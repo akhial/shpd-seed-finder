@@ -1,0 +1,212 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+package dev.seedseeker.app.ui
+
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import dev.seedseeker.app.model.CatalogItem
+import dev.seedseeker.app.model.ItemKind
+import dev.seedseeker.app.model.ItemRequirement
+import dev.seedseeker.app.model.ScoutItem
+import dev.seedseeker.app.model.UpgradeMatch
+import dev.seedseeker.app.ui.theme.Amber
+import dev.seedseeker.app.ui.theme.Mint
+import java.util.Locale
+
+val LocalItemAtlas = staticCompositionLocalOf<ImageBitmap?> { null }
+
+/** Original compass mark used as the app's brand glyph. */
+@Composable
+fun CompassMark(modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val stroke = size.minDimension * 0.07f
+        drawCircle(Mint, style = Stroke(stroke))
+        drawLine(
+            color = Amber,
+            start = Offset(size.width * 0.32f, size.height * 0.72f),
+            end = Offset(size.width * 0.67f, size.height * 0.28f),
+            strokeWidth = stroke * 1.25f,
+            cap = StrokeCap.Round,
+        )
+        drawCircle(Color.White, radius = stroke * 0.8f, center = center)
+    }
+}
+
+/** 16×16 sprite from the upstream atlas, drawn with nearest-neighbour scaling. */
+@Composable
+fun ItemSprite(
+    item: CatalogItem,
+    modifierName: String? = null,
+    modifier: Modifier = Modifier,
+) {
+    val atlas = LocalItemAtlas.current
+    val placeholderColor = MaterialTheme.colorScheme.outline
+    Canvas(
+        modifier = modifier.semantics { contentDescription = item.name },
+    ) {
+        if (modifierName != null) {
+            val glow = if (item.kind == ItemKind.ARMOR) Mint else Amber
+            drawCircle(glow, radius = size.minDimension * 0.46f, alpha = 0.23f)
+            drawCircle(glow, radius = size.minDimension * 0.34f, alpha = 0.16f)
+        }
+        if (atlas != null) {
+            drawImage(
+                image = atlas,
+                srcOffset = IntOffset(
+                    x = (item.spriteIndex % 16) * 16,
+                    y = (item.spriteIndex / 16) * 16,
+                ),
+                srcSize = IntSize(16, 16),
+                dstOffset = IntOffset.Zero,
+                dstSize = IntSize(size.width.toInt(), size.height.toInt()),
+                filterQuality = FilterQuality.None,
+            )
+        } else {
+            drawCircle(placeholderColor, radius = size.minDimension * 0.28f)
+        }
+    }
+}
+
+/** Sprite inside a soft tonal tile; falls back to a "?" for wildcard requirements. */
+@Composable
+fun SpriteTile(
+    item: CatalogItem?,
+    modifierName: String? = null,
+    tileSize: Int = 60,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.size(tileSize.dp),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            if (item == null) {
+                Text(
+                    "?",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            } else {
+                ItemSprite(
+                    item = item,
+                    modifierName = modifierName,
+                    modifier = Modifier.size((tileSize * 3 / 4).dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun SectionHeader(
+    eyebrow: String,
+    title: String,
+    supporting: String? = null,
+    modifier: Modifier = Modifier,
+    trailing: @Composable () -> Unit = {},
+) {
+    Row(modifier, verticalAlignment = Alignment.Bottom) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                eyebrow.uppercase(Locale.ROOT),
+                style = MaterialTheme.typography.labelSmall,
+                letterSpacing = 1.4.sp,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(title, style = MaterialTheme.typography.headlineSmall)
+            if (supporting != null) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    supporting,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        trailing()
+    }
+}
+
+/** Small tonal capsule used for counts and states. */
+@Composable
+fun StatusPill(
+    text: String,
+    modifier: Modifier = Modifier,
+    container: Color = MaterialTheme.colorScheme.surfaceContainerHighest,
+    content: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+) {
+    Surface(shape = MaterialTheme.shapes.large, color = container, modifier = modifier) {
+        Text(
+            text,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            style = MaterialTheme.typography.labelMedium,
+            color = content,
+        )
+    }
+}
+
+fun upgradeBadgeLabel(match: UpgradeMatch, upgrade: Int): String = when (match) {
+    UpgradeMatch.ANY -> "Any"
+    UpgradeMatch.EXACT -> "= +$upgrade"
+    UpgradeMatch.AT_LEAST -> "≥ +$upgrade"
+}
+
+/** Region names shown next to floor numbers, as in the macOS manifest. */
+fun floorRegion(depth: Int): String = when {
+    depth < 6 -> "Sewers"
+    depth < 11 -> "Prison"
+    depth < 16 -> "Caves"
+    depth < 21 -> "Dwarven City"
+    else -> "Demon Halls"
+}
+
+/**
+ * Per-item hint that a scouted item satisfies one of the query requirements.
+ * Does not re-verify joint or exclusive-reward satisfiability.
+ */
+fun ScoutItem.matchesAny(requirements: List<ItemRequirement>): Boolean =
+    requirements.any { requirement ->
+        requirement.kind == item.kind &&
+            (requirement.item == null || requirement.item.id == item.id) &&
+            when (requirement.upgradeMatch) {
+                UpgradeMatch.ANY -> true
+                UpgradeMatch.EXACT -> upgrade == requirement.upgrade
+                UpgradeMatch.AT_LEAST -> upgrade >= requirement.upgrade
+            } &&
+            (requirement.modifier == null || requirement.modifier == effect) &&
+            (requirement.source == null || requirement.source == source)
+    }
+
+fun compactCount(value: Long): String = when {
+    value >= 1_000_000_000_000L -> String.format(Locale.US, "%.2fT", value / 1_000_000_000_000.0)
+    value >= 1_000_000_000L -> String.format(Locale.US, "%.2fB", value / 1_000_000_000.0)
+    value >= 1_000_000L -> String.format(Locale.US, "%.1fM", value / 1_000_000.0)
+    value >= 1_000L -> String.format(Locale.US, "%.1fK", value / 1_000.0)
+    else -> value.toString()
+}

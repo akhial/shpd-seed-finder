@@ -22,7 +22,7 @@ rustup target add aarch64-linux-android x86_64-linux-android
 If a newer JDK is your shell default, set `JAVA_HOME` to JDK 21 before invoking
 the wrapper. `ANDROID_HOME` or `android/local.properties` must identify the SDK.
 
-The app requests no Android permissions. It targets API 36, supports API 21+, opts into edge-to-edge drawing, and uses AndroidX's predictive-back handler for in-app navigation.
+The app requests no Android permissions. It targets API 36, supports API 23+, opts into edge-to-edge drawing, and uses AndroidX's predictive-back handler for in-app navigation.
 
 ## Licensing
 
