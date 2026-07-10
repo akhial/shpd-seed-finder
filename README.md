@@ -137,6 +137,12 @@ with `--items` (or `-i`). Matching seed codes are written to standard output in
 ascending order. The `kind` field is only required for wildcard requirements;
 concrete items use the stable IDs from `crates/seedfinder-core/src/catalog.rs`.
 
+Android and macOS app searches rotate the full seed space instead: the first
+session start is randomized, and later sessions use distinct, widely separated
+starts. Each session still increments contiguous seeds and wraps only once, so
+this diversification adds no modular arithmetic to the per-seed hot path. CLI
+searches and benchmarks remain deterministic for reproducibility.
+
 ```json
 {
   "max_depth": 24,

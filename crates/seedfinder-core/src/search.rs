@@ -267,7 +267,9 @@ pub struct StreamingSearchFailure {
 #[derive(Debug)]
 struct StreamingShared {
     cursor: AtomicU64,
+    range_start: u64,
     end_seed_exclusive: u64,
+    traversal_start: u64,
     total: u64,
     chunk_size: u64,
     max_results: u64,
@@ -403,22 +405,43 @@ pub fn spawn_streaming_search<G: WorldGenerator + Send + 'static>(
     query: SearchQuery,
     options: SearchOptions,
 ) -> Result<StreamingSearchHandle, SearchError> {
+    spawn_rotated_streaming_search(generator, query, options, options.start_seed)
+}
+
+/// Starts a non-blocking multicore traversal at `traversal_start`, wrapping at
+/// the end of the configured range and finishing immediately before the start.
+///
+/// Seed construction within each chunk remains a contiguous incrementing
+/// range. Only the chunk containing the single wrap point is split in two, so
+/// rotating a search adds no modular arithmetic to its per-seed hot path.
+///
+/// # Errors
+///
+/// Returns [`SearchError`] before starting any worker for an invalid query,
+/// numeric seed interval, or traversal start outside that interval.
+pub fn spawn_rotated_streaming_search<G: WorldGenerator + Send + 'static>(
+    generator: &Arc<G>,
+    query: SearchQuery,
+    options: SearchOptions,
+    traversal_start: u64,
+) -> Result<StreamingSearchHandle, SearchError> {
     query.validate()?;
-    if options.start_seed >= options.end_seed_exclusive || options.end_seed_exclusive > TOTAL_SEEDS
+    if options.start_seed >= options.end_seed_exclusive
+        || options.end_seed_exclusive > TOTAL_SEEDS
+        || !(options.start_seed..options.end_seed_exclusive).contains(&traversal_start)
     {
         return Err(SearchError::InvalidSeedRange);
     }
 
+    let total = options.end_seed_exclusive - options.start_seed;
     let plan = Arc::new(QueryPlan::analyze(&query));
     let shared = Arc::new(StreamingShared {
         // An impossible query is complete before any worker claims a chunk.
-        cursor: AtomicU64::new(if plan.is_unsatisfiable() {
-            options.end_seed_exclusive
-        } else {
-            options.start_seed
-        }),
+        cursor: AtomicU64::new(if plan.is_unsatisfiable() { total } else { 0 }),
+        range_start: options.start_seed,
         end_seed_exclusive: options.end_seed_exclusive,
-        total: options.end_seed_exclusive - options.start_seed,
+        traversal_start,
+        total,
         chunk_size: u64::try_from(options.chunk_size.get()).unwrap_or(1),
         max_results: u64::try_from(options.max_results.get()).unwrap_or(u64::MAX),
         tested: AtomicU64::new(0),
@@ -471,68 +494,129 @@ fn streaming_worker<G: WorldGenerator>(
     active_chunk: &Cell<Option<(u64, u64)>>,
 ) {
     let generation_depth = plan.generation_depth();
+    let seeds_before_wrap = shared.end_seed_exclusive - shared.traversal_start;
     while !shared.cancelled.load(Ordering::Acquire)
         && shared.accepted.load(Ordering::Acquire) < shared.max_results
     {
-        let chunk_start = shared
+        let logical_start = shared
             .cursor
             .fetch_add(shared.chunk_size, Ordering::Relaxed);
-        if chunk_start >= shared.end_seed_exclusive {
+        if logical_start >= shared.total {
             return;
         }
-        let chunk_end = chunk_start
+        let logical_end = logical_start
             .saturating_add(shared.chunk_size)
-            .min(shared.end_seed_exclusive);
-        active_chunk.set(Some((chunk_start, chunk_end)));
-        let seeds: Vec<_> = (chunk_start..chunk_end)
-            .map(|value| {
-                DungeonSeed::new(value)
-                    .expect("a validated search interval only contains representable seeds")
-            })
-            .collect();
-        let worlds = generator.generate_batch_gated(&seeds, generation_depth, plan);
-        assert_eq!(
-            worlds.len(),
-            seeds.len(),
-            "WorldGenerator::generate_batch_gated must return one entry per seed"
-        );
+            .min(shared.total);
 
-        let mut local_results = Vec::new();
-        let mut local_tested = 0_u64;
-        for world in worlds {
-            if shared.cancelled.load(Ordering::Acquire)
-                || shared.accepted.load(Ordering::Acquire) >= shared.max_results
+        if logical_start < seeds_before_wrap {
+            let first_end = logical_end.min(seeds_before_wrap);
+            streaming_seed_range(
+                generator,
+                query,
+                plan,
+                shared,
+                active_chunk,
+                generation_depth,
+                shared.traversal_start + logical_start,
+                shared.traversal_start + first_end,
+            );
+
+            // This branch runs for at most one claimed chunk in the entire
+            // search. Keeping the two numeric ranges separate preserves the
+            // ordinary increment loop and accurate panic diagnostics.
+            if logical_end > seeds_before_wrap
+                && !shared.cancelled.load(Ordering::Acquire)
+                && shared.accepted.load(Ordering::Acquire) < shared.max_results
             {
+                streaming_seed_range(
+                    generator,
+                    query,
+                    plan,
+                    shared,
+                    active_chunk,
+                    generation_depth,
+                    shared.range_start,
+                    shared.range_start + (logical_end - seeds_before_wrap),
+                );
+            }
+        } else {
+            let start = shared.range_start + (logical_start - seeds_before_wrap);
+            let end = shared.range_start + (logical_end - seeds_before_wrap);
+            streaming_seed_range(
+                generator,
+                query,
+                plan,
+                shared,
+                active_chunk,
+                generation_depth,
+                start,
+                end,
+            );
+        }
+    }
+}
+
+#[inline]
+#[allow(clippy::too_many_arguments)]
+fn streaming_seed_range<G: WorldGenerator>(
+    generator: &G,
+    query: &SearchQuery,
+    plan: &QueryPlan,
+    shared: &StreamingShared,
+    active_chunk: &Cell<Option<(u64, u64)>>,
+    generation_depth: u8,
+    start: u64,
+    end: u64,
+) {
+    active_chunk.set(Some((start, end)));
+    let seeds: Vec<_> = (start..end)
+        .map(|value| {
+            DungeonSeed::new(value)
+                .expect("a validated search interval only contains representable seeds")
+        })
+        .collect();
+    let worlds = generator.generate_batch_gated(&seeds, generation_depth, plan);
+    assert_eq!(
+        worlds.len(),
+        seeds.len(),
+        "WorldGenerator::generate_batch_gated must return one entry per seed"
+    );
+
+    let mut local_results = Vec::new();
+    let mut local_tested = 0_u64;
+    for world in worlds {
+        if shared.cancelled.load(Ordering::Acquire)
+            || shared.accepted.load(Ordering::Acquire) >= shared.max_results
+        {
+            break;
+        }
+        local_tested += 1;
+        let Some(world) = world else {
+            continue;
+        };
+        if query.matches(&world) {
+            if shared
+                .accepted
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |accepted| {
+                    (accepted < shared.max_results).then_some(accepted + 1)
+                })
+                .is_ok()
+            {
+                local_results.push(world);
+            } else {
                 break;
             }
-            local_tested += 1;
-            let Some(world) = world else {
-                continue;
-            };
-            if query.matches(&world) {
-                if shared
-                    .accepted
-                    .fetch_update(Ordering::AcqRel, Ordering::Acquire, |accepted| {
-                        (accepted < shared.max_results).then_some(accepted + 1)
-                    })
-                    .is_ok()
-                {
-                    local_results.push(world);
-                } else {
-                    break;
-                }
-            }
         }
-        shared.tested.fetch_add(local_tested, Ordering::Relaxed);
-        if !local_results.is_empty() {
-            shared
-                .results
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .extend(local_results);
-        }
-        active_chunk.set(None);
     }
+    shared.tested.fetch_add(local_tested, Ordering::Relaxed);
+    if !local_results.is_empty() {
+        shared
+            .results
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .extend(local_results);
+    }
+    active_chunk.set(None);
 }
 
 fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> String {
@@ -604,7 +688,7 @@ impl From<QueryError> for SearchError {
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroUsize;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     use crate::catalog::{ItemId, ItemKind};
     use crate::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
@@ -612,7 +696,7 @@ mod tests {
 
     use super::{
         SearchOptions, SearchProgress, StreamingSearchState, WorldGenerator, search_parallel,
-        spawn_streaming_search,
+        spawn_rotated_streaming_search, spawn_streaming_search,
     };
 
     struct DivisibleGenerator;
@@ -751,6 +835,62 @@ mod tests {
                 .map(|world| world.seed.value())
                 .collect::<Vec<_>>(),
             vec![0, 17, 34, 51]
+        );
+    }
+
+    #[test]
+    fn rotated_streaming_search_wraps_once_and_visits_each_seed_once() {
+        #[derive(Default)]
+        struct RecordingGenerator(Mutex<Vec<u64>>);
+
+        impl WorldGenerator for RecordingGenerator {
+            fn generate(&self, seed: crate::seed::DungeonSeed, _max_depth: u8) -> GeneratedWorld {
+                self.0
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .push(seed.value());
+                GeneratedWorld {
+                    seed,
+                    items: Vec::new(),
+                }
+            }
+        }
+
+        let query = SearchQuery {
+            requirements: vec![Requirement {
+                kind: ItemKind::Wand,
+                item: Some(ItemId::WandFrost),
+                upgrade: crate::query::UpgradeRequirement::Exact(2),
+                effect: None,
+                source: None,
+                identity_group: None,
+            }],
+            max_depth: 4,
+            require_blacksmith: false,
+            fast_mode: false,
+        };
+        let options = SearchOptions {
+            start_seed: 10,
+            end_seed_exclusive: 20,
+            workers: NonZeroUsize::MIN,
+            chunk_size: NonZeroUsize::new(4).unwrap(),
+            max_results: NonZeroUsize::MIN,
+        };
+        let generator = Arc::new(RecordingGenerator::default());
+        let handle = spawn_rotated_streaming_search(&generator, query, options, 17).unwrap();
+        while !handle.is_finished() {
+            std::thread::yield_now();
+        }
+
+        assert_eq!(handle.state(), StreamingSearchState::Completed);
+        assert_eq!(handle.tested(), 10);
+        assert_eq!(handle.total(), 10);
+        assert_eq!(
+            *generator
+                .0
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+            vec![17, 18, 19, 10, 11, 12, 13, 14, 15, 16]
         );
     }
 

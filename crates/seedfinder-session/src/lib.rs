@@ -1,16 +1,18 @@
 //! Frontend-neutral search sessions, registry, and scout packet generation.
 
 use std::collections::HashMap;
+use std::collections::hash_map::RandomState;
+use std::hash::BuildHasher;
 use std::num::NonZeroUsize;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use shpd_seedfinder_core::main_world::CanonicalMainWorldGenerator;
 use shpd_seedfinder_core::query::SearchQuery;
 use shpd_seedfinder_core::search::{
     SearchError, SearchOptions, StreamingSearchHandle, StreamingSearchState, WorldGenerator,
-    spawn_streaming_search,
+    spawn_rotated_streaming_search, spawn_streaming_search,
 };
 use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
 use shpd_seedfinder_core::wire::{
@@ -26,8 +28,14 @@ pub const ERROR_SEARCH_WORKER_FAILED: i64 = 2_001;
 pub const SEARCH_CHUNK_SIZE: usize = 4;
 pub const MAX_ACCEPTED_RESULTS: usize = 1_024;
 
+// Approximately one golden-ratio turn of the seed circle. TOTAL_SEEDS only
+// has 2 and 13 as prime factors; this odd, non-multiple-of-13 stride is
+// therefore coprime and visits every possible start before repeating.
+const PRODUCTION_SEARCH_START_STRIDE: u64 = 3_355_211_884_971;
+
 static REGISTRY: OnceLock<SessionRegistry> = OnceLock::new();
 static CANONICAL_GENERATOR: OnceLock<Arc<CanonicalMainWorldGenerator>> = OnceLock::new();
+static NEXT_PRODUCTION_SEARCH_START: OnceLock<AtomicU64> = OnceLock::new();
 
 #[must_use]
 pub fn registry() -> &'static SessionRegistry {
@@ -36,6 +44,29 @@ pub fn registry() -> &'static SessionRegistry {
 
 fn canonical_generator() -> &'static Arc<CanonicalMainWorldGenerator> {
     CANONICAL_GENERATOR.get_or_init(|| Arc::new(CanonicalMainWorldGenerator))
+}
+
+fn production_search_start() -> u64 {
+    let next = NEXT_PRODUCTION_SEARCH_START.get_or_init(|| {
+        let random_start = RandomState::new().hash_one(0_u8) % TOTAL_SEEDS;
+        AtomicU64::new(random_start)
+    });
+    claim_production_search_start(next)
+}
+
+fn claim_production_search_start(next: &AtomicU64) -> u64 {
+    next.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+        Some(advance_production_search_start(current))
+    })
+    .unwrap_or_else(|current| current)
+}
+
+const fn advance_production_search_start(current: u64) -> u64 {
+    if current >= TOTAL_SEEDS - PRODUCTION_SEARCH_START_STRIDE {
+        current - (TOTAL_SEEDS - PRODUCTION_SEARCH_START_STRIDE)
+    } else {
+        current + PRODUCTION_SEARCH_START_STRIDE
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -122,7 +153,16 @@ impl NativeSession {
             chunk_size: NonZeroUsize::new(SEARCH_CHUNK_SIZE).unwrap_or(NonZeroUsize::MIN),
             max_results: NonZeroUsize::new(MAX_ACCEPTED_RESULTS).unwrap_or(NonZeroUsize::MIN),
         };
-        Self::start(canonical_generator(), query, options)
+        spawn_rotated_streaming_search(
+            canonical_generator(),
+            query,
+            options,
+            production_search_start(),
+        )
+        .map(|search| Self {
+            search,
+            diagnostic_claimed: AtomicBool::new(false),
+        })
     }
 
     /// Decodes `SSF2` and starts a canonical production search.
@@ -403,6 +443,21 @@ mod tests {
     fn count(packet: &[u8]) -> usize {
         assert_eq!(&packet[..4], b"SSR1");
         usize::from(u16::from_be_bytes([packet[4], packet[5]]))
+    }
+
+    #[test]
+    fn production_search_starts_are_full_cycle_and_widely_spaced() {
+        let next = AtomicU64::new(TOTAL_SEEDS - 1);
+        let first = claim_production_search_start(&next);
+        let second = claim_production_search_start(&next);
+        let third = claim_production_search_start(&next);
+
+        assert_eq!(first, TOTAL_SEEDS - 1);
+        assert_eq!(second, advance_production_search_start(first));
+        assert_eq!(third, advance_production_search_start(second));
+        assert_ne!(first, second);
+        assert_ne!(second, third);
+        assert!(second < TOTAL_SEEDS && third < TOTAL_SEEDS);
     }
 
     #[test]
