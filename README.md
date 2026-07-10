@@ -132,6 +132,38 @@ cargo run --release -p shpd-seedfinder-cli -- --benchmark
 cargo run --release -p shpd-seedfinder-cli -- -b 1000 --workers 4
 ```
 
+To search from `AAA-AAA-AAA`, put the requirements in a JSON file and pass it
+with `--items` (or `-i`). Matching seed codes are written to standard output in
+ascending order. The `kind` field is only required for wildcard requirements;
+concrete items use the stable IDs from `crates/seedfinder-core/src/catalog.rs`.
+
+```json
+{
+  "max_depth": 24,
+  "require_blacksmith": false,
+  "requirements": [
+    {
+      "item": "ring_tenacity",
+      "upgrade": 4,
+      "source": "imp_reward"
+    },
+    {
+      "kind": "wand",
+      "upgrade": { "at_least": 2 }
+    }
+  ]
+}
+```
+
+Omitting `upgrade` means any upgrade; an integer means an exact upgrade. Item
+effects, loot `source`, and `identity_group` are optional. The same file can be
+used for a finite benchmark:
+
+```sh
+cargo run --release -p shpd-seedfinder-cli -- --items requirements.json --workers 4
+cargo run --release -p shpd-seedfinder-cli -- -i requirements.json -b 1000 --workers 4
+```
+
 ## Licensing and identity
 
 This project is GPL-3.0-or-later. It contains a derived generation

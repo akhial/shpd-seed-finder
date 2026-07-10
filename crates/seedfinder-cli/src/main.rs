@@ -1,5 +1,10 @@
+mod query_file;
+
 use std::env;
+use std::fs;
+use std::io::{self, Write as _};
 use std::num::NonZeroUsize;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use shpd_seedfinder_core::SHPD_VERSION;
@@ -11,29 +16,42 @@ use shpd_seedfinder_core::seed::TOTAL_SEEDS;
 
 const DEFAULT_BENCHMARK_SEEDS: u64 = 10_000;
 const SEARCH_CHUNK_SIZE: usize = 4;
+const SEARCH_WINDOW_SEEDS: u64 = 4_096;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct BenchmarkOptions {
     seeds: u64,
     workers: Option<NonZeroUsize>,
+    items: Option<PathBuf>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum Command {
     Benchmark(BenchmarkOptions),
+    Search {
+        items: PathBuf,
+        workers: Option<NonZeroUsize>,
+    },
     Help,
     Version,
 }
 
 fn main() -> ExitCode {
     match parse_args(env::args().skip(1)) {
-        Ok(Command::Benchmark(options)) => match run_benchmark(options) {
+        Ok(Command::Benchmark(options)) => match benchmark_command(&options) {
             Ok(report) => {
                 println!("{report}");
                 ExitCode::SUCCESS
             }
             Err(error) => {
                 eprintln!("seed-seeker: benchmark failed: {error}");
+                ExitCode::FAILURE
+            }
+        },
+        Ok(Command::Search { items, workers }) => match search_command(&items, workers) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("seed-seeker: search failed: {error}");
                 ExitCode::FAILURE
             }
         },
@@ -68,17 +86,17 @@ fn parse_args(arguments: impl IntoIterator<Item = String>) -> Result<Command, St
         }
     }
 
-    let mut benchmark = false;
-    let mut seeds = DEFAULT_BENCHMARK_SEEDS;
+    let mut benchmark_seeds = None;
     let mut workers = None;
+    let mut items = None;
     let mut index = 0;
     while index < arguments.len() {
         match arguments[index].as_str() {
             "--benchmark" | "-b" => {
-                if benchmark {
+                if benchmark_seeds.is_some() {
                     return Err("benchmark may only be specified once".to_owned());
                 }
-                benchmark = true;
+                let mut seeds = DEFAULT_BENCHMARK_SEEDS;
                 if arguments
                     .get(index + 1)
                     .is_some_and(|argument| !argument.starts_with('-'))
@@ -86,6 +104,7 @@ fn parse_args(arguments: impl IntoIterator<Item = String>) -> Result<Command, St
                     index += 1;
                     seeds = parse_seed_count(&arguments[index])?;
                 }
+                benchmark_seeds = Some(seeds);
             }
             "--workers" => {
                 if workers.is_some() {
@@ -97,18 +116,35 @@ fn parse_args(arguments: impl IntoIterator<Item = String>) -> Result<Command, St
                     .ok_or_else(|| "--workers requires a positive integer".to_owned())?;
                 workers = Some(parse_worker_count(value)?);
             }
+            "--items" | "-i" => {
+                if items.is_some() {
+                    return Err("--items may only be specified once".to_owned());
+                }
+                index += 1;
+                let value = arguments
+                    .get(index)
+                    .ok_or_else(|| "--items requires a JSON file path".to_owned())?;
+                items = Some(PathBuf::from(value));
+            }
             "--help" | "-h" | "--version" | "-V" => {
-                return Err("help and version cannot be combined with a benchmark".to_owned());
+                return Err("help and version cannot be combined with other options".to_owned());
             }
             argument => return Err(format!("unknown option '{argument}'")),
         }
         index += 1;
     }
 
-    if !benchmark {
-        return Err("--workers requires --benchmark".to_owned());
+    if let Some(seeds) = benchmark_seeds {
+        return Ok(Command::Benchmark(BenchmarkOptions {
+            seeds,
+            workers,
+            items,
+        }));
     }
-    Ok(Command::Benchmark(BenchmarkOptions { seeds, workers }))
+    if let Some(items) = items {
+        return Ok(Command::Search { items, workers });
+    }
+    Err("--workers requires --benchmark or --items".to_owned())
 }
 
 fn parse_seed_count(value: &str) -> Result<u64, String> {
@@ -130,21 +166,29 @@ fn parse_worker_count(value: &str) -> Result<NonZeroUsize, String> {
 fn help() -> &'static str {
     concat!(
         "Seed Seeker command-line tools\n\n",
-        "Usage: seed-seeker --benchmark [SEEDS] [--workers WORKERS]\n\n",
+        "Usage:\n",
+        "  seed-seeker --items FILE [--workers WORKERS]\n",
+        "  seed-seeker [--items FILE] --benchmark [SEEDS] [--workers WORKERS]\n\n",
         "Options:\n",
-        "  -b, --benchmark [SEEDS]  Benchmark the canonical depth-24 seed search\n",
+        "  -b, --benchmark [SEEDS]  Benchmark a seed search\n",
         "                            [default: 10000]\n",
+        "  -i, --items FILE          Read search requirements from a JSON file\n",
         "      --workers WORKERS     Number of search workers [default: available CPUs]\n",
         "  -h, --help                Print help\n",
         "  -V, --version             Print version\n",
     )
 }
 
-fn run_benchmark(benchmark: BenchmarkOptions) -> Result<String, String> {
+fn benchmark_command(benchmark: &BenchmarkOptions) -> Result<String, String> {
+    let query = benchmark
+        .items
+        .as_deref()
+        .map(load_query)
+        .transpose()?
+        .unwrap_or_else(benchmark_query);
     let workers = benchmark
         .workers
         .unwrap_or_else(SearchOptions::available_parallelism);
-    let query = benchmark_query();
     let options = SearchOptions {
         start_seed: 0,
         end_seed_exclusive: benchmark.seeds,
@@ -176,6 +220,48 @@ fn run_benchmark(benchmark: BenchmarkOptions) -> Result<String, String> {
     ))
 }
 
+fn search_command(items: &Path, workers: Option<NonZeroUsize>) -> Result<(), String> {
+    let query = load_query(items)?;
+    let workers = workers.unwrap_or_else(SearchOptions::available_parallelism);
+    let stdout = io::stdout();
+    let mut output = io::BufWriter::new(stdout.lock());
+    let mut start_seed = 0;
+    while start_seed < TOTAL_SEEDS {
+        let end_seed_exclusive = start_seed
+            .saturating_add(SEARCH_WINDOW_SEEDS)
+            .min(TOTAL_SEEDS);
+        let outcome = search_parallel(
+            &CanonicalMainWorldGenerator,
+            &query,
+            SearchOptions {
+                start_seed,
+                end_seed_exclusive,
+                workers,
+                chunk_size: NonZeroUsize::new(SEARCH_CHUNK_SIZE).expect("chunk size is non-zero"),
+                max_results: NonZeroUsize::MAX,
+            },
+            &SearchProgress::default(),
+        )
+        .map_err(|error| format!("{error:?}"))?;
+        for world in outcome.worlds {
+            writeln!(output, "{}", world.seed)
+                .map_err(|error| format!("could not write matching seed: {error}"))?;
+        }
+        output
+            .flush()
+            .map_err(|error| format!("could not flush matching seeds: {error}"))?;
+        start_seed = end_seed_exclusive;
+    }
+    Ok(())
+}
+
+fn load_query(path: &Path) -> Result<SearchQuery, String> {
+    let contents = fs::read_to_string(path)
+        .map_err(|error| format!("could not read '{}': {error}", path.display()))?;
+    query_file::decode(&contents)
+        .map_err(|error| format!("could not parse '{}': {error}", path.display()))
+}
+
 fn benchmark_query() -> SearchQuery {
     SearchQuery {
         requirements: vec![Requirement {
@@ -194,6 +280,7 @@ fn benchmark_query() -> SearchQuery {
 #[cfg(test)]
 mod tests {
     use std::num::NonZeroUsize;
+    use std::path::PathBuf;
 
     use shpd_seedfinder_core::seed::TOTAL_SEEDS;
 
@@ -203,6 +290,7 @@ mod tests {
         Command::Benchmark(BenchmarkOptions {
             seeds,
             workers: workers.and_then(NonZeroUsize::new),
+            items: None,
         })
     }
 
@@ -245,6 +333,46 @@ mod tests {
     }
 
     #[test]
+    fn items_file_starts_a_search_without_the_benchmark_flag() {
+        assert_eq!(
+            parse_args([
+                "--items".to_owned(),
+                "requirements.json".to_owned(),
+                "--workers".to_owned(),
+                "3".to_owned(),
+            ]),
+            Ok(Command::Search {
+                items: PathBuf::from("requirements.json"),
+                workers: NonZeroUsize::new(3),
+            })
+        );
+        assert_eq!(
+            parse_args(["-i".to_owned(), "requirements.json".to_owned()]),
+            Ok(Command::Search {
+                items: PathBuf::from("requirements.json"),
+                workers: None,
+            })
+        );
+    }
+
+    #[test]
+    fn items_file_can_customize_a_benchmark_query() {
+        assert_eq!(
+            parse_args([
+                "-i".to_owned(),
+                "requirements.json".to_owned(),
+                "-b".to_owned(),
+                "1000".to_owned(),
+            ]),
+            Ok(Command::Benchmark(BenchmarkOptions {
+                seeds: 1_000,
+                workers: None,
+                items: Some(PathBuf::from("requirements.json")),
+            }))
+        );
+    }
+
+    #[test]
     fn rejects_unknown_or_conflicting_arguments() {
         assert_eq!(
             parse_args(["--unknown".to_owned()]),
@@ -252,7 +380,7 @@ mod tests {
         );
         assert_eq!(
             parse_args(["-b".to_owned(), "--help".to_owned()]),
-            Err("help and version cannot be combined with a benchmark".to_owned())
+            Err("help and version cannot be combined with other options".to_owned())
         );
     }
 
@@ -272,6 +400,7 @@ mod tests {
     #[test]
     fn help_lists_benchmark_seed_and_worker_options() {
         assert!(help().contains("-b, --benchmark"));
+        assert!(help().contains("-i, --items FILE"));
         assert!(help().contains("--workers WORKERS"));
     }
 }
