@@ -5,6 +5,48 @@ const ADDEND: u64 = 0xB;
 const MASK: u64 = (1_u64 << 48) - 1;
 const MX3_MULTIPLIER: u64 = 0xBEA2_25F9_EB34_556D;
 
+// Jump-ahead compositions of the LCG: applying `state * Ak + Ck` advances the
+// generator by k steps in one multiply-add. Truncation to 48 bits commutes
+// with wrapping 64-bit multiply/add, so composing unmasked stays exact.
+const MULTIPLIER_2: u64 = MULTIPLIER.wrapping_mul(MULTIPLIER);
+const ADDEND_2: u64 = MULTIPLIER.wrapping_mul(ADDEND).wrapping_add(ADDEND);
+const MULTIPLIER_3: u64 = MULTIPLIER_2.wrapping_mul(MULTIPLIER);
+const ADDEND_3: u64 = MULTIPLIER.wrapping_mul(ADDEND_2).wrapping_add(ADDEND);
+const MULTIPLIER_4: u64 = MULTIPLIER_3.wrapping_mul(MULTIPLIER);
+const ADDEND_4: u64 = MULTIPLIER.wrapping_mul(ADDEND_3).wrapping_add(ADDEND);
+const MULTIPLIER_5: u64 = MULTIPLIER_4.wrapping_mul(MULTIPLIER);
+const ADDEND_5: u64 = MULTIPLIER.wrapping_mul(ADDEND_4).wrapping_add(ADDEND);
+const MULTIPLIER_6: u64 = MULTIPLIER_5.wrapping_mul(MULTIPLIER);
+const ADDEND_6: u64 = MULTIPLIER.wrapping_mul(ADDEND_5).wrapping_add(ADDEND);
+const MULTIPLIER_7: u64 = MULTIPLIER_6.wrapping_mul(MULTIPLIER);
+const ADDEND_7: u64 = MULTIPLIER.wrapping_mul(ADDEND_6).wrapping_add(ADDEND);
+const MULTIPLIER_8: u64 = MULTIPLIER_7.wrapping_mul(MULTIPLIER);
+const ADDEND_8: u64 = MULTIPLIER.wrapping_mul(ADDEND_7).wrapping_add(ADDEND);
+
+// Lemire's exact division-free `x % d` for 32-bit operands: with
+// `magic = floor(2^64 / d) + 1`, the remainder is the high 64 bits of
+// `(magic * x mod 2^64) * d`. Exact for every u32 `x` and `d >= 2`.
+const fn bound_magic(divisor: u64) -> u64 {
+    (u64::MAX / divisor).wrapping_add(1)
+}
+
+const SMALL_BOUND_MAGIC: [u64; 65] = {
+    let mut table = [0_u64; 65];
+    let mut divisor = 2_usize;
+    while divisor <= 64 {
+        table[divisor] = bound_magic(divisor as u64);
+        divisor += 1;
+    }
+    table
+};
+
+#[inline]
+#[allow(clippy::cast_possible_truncation)]
+fn fast_rem_u32(value: u32, divisor: u32, magic: u64) -> u32 {
+    let low = magic.wrapping_mul(u64::from(value));
+    ((u128::from(low) * u128::from(divisor)) >> 64) as u32
+}
+
 /// The 48-bit linear-congruential generator implemented by `java.util.Random`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct JavaRandom {
@@ -49,12 +91,86 @@ impl JavaRandom {
 
         loop {
             let bits = i32::try_from(self.next_bits(31)).unwrap_or_default();
-            let value = bits % bound;
+            #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+            let value = if bound <= 64 {
+                // Division-free remainder for the small bounds that dominate
+                // level generation; bit-identical to `bits % bound`.
+                fast_rem_u32(bits as u32, bound as u32, SMALL_BOUND_MAGIC[bound as usize]) as i32
+            } else {
+                bits % bound
+            };
             // Java performs this expression in wrapping signed 32-bit math.
             if bits.wrapping_sub(value).wrapping_add(bound - 1) >= 0 {
                 return value;
             }
         }
+    }
+
+    /// `nextInt(bound)` with a caller-precomputed [`FastBound`], for loops
+    /// that draw many values against the same non-power-of-two bound.
+    pub(crate) fn next_i32_fast_bound(&mut self, fast: &FastBound) -> i32 {
+        let bound = fast.bound;
+        if (bound & -bound) == bound {
+            return i32::try_from(((i64::from(bound)) * i64::from(self.next_bits(31))) >> 31)
+                .unwrap_or_default();
+        }
+        loop {
+            let bits = i32::try_from(self.next_bits(31)).unwrap_or_default();
+            #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+            let value = fast_rem_u32(bits as u32, bound as u32, fast.magic) as i32;
+            if bits.wrapping_sub(value).wrapping_add(bound - 1) >= 0 {
+                return value;
+            }
+        }
+    }
+
+    /// Draws one canonical `nextFloat()` per cell and stores `draw < fill`,
+    /// returning how many cells came up filled. The eight-step jump-ahead
+    /// constants break the LCG's serial dependency chain so eight draws
+    /// compute in parallel; the emitted stream is bit-identical to calling
+    /// [`Self::next_f32`] once per cell.
+    #[allow(clippy::cast_precision_loss)]
+    pub(crate) fn fill_f32_below(&mut self, cells: &mut [bool], fill: f32) -> i32 {
+        let mut filled = 0_i32;
+        let mut state = self.state;
+        let mut chunks = cells.chunks_exact_mut(8);
+        // `draw / 2^24 < fill` over exact 24-bit integers is equivalent to
+        // the pure-integer test `draw < ceil(fill * 2^24)`: multiplying an
+        // f32 by a power of two is exact, so no rounding can flip the
+        // comparison. Negative or oversized thresholds clamp to "none" /
+        // "all" exactly as the float comparison would.
+        let threshold = (fill * 16_777_216.0_f32).ceil();
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let threshold = if threshold <= 0.0_f32 {
+            0_u64
+        } else if threshold >= 16_777_216.0_f32 {
+            1 << 24
+        } else {
+            threshold as u64
+        };
+        for chunk in &mut chunks {
+            let states = [
+                state.wrapping_mul(MULTIPLIER).wrapping_add(ADDEND),
+                state.wrapping_mul(MULTIPLIER_2).wrapping_add(ADDEND_2),
+                state.wrapping_mul(MULTIPLIER_3).wrapping_add(ADDEND_3),
+                state.wrapping_mul(MULTIPLIER_4).wrapping_add(ADDEND_4),
+                state.wrapping_mul(MULTIPLIER_5).wrapping_add(ADDEND_5),
+                state.wrapping_mul(MULTIPLIER_6).wrapping_add(ADDEND_6),
+                state.wrapping_mul(MULTIPLIER_7).wrapping_add(ADDEND_7),
+                state.wrapping_mul(MULTIPLIER_8).wrapping_add(ADDEND_8),
+            ];
+            for (cell, lane_state) in chunk.iter_mut().zip(states) {
+                *cell = ((lane_state & MASK) >> 24) < threshold;
+                filled += i32::from(*cell);
+            }
+            state = states[7] & MASK;
+        }
+        self.state = state;
+        for cell in chunks.into_remainder() {
+            *cell = self.next_f32() < fill;
+            filled += i32::from(*cell);
+        }
+        filled
     }
 
     /// Mirrors Java's `nextLong()` including sign-extension of its low word.
@@ -73,6 +189,29 @@ impl JavaRandom {
     /// Mirrors Java's `nextBoolean()`.
     pub fn next_bool(&mut self) -> bool {
         self.next_bits(1) != 0
+    }
+}
+
+/// Precomputed division-free reciprocal for repeated `nextInt(bound)` draws
+/// against one bound. Power-of-two bounds never consult `magic`.
+pub(crate) struct FastBound {
+    bound: i32,
+    magic: u64,
+}
+
+impl FastBound {
+    /// # Panics
+    ///
+    /// Panics if `bound <= 0`, matching `nextInt(bound)`.
+    pub(crate) fn new(bound: i32) -> Self {
+        assert!(bound > 0, "bound must be positive");
+        #[allow(clippy::cast_sign_loss)]
+        let magic = if bound >= 2 {
+            bound_magic(u64::from(bound.unsigned_abs()))
+        } else {
+            0
+        };
+        Self { bound, magic }
     }
 }
 
@@ -128,6 +267,13 @@ impl RandomStack {
         self.generators
             .last_mut()
             .expect("RNG stack always has a base")
+    }
+
+    /// Direct access to the active generator so tight draw loops can skip the
+    /// per-draw stack lookup. The mutable borrow freezes the stack while it
+    /// lives, so push/pop discipline cannot be violated mid-loop.
+    pub(crate) fn current_generator(&mut self) -> &mut JavaRandom {
+        self.current()
     }
 
     /// Mirrors Shattered's `Random.Int()`.

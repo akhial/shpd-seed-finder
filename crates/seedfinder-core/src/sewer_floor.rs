@@ -308,7 +308,7 @@ pub fn generate_sewer_floor(
     random: &mut RandomStack,
 ) -> Result<GeneratedSewerFloor, SewerFloorError> {
     let mut painted = paint_sewer_floor(run, limited_drops, depth, random)?;
-    let mut flags = LevelFlags::build(&painted.level.map, true);
+    let mut flags = LevelFlags::build_for_generation(&painted.level.map);
     let spatial_rules = SewerSpatialRules {
         bridge_spaces: painted.bridge_spaces.clone(),
     };

@@ -20,3 +20,9 @@
 
 # Locally signed release artifacts.
 /dist/
+
+# Claude
+.claude
+
+# PGO raw counter dumps (the merged .profdata is checked in).
+pgo/*.profraw

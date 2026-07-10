@@ -23,7 +23,7 @@ use crate::java_math::{div_i32, round_f32};
 use crate::level::Level;
 use crate::model::{Accessibility, ItemSource, WorldItem};
 use crate::painter::{generate_patch, set_shared_door_type};
-use crate::rng::RandomStack;
+use crate::rng::{FastBound, RandomStack};
 use crate::room::{DoorType, Room, RoomId, RoomKind, SecretRoomKind};
 use crate::run::{GeneratorCategory, GeneratorState, PotionKind, ScrollKind};
 use crate::special_equipment::{SpecialItem, SpecialPrizeContext};
@@ -1285,25 +1285,37 @@ fn maze_valid_move(
 ) -> bool {
     let side_x = 1 - dx.abs();
     let side_y = 1 - dy.abs();
+    // Column-major cell index plus loop-invariant step/side strides; the
+    // in-bounds checks below keep every probed index inside the maze, so the
+    // strided adds probe the same cells `maze_index` would.
+    let step_stride = dx.wrapping_mul(height).wrapping_add(dy);
+    let side_stride = side_x.wrapping_mul(height).wrapping_add(side_y);
+    let mut index = x.wrapping_mul(height).wrapping_add(y);
     x += dx;
     y += dy;
+    index = index.wrapping_add(step_stride);
     if x <= 0 || x >= width - 1 || y <= 0 || y >= height - 1 {
         return false;
     }
-    if maze[maze_index(height, x, y)]
-        || maze[maze_index(height, x + side_x, y + side_y)]
-        || maze[maze_index(height, x - side_x, y - side_y)]
+    if maze[maze_cell(index)]
+        || maze[maze_cell(index + side_stride)]
+        || maze[maze_cell(index - side_stride)]
     {
         return false;
     }
     x += dx;
     y += dy;
+    index = index.wrapping_add(step_stride);
     if x <= 0 || x >= width - 1 || y <= 0 || y >= height - 1 {
         return false;
     }
-    !maze[maze_index(height, x, y)]
-        && !maze[maze_index(height, x + side_x, y + side_y)]
-        && !maze[maze_index(height, x - side_x, y - side_y)]
+    !maze[maze_cell(index)]
+        && !maze[maze_cell(index + side_stride)]
+        && !maze[maze_cell(index - side_stride)]
+}
+
+fn maze_cell(index: i32) -> usize {
+    usize::try_from(index).expect("maze coordinate is non-negative")
 }
 
 fn maze_direction(
@@ -1312,15 +1324,15 @@ fn maze_direction(
     height: i32,
     x: i32,
     y: i32,
-    random: &mut RandomStack,
+    random: &mut crate::rng::JavaRandom,
 ) -> Option<(i32, i32)> {
-    if random.int_bound(4) == 0 && maze_valid_move(maze, width, height, x, y, 0, -1) {
+    if random.next_i32_bound(4) == 0 && maze_valid_move(maze, width, height, x, y, 0, -1) {
         return Some((0, -1));
     }
-    if random.int_bound(3) == 0 && maze_valid_move(maze, width, height, x, y, 1, 0) {
+    if random.next_i32_bound(3) == 0 && maze_valid_move(maze, width, height, x, y, 1, 0) {
         return Some((1, 0));
     }
-    if random.int_bound(2) == 0 && maze_valid_move(maze, width, height, x, y, 0, 1) {
+    if random.next_i32_bound(2) == 0 && maze_valid_move(maze, width, height, x, y, 0, 1) {
         return Some((0, 1));
     }
     maze_valid_move(maze, width, height, x, y, -1, 0).then_some((-1, 0))
@@ -1339,16 +1351,23 @@ fn generate_maze(bounds: Rect, entrance: Point, random: &mut RandomStack) -> Vec
     }
     maze[maze_index(height, entrance.x - bounds.left, entrance.y - bounds.top)] = false;
 
+    // Same hoisting as the sewer connection maze: the loop exits only after
+    // 2,500 consecutive failed rounds, so the generator and the reciprocal
+    // pick bounds are lifted out of the draw loop. The canonical draw
+    // sequence is unchanged.
+    let generator = random.current_generator();
+    let x_bound = FastBound::new(width);
+    let y_bound = FastBound::new(height);
     let mut fails = 0;
     while fails < 2_500 {
         let (mut x, mut y) = loop {
-            let x = random.int_bound(width);
-            let y = random.int_bound(height);
+            let x = generator.next_i32_fast_bound(&x_bound);
+            let y = generator.next_i32_fast_bound(&y_bound);
             if maze[maze_index(height, x, y)] {
                 break (x, y);
             }
         };
-        let Some((dx, dy)) = maze_direction(&maze, width, height, x, y, random) else {
+        let Some((dx, dy)) = maze_direction(&maze, width, height, x, y, generator) else {
             fails += 1;
             continue;
         };
@@ -1359,7 +1378,8 @@ fn generate_maze(bounds: Rect, entrance: Point, random: &mut RandomStack) -> Vec
             y += dy;
             maze[maze_index(height, x, y)] = true;
             moves += 1;
-            if random.int_bound(moves) != 0 || !maze_valid_move(&maze, width, height, x, y, dx, dy)
+            if generator.next_i32_bound(moves) != 0
+                || !maze_valid_move(&maze, width, height, x, y, dx, dy)
             {
                 break;
             }

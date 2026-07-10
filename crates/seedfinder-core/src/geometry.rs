@@ -807,6 +807,11 @@ pub mod painter {
     }
 }
 
+/// Largest grid height served by the bitboard fast path of
+/// [`PathFinder::all_open_cells_connected`]; taller grids fall back to the
+/// queue-based search.
+const MAX_BITBOARD_ROWS: usize = 64;
+
 /// Reusable port of v3.3.8 `com.watabou.utils.PathFinder`.
 ///
 /// Upstream stores one global work buffer.  A Rust instance keeps the same
@@ -969,12 +974,11 @@ impl PathFinder {
 
     fn lr_range(&self, step: usize) -> std::ops::Range<usize> {
         let step = i32::try_from(step).expect("PathFinder cell exceeds Java int");
-        let start = if rem_i32(step, self.width) == 0 { 3 } else { 0 };
-        let end_trim = if rem_i32(step.wrapping_add(1), self.width) == 0 {
-            3
-        } else {
-            0
-        };
+        // One shared remainder: cells are non-negative, so `step % width == 0`
+        // and `(step + 1) % width == 0` are the first and last map columns.
+        let column = rem_i32(step, self.width);
+        let start = if column == 0 { 3 } else { 0 };
+        let end_trim = if column == self.width - 1 { 3 } else { 0 };
         start..(self.direction_lr.len() - end_trim)
     }
 
@@ -1106,6 +1110,97 @@ impl PathFinder {
         self.build_distance_map_impl(to, passable, None);
     }
 
+    /// Reachability-only equivalent of `build_distance_map` followed by an
+    /// "every open cell has `distance != i32::MAX`" scan, for grids whose
+    /// distances are never otherwise read. The flood runs on one bitmask row
+    /// per grid line, spreading whole rows per step, which is far cheaper
+    /// than the queue-based search on the small patch grids room painting
+    /// validates. Like the queue search, the start cell reaches its
+    /// neighbours even when the start itself is not open.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `start` lies outside the grid or the dimensions are not
+    /// positive, mirroring `buildDistanceMap`'s array accesses.
+    #[must_use]
+    pub fn all_open_cells_connected(
+        width: i32,
+        height: i32,
+        start: usize,
+        open: impl Fn(usize) -> bool,
+    ) -> bool {
+        let width_usize = usize::try_from(width).expect("positive grid width");
+        let height_usize = usize::try_from(height).expect("positive grid height");
+        let length = width_usize
+            .checked_mul(height_usize)
+            .expect("grid size fits usize");
+        assert!(width > 0 && height > 0, "grid dimensions must be positive");
+        assert!(start < length, "start cell is outside the grid");
+
+        if width_usize > 64 || height_usize > MAX_BITBOARD_ROWS {
+            // Generated rooms never get this large; fall back to the exact
+            // queue-based search if some future caller passes a full map.
+            let passable: Vec<bool> = (0..length).map(open).collect();
+            let mut finder = PathFinder::new(width, height);
+            finder.build_distance_map(start, &passable);
+            return passable
+                .iter()
+                .zip(&finder.distance)
+                .all(|(&is_open, &distance)| !is_open || distance != i32::MAX);
+        }
+
+        let row_mask = if width_usize == 64 {
+            u64::MAX
+        } else {
+            (1_u64 << width_usize) - 1
+        };
+        let mut open_rows = [0_u64; MAX_BITBOARD_ROWS];
+        for (y, open_row) in open_rows[..height_usize].iter_mut().enumerate() {
+            let mut row = 0_u64;
+            let base = y * width_usize;
+            for x in 0..width_usize {
+                row |= u64::from(open(base + x)) << x;
+            }
+            *open_row = row;
+        }
+
+        let mut reach = [0_u64; MAX_BITBOARD_ROWS];
+        // Seeding outside `open_rows` reproduces the queue search's quirk of
+        // relaxing outward from an impassable start cell.
+        reach[start / width_usize] = 1_u64 << (start % width_usize);
+
+        let spread = |row: u64| (row | row << 1 | row >> 1) & row_mask;
+        loop {
+            let mut changed = false;
+            for y in 0..height_usize {
+                let above = if y > 0 { reach[y - 1] } else { 0 };
+                let below = if y + 1 < height_usize { reach[y + 1] } else { 0 };
+                let grown = reach[y] | (spread(reach[y] | above | below) & open_rows[y]);
+                if grown != reach[y] {
+                    reach[y] = grown;
+                    changed = true;
+                }
+            }
+            for y in (0..height_usize).rev() {
+                let above = if y > 0 { reach[y - 1] } else { 0 };
+                let below = if y + 1 < height_usize { reach[y + 1] } else { 0 };
+                let grown = reach[y] | (spread(reach[y] | above | below) & open_rows[y]);
+                if grown != reach[y] {
+                    reach[y] = grown;
+                    changed = true;
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+
+        open_rows[..height_usize]
+            .iter()
+            .zip(&reach[..height_usize])
+            .all(|(&open_row, &reached)| open_row & !reached == 0)
+    }
+
     /// Limited form of `buildDistanceMap(to, passable, limit)`.
     pub fn build_distance_map_limited(&mut self, to: usize, passable: &[bool], limit: i32) {
         self.build_distance_map_impl(to, passable, Some(limit));
@@ -1114,28 +1209,49 @@ impl PathFinder {
     fn build_distance_map_impl(&mut self, to: usize, passable: &[bool], limit: Option<i32>) {
         self.check_cell(to);
         self.check_map(passable);
-        self.distance.fill(i32::MAX);
         let mut head = 0;
         let mut tail = 0;
-        self.enqueue(&mut tail, to);
-        self.distance[to] = 0;
+
+        // `None` behaves like a limit no distance reaches, so hoisting it
+        // keeps the per-step check to a single comparison. Re-slicing the
+        // maps to the asserted size lets the optimizer drop redundant
+        // per-cell bounds checks inside the neighbour loop.
+        let limit = limit.unwrap_or(i32::MAX);
+        let size = self.size;
+        let width = self.width;
+        let directions = self.direction_lr;
+        let passable = &passable[..size];
+        let queue = &mut self.queue[..size];
+        let distance = &mut self.distance[..size];
+
+        distance.fill(i32::MAX);
+        queue[0] = to;
+        tail += 1;
+        distance[to] = 0;
 
         while head < tail {
-            let step = self.queue[head];
+            let step = queue[head];
             head += 1;
-            let next_distance = self.distance[step].wrapping_add(1);
-            if limit.is_some_and(|maximum| next_distance > maximum) {
+            let next_distance = distance[step].wrapping_add(1);
+            if next_distance > limit {
                 return;
             }
 
-            let range = self.lr_range(step);
-            for index in range {
-                let Some(cell) = self.checked_offset(step, self.direction_lr[index]) else {
-                    continue;
-                };
-                if passable[cell] && self.distance[cell] > next_distance {
-                    self.enqueue(&mut tail, cell);
-                    self.distance[cell] = next_distance;
+            let step_i32 = i32::try_from(step).expect("PathFinder cell exceeds Java int");
+            let column = rem_i32(step_i32, width);
+            let start_index = if column == 0 { 3 } else { 0 };
+            let end_index = if column == width - 1 { 5 } else { 8 };
+            for &offset in &directions[start_index..end_index] {
+                let cell = step_i32.wrapping_add(offset);
+                // A single unsigned compare rejects both negative and
+                // out-of-map neighbours.
+                #[allow(clippy::cast_sign_loss)]
+                let cell = cell as u32 as usize;
+                if cell < size && passable[cell] && distance[cell] > next_distance {
+                    assert!(tail < size, "PathFinder queue overflow");
+                    queue[tail] = cell;
+                    tail += 1;
+                    distance[cell] = next_distance;
                 }
             }
         }

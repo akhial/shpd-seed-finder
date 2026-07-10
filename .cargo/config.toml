@@ -1,0 +1,10 @@
+# Profile-guided optimization for release builds. The checked-in profile was
+# recorded from `seed-seeker --benchmark` and speeds the seed search up by
+# roughly 6% on top of the source-level optimizations. If your Rust
+# toolchain's LLVM rejects the profile version, regenerate it:
+#   rm -rf /tmp/pgo && RUSTFLAGS="-Cprofile-generate=/tmp/pgo" cargo build --release
+#   ./target/release/seed-seeker --benchmark 6000
+#   $(rustc --print sysroot)/lib/rustlib/*/bin/llvm-profdata merge \
+#       -o pgo/seed-seeker.profdata /tmp/pgo/*.profraw
+[target.aarch64-apple-darwin]
+rustflags = ["-Cprofile-use=/Users/adel/Documents/seed-finder/pgo/seed-seeker.profdata"]

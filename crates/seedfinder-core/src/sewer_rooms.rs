@@ -26,7 +26,7 @@ use crate::painter::{
     RoomPaintDispatch, fill_room, fill_room_margin, generate_patch, set_shared_door_type,
     standard_can_merge,
 };
-use crate::rng::RandomStack;
+use crate::rng::{FastBound, RandomStack};
 use crate::room::{
     ConnectionRoomKind, DoorType, Room, RoomId, RoomKind, SizeCategory, StandardRoomKind,
 };
@@ -571,13 +571,12 @@ impl<C: SewerRoomContent> SewerRoomDispatcher<C> {
                         patch[patch_coordinate(&rooms[room], door.x, door.y - 2)] = false;
                     }
                 }
-                let passable: Vec<bool> = patch.iter().map(|filled| !filled).collect();
-                let mut finder = PathFinder::new(patch_width, patch_height);
-                finder.build_distance_map(start_point, &passable);
-                let valid = patch
-                    .iter()
-                    .zip(&finder.distance)
-                    .all(|(&filled, &distance)| filled || distance != i32::MAX);
+                let valid = PathFinder::all_open_cells_connected(
+                    patch_width,
+                    patch_height,
+                    start_point,
+                    |cell| !patch[cell],
+                );
                 attempts = attempts.wrapping_add(1);
                 if attempts > 100 {
                     fill -= 0.01_f32;
@@ -1952,25 +1951,37 @@ fn connection_maze_valid_move(
 ) -> bool {
     let side_x = 1 - dx.abs();
     let side_y = 1 - dy.abs();
+    // Column-major cell index plus loop-invariant step/side strides; the
+    // in-bounds checks below keep every probed index inside the maze, so the
+    // strided adds probe the same cells `connection_maze_index` would.
+    let step_stride = dx.wrapping_mul(height).wrapping_add(dy);
+    let side_stride = side_x.wrapping_mul(height).wrapping_add(side_y);
+    let mut index = x.wrapping_mul(height).wrapping_add(y);
     x += dx;
     y += dy;
+    index = index.wrapping_add(step_stride);
     if x <= 0 || x >= width - 1 || y <= 0 || y >= height - 1 {
         return false;
     }
-    if maze[connection_maze_index(height, x, y)]
-        || maze[connection_maze_index(height, x + side_x, y + side_y)]
-        || maze[connection_maze_index(height, x - side_x, y - side_y)]
+    if maze[cell_index(index)]
+        || maze[cell_index(index + side_stride)]
+        || maze[cell_index(index - side_stride)]
     {
         return false;
     }
     x += dx;
     y += dy;
+    index = index.wrapping_add(step_stride);
     if x <= 0 || x >= width - 1 || y <= 0 || y >= height - 1 {
         return false;
     }
-    !maze[connection_maze_index(height, x, y)]
-        && !maze[connection_maze_index(height, x + side_x, y + side_y)]
-        && !maze[connection_maze_index(height, x - side_x, y - side_y)]
+    !maze[cell_index(index)]
+        && !maze[cell_index(index + side_stride)]
+        && !maze[cell_index(index - side_stride)]
+}
+
+fn cell_index(index: i32) -> usize {
+    usize::try_from(index).expect("maze coordinate is non-negative")
 }
 
 fn connection_maze_direction(
@@ -1979,15 +1990,18 @@ fn connection_maze_direction(
     height: i32,
     x: i32,
     y: i32,
-    random: &mut RandomStack,
+    random: &mut crate::rng::JavaRandom,
 ) -> Option<(i32, i32)> {
-    if random.int_bound(4) == 0 && connection_maze_valid_move(maze, width, height, x, y, 0, -1) {
+    if random.next_i32_bound(4) == 0 && connection_maze_valid_move(maze, width, height, x, y, 0, -1)
+    {
         return Some((0, -1));
     }
-    if random.int_bound(3) == 0 && connection_maze_valid_move(maze, width, height, x, y, 1, 0) {
+    if random.next_i32_bound(3) == 0 && connection_maze_valid_move(maze, width, height, x, y, 1, 0)
+    {
         return Some((1, 0));
     }
-    if random.int_bound(2) == 0 && connection_maze_valid_move(maze, width, height, x, y, 0, 1) {
+    if random.next_i32_bound(2) == 0 && connection_maze_valid_move(maze, width, height, x, y, 0, 1)
+    {
         return Some((0, 1));
     }
     connection_maze_valid_move(maze, width, height, x, y, -1, 0).then_some((-1, 0))
@@ -2013,16 +2027,24 @@ fn generate_connection_maze(rooms: &[Room], room: RoomId, random: &mut RandomSta
         )] = false;
     }
 
+    // The wall-growing loop only exits after 2,500 consecutive failed draw
+    // rounds, so per-draw overhead dominates: hoist the generator and the
+    // division-free reciprocals for the loop-invariant pick bounds. Each
+    // replacement performs the identical canonical draw sequence.
+    let generator = random.current_generator();
+    let x_bound = FastBound::new(width);
+    let y_bound = FastBound::new(height);
     let mut failures = 0_i32;
     while failures < 2_500 {
         let (mut x, mut y) = loop {
-            let x = random.int_bound(width);
-            let y = random.int_bound(height);
+            let x = generator.next_i32_fast_bound(&x_bound);
+            let y = generator.next_i32_fast_bound(&y_bound);
             if maze[connection_maze_index(height, x, y)] {
                 break (x, y);
             }
         };
-        let Some((dx, dy)) = connection_maze_direction(&maze, width, height, x, y, random) else {
+        let Some((dx, dy)) = connection_maze_direction(&maze, width, height, x, y, generator)
+        else {
             failures += 1;
             continue;
         };
@@ -2033,7 +2055,7 @@ fn generate_connection_maze(rooms: &[Room], room: RoomId, random: &mut RandomSta
             y += dy;
             maze[connection_maze_index(height, x, y)] = true;
             moves += 1;
-            if random.int_bound(moves) != 0
+            if generator.next_i32_bound(moves) != 0
                 || !connection_maze_valid_move(&maze, width, height, x, y, dx, dy)
             {
                 break;

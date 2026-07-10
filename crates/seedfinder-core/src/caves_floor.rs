@@ -342,7 +342,7 @@ pub fn generate_caves_floor(
     random: &mut RandomStack,
 ) -> Result<GeneratedCavesFloor, CavesFloorError> {
     let mut painted = paint_caves_floor(run, limited_drops, quests, shop_run, depth, random)?;
-    let mut flags = LevelFlags::build(&painted.level.map, false);
+    let mut flags = LevelFlags::build_for_generation(&painted.level.map);
     let entrance_cell = painted
         .level
         .entrance()

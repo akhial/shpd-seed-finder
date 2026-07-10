@@ -30,7 +30,7 @@ use std::fmt;
 use crate::geometry::{Point, Rect, painter as draw, terrain};
 use crate::java_math::round_f32;
 use crate::level::{Feeling, Level, PlacedTrap, TrapSpec, sewer_trap_table};
-use crate::rng::RandomStack;
+use crate::rng::{FastBound, RandomStack};
 use crate::room::{Door, DoorType, Room, RoomId, RoomKind, SizeCategory, place_doors_in_order};
 
 /// A structural painting failure which makes upstream `RegularPainter.paint`
@@ -320,88 +320,50 @@ pub fn generate_patch(
         fill += (0.5_f32 - fill) * 0.5_f32;
     }
 
-    for cell in &mut output {
-        *cell = rng.float() < fill;
-        if *cell {
-            fill_difference = fill_difference.wrapping_add(1);
-        }
-    }
+    let generator = rng.current_generator();
+    fill_difference = fill_difference.wrapping_add(generator.fill_f32_below(&mut output, fill));
 
-    let mut pass = 0_i32;
-    while pass < clustering {
-        let mut y = 0_i32;
-        while y < height {
-            let mut x = 0_i32;
-            while x < width {
-                let position_i32 = x.wrapping_add(y.wrapping_mul(width));
-                let position = usize::try_from(position_i32).expect("patch position is negative");
-                let mut count = 0_i32;
-                let mut neighbours = 0_i32;
-
-                if y > 0 {
-                    if x > 0 {
-                        if output[usize::try_from(position_i32 - width - 1).unwrap()] {
-                            count += 1;
-                        }
-                        neighbours += 1;
-                    }
-                    if output[usize::try_from(position_i32 - width).unwrap()] {
-                        count += 1;
-                    }
-                    neighbours += 1;
-                    if x < width - 1 {
-                        if output[usize::try_from(position_i32 - width + 1).unwrap()] {
-                            count += 1;
-                        }
-                        neighbours += 1;
-                    }
+    if length > 0 && clustering > 0 {
+        let width_usize = usize::try_from(width).expect("patch width is non-negative");
+        let height_usize = usize::try_from(height).expect("patch height is non-negative");
+        if (2..=64).contains(&width_usize) {
+            // Bit-sliced automaton: one u64 row per map line, all interior
+            // columns of a row evaluated at once. The board converts to bit
+            // rows once for every smoothing pass, then back.
+            let mut rows = vec![0_u64; height_usize];
+            for (bits, cells) in rows.iter_mut().zip(output.chunks_exact(width_usize)) {
+                for (x, &cell) in cells.iter().enumerate() {
+                    *bits |= u64::from(cell) << x;
                 }
-                if x > 0 {
-                    if output[position - 1] {
-                        count += 1;
-                    }
-                    neighbours += 1;
-                }
-                if output[position] {
-                    count += 1;
-                }
-                neighbours += 1;
-                if x < width - 1 {
-                    if output[position + 1] {
-                        count += 1;
-                    }
-                    neighbours += 1;
-                }
-                if y < height - 1 {
-                    if x > 0 {
-                        if output[usize::try_from(position_i32 + width - 1).unwrap()] {
-                            count += 1;
-                        }
-                        neighbours += 1;
-                    }
-                    if output[usize::try_from(position_i32 + width).unwrap()] {
-                        count += 1;
-                    }
-                    neighbours += 1;
-                    if x < width - 1 {
-                        if output[usize::try_from(position_i32 + width + 1).unwrap()] {
-                            count += 1;
-                        }
-                        neighbours += 1;
-                    }
-                }
-
-                current[position] = count.wrapping_mul(2) >= neighbours;
-                if current[position] != output[position] {
-                    fill_difference =
-                        fill_difference.wrapping_add(if current[position] { 1 } else { -1 });
-                }
-                x = x.wrapping_add(1);
             }
-            y = y.wrapping_add(1);
+            let mut next_rows = vec![0_u64; height_usize];
+            for _ in 0..clustering {
+                fill_difference = fill_difference.wrapping_add(clustering_pass_bits(
+                    &rows,
+                    &mut next_rows,
+                    width_usize,
+                    height_usize,
+                ));
+                std::mem::swap(&mut rows, &mut next_rows);
+            }
+            for (bits, cells) in rows.iter().zip(output.chunks_exact_mut(width_usize)) {
+                for (x, cell) in cells.iter_mut().enumerate() {
+                    *cell = bits & (1 << x) != 0;
+                }
+            }
+        } else {
+            let mut column_counts = vec![0_u8; width_usize];
+            for _ in 0..clustering {
+                fill_difference = fill_difference.wrapping_add(clustering_pass(
+                    &output,
+                    &mut current,
+                    width_usize,
+                    height_usize,
+                    &mut column_counts,
+                ));
+                std::mem::swap(&mut current, &mut output);
+            }
         }
-        std::mem::swap(&mut current, &mut output);
-        pass = pass.wrapping_add(1);
     }
 
     if force_fill_rate && width.min(height) > 2 {
@@ -417,13 +379,18 @@ pub fn generate_patch(
             width + 1,
         ];
         let growing = fill_difference < 0;
+        let x_bound = FastBound::new(width - 2);
+        let y_bound = FastBound::new(height - 2);
         while fill_difference != 0 {
             let mut cell_i32;
             let mut tries = 0_i32;
             loop {
-                cell_i32 = rng
-                    .int_between(1, width - 1)
-                    .wrapping_add(rng.int_between(1, height - 1).wrapping_mul(width));
+                // Same draws as `rng.int_between(1, width - 1)` and
+                // `rng.int_between(1, height - 1)`; the bounds are positive
+                // here because both dimensions exceed 2.
+                let x = generator.next_i32_fast_bound(&x_bound).wrapping_add(1);
+                let y = generator.next_i32_fast_bound(&y_bound).wrapping_add(1);
+                cell_i32 = x.wrapping_add(y.wrapping_mul(width));
                 tries = tries.wrapping_add(1);
                 let cell = usize::try_from(cell_i32).expect("patch correction cell is negative");
                 if output[cell] == growing || tries.wrapping_mul(10) >= length_i32 {
@@ -445,6 +412,154 @@ pub fn generate_patch(
         }
     }
     output
+}
+
+/// One smoothing pass of [`generate_patch`]'s cellular automaton over u64
+/// bit rows. Per row, the three column sums (0..=3) are carried as two
+/// bit-sliced planes, the 3-wide window total (0..=9) as four planes, and the
+/// "at least half of the in-bounds 3x3 neighbourhood filled" rule becomes a
+/// per-plane comparison against the row-count-dependent threshold. The two
+/// edge columns see only a 2-wide window, so they are patched in scalar form.
+/// Returns the signed change in filled cells, exactly like [`clustering_pass`].
+fn clustering_pass_bits(rows: &[u64], next_rows: &mut [u64], width: usize, height: usize) -> i32 {
+    let row_mask = if width == 64 {
+        u64::MAX
+    } else {
+        (1_u64 << width) - 1
+    };
+    // Bits 1..=width-2: the columns with a full 3-wide window.
+    let interior_mask = row_mask & !1 & !(1 << (width - 1));
+    let mut delta = 0_i32;
+    for y in 0..height {
+        let above = if y > 0 { rows[y - 1] } else { 0 };
+        let mid = rows[y];
+        let below = if y + 1 < height { rows[y + 1] } else { 0 };
+        let row_count = 1 + u32::from(y > 0) + u32::from(y + 1 < height);
+
+        // Column sums as two planes: sum = 2*column_high + column_low.
+        let column_low = above ^ mid ^ below;
+        let column_high = (above & mid) | (below & (above ^ mid));
+
+        // Window total = left + centre + right column sums.
+        let left_low = column_low << 1;
+        let left_high = column_high << 1;
+        let right_low = column_low >> 1;
+        let right_high = column_high >> 1;
+        let sum0 = left_low ^ column_low ^ right_low;
+        let carry_low = (left_low & column_low) | (right_low & (left_low ^ column_low));
+        let ones = left_high ^ column_high ^ right_high;
+        let majority = (left_high & column_high) | (right_high & (left_high ^ column_high));
+        let sum1 = ones ^ carry_low;
+        let carry_mid = ones & carry_low;
+        let sum2 = majority ^ carry_mid;
+        let sum3 = majority & carry_mid;
+
+        // 2*count >= row_count*3 for the 3-wide interior window.
+        let meets_threshold = match row_count {
+            3 => sum3 | (sum2 & (sum1 | sum0)), // count >= 5
+            2 => sum3 | sum2 | (sum1 & sum0),   // count >= 3
+            _ => sum3 | sum2 | sum1,            // count >= 2
+        };
+        let mut new_row = meets_threshold & interior_mask;
+
+        // Edge columns have a 2-wide window: 2*count >= row_count*2.
+        let edge_count = |x: usize| {
+            ((above >> x) & 1) + ((mid >> x) & 1) + ((below >> x) & 1)
+        };
+        if edge_count(0) + edge_count(1) >= u64::from(row_count) {
+            new_row |= 1;
+        }
+        if edge_count(width - 1) + edge_count(width - 2) >= u64::from(row_count) {
+            new_row |= 1 << (width - 1);
+        }
+
+        #[allow(clippy::cast_possible_wrap)]
+        {
+            delta += (new_row & !mid).count_ones() as i32;
+            delta -= (mid & !new_row).count_ones() as i32;
+        }
+        next_rows[y] = new_row;
+    }
+    delta
+}
+
+/// One smoothing pass of [`generate_patch`]'s cellular automaton, written with
+/// sliding-window column sums so the per-cell 3x3 neighbourhood scan stays
+/// branch-light and bounds-check free. A cell becomes filled when at least
+/// half of its in-bounds 3x3 neighbourhood (self included) is filled, exactly
+/// as the original per-cell scan computed. Returns the signed change in filled
+/// cells so the caller can keep its running fill difference.
+fn clustering_pass(
+    output: &[bool],
+    current: &mut [bool],
+    width: usize,
+    height: usize,
+    column_counts: &mut [u8],
+) -> i32 {
+    let mut delta = 0_i32;
+    for y in 0..height {
+        let row_start = y * width;
+        let mid = &output[row_start..row_start + width];
+        let above = (y > 0).then(|| &output[row_start - width..row_start]);
+        let below =
+            (y + 1 < height).then(|| &output[row_start + width..row_start + 2 * width]);
+        let rows = 1 + u8::from(above.is_some()) + u8::from(below.is_some());
+
+        match (above, below) {
+            (Some(above), Some(below)) => {
+                for (((column, &m), &a), &b) in column_counts
+                    .iter_mut()
+                    .zip(mid)
+                    .zip(above)
+                    .zip(below)
+                {
+                    *column = u8::from(m) + u8::from(a) + u8::from(b);
+                }
+            }
+            (Some(other), None) | (None, Some(other)) => {
+                for ((column, &m), &o) in column_counts.iter_mut().zip(mid).zip(other) {
+                    *column = u8::from(m) + u8::from(o);
+                }
+            }
+            (None, None) => {
+                for (column, &m) in column_counts.iter_mut().zip(mid) {
+                    *column = u8::from(m);
+                }
+            }
+        }
+
+        let row_out = &mut current[row_start..row_start + width];
+        if width == 1 {
+            let new = column_counts[0] * 2 >= rows;
+            delta += i32::from(new) - i32::from(mid[0]);
+            row_out[0] = new;
+            continue;
+        }
+
+        let edge_threshold = rows * 2;
+        let first = column_counts[0] + column_counts[1];
+        let new = first * 2 >= edge_threshold;
+        delta += i32::from(new) - i32::from(mid[0]);
+        row_out[0] = new;
+
+        let interior_threshold = rows * 3;
+        for ((out, &m), window) in row_out[1..width - 1]
+            .iter_mut()
+            .zip(&mid[1..width - 1])
+            .zip(column_counts.windows(3))
+        {
+            let count = window[0] + window[1] + window[2];
+            let new = count * 2 >= interior_threshold;
+            delta += i32::from(new) - i32::from(m);
+            *out = new;
+        }
+
+        let last = column_counts[width - 2] + column_counts[width - 1];
+        let new = last * 2 >= edge_threshold;
+        delta += i32::from(new) - i32::from(mid[width - 1]);
+        row_out[width - 1] = new;
+    }
+    delta
 }
 
 /// Configurable generic part of v3.3.8 `RegularPainter`.
@@ -777,19 +892,20 @@ fn build_room_distance_map(rooms: &mut [Room], focus: RoomId) {
     while let Some(room) = queue.pop_front() {
         let distance = rooms[room].distance;
         let price = rooms[room].price;
-        let edges: Vec<RoomId> = rooms[room]
-            .connected
-            .iter()
-            .filter_map(|connection| {
-                let door = connection.door?;
-                matches!(
-                    door.door_type,
-                    DoorType::Empty | DoorType::Tunnel | DoorType::Unlocked | DoorType::Regular
-                )
-                .then_some(connection.room)
-            })
-            .collect();
-        for edge in edges {
+        // Indexed iteration ends each `connected` borrow before the edge
+        // relaxation mutates `rooms`, so no per-node edge list is collected.
+        for connection_index in 0..rooms[room].connected.len() {
+            let connection = &rooms[room].connected[connection_index];
+            let Some(door) = connection.door else {
+                continue;
+            };
+            if !matches!(
+                door.door_type,
+                DoorType::Empty | DoorType::Tunnel | DoorType::Unlocked | DoorType::Regular
+            ) {
+                continue;
+            }
+            let edge = connection.room;
             let candidate = distance.wrapping_add(price);
             if rooms[edge].distance > candidate {
                 rooms[edge].distance = candidate;

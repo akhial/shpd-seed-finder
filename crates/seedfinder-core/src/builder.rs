@@ -193,61 +193,107 @@ pub fn find_free_space(
     max_size: i32,
     rng: &mut RandomStack,
 ) -> Rect {
-    let mut space = Rect::new(
+    let space = Rect::new(
         start.x.wrapping_sub(max_size),
         start.y.wrapping_sub(max_size),
         start.x.wrapping_add(max_size),
         start.y.wrapping_add(max_size),
     );
-    let mut colliding = collision.to_vec();
+    // The passes below rescan the collision list repeatedly. Copying the
+    // rectangles up front keeps those scans on a dense array instead of
+    // striding through the much larger `Room` structs; empty bounds stay
+    // empty, so filtering them once up front matches retesting every pass.
+    // This function runs thousands of times per generated seed, so the copy
+    // lives in a per-thread buffer that is allocated once and reused, rather
+    // than in per-call stack or heap storage.
+    COLLIDING_SCRATCH.with(|scratch| {
+        let mut colliding = scratch.borrow_mut();
+        colliding.clear();
+        colliding.extend(
+            collision
+                .iter()
+                .map(|&room| rooms[room].bounds)
+                .filter(|bounds| !bounds.is_empty()),
+        );
+        free_space_from_collisions(start, &mut colliding, space, rng)
+    })
+}
 
+thread_local! {
+    static COLLIDING_SCRATCH: std::cell::RefCell<Vec<Rect>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn free_space_from_collisions(
+    start: Point,
+    colliding: &mut [Rect],
+    mut space: Rect,
+    rng: &mut RandomStack,
+) -> Rect {
+    let mut count = colliding.len();
     loop {
-        colliding.retain(|&room| {
-            !rooms[room].bounds.is_empty()
-                && space.left.max(rooms[room].bounds.left)
-                    < space.right.min(rooms[room].bounds.right)
-                && space.top.max(rooms[room].bounds.top)
-                    < space.bottom.min(rooms[room].bounds.bottom)
-        });
-
+        // One fused pass compacts away rectangles no longer intersecting the
+        // shrinking `space` and runs Java's closest-collision scan over the
+        // survivors, in their original order.
+        let mut kept = 0_usize;
         let mut closest_room = None;
         let mut closest_difference = i32::MAX;
         let mut inside = true;
         let mut current_difference = 0_i32;
-        for &room in &colliding {
-            let bounds = rooms[room].bounds;
-            if start.x <= bounds.left {
-                inside = false;
-                current_difference =
-                    current_difference.wrapping_add(bounds.left.wrapping_sub(start.x));
-            } else if start.x >= bounds.right {
-                inside = false;
-                current_difference =
-                    current_difference.wrapping_add(start.x.wrapping_sub(bounds.right));
+        for index in 0..count {
+            let bounds = colliding[index];
+            // Everything below is predicated on `intersects` with conditional
+            // moves rather than branches: which rectangles survive each pass
+            // is data-dependent and defeats the branch predictor otherwise.
+            #[allow(clippy::needless_bitwise_bool)]
+            let intersects = (space.left.max(bounds.left) < space.right.min(bounds.right))
+                & (space.top.max(bounds.top) < space.bottom.min(bounds.bottom));
+            colliding[kept] = bounds;
+            kept += usize::from(intersects);
+
+            // Branch-free form of Java's axis checks: bounds are non-empty
+            // (left < right, top < bottom), so at most one term per axis is
+            // positive and equals exactly the summand the original branch
+            // chain would have added; boundary contact contributes zero but
+            // still clears `inside`, as the original `<=`/`>=` tests did.
+            // Rectangles the retain pass dropped contribute nothing.
+            let excess = bounds
+                .left
+                .wrapping_sub(start.x)
+                .max(0)
+                .wrapping_add(start.x.wrapping_sub(bounds.right).max(0))
+                .wrapping_add(bounds.top.wrapping_sub(start.y).max(0))
+                .wrapping_add(start.y.wrapping_sub(bounds.bottom).max(0));
+            current_difference =
+                current_difference.wrapping_add(if intersects { excess } else { 0 });
+            #[allow(clippy::needless_bitwise_bool)]
+            let strictly_inside = (start.x > bounds.left)
+                & (start.x < bounds.right)
+                & (start.y > bounds.top)
+                & (start.y < bounds.bottom);
+            #[allow(clippy::needless_bitwise_bool)]
+            {
+                inside &= strictly_inside | !intersects;
             }
 
-            if start.y <= bounds.top {
-                inside = false;
-                current_difference =
-                    current_difference.wrapping_add(bounds.top.wrapping_sub(start.y));
-            } else if start.y >= bounds.bottom {
-                inside = false;
-                current_difference =
-                    current_difference.wrapping_add(start.y.wrapping_sub(bounds.bottom));
-            }
-
-            if inside {
+            #[allow(clippy::needless_bitwise_bool)]
+            if inside & intersects {
                 space.set(start.x, start.y, start.x, start.y);
                 return space;
             }
-            if current_difference < closest_difference {
-                closest_difference = current_difference;
-                closest_room = Some(room);
-            }
+            #[allow(clippy::needless_bitwise_bool)]
+            let better = intersects & (current_difference < closest_difference);
+            closest_difference = if better {
+                current_difference
+            } else {
+                closest_difference
+            };
+            closest_room = if better { Some(kept - 1) } else { closest_room };
         }
+        count = kept;
 
         if let Some(closest) = closest_room {
-            let bounds = rooms[closest].bounds;
+            let bounds = colliding[closest];
             let mut width_difference = i32::MAX;
             if bounds.left >= start.x {
                 width_difference = space
@@ -291,16 +337,13 @@ pub fn find_free_space(
                     space.top = bounds.bottom;
                 }
             }
-            let index = colliding
-                .iter()
-                .position(|&room| room == closest)
-                .expect("closest room remains in colliding list");
-            colliding.remove(index);
+            colliding.copy_within(closest + 1..count, closest);
+            count -= 1;
         } else {
-            colliding.clear();
+            count = 0;
         }
 
-        if colliding.is_empty() {
+        if count == 0 {
             return space;
         }
     }
@@ -838,6 +881,9 @@ impl Builder for LoopBuilder {
         rng: &mut RandomStack,
         shop_size_hook: &mut dyn FnMut(&mut Room, &mut RandomStack),
     ) -> bool {
+        // Tunnel rooms pushed mid-build would otherwise regrow the room list
+        // (and memcpy the large `Room` structs) several times per attempt.
+        rooms.reserve(64);
         clear_all_connections(rooms);
         let mut active: Vec<RoomId> = (0..rooms.len()).collect();
         let mut setup = self.regular.setup_rooms(rooms, &active, rng);
@@ -1083,6 +1129,9 @@ impl Builder for FigureEightBuilder {
         rng: &mut RandomStack,
         shop_size_hook: &mut dyn FnMut(&mut Room, &mut RandomStack),
     ) -> bool {
+        // Tunnel rooms pushed mid-build would otherwise regrow the room list
+        // (and memcpy the large `Room` structs) several times per attempt.
+        rooms.reserve(64);
         clear_all_connections(rooms);
         let mut active: Vec<RoomId> = (0..rooms.len()).collect();
         let mut setup = self.regular.setup_rooms(rooms, &active, rng);

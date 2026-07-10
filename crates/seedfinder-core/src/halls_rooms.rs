@@ -348,13 +348,12 @@ impl<C: SewerRoomContent> HallsRoomDispatcher<C> {
                     patch[patch_coordinate(&rooms[room], door.x, door.y - 2)] = false;
                 }
             }
-            let passable: Vec<bool> = patch.iter().map(|filled| !filled).collect();
-            let mut finder = PathFinder::new(patch_width, patch_height);
-            finder.build_distance_map(start_point, &passable);
-            let valid = patch
-                .iter()
-                .zip(&finder.distance)
-                .all(|(&filled, &distance)| filled || distance != i32::MAX);
+            let valid = PathFinder::all_open_cells_connected(
+                patch_width,
+                patch_height,
+                start_point,
+                |cell| !patch[cell],
+            );
             attempts = attempts.wrapping_add(1);
             if attempts > 100 {
                 fill -= 0.01;

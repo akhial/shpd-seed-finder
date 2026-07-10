@@ -399,13 +399,12 @@ impl<C: SewerRoomContent> CavesRoomDispatcher<C> {
                     patch[patch_coordinate(&rooms[room], door.x, door.y - 2)] = false;
                 }
             }
-            let passable: Vec<bool> = patch.iter().map(|filled| !filled).collect();
-            let mut finder = PathFinder::new(patch_width, patch_height);
-            finder.build_distance_map(start_point, &passable);
-            let valid = patch
-                .iter()
-                .zip(&finder.distance)
-                .all(|(&filled, &distance)| filled || distance != i32::MAX);
+            let valid = PathFinder::all_open_cells_connected(
+                patch_width,
+                patch_height,
+                start_point,
+                |cell| !patch[cell],
+            );
             attempts = attempts.wrapping_add(1);
             if attempts > 100 {
                 fill -= 0.01_f32;
@@ -535,6 +534,10 @@ impl<C: SewerRoomContent> CavesRoomDispatcher<C> {
             .expect("CavesFissureRoom is a StandardRoom");
         let line_count = 1 + category.room_value();
 
+        // Loop-invariant scratch: the connectivity check below runs once per
+        // retry over a fixed-size interior grid.
+        let interior = usize::try_from((width - 2) * (height - 2)).unwrap();
+        let mut passable = vec![false; interior];
         loop {
             fill_room(level, &rooms[room], terrain::WALL);
             fill_room_margin(level, &rooms[room], 1, terrain::EMPTY);
@@ -672,17 +675,17 @@ impl<C: SewerRoomContent> CavesRoomDispatcher<C> {
                 door_point = local_room_cell(&rooms[room], inside);
             }
 
-            let mut passable = vec![false; usize::try_from((width - 2) * (height - 2)).unwrap()];
+            passable.fill(false);
             for point in bounds.shrink(1).points() {
                 let index = local_room_cell(&rooms[room], point);
                 passable[index] = level.map.cells[level.point_to_cell(point)] != terrain::CHASM;
             }
-            let mut finder = PathFinder::new(width - 2, height - 2);
-            finder.build_distance_map(door_point, &passable);
-            let pathable = passable
-                .iter()
-                .zip(&finder.distance)
-                .all(|(&open, &distance)| !open || distance != i32::MAX);
+            let pathable = PathFinder::all_open_cells_connected(
+                width - 2,
+                height - 2,
+                door_point,
+                |cell| passable[cell],
+            );
             if pathable {
                 break;
             }

@@ -405,7 +405,7 @@ pub fn generate_halls_floor(
     random: &mut RandomStack,
 ) -> Result<GeneratedHallsFloor, HallsFloorError> {
     let mut painted = paint_halls_floor(run, limited_drops, quests, shop_run, depth, random)?;
-    let mut flags = LevelFlags::build(&painted.level.map, false);
+    let mut flags = LevelFlags::build_for_generation(&painted.level.map);
     let entrance_cell = painted
         .level
         .entrance()
