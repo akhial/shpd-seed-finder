@@ -69,6 +69,7 @@ fun FinderScreen(
     requirements: List<ItemRequirement>,
     maximumDepth: Int,
     requireBlacksmith: Boolean,
+    fastMode: Boolean,
     results: List<SeedResult>,
     status: SearchStatus?,
     isSearching: Boolean,
@@ -79,6 +80,7 @@ fun FinderScreen(
     onRemove: (ItemRequirement) -> Unit,
     onMaximumDepthChange: (Int) -> Unit,
     onRequireBlacksmithChange: (Boolean) -> Unit,
+    onFastModeChange: (Boolean) -> Unit,
     onSearch: () -> Unit,
     onCancel: () -> Unit,
     onScoutSeed: (String) -> Unit,
@@ -176,9 +178,11 @@ fun FinderScreen(
                     ScopeCard(
                         maximumDepth = maximumDepth,
                         requireBlacksmith = requireBlacksmith,
+                        fastMode = fastMode,
                         enabled = !isSearching,
                         onMaximumDepthChange = onMaximumDepthChange,
                         onRequireBlacksmithChange = onRequireBlacksmithChange,
+                        onFastModeChange = onFastModeChange,
                         modifier = Modifier.padding(top = 20.dp),
                     )
                 }
@@ -356,9 +360,11 @@ private fun AndConnector() {
 private fun ScopeCard(
     maximumDepth: Int,
     requireBlacksmith: Boolean,
+    fastMode: Boolean,
     enabled: Boolean,
     onMaximumDepthChange: (Int) -> Unit,
     onRequireBlacksmithChange: (Boolean) -> Unit,
+    onFastModeChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Card(
@@ -407,6 +413,23 @@ private fun ScopeCard(
                 Switch(
                     checked = requireBlacksmith,
                     onCheckedChange = onRequireBlacksmithChange,
+                    enabled = enabled,
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Fast search", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Treat +3 weapons and armor as quest rewards only. Rare Crypt and " +
+                            "Sacrificial-fire seeds are skipped; found seeds are always genuine.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = fastMode,
+                    onCheckedChange = onFastModeChange,
                     enabled = enabled,
                 )
             }

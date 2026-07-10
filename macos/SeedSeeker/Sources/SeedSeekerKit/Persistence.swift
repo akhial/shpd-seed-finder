@@ -4,8 +4,22 @@ public struct SavedQuery: Codable, Sendable {
     public var requirements: [ItemRequirement]
     public var maximumDepth: Int
     public var requireBlacksmith: Bool
-    public init(requirements: [ItemRequirement] = [], maximumDepth: Int = 24, requireBlacksmith: Bool = false) {
-        self.requirements = requirements; self.maximumDepth = maximumDepth; self.requireBlacksmith = requireBlacksmith
+    public var fastMode: Bool
+    public init(requirements: [ItemRequirement] = [], maximumDepth: Int = 24,
+                requireBlacksmith: Bool = false, fastMode: Bool = false) {
+        self.requirements = requirements; self.maximumDepth = maximumDepth
+        self.requireBlacksmith = requireBlacksmith; self.fastMode = fastMode
+    }
+    private enum CodingKeys: String, CodingKey {
+        case requirements, maximumDepth, requireBlacksmith, fastMode
+    }
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        requirements = try container.decode([ItemRequirement].self, forKey: .requirements)
+        maximumDepth = try container.decode(Int.self, forKey: .maximumDepth)
+        requireBlacksmith = try container.decode(Bool.self, forKey: .requireBlacksmith)
+        // Saved queries predating the fast-mode toggle omit the key.
+        fastMode = try container.decodeIfPresent(Bool.self, forKey: .fastMode) ?? false
     }
     public func validated() -> SavedQuery? {
         guard (1...24).contains(maximumDepth) else { return nil }

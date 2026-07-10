@@ -156,8 +156,18 @@ concrete items use the stable IDs from `crates/seedfinder-core/src/catalog.rs`.
 ```
 
 Omitting `upgrade` means any upgrade; an integer means an exact upgrade. Item
-effects, loot `source`, and `identity_group` are optional. The same file can be
-used for a finite benchmark:
+effects, loot `source`, and `identity_group` are optional.
+
+Searches automatically exploit generation logic: queries that can only be
+satisfied by quest rewards stop generating floors past the quest's depth window
+(+3 wands end at floor 9, +3/+4 rings at floor 19), and a seed is abandoned as
+soon as a resolved quest rules the query out. These shortcuts are exact. The
+optional top-level `"fast_mode": true` adds one lossy shortcut: +3 weapon/armor
+requirements consider only Ghost and Blacksmith rewards, skipping the far rarer
+Crypt and Sacrificial-fire prizes, so those searches end at floor 14. Fast-mode
+matches are always genuine; some exotic seeds are simply not reported.
+
+The same file can be used for a finite benchmark:
 
 ```sh
 cargo run --release -p shpd-seedfinder-cli -- --items requirements.json --workers 4

@@ -56,6 +56,29 @@ class QueryCodecTest {
     }
 
     @Test
+    fun fastModeSetsFlagBitOne() {
+        val sword = ItemCatalog.weapons.first { it.id == "sword" }
+        val request = SearchRequest(
+            requirements = listOf(ItemRequirement(key = 9, item = sword, upgrade = 3)),
+            fastMode = true,
+        )
+        assertArrayEquals(
+            byteArrayOf(
+                0x53, 0x53, 0x46, 0x32,
+                0x18, 0x02, // floor 24, fast-mode flag
+                0x00, 0x01,
+                0x00,
+                0x00, 0x05, 0x73, 0x77, 0x6F, 0x72, 0x64,
+                0x01,
+                0x03,
+                0x00, 0x00,
+                0x00, 0x00,
+            ),
+            QueryCodec.encode(request),
+        )
+    }
+
+    @Test
     fun generalConstraintsExpressLinkedWandReforgeSetup() {
         fun wand(
             key: Long,

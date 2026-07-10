@@ -381,6 +381,7 @@ mod tests {
             }],
             max_depth: 24,
             require_blacksmith: false,
+            fast_mode: false,
         }
     }
     fn options(end: u64, max: usize) -> SearchOptions {

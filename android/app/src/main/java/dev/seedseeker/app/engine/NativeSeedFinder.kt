@@ -177,7 +177,8 @@ class DemoNativeSeedFinder : NativeSeedFinder {
  *
  * Request packet `SSF2`: magic[4], maxDepth:u8, flags:u8, requirementCount:u16, then repeated
  * kind:u8, optionalItemId:utf8_u16, upgradeMode:u8, upgradeValue:u8, modifier:utf8_u16,
- * optionalSource:u8, sameItemGroup:u8. Flag bit 0 requires an accessible blacksmith.
+ * optionalSource:u8, sameItemGroup:u8. Flag bit 0 requires an accessible blacksmith; flag
+ * bit 1 enables the lossy fast search mode (quest-only +3 weapon/armor sources).
  * Result packet `SSR1`: magic[4], count:u16, then
  * repeated seedLength:u8, seed:ASCII. State codes are 0 running, 1 complete, 2 cancelled,
  * 3 failed. A non-zero handle is required. Scout packet `SSC1` contains the echoed canonical seed
@@ -299,7 +300,9 @@ object QueryCodec {
         DataOutputStream(bytes).use { output ->
             output.write(MAGIC)
             output.writeByte(request.maximumDepth)
-            output.writeByte(if (request.requireBlacksmith) 1 else 0)
+            output.writeByte(
+                (if (request.requireBlacksmith) 1 else 0) or (if (request.fastMode) 2 else 0),
+            )
             output.writeShort(request.requirements.size)
             request.requirements.forEach { requirement -> writeRequirement(output, requirement) }
         }

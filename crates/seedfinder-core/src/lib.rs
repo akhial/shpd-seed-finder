@@ -15,6 +15,7 @@ pub mod city_floor;
 pub mod city_mobs;
 pub mod city_rooms;
 pub mod equipment;
+pub mod feasibility;
 pub mod generator;
 pub mod geometry;
 pub mod halls_floor;

@@ -80,6 +80,12 @@ data class SearchRequest(
     val requirements: List<ItemRequirement>,
     val maximumDepth: Int = 24,
     val requireBlacksmith: Boolean = false,
+    /**
+     * Faster but non-exhaustive: +3 weapon/armor requirements only consider
+     * quest rewards, skipping seeds whose sole match is a Crypt or
+     * Sacrificial-fire prize. Found seeds are always genuine matches.
+     */
+    val fastMode: Boolean = false,
 ) {
     init {
         require(requirements.isNotEmpty()) { "At least one requirement is needed" }

@@ -19,6 +19,16 @@ final class SeedSeekerKitTests: XCTestCase {
         ])
     }
 
+    func testQueryCodecFastModeSetsFlagBitOne() throws {
+        let requirement = try ItemRequirement(key: 1, item: nil, upgrade: 3, kind: .armor,
+                                              upgradeMatch: .exactly)
+        let request = try SearchRequest(requirements: [requirement], fastMode: true)
+        XCTAssertEqual(Array(try QueryCodec.encode(request)), [
+            83, 83, 70, 50, 24, 2, 0, 1,
+            1, 0, 0, 1, 3, 0, 0, 0, 0,
+        ])
+    }
+
     func testResultCodecGoldenAndMalformedPackets() throws {
         let packet = Data([83, 83, 82, 49, 0, 1, 11] + Array("ABC-DEF-GHI".utf8))
         XCTAssertEqual(try ResultCodec.decode(packet, requirementCount: 2),

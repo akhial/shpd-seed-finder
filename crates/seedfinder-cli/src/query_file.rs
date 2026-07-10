@@ -11,6 +11,8 @@ struct QueryDocument {
     max_depth: u8,
     #[serde(default)]
     require_blacksmith: bool,
+    #[serde(default)]
+    fast_mode: bool,
 }
 
 #[derive(Deserialize)]
@@ -143,6 +145,7 @@ pub fn decode(contents: &str) -> Result<SearchQuery, String> {
         requirements,
         max_depth: document.max_depth,
         require_blacksmith: document.require_blacksmith,
+        fast_mode: document.fast_mode,
     };
     query
         .validate()

@@ -15,6 +15,7 @@ private struct ContentView: View {
     @State private var requirements: [ItemRequirement] = []
     @State private var maximumDepth = 24
     @State private var requireBlacksmith = false
+    @State private var fastMode = false
     @State private var restored = false
     @State private var controller = SearchController()
     @State private var scout = ScoutViewModel()
@@ -23,7 +24,8 @@ private struct ContentView: View {
         VStack(spacing: 0) {
             NavigationSplitView {
                 QueryView(requirements: $requirements, maximumDepth: $maximumDepth,
-                          requireBlacksmith: $requireBlacksmith, controller: controller)
+                          requireBlacksmith: $requireBlacksmith, fastMode: $fastMode,
+                          controller: controller)
                     .navigationSplitViewColumnWidth(min: 300, ideal: 330, max: 380)
             } content: {
                 ResultsView(controller: controller) { seed in scout.scout(seed) }
@@ -42,17 +44,19 @@ private struct ContentView: View {
             let saved = QueryPersistence.decode(savedQueryJSON)
             requirements = saved.requirements; maximumDepth = saved.maximumDepth
             requireBlacksmith = saved.requireBlacksmith
+            fastMode = saved.fastMode
         }
         .onChange(of: requirements) { save() }
         .onChange(of: maximumDepth) { save() }
         .onChange(of: requireBlacksmith) { save() }
+        .onChange(of: fastMode) { save() }
         .onChange(of: controller.selectedSeed) { _, seed in if let seed { scout.scout(seed) } }
     }
 
     private func save() {
         guard restored else { return }
         savedQueryJSON = QueryPersistence.encode(.init(requirements: requirements,
-            maximumDepth: maximumDepth, requireBlacksmith: requireBlacksmith)) ?? ""
+            maximumDepth: maximumDepth, requireBlacksmith: requireBlacksmith, fastMode: fastMode)) ?? ""
     }
 }
 
@@ -89,6 +93,7 @@ private struct QueryView: View {
     @Binding var requirements: [ItemRequirement]
     @Binding var maximumDepth: Int
     @Binding var requireBlacksmith: Bool
+    @Binding var fastMode: Bool
     let controller: SearchController
     @State private var editor: EditorSession?
 
@@ -109,13 +114,19 @@ private struct QueryView: View {
                         Slider(value: intBinding($maximumDepth), in: 1...24, step: 1)
                     }
                     Toggle("Require accessible blacksmith", isOn: $requireBlacksmith)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Toggle("Fast search", isOn: $fastMode)
+                        Text("Treats +3 weapons and armor as quest rewards only, skipping the rare Crypt and Sacrificial-fire prizes. Found seeds are always genuine.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
             }
             Divider()
             Button {
                 if controller.isRunning { controller.cancel() }
                 else if let request = try? SearchRequest(requirements: requirements,
-                    maximumDepth: maximumDepth, requireBlacksmith: requireBlacksmith) { controller.start(request) }
+                    maximumDepth: maximumDepth, requireBlacksmith: requireBlacksmith,
+                    fastMode: fastMode) { controller.start(request) }
             } label: {
                 Label(controller.isRunning ? "Cancel Search" : "Start Search",
                       systemImage: controller.isRunning ? "stop.fill" : "play.fill")

@@ -12,6 +12,7 @@ use std::process::ExitCode;
 
 use shpd_seedfinder_core::SHPD_VERSION;
 use shpd_seedfinder_core::catalog::{ItemId, ItemKind};
+use shpd_seedfinder_core::feasibility::QueryPlan;
 use shpd_seedfinder_core::main_world::CanonicalMainWorldGenerator;
 use shpd_seedfinder_core::query::{Requirement, SearchQuery, UpgradeRequirement};
 use shpd_seedfinder_core::search::{SearchOptions, SearchProgress, search_parallel};
@@ -225,6 +226,13 @@ fn benchmark_command(benchmark: &BenchmarkOptions) -> Result<String, String> {
 
 fn search_command(items: &Path, workers: Option<NonZeroUsize>) -> Result<(), String> {
     let query = load_query(items)?;
+    if QueryPlan::analyze(&query).is_unsatisfiable() {
+        eprintln!(
+            "seed-seeker: no seed can satisfy this query within depth {}; nothing to search",
+            query.max_depth
+        );
+        return Ok(());
+    }
     let workers = workers.unwrap_or_else(SearchOptions::available_parallelism);
     let stdout = io::stdout();
     let mut output = io::BufWriter::new(stdout.lock());
@@ -277,6 +285,7 @@ fn benchmark_query() -> SearchQuery {
         }],
         max_depth: 24,
         require_blacksmith: false,
+        fast_mode: false,
     }
 }
 

@@ -15,7 +15,8 @@ const MAX_REQUIREMENTS: usize = 64;
 
 /// Decodes Android `SSF1` and `SSF2` packets. V1 is retained for compatibility;
 /// V2 adds floor limits, source/identity constraints, upgrade predicates, and
-/// a blacksmith-availability flag.
+/// two flag bits: bit 0 requires blacksmith availability, bit 1 enables the
+/// lossy fast search mode described on [`SearchQuery::fast_mode`].
 ///
 /// # Errors
 ///
@@ -70,13 +71,14 @@ fn decode_query_v1(input: &mut Input<'_>) -> Result<SearchQuery, WireError> {
         requirements,
         max_depth: 24,
         require_blacksmith: false,
+        fast_mode: false,
     })
 }
 
 fn decode_query_v2(input: &mut Input<'_>) -> Result<SearchQuery, WireError> {
     let max_depth = input.u8()?;
     let flags = input.u8()?;
-    if flags & !1 != 0 {
+    if flags & !0b11 != 0 {
         return Err(WireError::InvalidFlags);
     }
     let count = usize::from(input.u16()?);
@@ -131,6 +133,7 @@ fn decode_query_v2(input: &mut Input<'_>) -> Result<SearchQuery, WireError> {
         requirements,
         max_depth,
         require_blacksmith: flags & 1 != 0,
+        fast_mode: flags & 0b10 != 0,
     })
 }
 
@@ -628,9 +631,24 @@ mod tests {
     }
 
     #[test]
+    fn ssf2_flag_bit_one_selects_fast_mode() {
+        let mut packet = b"SSF2".to_vec();
+        packet.extend_from_slice(&[24, 0b10, 0, 1]); // floor, fast-mode flag, count
+        packet.push(1); // armor
+        field(&mut packet, "");
+        packet.extend_from_slice(&[1, 3]); // exact +3
+        field(&mut packet, "");
+        packet.extend_from_slice(&[0, 0]);
+
+        let query = decode_query(&packet).unwrap();
+        assert!(query.fast_mode);
+        assert!(!query.require_blacksmith);
+    }
+
+    #[test]
     fn ssf2_rejects_reserved_flags_kinds_and_upgrade_modes() {
         assert_eq!(
-            decode_query(b"SSF2\x18\x02\0\x01"),
+            decode_query(b"SSF2\x18\x04\0\x01"),
             Err(WireError::InvalidFlags)
         );
 

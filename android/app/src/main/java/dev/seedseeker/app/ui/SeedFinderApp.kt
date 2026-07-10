@@ -73,6 +73,7 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
     var nextRequirementKey by remember { mutableLongStateOf(3L) }
     var maximumDepth by remember { mutableStateOf(24) }
     var requireBlacksmith by remember { mutableStateOf(false) }
+    var fastMode by remember { mutableStateOf(false) }
     var editingRequirement by remember { mutableStateOf<ItemRequirement?>(null) }
     var showRequirementSheet by remember { mutableStateOf(false) }
     var results by remember { mutableStateOf(emptyList<SeedResult>()) }
@@ -185,6 +186,7 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
                 requirements = requirements,
                 maximumDepth = maximumDepth,
                 requireBlacksmith = requireBlacksmith,
+                fastMode = fastMode,
                 results = results,
                 status = searchStatus,
                 isSearching = isSearching,
@@ -206,11 +208,12 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
                 },
                 onMaximumDepthChange = { maximumDepth = it },
                 onRequireBlacksmithChange = { requireBlacksmith = it },
+                onFastModeChange = { fastMode = it },
                 onSearch = {
                     if (requirements.isNotEmpty()) {
                         run = SearchRun(
                             nextRunId++,
-                            SearchRequest(requirements, maximumDepth, requireBlacksmith),
+                            SearchRequest(requirements, maximumDepth, requireBlacksmith, fastMode),
                         )
                     }
                 },

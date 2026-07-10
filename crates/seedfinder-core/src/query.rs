@@ -90,6 +90,12 @@ pub struct SearchQuery {
     pub max_depth: u8,
     /// Whether an accessible blacksmith room must exist within `max_depth`.
     pub require_blacksmith: bool,
+    /// Trades exhaustiveness for speed: +3 weapon/armor requirements are
+    /// assumed to come from quest rewards, ignoring the far rarer Crypt and
+    /// Sacrificial-fire prizes. Matches are still always genuine, but seeds
+    /// whose only qualifying item comes from those rooms are skipped. See
+    /// [`crate::feasibility`].
+    pub fast_mode: bool,
 }
 
 impl SearchQuery {
@@ -327,6 +333,7 @@ mod tests {
             requirements: vec![requirement(ItemId::Sword), requirement(ItemId::Sword)],
             max_depth: 4,
             require_blacksmith: false,
+            fast_mode: false,
         };
         let one = GeneratedWorld {
             seed: DungeonSeed::MIN,
@@ -349,6 +356,7 @@ mod tests {
             requirements: vec![requirement(ItemId::Sword), requirement(ItemId::MailArmor)],
             max_depth: 4,
             require_blacksmith: false,
+            fast_mode: false,
         };
         let world = GeneratedWorld {
             seed: DungeonSeed::MIN,
@@ -378,6 +386,7 @@ mod tests {
             requirements: vec![requirement(ItemId::Sword), requirement(ItemId::MailArmor)],
             max_depth: 4,
             require_blacksmith: false,
+            fast_mode: false,
         };
         let world = GeneratedWorld {
             seed: DungeonSeed::MIN,
@@ -433,6 +442,7 @@ mod tests {
             requirements: vec![requirement(ItemId::Sword), requirement(ItemId::MailArmor)],
             max_depth: 4,
             require_blacksmith: false,
+            fast_mode: false,
         };
         assert!(compatible.matches(&world));
 
@@ -440,6 +450,7 @@ mod tests {
             requirements: vec![requirement(ItemId::Sword), requirement(ItemId::WandFrost)],
             max_depth: 4,
             require_blacksmith: false,
+            fast_mode: false,
         };
         assert!(!incompatible.matches(&world));
     }
@@ -509,6 +520,7 @@ mod tests {
             ],
             max_depth: 14,
             require_blacksmith: true,
+            fast_mode: false,
         };
         let make = |item, upgrade, depth, source| WorldItem {
             item,
@@ -559,6 +571,7 @@ mod tests {
             ],
             max_depth: 24,
             require_blacksmith: false,
+            fast_mode: false,
         };
 
         assert_eq!(query.validate(), Err(QueryError::InconsistentIdentityGroup));

@@ -6,14 +6,32 @@
 
 use std::fmt;
 
-use crate::caves_floor::{CanonicalCavesWorldGenerator, CavesFloorError, generate_caves_world};
-use crate::city_floor::{CanonicalCityWorldGenerator, CityFloorError, generate_city_world};
-use crate::halls_floor::{CanonicalHallsWorldGenerator, HallsFloorError, generate_halls_world};
+use crate::caves_floor::{
+    CanonicalCavesWorldGenerator, CavesFloorError, generate_caves_floor, generate_caves_world,
+};
+use crate::city_boss_shop::generate_city_boss_shop;
+use crate::city_floor::{
+    CanonicalCityWorldGenerator, CityFloorError, generate_city_floor, generate_city_world,
+};
+use crate::halls_floor::{
+    CanonicalHallsWorldGenerator, HallsFloorError, generate_halls_floor, generate_halls_world,
+};
+use crate::level_prelude::LimitedDrops;
 use crate::model::GeneratedWorld;
-use crate::prison_floor::{CanonicalPrisonWorldGenerator, PrisonFloorError, generate_prison_world};
-use crate::search::WorldGenerator;
+use crate::prison_floor::{
+    CanonicalPrisonWorldGenerator, PrisonFloorError, generate_prison_floor, generate_prison_world,
+};
+use crate::quests::QuestState;
+use crate::batch::seed_for_depth_batch4;
+use crate::rng::{RandomStack, seed_for_depth};
+use crate::run::RunState;
+use crate::search::{FloorGate, WorldGenerator};
 use crate::seed::DungeonSeed;
-use crate::sewer_floor::{CanonicalSewerWorldGenerator, SewerFloorError, generate_sewer_world};
+use crate::sewer_floor::{
+    CanonicalSewerWorldGenerator, SewerFloorError, generate_sewer_floor, generate_sewer_world,
+    remap_floor_choice_groups,
+};
+use crate::shop::ShopRunState;
 
 /// Exact version-pinned generator used by production search sessions.
 #[derive(Clone, Copy, Debug, Default)]
@@ -48,6 +66,46 @@ impl WorldGenerator for CanonicalMainWorldGenerator {
             21..=24 => CanonicalHallsWorldGenerator.generate_batch(seeds, max_depth),
             _ => unreachable!("depth was validated above"),
         }
+    }
+
+    fn generate_batch_gated(
+        &self,
+        seeds: &[DungeonSeed],
+        max_depth: u8,
+        gate: &dyn FloorGate,
+    ) -> Vec<Option<GeneratedWorld>> {
+        assert!(
+            (1..=24).contains(&max_depth),
+            "CanonicalMainWorldGenerator accepts depths 1..=24"
+        );
+        let target = effective_regular_depth(max_depth);
+        let depths = regular_depths(target).collect::<Vec<_>>();
+        let mut output = Vec::with_capacity(seeds.len());
+        let mut chunks = seeds.chunks_exact(4);
+        for chunk in &mut chunks {
+            let dungeon_seeds = std::array::from_fn(|index| {
+                i64::try_from(chunk[index].value()).expect("base-26 seed range fits Java long")
+            });
+            let roots_by_depth = depths
+                .iter()
+                .map(|&depth| seed_for_depth_batch4(dungeon_seeds, depth, 0))
+                .collect::<Vec<_>>();
+            for lane in 0..4 {
+                let roots = roots_by_depth
+                    .iter()
+                    .map(|depth_roots| depth_roots[lane])
+                    .collect::<Vec<_>>();
+                output.push(
+                    generate_gated_world_with_roots(chunk[lane], target, &roots, gate)
+                        .expect("validated gated batch satisfies canonical invariants"),
+                );
+            }
+        }
+        output.extend(chunks.remainder().iter().copied().map(|seed| {
+            generate_main_world_gated(seed, target, gate)
+                .expect("validated gated batch satisfies canonical invariants")
+        }));
+        output
     }
 }
 
@@ -85,6 +143,133 @@ pub fn generate_main_world(
     }
 }
 
+/// Regular (non-boss) depths generated for a prefix through `target`.
+/// Depth 20 is included from 20 onward because its Imp shop eagerly draws
+/// stock which the searchable model exposes as depth-20 items.
+fn regular_depths(target: u8) -> impl Iterator<Item = u32> {
+    (1..=u32::from(target)).filter(|&depth| !matches!(depth, 5 | 10 | 15))
+}
+
+/// Maps a requested depth onto the deepest state-mutating floor at or above
+/// it: boss floors 5/10/15 are persistent-state neutral in the pinned profile.
+const fn effective_regular_depth(maximum_depth: u8) -> u8 {
+    match maximum_depth {
+        5 => 4,
+        10 => 9,
+        15 => 14,
+        other => other,
+    }
+}
+
+/// Gated variant of [`generate_main_world`]: after each completed floor the
+/// gate may prove the partial world unable to match, abandoning the seed's
+/// remaining floors. Returns `Ok(None)` for abandoned seeds.
+///
+/// # Errors
+///
+/// Returns [`MainWorldError::InvalidMaximumDepth`] outside 1..=24, or wraps
+/// the exact regional generation failure.
+///
+/// # Panics
+///
+/// Panics only if a representable seed exceeds Java's `long` range, which the
+/// [`DungeonSeed`] type rules out.
+pub fn generate_main_world_gated(
+    seed: DungeonSeed,
+    maximum_depth: u8,
+    gate: &dyn FloorGate,
+) -> Result<Option<GeneratedWorld>, MainWorldError> {
+    if !(1..=24).contains(&maximum_depth) {
+        return Err(MainWorldError::InvalidMaximumDepth(maximum_depth));
+    }
+    let target = effective_regular_depth(maximum_depth);
+    let dungeon_seed = i64::try_from(seed.value()).expect("base-26 seed range fits Java long");
+    let roots = regular_depths(target)
+        .map(|depth| seed_for_depth(dungeon_seed, depth, 0))
+        .collect::<Vec<_>>();
+    generate_gated_world_with_roots(seed, target, &roots, gate)
+}
+
+/// Sequential gated composite over the canonical per-region floor generators.
+/// `target` must already be boss-mapped (never 5, 10, or 15).
+fn generate_gated_world_with_roots(
+    seed: DungeonSeed,
+    target: u8,
+    roots: &[i64],
+    gate: &dyn FloorGate,
+) -> Result<Option<GeneratedWorld>, MainWorldError> {
+    let dungeon_seed = i64::try_from(seed.value()).expect("base-26 seed range fits Java long");
+    let mut run = RunState::new(dungeon_seed);
+    let mut limited_drops = LimitedDrops::default();
+    let mut quests = QuestState::new();
+    let mut shop_run = ShopRunState::default();
+    let mut random = RandomStack::with_base_seed(0);
+    let mut items = Vec::new();
+    let mut next_choice_group = 0_u16;
+
+    for (&root, depth) in roots.iter().zip(regular_depths(target)) {
+        random.push(root);
+        let mut floor_items = match depth {
+            1..=4 => {
+                generate_sewer_floor(&mut run, &mut limited_drops, &mut quests, depth, &mut random)
+                    .map_err(MainWorldError::Sewer)?
+                    .world_items
+            }
+            6..=9 => generate_prison_floor(
+                &mut run,
+                &mut limited_drops,
+                &mut quests,
+                &mut shop_run,
+                depth,
+                &mut random,
+            )
+            .map_err(MainWorldError::Prison)?
+            .world_items,
+            11..=14 => generate_caves_floor(
+                &mut run,
+                &mut limited_drops,
+                &mut quests,
+                &mut shop_run,
+                depth,
+                &mut random,
+            )
+            .map_err(MainWorldError::Caves)?
+            .world_items,
+            16..=19 => generate_city_floor(
+                &mut run,
+                &mut limited_drops,
+                &mut quests,
+                &mut shop_run,
+                depth,
+                &mut random,
+            )
+            .map_err(MainWorldError::City)?
+            .world_items,
+            20 => generate_city_boss_shop(&mut run, &mut shop_run, &mut random)
+                .map_err(|error| MainWorldError::Halls(HallsFloorError::BossShop(error)))?
+                .world_items,
+            _ => generate_halls_floor(
+                &mut run,
+                &mut limited_drops,
+                &mut quests,
+                &mut shop_run,
+                depth,
+                &mut random,
+            )
+            .map_err(MainWorldError::Halls)?
+            .world_items,
+        };
+        random.pop();
+        next_choice_group = remap_floor_choice_groups(&mut floor_items, next_choice_group);
+        items.extend(floor_items);
+        let completed = u8::try_from(depth).expect("main-path depths fit u8");
+        if completed < target && !gate.continue_after_floor(completed, &items) {
+            return Ok(None);
+        }
+    }
+    Ok(Some(GeneratedWorld { seed, items }))
+}
+
 /// Failure while producing a canonical main-dungeon prefix.
 #[derive(Clone, Debug, PartialEq)]
 pub enum MainWorldError {
@@ -116,12 +301,153 @@ impl std::error::Error for MainWorldError {}
 #[cfg(test)]
 mod tests {
     use crate::catalog::{ItemId, ItemKind};
-    use crate::model::ItemSource;
-    use crate::query::{Requirement, SearchQuery};
-    use crate::search::WorldGenerator;
+    use crate::feasibility::QueryPlan;
+    use crate::model::{ItemSource, WorldItem};
+    use crate::query::{Requirement, SearchQuery, UpgradeRequirement};
+    use crate::search::{FloorGate, WorldGenerator};
     use crate::seed::DungeonSeed;
 
-    use super::{CanonicalMainWorldGenerator, MainWorldError, generate_main_world};
+    use super::{
+        CanonicalMainWorldGenerator, MainWorldError, generate_main_world,
+        generate_main_world_gated,
+    };
+
+    struct OpenGate;
+
+    impl FloorGate for OpenGate {
+        fn continue_after_floor(&self, _depth: u8, _items: &[WorldItem]) -> bool {
+            true
+        }
+    }
+
+    #[test]
+    fn gated_generation_with_an_open_gate_matches_ungated_generation() {
+        for depth in [1, 4, 5, 9, 12, 15, 17, 20, 24] {
+            for seed_value in [0_u64, 5, 26, 4_093] {
+                let seed = DungeonSeed::new(seed_value).unwrap();
+                assert_eq!(
+                    generate_main_world_gated(seed, depth, &OpenGate)
+                        .unwrap()
+                        .expect("an open gate never abandons a seed"),
+                    generate_main_world(seed, depth).unwrap(),
+                    "depth {depth} seed {seed_value}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn gated_search_agrees_with_brute_force_matching() {
+        let wildcard = |kind, upgrade| Requirement {
+            kind,
+            item: None,
+            upgrade,
+            effect: None,
+            source: None,
+            identity_group: None,
+        };
+        let query = |requirements: Vec<Requirement>, fast_mode| SearchQuery {
+            requirements,
+            max_depth: 24,
+            require_blacksmith: false,
+            fast_mode,
+        };
+        let queries = [
+            // Imp-only: exercises depth-19 truncation and post-quest aborts.
+            query(
+                vec![wildcard(ItemKind::Ring, UpgradeRequirement::Exact(4))],
+                false,
+            ),
+            // Wandmaker-only: exercises the depth-9 deadline.
+            query(
+                vec![wildcard(ItemKind::Wand, UpgradeRequirement::Exact(3))],
+                false,
+            ),
+            // Ghost/Blacksmith/Crypt/Sacrifice interplay, exact semantics.
+            query(
+                vec![
+                    wildcard(ItemKind::Weapon, UpgradeRequirement::Exact(3)),
+                    wildcard(ItemKind::Armor, UpgradeRequirement::Exact(3)),
+                ],
+                false,
+            ),
+            // Mixed rare + ordinary requirement keeps full depth.
+            query(
+                vec![
+                    wildcard(ItemKind::Ring, UpgradeRequirement::AtLeast(3)),
+                    wildcard(ItemKind::Wand, UpgradeRequirement::AtLeast(1)),
+                ],
+                false,
+            ),
+        ];
+        let seeds = (0..32)
+            .map(|value| DungeonSeed::new(value).unwrap())
+            .collect::<Vec<_>>();
+        let full_worlds = seeds
+            .iter()
+            .map(|&seed| generate_main_world(seed, 24).unwrap())
+            .collect::<Vec<_>>();
+
+        let mut total_matches = 0;
+        for query in &queries {
+            let plan = QueryPlan::analyze(query);
+            assert!(!plan.is_unsatisfiable());
+            let gated = CanonicalMainWorldGenerator.generate_batch_gated(
+                &seeds,
+                plan.generation_depth(),
+                &plan,
+            );
+            for (index, gated_world) in gated.iter().enumerate() {
+                let expected = query.matches(&full_worlds[index]);
+                let actual = gated_world
+                    .as_ref()
+                    .is_some_and(|world| query.matches(world));
+                assert_eq!(
+                    actual,
+                    expected,
+                    "seed {} disagreed for {query:?}",
+                    seeds[index]
+                );
+                total_matches += usize::from(expected);
+            }
+        }
+        // Seed AAA-AAA-AAF carries a +4 Imp ring, so the comparison is not
+        // vacuously passing on all-negative outcomes.
+        assert!(total_matches > 0);
+    }
+
+    #[test]
+    fn fast_mode_finds_only_genuine_matches() {
+        let query = SearchQuery {
+            requirements: vec![Requirement {
+                kind: ItemKind::Armor,
+                item: None,
+                upgrade: UpgradeRequirement::Exact(3),
+                effect: None,
+                source: None,
+                identity_group: None,
+            }],
+            max_depth: 24,
+            require_blacksmith: false,
+            fast_mode: true,
+        };
+        let plan = QueryPlan::analyze(&query);
+        assert_eq!(plan.generation_depth(), 14);
+        let seeds = (0..32)
+            .map(|value| DungeonSeed::new(value).unwrap())
+            .collect::<Vec<_>>();
+        let gated =
+            CanonicalMainWorldGenerator.generate_batch_gated(&seeds, plan.generation_depth(), &plan);
+        for (index, gated_world) in gated.iter().enumerate() {
+            if let Some(world) = gated_world {
+                if query.matches(world) {
+                    // Every fast-mode match must be a genuine full-depth match.
+                    let full = generate_main_world(seeds[index], 24).unwrap();
+                    assert!(query.matches(&full));
+                }
+            }
+        }
+    }
 
     #[test]
     fn rejects_depths_outside_the_main_searchable_dungeon() {
@@ -190,6 +516,7 @@ mod tests {
             }],
             max_depth: 24,
             require_blacksmith: false,
+            fast_mode: false,
         };
         assert_eq!(query.validate(), Ok(()));
         assert!(query.matches(&world));

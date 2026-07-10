@@ -1380,6 +1380,7 @@ mod tests {
             }],
             max_depth: 4,
             require_blacksmith: false,
+            fast_mode: false,
         };
         let options = SearchOptions {
             start_seed: 0,
