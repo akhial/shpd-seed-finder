@@ -269,25 +269,50 @@ impl Rect {
 
     /// Mirrors `Rect.getPoints()`: x is the outer loop and both ends are
     /// inclusive, despite the class's usual exclusive-right convention.
+    /// Yields lazily — these walks are hot enough that materializing Java's
+    /// `ArrayList` for real shows up in profiles.
     #[must_use]
-    pub fn points(self) -> Vec<Point> {
-        let mut points = Vec::new();
-        let mut x = self.left;
-        while x <= self.right {
-            let mut y = self.top;
-            while y <= self.bottom {
-                points.push(Point::new(x, y));
-                if y == self.bottom {
-                    break;
-                }
-                y = y.wrapping_add(1);
-            }
-            if x == self.right {
-                break;
-            }
-            x = x.wrapping_add(1);
+    pub fn points(self) -> RectPoints {
+        RectPoints {
+            x: self.left,
+            y: self.top,
+            rect: self,
+            done: self.left > self.right || self.top > self.bottom,
         }
-        points
+    }
+}
+
+/// Iterator behind [`Rect::points`], kept as a plain coordinate pair so the
+/// per-point step compiles to two compares and an add.
+#[derive(Clone, Debug)]
+pub struct RectPoints {
+    x: i32,
+    y: i32,
+    rect: Rect,
+    done: bool,
+}
+
+impl Iterator for RectPoints {
+    type Item = Point;
+
+    fn next(&mut self) -> Option<Point> {
+        if self.done {
+            return None;
+        }
+        let point = Point::new(self.x, self.y);
+        // Compare before stepping, exactly like the Java double loop, so the
+        // inclusive walk never overflows at extreme coordinates.
+        if self.y == self.rect.bottom {
+            if self.x == self.rect.right {
+                self.done = true;
+            } else {
+                self.x = self.x.wrapping_add(1);
+                self.y = self.rect.top;
+            }
+        } else {
+            self.y = self.y.wrapping_add(1);
+        }
+        Some(point)
     }
 }
 
@@ -1174,7 +1199,11 @@ impl PathFinder {
             let mut changed = false;
             for y in 0..height_usize {
                 let above = if y > 0 { reach[y - 1] } else { 0 };
-                let below = if y + 1 < height_usize { reach[y + 1] } else { 0 };
+                let below = if y + 1 < height_usize {
+                    reach[y + 1]
+                } else {
+                    0
+                };
                 let grown = reach[y] | (spread(reach[y] | above | below) & open_rows[y]);
                 if grown != reach[y] {
                     reach[y] = grown;
@@ -1183,7 +1212,11 @@ impl PathFinder {
             }
             for y in (0..height_usize).rev() {
                 let above = if y > 0 { reach[y - 1] } else { 0 };
-                let below = if y + 1 < height_usize { reach[y + 1] } else { 0 };
+                let below = if y + 1 < height_usize {
+                    reach[y + 1]
+                } else {
+                    0
+                };
                 let grown = reach[y] | (spread(reach[y] | above | below) & open_rows[y]);
                 if grown != reach[y] {
                     reach[y] = grown;
@@ -1726,7 +1759,7 @@ mod tests {
         assert!(!called);
 
         assert_eq!(
-            Rect::new(1, 2, 2, 3).points(),
+            Rect::new(1, 2, 2, 3).points().collect::<Vec<_>>(),
             [
                 Point::new(1, 2),
                 Point::new(1, 3),

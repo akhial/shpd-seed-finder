@@ -25,6 +25,7 @@ pub mod level;
 pub mod level_flags;
 pub mod level_prelude;
 pub mod main_world;
+mod maze;
 pub mod mobs;
 pub mod model;
 pub mod painter;

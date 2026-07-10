@@ -956,7 +956,6 @@ pub fn pit_fall_candidates<L: ForcedLevelContext>(level: &L, room: &Room) -> Vec
 fn pit_fall_candidates_in<L: ForcedLevelContext>(level: &L, bounds: Rect) -> Vec<usize> {
     bounds
         .points()
-        .into_iter()
         .map(|point| point_to_cell(level, point))
         .filter(|cell| {
             terrain::flags(level.map().cells[*cell]) & terrain::PASSABLE != 0

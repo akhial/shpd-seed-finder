@@ -1341,6 +1341,16 @@ fn maze_direction(
 fn generate_maze(bounds: Rect, entrance: Point, random: &mut RandomStack) -> Vec<bool> {
     let width = inclusive_width(bounds);
     let height = inclusive_height(bounds);
+    if (crate::maze::MIN_BIT_MAZE_SIDE..=crate::maze::MAX_BIT_MAZE_HEIGHT).contains(&height)
+        && width >= crate::maze::MIN_BIT_MAZE_SIDE
+    {
+        let mut cols = crate::maze::walled_border_cols(width, height);
+        let x = usize::try_from(entrance.x - bounds.left).expect("entrance is in the room");
+        cols[x] &= !(1_u64 << (entrance.y - bounds.top));
+        crate::maze::grow_maze(&mut cols, width, height, random);
+        return crate::maze::cols_to_column_major(&cols, height);
+    }
+
     let mut maze = vec![false; usize::try_from(width * height).expect("positive maze size")];
     for x in 0..width {
         for y in 0..height {

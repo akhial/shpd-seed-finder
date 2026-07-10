@@ -680,12 +680,10 @@ impl<C: SewerRoomContent> CavesRoomDispatcher<C> {
                 let index = local_room_cell(&rooms[room], point);
                 passable[index] = level.map.cells[level.point_to_cell(point)] != terrain::CHASM;
             }
-            let pathable = PathFinder::all_open_cells_connected(
-                width - 2,
-                height - 2,
-                door_point,
-                |cell| passable[cell],
-            );
+            let pathable =
+                PathFinder::all_open_cells_connected(width - 2, height - 2, door_point, |cell| {
+                    passable[cell]
+                });
             if pathable {
                 break;
             }

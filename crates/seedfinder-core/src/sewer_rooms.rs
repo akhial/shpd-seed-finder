@@ -2011,6 +2011,19 @@ fn generate_connection_maze(rooms: &[Room], room: RoomId, random: &mut RandomSta
     let selected = &rooms[room];
     let width = selected.width();
     let height = selected.height();
+    if (crate::maze::MIN_BIT_MAZE_SIDE..=crate::maze::MAX_BIT_MAZE_HEIGHT).contains(&height)
+        && width >= crate::maze::MIN_BIT_MAZE_SIDE
+    {
+        let mut cols = crate::maze::walled_border_cols(width, height);
+        for (_, door) in room_doors(rooms, room) {
+            let x = usize::try_from(door.x - selected.bounds.left).expect("door is in the room");
+            let y = door.y - selected.bounds.top;
+            cols[x] &= !(1_u64 << y);
+        }
+        crate::maze::grow_maze(&mut cols, width, height, random);
+        return crate::maze::cols_to_column_major(&cols, height);
+    }
+
     let mut maze = vec![false; usize::try_from(width * height).expect("positive maze size")];
     for x in 0..width {
         for y in 0..height {

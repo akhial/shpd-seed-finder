@@ -311,7 +311,6 @@ pub fn generate_patch(
 ) -> Vec<bool> {
     let length_i32 = width.wrapping_mul(height);
     let length = usize::try_from(length_i32).expect("patch dimensions must be non-negative");
-    let mut current = vec![false; length];
     let mut output = vec![false; length];
     #[allow(clippy::cast_precision_loss)]
     let mut fill_difference = round_f32(length_i32 as f32 * fill).wrapping_neg();
@@ -323,19 +322,21 @@ pub fn generate_patch(
     let generator = rng.current_generator();
     fill_difference = fill_difference.wrapping_add(generator.fill_f32_below(&mut output, fill));
 
-    if length > 0 && clustering > 0 {
-        let width_usize = usize::try_from(width).expect("patch width is non-negative");
+    let width_usize = usize::try_from(width).expect("patch width is non-negative");
+    let needs_correction = force_fill_rate && width.min(height) > 2;
+    if length > 0 && (2..=64).contains(&width_usize) && (clustering > 0 || needs_correction) {
+        // Bit-sliced fast path: one u64 row per map line. The board converts
+        // to bit rows once; the smoothing passes evaluate all interior
+        // columns of a row at once and the fill-rate correction toggles each
+        // 3x3 block with bulk mask operations; then it converts back once.
         let height_usize = usize::try_from(height).expect("patch height is non-negative");
-        if (2..=64).contains(&width_usize) {
-            // Bit-sliced automaton: one u64 row per map line, all interior
-            // columns of a row evaluated at once. The board converts to bit
-            // rows once for every smoothing pass, then back.
-            let mut rows = vec![0_u64; height_usize];
-            for (bits, cells) in rows.iter_mut().zip(output.chunks_exact(width_usize)) {
-                for (x, &cell) in cells.iter().enumerate() {
-                    *bits |= u64::from(cell) << x;
-                }
+        let mut rows = vec![0_u64; height_usize];
+        for (bits, cells) in rows.iter_mut().zip(output.chunks_exact(width_usize)) {
+            for (x, &cell) in cells.iter().enumerate() {
+                *bits |= u64::from(cell) << x;
             }
+        }
+        if clustering > 0 {
             let mut next_rows = vec![0_u64; height_usize];
             for _ in 0..clustering {
                 fill_difference = fill_difference.wrapping_add(clustering_pass_bits(
@@ -346,27 +347,35 @@ pub fn generate_patch(
                 ));
                 std::mem::swap(&mut rows, &mut next_rows);
             }
-            for (bits, cells) in rows.iter().zip(output.chunks_exact_mut(width_usize)) {
-                for (x, cell) in cells.iter_mut().enumerate() {
-                    *cell = bits & (1 << x) != 0;
-                }
+        }
+        if needs_correction {
+            correct_fill_bits(&mut rows, width, height, fill_difference, generator);
+        }
+        for (bits, cells) in rows.iter().zip(output.chunks_exact_mut(width_usize)) {
+            for (x, cell) in cells.iter_mut().enumerate() {
+                *cell = bits & (1 << x) != 0;
             }
-        } else {
-            let mut column_counts = vec![0_u8; width_usize];
-            for _ in 0..clustering {
-                fill_difference = fill_difference.wrapping_add(clustering_pass(
-                    &output,
-                    &mut current,
-                    width_usize,
-                    height_usize,
-                    &mut column_counts,
-                ));
-                std::mem::swap(&mut current, &mut output);
-            }
+        }
+        return output;
+    }
+
+    if length > 0 && clustering > 0 {
+        let height_usize = usize::try_from(height).expect("patch height is non-negative");
+        let mut current = vec![false; length];
+        let mut column_counts = vec![0_u8; width_usize];
+        for _ in 0..clustering {
+            fill_difference = fill_difference.wrapping_add(clustering_pass(
+                &output,
+                &mut current,
+                width_usize,
+                height_usize,
+                &mut column_counts,
+            ));
+            std::mem::swap(&mut current, &mut output);
         }
     }
 
-    if force_fill_rate && width.min(height) > 2 {
+    if needs_correction {
         let offsets = [
             -width - 1,
             -width,
@@ -412,6 +421,69 @@ pub fn generate_patch(
         }
     }
     output
+}
+
+/// [`generate_patch`]'s fill-rate correction loop over u64 bit rows. The
+/// draw sequence is identical to the scalar loop — the pick loop performs the
+/// same `int_between(1, width - 1)` / `int_between(1, height - 1)` pair per
+/// try and the same wall-clock exit after `10 * tries >= length` — while the
+/// draw-free 3x3 neighbour walk collapses into at most three masked row
+/// toggles. Java visits the block row-major and left-to-right within a row,
+/// so when the remaining difference runs out mid-block the partial row takes
+/// its lowest-order candidate bits, exactly the cells the scalar walk would
+/// have flipped before stopping.
+fn correct_fill_bits(
+    rows: &mut [u64],
+    width: i32,
+    height: i32,
+    mut fill_difference: i32,
+    generator: &mut crate::rng::JavaRandom,
+) {
+    let length_i32 = width.wrapping_mul(height);
+    let growing = fill_difference < 0;
+    let x_bound = FastBound::new(width - 2);
+    let y_bound = FastBound::new(height - 2);
+    while fill_difference != 0 {
+        let mut x;
+        let mut y;
+        let mut tries = 0_i32;
+        loop {
+            // Both draws land in 1..=dim-2, so the 3x3 block below stays in
+            // bounds and the mask shift by `x - 1` is non-negative.
+            x = generator.next_i32_fast_bound(&x_bound).wrapping_add(1);
+            y = generator.next_i32_fast_bound(&y_bound).wrapping_add(1);
+            tries = tries.wrapping_add(1);
+            let row = rows[usize::try_from(y).expect("patch correction row is negative")];
+            #[allow(clippy::cast_sign_loss)]
+            let hit = (row >> (x as u32)) & 1 == u64::from(growing);
+            if hit || tries.wrapping_mul(10) >= length_i32 {
+                break;
+            }
+        }
+
+        let mask = 0b111_u64 << (x - 1);
+        let y = usize::try_from(y).expect("patch correction row is negative");
+        for row in &mut rows[y - 1..=y + 1] {
+            if fill_difference == 0 {
+                break;
+            }
+            let mut candidates = if growing { !*row & mask } else { *row & mask };
+            let flips = candidates.count_ones();
+            let budget = fill_difference.unsigned_abs();
+            if flips <= budget {
+                *row ^= candidates;
+                let step = i32::try_from(flips).expect("a 3-bit mask has at most 3 candidates");
+                fill_difference = fill_difference.wrapping_add(if growing { step } else { -step });
+            } else {
+                for _ in 0..budget {
+                    let bit = candidates & candidates.wrapping_neg();
+                    *row ^= bit;
+                    candidates ^= bit;
+                }
+                fill_difference = 0;
+            }
+        }
+    }
 }
 
 /// One smoothing pass of [`generate_patch`]'s cellular automaton over u64
@@ -463,9 +535,7 @@ fn clustering_pass_bits(rows: &[u64], next_rows: &mut [u64], width: usize, heigh
         let mut new_row = meets_threshold & interior_mask;
 
         // Edge columns have a 2-wide window: 2*count >= row_count*2.
-        let edge_count = |x: usize| {
-            ((above >> x) & 1) + ((mid >> x) & 1) + ((below >> x) & 1)
-        };
+        let edge_count = |x: usize| ((above >> x) & 1) + ((mid >> x) & 1) + ((below >> x) & 1);
         if edge_count(0) + edge_count(1) >= u64::from(row_count) {
             new_row |= 1;
         }
@@ -501,17 +571,13 @@ fn clustering_pass(
         let row_start = y * width;
         let mid = &output[row_start..row_start + width];
         let above = (y > 0).then(|| &output[row_start - width..row_start]);
-        let below =
-            (y + 1 < height).then(|| &output[row_start + width..row_start + 2 * width]);
+        let below = (y + 1 < height).then(|| &output[row_start + width..row_start + 2 * width]);
         let rows = 1 + u8::from(above.is_some()) + u8::from(below.is_some());
 
         match (above, below) {
             (Some(above), Some(below)) => {
-                for (((column, &m), &a), &b) in column_counts
-                    .iter_mut()
-                    .zip(mid)
-                    .zip(above)
-                    .zip(below)
+                for (((column, &m), &a), &b) in
+                    column_counts.iter_mut().zip(mid).zip(above).zip(below)
                 {
                     *column = u8::from(m) + u8::from(a) + u8::from(b);
                 }

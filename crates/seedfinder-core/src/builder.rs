@@ -193,6 +193,35 @@ pub fn find_free_space(
     max_size: i32,
     rng: &mut RandomStack,
 ) -> Rect {
+    find_free_space_inner(start, rooms, CollisionBounds::Ids(collision), max_size, rng)
+}
+
+/// The collision list of one `findFreeSpace` call: either Java's room-id list
+/// resolved through the room table on the fly, or a dense pre-copied bounds
+/// snapshot when the caller retries several placements against an unchanged
+/// list.
+#[derive(Clone, Copy)]
+enum CollisionBounds<'a> {
+    Ids(&'a [RoomId]),
+    Rects(&'a [Rect]),
+}
+
+impl CollisionBounds<'_> {
+    fn len(self) -> usize {
+        match self {
+            Self::Ids(ids) => ids.len(),
+            Self::Rects(rects) => rects.len(),
+        }
+    }
+}
+
+fn find_free_space_inner(
+    start: Point,
+    rooms: &[Room],
+    collision: CollisionBounds<'_>,
+    max_size: i32,
+    rng: &mut RandomStack,
+) -> Rect {
     let space = Rect::new(
         start.x.wrapping_sub(max_size),
         start.y.wrapping_sub(max_size),
@@ -201,22 +230,55 @@ pub fn find_free_space(
     );
     // The passes below rescan the collision list repeatedly. Copying the
     // rectangles up front keeps those scans on a dense array instead of
-    // striding through the much larger `Room` structs; empty bounds stay
-    // empty, so filtering them once up front matches retesting every pass.
-    // This function runs thousands of times per generated seed, so the copy
-    // lives in a per-thread buffer that is allocated once and reused, rather
-    // than in per-call stack or heap storage.
+    // striding through the much larger `Room` structs. Only rectangles that
+    // intersect the initial `space` are kept: every effect a rectangle has in
+    // any pass — the `curDiff` sum, the `inside` flag, closest-collision
+    // tracking, and the tie-break draw — is gated on intersecting the current
+    // `space`, and `space` only shrinks, so rectangles outside the initial
+    // window can never contribute. Empty bounds never intersect anything, so
+    // this subsumes the non-empty filter Java's per-pass retests imply. This
+    // function runs thousands of times per generated seed, so the copy lives
+    // in a per-thread buffer that is allocated once and reused, rather than
+    // in per-call stack or heap storage.
     COLLIDING_SCRATCH.with(|scratch| {
         let mut colliding = scratch.borrow_mut();
-        colliding.clear();
-        colliding.extend(
-            collision
-                .iter()
-                .map(|&room| rooms[room].bounds)
-                .filter(|bounds| !bounds.is_empty()),
-        );
-        free_space_from_collisions(start, &mut colliding, space, rng)
+        // Grow-only: the surviving prefix is fully overwritten below, so
+        // stale entries past it never get read.
+        if colliding.len() < collision.len() {
+            colliding.resize(collision.len(), Rect::new(0, 0, 0, 0));
+        }
+        let kept = match collision {
+            CollisionBounds::Ids(ids) => filter_collisions(
+                ids.iter().map(|&room| rooms[room].bounds),
+                space,
+                &mut colliding,
+            ),
+            CollisionBounds::Rects(rects) => {
+                filter_collisions(rects.iter().copied(), space, &mut colliding)
+            }
+        };
+        free_space_from_collisions(start, &mut colliding[..kept], space, rng)
     })
+}
+
+/// Predicated compaction of the rectangles intersecting `space` into the
+/// scratch prefix. Which rectangles intersect is data-dependent, so the loop
+/// uses an unconditional store and a conditional length bump rather than a
+/// branch per rectangle.
+fn filter_collisions(
+    bounds_iter: impl Iterator<Item = Rect>,
+    space: Rect,
+    out: &mut [Rect],
+) -> usize {
+    let mut kept = 0_usize;
+    for bounds in bounds_iter {
+        #[allow(clippy::needless_bitwise_bool)]
+        let intersects = (space.left.max(bounds.left) < space.right.min(bounds.right))
+            & (space.top.max(bounds.top) < space.bottom.min(bounds.bottom));
+        out[kept] = bounds;
+        kept += usize::from(intersects);
+    }
+    kept
 }
 
 thread_local! {
@@ -418,6 +480,50 @@ pub fn place_room_with_shop_size_hook(
     collision: &[RoomId],
     previous: RoomId,
     next: RoomId,
+    angle: f32,
+    rng: &mut RandomStack,
+    shop_size_hook: &mut dyn FnMut(&mut Room, &mut RandomStack),
+) -> f32 {
+    place_room_impl(
+        rooms,
+        CollisionBounds::Ids(collision),
+        previous,
+        next,
+        angle,
+        rng,
+        shop_size_hook,
+    )
+}
+
+/// [`place_room`] against a pre-copied bounds snapshot of the collision
+/// list. Placement retry loops draw fresh angles against an unchanged list —
+/// only the room being placed, which is never on it, mutates between tries —
+/// so the caller snapshots the bounds once and the retries skip re-striding
+/// the room table.
+fn place_room_from_rects(
+    rooms: &mut [Room],
+    collision: &[Rect],
+    previous: RoomId,
+    next: RoomId,
+    angle: f32,
+    rng: &mut RandomStack,
+) -> f32 {
+    place_room_impl(
+        rooms,
+        CollisionBounds::Rects(collision),
+        previous,
+        next,
+        angle,
+        rng,
+        &mut |_, _| {},
+    )
+}
+
+fn place_room_impl(
+    rooms: &mut [Room],
+    collision: CollisionBounds<'_>,
+    previous: RoomId,
+    next: RoomId,
     mut angle: f32,
     rng: &mut RandomStack,
     shop_size_hook: &mut dyn FnMut(&mut Room, &mut RandomStack),
@@ -472,7 +578,7 @@ pub fn place_room_with_shop_size_hook(
     }
 
     let max_size = rooms[next].max_width().max(rooms[next].max_height());
-    let space = find_free_space(start, rooms, collision, max_size, rng);
+    let space = find_free_space_inner(start, rooms, collision, max_size, rng);
     if rooms[next].is_shop() {
         shop_size_hook(&mut rooms[next], rng);
     }
@@ -696,6 +802,9 @@ where
     let mut failed_branch_attempts = 0_i32;
     let mut chance_deck = connection_chances.to_vec();
     let mut connecting_this_branch = Vec::new();
+    // Dense bounds snapshot of `active`, rebuilt before each placement retry
+    // loop; see `place_room_from_rects`.
+    let mut active_bounds: Vec<Rect> = Vec::new();
 
     while room_index < rooms_to_branch.len() {
         if failed_branch_attempts > 100 {
@@ -726,10 +835,13 @@ where
                 create_connection_room(depth, rng)
             };
             let tunnel = append_pending(rooms, connection);
+            active_bounds.clear();
+            active_bounds.extend(active.iter().map(|&room| rooms[room].bounds));
             let mut tries = 3;
             let angle = loop {
                 let target = random_branch_angle(current, rooms, rng);
-                let placed = place_room(rooms, active, current, tunnel, target, rng);
+                let placed =
+                    place_room_from_rects(rooms, &active_bounds, current, tunnel, target, rng);
                 tries -= 1;
                 if placed != -1.0 || tries <= 0 {
                     break placed;
@@ -754,13 +866,23 @@ where
             continue;
         }
 
+        active_bounds.clear();
+        active_bounds.extend(active.iter().map(|&room| rooms[room].bounds));
+        // Unlike the tunnels above, `room` is itself on the collision list,
+        // and a try that fails at the final `connectRooms` has already
+        // resized and shifted it — Java's next try observes those bounds
+        // through the shared room table, so the snapshot entry must follow.
+        let room_slot = active.iter().position(|&candidate| candidate == room);
         let mut tries = 10;
         let angle = loop {
             let target = random_branch_angle(current, rooms, rng);
-            let placed = place_room(rooms, active, current, room, target, rng);
+            let placed = place_room_from_rects(rooms, &active_bounds, current, room, target, rng);
             tries -= 1;
             if placed != -1.0 || tries <= 0 {
                 break placed;
+            }
+            if let Some(slot) = room_slot {
+                active_bounds[slot] = rooms[room].bounds;
             }
         };
         if angle == -1.0 {
