@@ -4,23 +4,25 @@ use std::fmt;
 
 use crate::catalog::{Effect, ItemKind, item, item_by_stable_id};
 use crate::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
-use crate::query::{Requirement, SearchQuery, UpgradeRequirement};
+use crate::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
 use crate::seed::DungeonSeed;
 
 const REQUEST_MAGIC_V1: &[u8; 4] = b"SSF1";
 const REQUEST_MAGIC_V2: &[u8; 4] = b"SSF2";
 const REQUEST_MAGIC_V3: &[u8; 4] = b"SSF3";
+const REQUEST_MAGIC_V4: &[u8; 4] = b"SSF4";
 const RESULT_MAGIC: &[u8; 4] = b"SSR1";
 const SCOUT_RESULT_MAGIC: &[u8; 4] = b"SSC1";
 const MAX_REQUIREMENTS: usize = 64;
 
-/// Decodes Android `SSF1`, `SSF2`, and `SSF3` packets. Older versions are
+/// Decodes Android `SSF1` through `SSF4` packets. Older versions are
 /// retained for compatibility; V2 adds the overall floor limit,
 /// source/identity constraints, upgrade predicates, and
 /// three flag bits: bit 0 requires blacksmith availability, bit 1 enables the
 /// lossy fast search mode described on [`SearchQuery::fast_mode`], and bit 2
 /// prevents Blacksmith "Smith" rewards from satisfying item requirements. V3
-/// adds an optional floor limit to every individual requirement.
+/// adds an optional floor limit to every individual requirement, and V4 adds
+/// an optional exact or minimum equipment-tier predicate.
 ///
 /// # Errors
 ///
@@ -31,8 +33,12 @@ pub fn decode_query(packet: &[u8]) -> Result<SearchQuery, WireError> {
     let magic = input.take(4)?;
     let query = if magic == REQUEST_MAGIC_V1 {
         decode_query_v1(&mut input)?
-    } else if magic == REQUEST_MAGIC_V2 || magic == REQUEST_MAGIC_V3 {
-        decode_query_v2(&mut input, magic == REQUEST_MAGIC_V3)?
+    } else if magic == REQUEST_MAGIC_V2 {
+        decode_query_v2(&mut input, false, false)?
+    } else if magic == REQUEST_MAGIC_V3 {
+        decode_query_v2(&mut input, false, true)?
+    } else if magic == REQUEST_MAGIC_V4 {
+        decode_query_v2(&mut input, true, true)?
     } else {
         return Err(WireError::BadMagic);
     };
@@ -65,6 +71,7 @@ fn decode_query_v1(input: &mut Input<'_>) -> Result<SearchQuery, WireError> {
         requirements.push(Requirement {
             kind: definition.kind,
             item: Some(definition.id),
+            tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Exact(upgrade),
             effect,
             source: None,
@@ -83,6 +90,7 @@ fn decode_query_v1(input: &mut Input<'_>) -> Result<SearchQuery, WireError> {
 
 fn decode_query_v2(
     input: &mut Input<'_>,
+    has_tier: bool,
     has_requirement_depths: bool,
 ) -> Result<SearchQuery, WireError> {
     let max_depth = input.u8()?;
@@ -106,6 +114,18 @@ fn decode_query_v2(
                     .ok_or(WireError::UnknownItem)?
                     .id,
             )
+        };
+        let tier = if has_tier {
+            let mode = input.u8()?;
+            let value = input.u8()?;
+            match mode {
+                0 if value == 0 => TierRequirement::Any,
+                1 => TierRequirement::Exact(value),
+                2 => TierRequirement::AtLeast(value),
+                _ => return Err(WireError::InvalidTierMode),
+            }
+        } else {
+            TierRequirement::Any
         };
         let upgrade_mode = input.u8()?;
         let upgrade_value = input.u8()?;
@@ -140,6 +160,7 @@ fn decode_query_v2(
         requirements.push(Requirement {
             kind,
             item,
+            tier,
             upgrade,
             effect,
             source,
@@ -470,6 +491,7 @@ pub enum WireError {
     UnknownItem,
     UnknownModifier,
     InvalidUpgradeMode,
+    InvalidTierMode,
     InvalidQuery,
     TrailingData,
     TooManyResults,
@@ -494,6 +516,7 @@ impl fmt::Display for WireError {
             Self::UnknownItem => "packet names an unknown item ID",
             Self::UnknownModifier => "packet names an unknown enchantment or glyph",
             Self::InvalidUpgradeMode => "packet contains an invalid upgrade predicate",
+            Self::InvalidTierMode => "packet contains an invalid tier predicate",
             Self::InvalidQuery => "packet describes an inconsistent search query",
             Self::TrailingData => "packet has trailing bytes",
             Self::TooManyResults => "result batch exceeds the protocol limit",
@@ -516,7 +539,7 @@ mod tests {
     use crate::catalog::{ArmorEffect, Effect, ITEMS, ItemId, ItemKind, WeaponEffect, item};
     use crate::main_world::CanonicalMainWorldGenerator;
     use crate::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
-    use crate::query::UpgradeRequirement;
+    use crate::query::{TierRequirement, UpgradeRequirement};
     use crate::search::WorldGenerator;
     use crate::seed::DungeonSeed;
 
@@ -692,6 +715,23 @@ mod tests {
         let query = decode_query(&packet).unwrap();
         assert!(query.exclude_blacksmith_rewards);
         assert!(!query.require_blacksmith);
+    }
+
+    #[test]
+    fn ssf4_decodes_exact_and_minimum_tier_predicates() {
+        let mut packet = b"SSF4".to_vec();
+        packet.extend_from_slice(&[24, 0, 0, 2]);
+        for (kind, tier_mode, tier) in [(0, 1, 5), (1, 2, 4)] {
+            packet.push(kind);
+            field(&mut packet, "");
+            packet.extend_from_slice(&[tier_mode, tier, 0, 0]);
+            field(&mut packet, "");
+            packet.extend_from_slice(&[0, 0, 0]);
+        }
+
+        let query = decode_query(&packet).unwrap();
+        assert_eq!(query.requirements[0].tier, TierRequirement::Exact(5));
+        assert_eq!(query.requirements[1].tier, TierRequirement::AtLeast(4));
     }
 
     #[test]

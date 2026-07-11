@@ -7,11 +7,41 @@ import dev.seedseeker.app.model.ItemKind
 import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.ScoutItemSource
 import dev.seedseeker.app.model.UpgradeMatch
+import dev.seedseeker.app.model.TierMatch
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class QueryCodecTest {
+    @Test
+    fun tierPredicateUsesSsf4AndEncodesExactTier() {
+        val requirement = ItemRequirement(
+            key = 1,
+            item = null,
+            upgrade = 0,
+            kind = ItemKind.WEAPON,
+            tier = 5,
+            tierMatch = TierMatch.EXACT,
+            upgradeMatch = UpgradeMatch.ANY,
+        )
+
+        assertArrayEquals(
+            byteArrayOf(
+                'S'.code.toByte(), 'S'.code.toByte(), 'F'.code.toByte(), '4'.code.toByte(),
+                24, 0, 0, 1,
+                0, 0, 0, // weapon, any item
+                1, 5, // exact tier 5
+                0, 0, // any upgrade
+                0, 0, // no modifier
+                0, 0, 0, // any source, no identity group, no requirement floor limit
+            ),
+            QueryCodec.encode(SearchRequest(listOf(requirement))),
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            requirement.copy(tier = 1)
+        }
+    }
+
     @Test
     fun encodesStableSsf3PacketWithExactUpgradeAndFloorLimit() {
         val sword = ItemCatalog.weapons.first { it.id == "sword" }

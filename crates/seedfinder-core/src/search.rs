@@ -692,7 +692,7 @@ mod tests {
 
     use crate::catalog::{ItemId, ItemKind};
     use crate::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
-    use crate::query::{Requirement, SearchQuery};
+    use crate::query::{Requirement, SearchQuery, TierRequirement};
 
     use super::{
         SearchOptions, SearchProgress, StreamingSearchState, WorldGenerator, search_parallel,
@@ -727,6 +727,7 @@ mod tests {
             requirements: vec![Requirement {
                 kind: ItemKind::Wand,
                 item: Some(ItemId::WandFrost),
+                tier: TierRequirement::Any,
                 upgrade: crate::query::UpgradeRequirement::Exact(2),
                 effect: None,
                 source: None,
@@ -804,6 +805,7 @@ mod tests {
             requirements: vec![Requirement {
                 kind: ItemKind::Wand,
                 item: Some(ItemId::WandFrost),
+                tier: TierRequirement::Any,
                 upgrade: crate::query::UpgradeRequirement::Exact(2),
                 effect: None,
                 source: None,
@@ -866,6 +868,7 @@ mod tests {
             requirements: vec![Requirement {
                 kind: ItemKind::Wand,
                 item: Some(ItemId::WandFrost),
+                tier: TierRequirement::Any,
                 upgrade: crate::query::UpgradeRequirement::Exact(2),
                 effect: None,
                 source: None,
@@ -908,6 +911,7 @@ mod tests {
             requirements: vec![Requirement {
                 kind: ItemKind::Wand,
                 item: Some(ItemId::WandFrost),
+                tier: TierRequirement::Any,
                 upgrade: crate::query::UpgradeRequirement::Exact(2),
                 effect: None,
                 source: None,
@@ -955,6 +959,7 @@ mod tests {
             requirements: vec![Requirement {
                 kind: ItemKind::Wand,
                 item: Some(ItemId::WandFrost),
+                tier: TierRequirement::Any,
                 upgrade: crate::query::UpgradeRequirement::Exact(2),
                 effect: None,
                 source: None,

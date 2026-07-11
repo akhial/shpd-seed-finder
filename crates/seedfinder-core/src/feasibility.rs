@@ -393,7 +393,7 @@ impl FloorGate for QueryPlan {
 mod tests {
     use crate::catalog::{ArmorEffect, Effect, ItemId, ItemKind, WeaponEffect};
     use crate::model::{Accessibility, ItemSource, WorldItem};
-    use crate::query::{Requirement, SearchQuery, UpgradeRequirement};
+    use crate::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
 
     use super::QueryPlan;
 
@@ -401,6 +401,7 @@ mod tests {
         Requirement {
             kind,
             item: None,
+            tier: TierRequirement::Any,
             upgrade,
             effect: None,
             source: None,

@@ -334,7 +334,9 @@ mod tests {
 
     use shpd_seedfinder_core::catalog::{ItemId, ItemKind};
     use shpd_seedfinder_core::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
-    use shpd_seedfinder_core::query::{Requirement, SearchQuery, UpgradeRequirement};
+    use shpd_seedfinder_core::query::{
+        Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
+    };
     use shpd_seedfinder_core::search::{SearchOptions, WorldGenerator};
     use shpd_seedfinder_core::seed::DungeonSeed;
     use shpd_seedfinder_core::wire::{WireError, decode_scout_world};
@@ -424,6 +426,7 @@ mod tests {
             requirements: vec![Requirement {
                 kind: ItemKind::Wand,
                 item: Some(ItemId::WandFrost),
+                tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Exact(2),
                 effect: None,
                 source: None,

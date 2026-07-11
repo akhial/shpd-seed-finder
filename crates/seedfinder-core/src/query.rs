@@ -17,6 +17,24 @@ pub enum UpgradeRequirement {
     AtLeast(u8),
 }
 
+/// Optional tier predicate for tiered equipment.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TierRequirement {
+    Any,
+    Exact(u8),
+    AtLeast(u8),
+}
+
+impl TierRequirement {
+    fn matches(self, tier: Option<u8>) -> bool {
+        match self {
+            Self::Any => true,
+            Self::Exact(wanted) => tier == Some(wanted),
+            Self::AtLeast(minimum) => tier.is_some_and(|tier| tier >= minimum),
+        }
+    }
+}
+
 impl UpgradeRequirement {
     const fn matches(self, upgrade: u8) -> bool {
         match self {
@@ -32,6 +50,7 @@ impl UpgradeRequirement {
 pub struct Requirement {
     pub kind: ItemKind,
     pub item: Option<ItemId>,
+    pub tier: TierRequirement,
     pub upgrade: UpgradeRequirement,
     pub effect: Option<Effect>,
     pub source: Option<ItemSource>,
@@ -59,6 +78,7 @@ impl Requirement {
         };
         let definition = item(identity);
         (definition.kind == self.kind
+            && self.tier.matches(definition.tier)
             && self.upgrade.matches(candidate.upgrade)
             && self
                 .effect
@@ -79,6 +99,17 @@ impl Requirement {
             .is_some_and(|item_id| item(item_id).kind != self.kind)
         {
             return Err(QueryError::ItemKindMismatch);
+        }
+        let valid_tier = match self.tier {
+            TierRequirement::Any => true,
+            TierRequirement::Exact(tier) | TierRequirement::AtLeast(tier) => {
+                self.item.is_none()
+                    && matches!(self.kind, ItemKind::Weapon | ItemKind::Armor)
+                    && (2..=5).contains(&tier)
+            }
+        };
+        if !valid_tier {
+            return Err(QueryError::InvalidTier);
         }
         let maximum = self.kind.maximum_search_upgrade();
         let valid_upgrade = match self.upgrade {
@@ -307,6 +338,7 @@ pub enum QueryError {
     Empty,
     InvalidDepth,
     InvalidUpgrade,
+    InvalidTier,
     ItemKindMismatch,
     EffectKindMismatch,
     InvalidIdentityGroup,
@@ -319,6 +351,7 @@ impl fmt::Display for QueryError {
             Self::Empty => "at least one item requirement is needed",
             Self::InvalidDepth => "maximum depth must be between 1 and 24",
             Self::InvalidUpgrade => "upgrade must be +1, +2, or +3 (+4 for rings)",
+            Self::InvalidTier => "tier filters require any tier-2 through tier-5 weapon or armor",
             Self::ItemKindMismatch => "selected item is in a different category",
             Self::EffectKindMismatch => "selected enchantment or glyph is inapplicable",
             Self::InvalidIdentityGroup => "identity group zero is reserved for no group",
@@ -338,7 +371,7 @@ mod tests {
     use crate::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
     use crate::seed::DungeonSeed;
 
-    use super::{QueryError, Requirement, SearchQuery, UpgradeRequirement};
+    use super::{QueryError, Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
 
     fn world_item(item: ItemId, accessibility: Accessibility) -> WorldItem {
         WorldItem {
@@ -357,6 +390,7 @@ mod tests {
         Requirement {
             kind: crate::catalog::item(item).kind,
             item: Some(item),
+            tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Exact(2),
             effect: None,
             source: None,
@@ -402,6 +436,7 @@ mod tests {
             requirements: vec![Requirement {
                 kind: ItemKind::Ring,
                 item: Some(ItemId::RingWealth),
+                tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Exact(4),
                 effect: None,
                 source: Some(ItemSource::GhostReward),
@@ -419,6 +454,7 @@ mod tests {
         accuracy_and_wealth.requirements.push(Requirement {
             kind: ItemKind::Ring,
             item: Some(ItemId::RingAccuracy),
+            tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Exact(4),
             effect: None,
             source: None,
@@ -436,6 +472,7 @@ mod tests {
         let requirement = Requirement {
             kind: ItemKind::Ring,
             item: Some(ItemId::RingWealth),
+            tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Exact(3),
             effect: None,
             source: None,
@@ -580,6 +617,7 @@ mod tests {
         let invalid = Requirement {
             kind: ItemKind::Wand,
             item: Some(ItemId::Sword),
+            tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Exact(2),
             effect: None,
             source: None,
@@ -594,6 +632,7 @@ mod tests {
         let ring = Requirement {
             kind: ItemKind::Ring,
             item: Some(ItemId::RingSharpshooting),
+            tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Exact(4),
             effect: None,
             source: None,
@@ -605,6 +644,7 @@ mod tests {
         let wand = Requirement {
             kind: ItemKind::Wand,
             item: Some(ItemId::WandFrost),
+            tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Exact(4),
             effect: None,
             source: None,
@@ -615,10 +655,49 @@ mod tests {
     }
 
     #[test]
+    fn tier_predicates_match_exact_and_minimum_tiers() {
+        let tier_five = Requirement {
+            kind: ItemKind::Weapon,
+            item: None,
+            tier: TierRequirement::Exact(5),
+            upgrade: UpgradeRequirement::Exact(2),
+            effect: None,
+            source: None,
+            identity_group: None,
+            max_depth: None,
+        };
+        assert!(tier_five.matches(&world_item(ItemId::Greatsword, Accessibility::Independent)));
+        assert!(!tier_five.matches(&world_item(ItemId::Longsword, Accessibility::Independent)));
+
+        let tier_four_plus = Requirement {
+            tier: TierRequirement::AtLeast(4),
+            ..tier_five
+        };
+        assert!(tier_four_plus.matches(&world_item(ItemId::Longsword, Accessibility::Independent)));
+        assert!(
+            tier_four_plus.matches(&world_item(ItemId::Greatsword, Accessibility::Independent))
+        );
+        assert!(!tier_four_plus.matches(&world_item(ItemId::Sword, Accessibility::Independent)));
+
+        let invalid = Requirement {
+            kind: ItemKind::Wand,
+            ..tier_five
+        };
+        assert_eq!(invalid.validate(), Err(QueryError::InvalidTier));
+
+        let tier_one = Requirement {
+            tier: TierRequirement::Exact(1),
+            ..tier_five
+        };
+        assert_eq!(tier_one.validate(), Err(QueryError::InvalidTier));
+    }
+
+    #[test]
     fn linked_wands_require_distinct_copies_and_a_blacksmith_in_range() {
         let linked = |upgrade, source| Requirement {
             kind: ItemKind::Wand,
             item: None,
+            tier: TierRequirement::Any,
             upgrade,
             effect: None,
             source,
@@ -636,6 +715,7 @@ mod tests {
                 Requirement {
                     kind: ItemKind::Wand,
                     item: None,
+                    tier: TierRequirement::Any,
                     upgrade: UpgradeRequirement::Exact(1),
                     effect: None,
                     source: None,
@@ -723,6 +803,7 @@ mod tests {
         let linked = |item| Requirement {
             kind: ItemKind::Wand,
             item,
+            tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Any,
             effect: None,
             source: None,

@@ -290,7 +290,7 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
             RequirementSheet(
                 editing = editingRequirement,
                 onDismiss = { showRequirementSheet = false },
-                onSave = { item, kind, upgradeMatch, upgrade, modifier, source, identityGroup, itemMaximumDepth ->
+                onSave = { item, kind, tierMatch, tier, upgradeMatch, upgrade, modifier, source, identityGroup, itemMaximumDepth ->
                     val existing = editingRequirement
                     if (existing == null) {
                         requirements = requirements + ItemRequirement(
@@ -299,6 +299,8 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
                             upgrade = upgrade,
                             modifier = modifier,
                             kind = kind,
+                            tier = tier,
+                            tierMatch = tierMatch,
                             upgradeMatch = upgradeMatch,
                             source = source,
                             identityGroup = identityGroup,
@@ -312,6 +314,8 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
                                     upgrade = upgrade,
                                     modifier = modifier,
                                     kind = kind,
+                                    tier = tier,
+                                    tierMatch = tierMatch,
                                     upgradeMatch = upgradeMatch,
                                     source = source,
                                     identityGroup = identityGroup,

@@ -56,26 +56,34 @@ import dev.seedseeker.app.model.CatalogItem
 import dev.seedseeker.app.model.ItemKind
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.ScoutItemSource
+import dev.seedseeker.app.model.TierMatch
 import dev.seedseeker.app.model.UpgradeMatch
 import java.util.Locale
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun RequirementSheet(
     editing: ItemRequirement?,
     onDismiss: () -> Unit,
-    onSave: (CatalogItem?, ItemKind, UpgradeMatch, Int, String?, ScoutItemSource?, Int?, Int?) -> Unit,
+    onSave: (CatalogItem?, ItemKind, TierMatch, Int, UpgradeMatch, Int, String?, ScoutItemSource?, Int?, Int?) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val identity = editing?.key ?: -1L
     var kind by remember(identity) { mutableStateOf(editing?.kind ?: ItemKind.WEAPON) }
     var selectedItem by remember(identity) {
         mutableStateOf<CatalogItem?>(
-            if (editing == null) ItemCatalog.forKind(kind).first() else editing.item,
+            if (editing == null) {
+                ItemCatalog.forKind(kind).first { it.tier != 1 }
+            } else {
+                editing.item
+            },
         )
     }
     var upgradeMatch by remember(identity) { mutableStateOf(editing?.upgradeMatch ?: UpgradeMatch.EXACT) }
     var upgrade by remember(identity) { mutableStateOf(editing?.upgrade ?: 1) }
+    var tierMatch by remember(identity) { mutableStateOf(editing?.tierMatch ?: TierMatch.ANY) }
+    var tier by remember(identity) { mutableStateOf(editing?.tier?.takeIf { it >= 2 } ?: 2) }
     var modifierName by remember(identity) { mutableStateOf(editing?.modifier) }
     var modifierMenuExpanded by remember(identity) { mutableStateOf(false) }
     var source by remember(identity) { mutableStateOf(editing?.source) }
@@ -127,7 +135,9 @@ fun RequirementSheet(
                         onCheckedChange = { checked ->
                             if (checked && kind != entry) {
                                 kind = entry
-                                selectedItem = ItemCatalog.forKind(entry).first()
+                                selectedItem = ItemCatalog.forKind(entry).first { it.tier != 1 }
+                                tierMatch = TierMatch.ANY
+                                tier = 2
                                 modifierName = null
                                 clampUpgrade(upgradeMatch, entry)
                             }
@@ -161,6 +171,48 @@ fun RequirementSheet(
                 )
             }
 
+            if (selectedItem == null && kind in setOf(ItemKind.WEAPON, ItemKind.ARMOR)) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TierMatch.entries.forEach { match ->
+                        FilterChip(
+                            selected = tierMatch == match,
+                            onClick = { tierMatch = match },
+                            label = { Text(match.label) },
+                        )
+                    }
+                }
+                if (tierMatch != TierMatch.ANY) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                if (tierMatch == TierMatch.EXACT) "Exact tier" else "Minimum tier",
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                            Text(
+                                "Tier $tier${if (tierMatch == TierMatch.AT_LEAST) "+" else ""}",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                        Slider(
+                            value = tier.toFloat(),
+                            onValueChange = { tier = it.roundToInt() },
+                            valueRange = 2f..5f,
+                            steps = 2,
+                        )
+                    }
+                }
+            }
+
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(92.dp),
                 modifier = Modifier
@@ -170,11 +222,14 @@ fun RequirementSheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(ItemCatalog.forKind(kind), key = { it.id }) { item ->
+                items(ItemCatalog.forKind(kind).filter { it.tier != 1 }, key = { it.id }) { item ->
                     ItemTile(
                         item = item,
                         selected = selectedItem?.id == item.id,
-                        onClick = { selectedItem = item },
+                        onClick = {
+                            selectedItem = item
+                            tierMatch = TierMatch.ANY
+                        },
                     )
                 }
             }
@@ -402,6 +457,8 @@ fun RequirementSheet(
                 RequirementPreview(
                     item = selectedItem,
                     kind = kind,
+                    tierMatch = tierMatch,
+                    tier = tier,
                     upgradeMatch = upgradeMatch,
                     upgrade = upgrade,
                     modifierName = modifierName,
@@ -412,7 +469,8 @@ fun RequirementSheet(
                 Spacer(Modifier.height(14.dp))
                 Button(
                     onClick = {
-                        onSave(selectedItem, kind, upgradeMatch, upgrade, modifierName, source, identityGroup, maximumDepth)
+                        onSave(selectedItem, kind, tierMatch, if (tierMatch == TierMatch.ANY) 0 else tier,
+                            upgradeMatch, upgrade, modifierName, source, identityGroup, maximumDepth)
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -476,6 +534,8 @@ private fun ItemTile(item: CatalogItem, selected: Boolean, onClick: () -> Unit) 
 private fun RequirementPreview(
     item: CatalogItem?,
     kind: ItemKind,
+    tierMatch: TierMatch,
+    tier: Int,
     upgradeMatch: UpgradeMatch,
     upgrade: Int,
     modifierName: String?,
@@ -497,7 +557,11 @@ private fun RequirementPreview(
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    item?.name ?: "Any ${kind.label.lowercase(Locale.ROOT)}",
+                    item?.name ?: when (tierMatch) {
+                        TierMatch.ANY -> "Any ${kind.singularLabel}"
+                        TierMatch.EXACT -> "Any Tier $tier ${kind.singularLabel}"
+                        TierMatch.AT_LEAST -> "Any Tier $tier+ ${kind.singularLabel}"
+                    },
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Text(

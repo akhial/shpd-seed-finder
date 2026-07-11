@@ -69,13 +69,15 @@ public enum SeedCode {
 
 public enum QueryCodec {
     public static func encode(_ request: SearchRequest) throws -> Data {
-        var output = Writer(); output.bytes("SSF3".utf8); output.u8(request.maximumDepth)
+        let hasTier = request.requirements.contains { $0.tierMatch != .any }
+        var output = Writer(); output.bytes((hasTier ? "SSF4" : "SSF3").utf8); output.u8(request.maximumDepth)
         output.u8((request.requireBlacksmith ? 1 : 0)
             | (request.fastMode ? 2 : 0)
             | (request.excludeBlacksmithRewards ? 4 : 0))
         output.u16(request.requirements.count)
         for requirement in request.requirements {
             output.u8(requirement.kind.rawValue); try output.text(requirement.item?.id ?? "")
+            if hasTier { output.u8(requirement.tierMatch.rawValue); output.u8(requirement.tier) }
             output.u8(requirement.upgradeMatch.rawValue); output.u8(requirement.upgrade)
             try output.text(requirement.modifier ?? "")
             output.u8(requirement.source.map { $0.rawValue + 1 } ?? 0)

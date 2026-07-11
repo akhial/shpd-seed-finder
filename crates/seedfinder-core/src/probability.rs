@@ -243,7 +243,7 @@ const fn armor_glyph_probability(effect: ArmorEffect) -> f64 {
 mod tests {
     use crate::catalog::{ArmorEffect, Effect, ItemId, ItemKind, WeaponEffect};
     use crate::model::ItemSource;
-    use crate::query::{Requirement, SearchQuery, UpgradeRequirement};
+    use crate::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
 
     use super::estimate_match_probability;
 
@@ -263,6 +263,7 @@ mod tests {
             Requirement {
                 kind: ItemKind::Weapon,
                 item: Some(ItemId::Sword),
+                tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Exact(2),
                 effect: Some(Effect::Weapon(WeaponEffect::Lucky)),
                 source: None,
@@ -272,6 +273,7 @@ mod tests {
             Requirement {
                 kind: ItemKind::Armor,
                 item: Some(ItemId::PlateArmor),
+                tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Exact(1),
                 effect: Some(Effect::Armor(ArmorEffect::Brimstone)),
                 source: None,
@@ -289,6 +291,7 @@ mod tests {
             Requirement {
                 kind: ItemKind::Armor,
                 item: Some(ItemId::MailArmor),
+                tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Exact(3),
                 effect: None,
                 source: Some(ItemSource::GhostReward),
@@ -298,6 +301,7 @@ mod tests {
             Requirement {
                 kind: ItemKind::Wand,
                 item: None,
+                tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Exact(3),
                 effect: None,
                 source: None,
@@ -307,6 +311,7 @@ mod tests {
             Requirement {
                 kind: ItemKind::Wand,
                 item: None,
+                tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Any,
                 effect: None,
                 source: None,
@@ -316,6 +321,7 @@ mod tests {
             Requirement {
                 kind: ItemKind::Wand,
                 item: None,
+                tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Any,
                 effect: None,
                 source: None,
@@ -325,6 +331,7 @@ mod tests {
             Requirement {
                 kind: ItemKind::Wand,
                 item: None,
+                tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::AtLeast(1),
                 effect: None,
                 source: None,
@@ -334,6 +341,7 @@ mod tests {
             Requirement {
                 kind: ItemKind::Ring,
                 item: None,
+                tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Exact(4),
                 effect: None,
                 source: None,

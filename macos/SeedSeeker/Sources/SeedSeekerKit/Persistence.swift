@@ -34,6 +34,7 @@ public struct SavedQuery: Codable, Sendable {
                !ItemCatalog.modifiersFor(requirement.kind).contains(modifier) { return nil }
             guard (try? ItemRequirement(key: requirement.key, item: requirement.item,
                 upgrade: requirement.upgrade, modifier: requirement.modifier, kind: requirement.kind,
+                tier: requirement.tier, tierMatch: requirement.tierMatch,
                 upgradeMatch: requirement.upgradeMatch, source: requirement.source,
                 identityGroup: requirement.identityGroup,
                 maximumDepth: requirement.maximumDepth)) != nil else { return nil }

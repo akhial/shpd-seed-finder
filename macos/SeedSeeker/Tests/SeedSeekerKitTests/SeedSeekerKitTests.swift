@@ -3,6 +3,17 @@ import SeedSeekerKit
 import XCTest
 
 final class SeedSeekerKitTests: XCTestCase {
+    func testQueryCodecTierPredicateUsesSSF4() throws {
+        let requirement = try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .armor,
+            tier: 4, tierMatch: .atLeast, upgradeMatch: .any)
+        let request = try SearchRequest(requirements: [requirement])
+        XCTAssertEqual(Array(try QueryCodec.encode(request)), [
+            83, 83, 70, 52, 24, 0, 0, 1,
+            1, 0, 0, 2, 4, 0, 0, 0, 0, 0, 0, 0,
+        ])
+        XCTAssertEqual(requirement.title, "Any Tier 4+ armor")
+    }
+
     func testQueryCodecGoldenTwoRequirements() throws {
         let dagger = try XCTUnwrap(ItemCatalog.findById("dagger"))
         let first = try ItemRequirement(key: 1, item: dagger, upgrade: 2, modifier: "Lucky",
@@ -92,6 +103,12 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 1, modifier: "Lucky", kind: .wand))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 1, kind: .weapon, identityGroup: 5))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 1, kind: .weapon, maximumDepth: 25))
+        XCTAssertNoThrow(try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .weapon,
+            tier: 5, tierMatch: .exactly, upgradeMatch: .any))
+        XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .weapon,
+            tier: 1, tierMatch: .exactly, upgradeMatch: .any))
+        XCTAssertThrowsError(try ItemRequirement(key: 1, item: ItemCatalog.weapons[0], upgrade: 1,
+            kind: .weapon, tier: 1, tierMatch: .exactly))
     }
 
     func testRealFFIScout() async throws {

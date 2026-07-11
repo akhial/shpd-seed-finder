@@ -3,13 +3,14 @@ package dev.seedseeker.app.model
 
 enum class ItemKind(
     val label: String,
+    val singularLabel: String,
     val modifierLabel: String?,
     val maximumSearchUpgrade: Int,
 ) {
-    WEAPON("Weapons", "Enchantment", 3),
-    ARMOR("Armor", "Glyph", 3),
-    WAND("Wands", null, 3),
-    RING("Rings", null, 4),
+    WEAPON("Weapons", "weapon", "Enchantment", 3),
+    ARMOR("Armor", "armor", "Glyph", 3),
+    WAND("Wands", "wand", null, 3),
+    RING("Rings", "ring", null, 4),
 }
 
 data class CatalogItem(
@@ -26,6 +27,8 @@ data class ItemRequirement(
     val upgrade: Int,
     val modifier: String? = null,
     val kind: ItemKind = item?.kind ?: error("A wildcard requirement must specify its category"),
+    val tier: Int = 0,
+    val tierMatch: TierMatch = TierMatch.ANY,
     val upgradeMatch: UpgradeMatch = UpgradeMatch.EXACT,
     val source: ScoutItemSource? = null,
     val identityGroup: Int? = null,
@@ -33,6 +36,12 @@ data class ItemRequirement(
 ) {
     init {
         require(item == null || item.kind == kind) { "Selected item must belong to its category" }
+        val validTier = when (tierMatch) {
+            TierMatch.ANY -> tier == 0
+            TierMatch.EXACT, TierMatch.AT_LEAST ->
+                item == null && kind in setOf(ItemKind.WEAPON, ItemKind.ARMOR) && tier in 2..5
+        }
+        require(validTier) { "Tier predicate requires any tier-2 through tier-5 weapon or armor" }
         val validUpgrade = when (upgradeMatch) {
             UpgradeMatch.ANY -> upgrade == 0
             UpgradeMatch.EXACT -> upgrade in 1..kind.maximumSearchUpgrade
@@ -74,6 +83,19 @@ data class ItemRequirement(
                 append(it)
             }
         }
+
+    val title: String
+        get() = item?.name ?: when (tierMatch) {
+            TierMatch.ANY -> "Any ${kind.singularLabel}"
+            TierMatch.EXACT -> "Any Tier $tier ${kind.singularLabel}"
+            TierMatch.AT_LEAST -> "Any Tier $tier+ ${kind.singularLabel}"
+        }
+}
+
+enum class TierMatch(val label: String) {
+    ANY("Any tier"),
+    EXACT("Exactly"),
+    AT_LEAST("At least"),
 }
 
 enum class UpgradeMatch(val label: String) {

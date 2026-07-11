@@ -14,7 +14,7 @@ use shpd_seedfinder_core::SHPD_VERSION;
 use shpd_seedfinder_core::catalog::{ItemId, ItemKind};
 use shpd_seedfinder_core::feasibility::QueryPlan;
 use shpd_seedfinder_core::main_world::CanonicalMainWorldGenerator;
-use shpd_seedfinder_core::query::{Requirement, SearchQuery, UpgradeRequirement};
+use shpd_seedfinder_core::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
 use shpd_seedfinder_core::search::{SearchOptions, SearchProgress, search_parallel};
 use shpd_seedfinder_core::seed::TOTAL_SEEDS;
 
@@ -278,6 +278,7 @@ fn benchmark_query() -> SearchQuery {
         requirements: vec![Requirement {
             kind: ItemKind::Ring,
             item: Some(ItemId::RingTenacity),
+            tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Exact(4),
             effect: None,
             source: None,

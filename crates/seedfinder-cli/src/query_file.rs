@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use shpd_seedfinder_core::catalog::{Effect, ItemKind, item_by_stable_id};
 use shpd_seedfinder_core::model::ItemSource;
-use shpd_seedfinder_core::query::{Requirement, SearchQuery, UpgradeRequirement};
+use shpd_seedfinder_core::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -191,6 +191,7 @@ fn convert_requirement(requirement: FileRequirement) -> Result<Requirement, Stri
     Ok(Requirement {
         kind,
         item: definition.map(|value| value.id),
+        tier: TierRequirement::Any,
         upgrade,
         effect,
         source: requirement.source.map(ItemSource::from),

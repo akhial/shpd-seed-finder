@@ -319,7 +319,7 @@ mod tests {
     use crate::catalog::{ItemId, ItemKind};
     use crate::feasibility::QueryPlan;
     use crate::model::{ItemSource, WorldItem};
-    use crate::query::{Requirement, SearchQuery, UpgradeRequirement};
+    use crate::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
     use crate::search::{FloorGate, WorldGenerator};
     use crate::seed::DungeonSeed;
 
@@ -356,6 +356,7 @@ mod tests {
         let wildcard = |kind, upgrade| Requirement {
             kind,
             item: None,
+            tier: TierRequirement::Any,
             upgrade,
             effect: None,
             source: None,
@@ -438,6 +439,7 @@ mod tests {
             requirements: vec![Requirement {
                 kind: ItemKind::Armor,
                 item: None,
+                tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Exact(3),
                 effect: None,
                 source: None,
@@ -559,6 +561,7 @@ mod tests {
             requirements: vec![Requirement {
                 kind: ItemKind::Ring,
                 item: Some(ItemId::RingSharpshooting),
+                tier: TierRequirement::Any,
                 upgrade: crate::query::UpgradeRequirement::Exact(4),
                 effect: None,
                 source: None,

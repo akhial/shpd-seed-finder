@@ -12,6 +12,7 @@ import dev.seedseeker.app.model.ScoutItem
 import dev.seedseeker.app.model.ScoutItemSource
 import dev.seedseeker.app.model.ScoutWorld
 import dev.seedseeker.app.model.SeedResult
+import dev.seedseeker.app.model.TierMatch
 import dev.seedseeker.app.catalog.ItemCatalog
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -177,10 +178,12 @@ class DemoNativeSeedFinder : NativeSeedFinder {
  * 5. `close(handle)` joins/releases native resources and is safe after any terminal state.
  * 6. `scoutSeed(seedBytes) -> scoutBytes` generates one canonical seed through depth 24.
  *
- * Request packet `SSF3`: magic[4], maxDepth:u8, flags:u8, requirementCount:u16, then repeated
- * kind:u8, optionalItemId:utf8_u16, upgradeMode:u8, upgradeValue:u8, modifier:utf8_u16,
- * optionalSource:u8, sameItemGroup:u8, requirementMaxDepth:u8 (0 uses the request limit). Flag
- * bit 0 requires an accessible blacksmith; flag
+ * Requests use `SSF3` without tier predicates and `SSF4` when one is present. SSF4 repeats
+ * kind:u8, optionalItemId:utf8_u16, tierMode:u8, tierValue:u8, upgradeMode:u8,
+ * upgradeValue:u8, modifier:utf8_u16,
+ * optionalSource:u8, sameItemGroup:u8, requirementMaxDepth:u8 (0 uses the request limit).
+ * SSF3 has the same layout without tierMode and tierValue. Flag bit 0 requires an accessible
+ * blacksmith; flag
  * bit 1 enables the lossy fast search mode (quest-only +3 weapon/armor sources); flag bit 2
  * prevents Blacksmith "Smith" rewards from satisfying item requirements.
  * Result packet `SSR1`: magic[4], count:u16, then
@@ -299,11 +302,10 @@ object SeedCode {
 }
 
 object QueryCodec {
-    private val MAGIC = byteArrayOf('S'.code.toByte(), 'S'.code.toByte(), 'F'.code.toByte(), '3'.code.toByte())
-
     fun encode(request: SearchRequest): ByteArray = ByteArrayOutputStream().use { bytes ->
         DataOutputStream(bytes).use { output ->
-            output.write(MAGIC)
+            val hasTier = request.requirements.any { it.tierMatch != TierMatch.ANY }
+            output.write("SSF${if (hasTier) 4 else 3}".toByteArray(StandardCharsets.US_ASCII))
             output.writeByte(request.maximumDepth)
             output.writeByte(
                 (if (request.requireBlacksmith) 1 else 0) or
@@ -311,14 +313,18 @@ object QueryCodec {
                     (if (request.excludeBlacksmithRewards) 4 else 0),
             )
             output.writeShort(request.requirements.size)
-            request.requirements.forEach { requirement -> writeRequirement(output, requirement) }
+            request.requirements.forEach { requirement -> writeRequirement(output, requirement, hasTier) }
         }
         bytes.toByteArray()
     }
 
-    private fun writeRequirement(output: DataOutputStream, requirement: ItemRequirement) {
+    private fun writeRequirement(output: DataOutputStream, requirement: ItemRequirement, hasTier: Boolean) {
         output.writeByte(requirement.kind.ordinal)
         writeUtf8(output, requirement.item?.id.orEmpty())
+        if (hasTier) {
+            output.writeByte(requirement.tierMatch.ordinal)
+            output.writeByte(requirement.tier)
+        }
         output.writeByte(requirement.upgradeMatch.ordinal)
         output.writeByte(requirement.upgrade)
         writeUtf8(output, requirement.modifier.orEmpty())

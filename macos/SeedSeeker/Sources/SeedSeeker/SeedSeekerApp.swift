@@ -234,6 +234,8 @@ private struct RequirementEditor: View {
     let onFinish: (ItemRequirement?) -> Void
     @State private var kind: ItemKind
     @State private var itemID: String
+    @State private var tierMatch: TierMatch
+    @State private var tier: Int
     @State private var match: UpgradeMatch
     @State private var upgrade: Int
     @State private var modifier: String
@@ -244,6 +246,8 @@ private struct RequirementEditor: View {
     init(requirement: ItemRequirement, isNew: Bool, onFinish: @escaping (ItemRequirement?) -> Void) {
         original = requirement; self.isNew = isNew; self.onFinish = onFinish
         _kind = State(initialValue: requirement.kind); _itemID = State(initialValue: requirement.item?.id ?? "")
+        _tierMatch = State(initialValue: requirement.tierMatch)
+        _tier = State(initialValue: requirement.tier < 2 ? 2 : requirement.tier)
         _match = State(initialValue: requirement.upgradeMatch); _upgrade = State(initialValue: requirement.upgrade)
         _modifier = State(initialValue: requirement.modifier ?? "")
         _sourceRaw = State(initialValue: requirement.source.map { $0.rawValue + 1 } ?? 0)
@@ -261,18 +265,38 @@ private struct RequirementEditor: View {
                         ForEach(ItemKind.allCases, id: \.self) { Text($0.label).tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    .onChange(of: kind) { _, _ in itemID = ""; modifier = ""; normalizeUpgrade() }
+                    .onChange(of: kind) { _, _ in
+                        itemID = ""; tierMatch = .any; tier = 2; modifier = ""; normalizeUpgrade()
+                    }
                     Picker("Item", selection: $itemID) {
                         Text("Any \(kind.singularLabel)").tag("")
                         if kind == .weapon {
-                            // Tier-1 weapons are starting gear and never generate in the dungeon.
+                            // Tier-1 melee weapons are starting gear and never spawn in the dungeon.
                             ForEach(2...5, id: \.self) { tier in
                                 Section("Tier \(tier)") {
                                     ForEach(ItemCatalog.weapons.filter { $0.tier == tier }) { Text($0.name).tag($0.id) }
                                 }
                             }
                         } else {
-                            ForEach(ItemCatalog.forKind(kind)) { Text($0.name).tag($0.id) }
+                            ForEach(ItemCatalog.forKind(kind).filter { $0.tier != 1 }) {
+                                Text($0.name).tag($0.id)
+                            }
+                        }
+                    }
+                    .onChange(of: itemID) { _, value in if !value.isEmpty { tierMatch = .any } }
+                    if itemID.isEmpty && (kind == .weapon || kind == .armor) {
+                        Picker("Tier", selection: $tierMatch) {
+                            ForEach(TierMatch.allCases, id: \.self) { Text($0.label).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                        if tierMatch != .any {
+                            VStack(alignment: .leading, spacing: 2) {
+                                LabeledContent(tierMatch == .exactly ? "Exact tier" : "Minimum tier") {
+                                    Text("Tier \(tier)\(tierMatch == .atLeast ? "+" : "")")
+                                        .monospacedDigit().foregroundStyle(.secondary)
+                                }
+                                Slider(value: intBinding($tier), in: 2...5, step: 1)
+                            }
                         }
                     }
                 }
@@ -340,7 +364,8 @@ private struct RequirementEditor: View {
     private func save() {
         let item = itemID.isEmpty ? nil : ItemCatalog.findById(itemID)
         guard let value = try? ItemRequirement(key: original.key, item: item, upgrade: upgrade,
-            modifier: modifier.isEmpty ? nil : modifier, kind: kind, upgradeMatch: match,
+            modifier: modifier.isEmpty ? nil : modifier, kind: kind,
+            tier: tierMatch == .any ? 0 : tier, tierMatch: tierMatch, upgradeMatch: match,
             source: sourceRaw == 0 ? nil : ScoutItemSource(rawValue: sourceRaw - 1),
             identityGroup: group == 0 ? nil : group,
             maximumDepth: maximumDepth == 0 ? nil : maximumDepth) else { return }

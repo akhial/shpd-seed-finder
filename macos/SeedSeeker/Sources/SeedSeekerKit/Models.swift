@@ -26,6 +26,11 @@ public enum UpgradeMatch: Int, Codable, CaseIterable, Sendable {
     public var label: String { ["Any", "Exactly", "At least"][rawValue] }
 }
 
+public enum TierMatch: Int, Codable, CaseIterable, Sendable {
+    case any, exactly, atLeast
+    public var label: String { ["Any tier", "Exactly", "At least"][rawValue] }
+}
+
 public enum ScoutItemSource: Int, Codable, CaseIterable, Sendable {
     case heap, chest, lockedChest, crystalChest, tomb, skeleton, sacrificialFire, mimic
     case goldenMimic, crystalMimic, statue, armoredStatue, shop, ghostReward
@@ -40,10 +45,11 @@ public enum ScoutItemSource: Int, Codable, CaseIterable, Sendable {
 }
 
 public enum ModelValidationError: Error, Equatable, LocalizedError {
-    case itemKind, upgrade, modifier, identityGroup, itemMaximumDepth, emptyRequirements, maximumDepth
+    case itemKind, tier, upgrade, modifier, identityGroup, itemMaximumDepth, emptyRequirements, maximumDepth
     public var errorDescription: String? {
         switch self {
         case .itemKind: "Selected item must belong to its category"
+        case .tier: "Tier predicate requires any tier-2 through tier-5 weapon or armor"
         case .upgrade: "Upgrade predicate is invalid"
         case .modifier: "This category cannot carry a modifier requirement"
         case .identityGroup: "Same-item group must be A..D"
@@ -60,6 +66,8 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
     public var upgrade: Int
     public var modifier: String?
     public var kind: ItemKind
+    public var tier: Int
+    public var tierMatch: TierMatch
     public var upgradeMatch: UpgradeMatch
     public var source: ScoutItemSource?
     public var identityGroup: Int?
@@ -67,10 +75,17 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
     public var id: Int64 { key }
 
     public init(key: Int64, item: CatalogItem?, upgrade: Int, modifier: String? = nil,
-                kind: ItemKind, upgradeMatch: UpgradeMatch = .exactly,
+                kind: ItemKind, tier: Int = 0, tierMatch: TierMatch = .any,
+                upgradeMatch: UpgradeMatch = .exactly,
                 source: ScoutItemSource? = nil, identityGroup: Int? = nil,
                 maximumDepth: Int? = nil) throws {
         guard item == nil || item?.kind == kind else { throw ModelValidationError.itemKind }
+        let validTier = switch tierMatch {
+        case .any: tier == 0
+        case .exactly, .atLeast:
+            item == nil && (kind == .weapon || kind == .armor) && (2...5).contains(tier)
+        }
+        guard validTier else { throw ModelValidationError.tier }
         let valid = switch upgradeMatch {
         case .any: upgrade == 0
         case .exactly: (1...kind.maximumSearchUpgrade).contains(upgrade)
@@ -81,12 +96,52 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
         guard identityGroup == nil || (1...4).contains(identityGroup!) else { throw ModelValidationError.identityGroup }
         guard maximumDepth == nil || (1...24).contains(maximumDepth!) else { throw ModelValidationError.itemMaximumDepth }
         self.key = key; self.item = item; self.upgrade = upgrade; self.modifier = modifier
-        self.kind = kind; self.upgradeMatch = upgradeMatch; self.source = source
+        self.kind = kind; self.tier = tier; self.tierMatch = tierMatch
+        self.upgradeMatch = upgradeMatch; self.source = source
         self.identityGroup = identityGroup
         self.maximumDepth = maximumDepth
     }
 
-    public var title: String { item?.name ?? "Any \(kind.singularLabel)" }
+    private enum CodingKeys: String, CodingKey {
+        case key, item, upgrade, modifier, kind, tier, tierMatch, upgradeMatch, source, identityGroup, maximumDepth
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            key: values.decode(Int64.self, forKey: .key),
+            item: values.decodeIfPresent(CatalogItem.self, forKey: .item),
+            upgrade: values.decode(Int.self, forKey: .upgrade),
+            modifier: values.decodeIfPresent(String.self, forKey: .modifier),
+            kind: values.decode(ItemKind.self, forKey: .kind),
+            tier: values.decodeIfPresent(Int.self, forKey: .tier) ?? 0,
+            tierMatch: values.decodeIfPresent(TierMatch.self, forKey: .tierMatch) ?? .any,
+            upgradeMatch: values.decode(UpgradeMatch.self, forKey: .upgradeMatch),
+            source: values.decodeIfPresent(ScoutItemSource.self, forKey: .source),
+            identityGroup: values.decodeIfPresent(Int.self, forKey: .identityGroup),
+            maximumDepth: values.decodeIfPresent(Int.self, forKey: .maximumDepth)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(key, forKey: .key); try values.encodeIfPresent(item, forKey: .item)
+        try values.encode(upgrade, forKey: .upgrade); try values.encodeIfPresent(modifier, forKey: .modifier)
+        try values.encode(kind, forKey: .kind); try values.encode(tier, forKey: .tier)
+        try values.encode(tierMatch, forKey: .tierMatch); try values.encode(upgradeMatch, forKey: .upgradeMatch)
+        try values.encodeIfPresent(source, forKey: .source)
+        try values.encodeIfPresent(identityGroup, forKey: .identityGroup)
+        try values.encodeIfPresent(maximumDepth, forKey: .maximumDepth)
+    }
+
+    public var title: String {
+        if let item { return item.name }
+        return switch tierMatch {
+        case .any: "Any \(kind.singularLabel)"
+        case .exactly: "Any Tier \(tier) \(kind.singularLabel)"
+        case .atLeast: "Any Tier \(tier)+ \(kind.singularLabel)"
+        }
+    }
     public var description: String {
         var text = switch upgradeMatch {
         case .any: "Any upgrade"

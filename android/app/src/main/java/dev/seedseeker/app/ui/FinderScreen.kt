@@ -298,7 +298,7 @@ private fun RequirementCard(
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    requirement.item?.name ?: "Any ${requirement.kind.label.lowercase(Locale.ROOT).dropLast(1)}",
+                    requirement.title,
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,

@@ -1127,7 +1127,7 @@ mod tests {
     use crate::catalog::ItemId;
     use crate::level_prelude::Feeling;
     use crate::mobs::SewerMobKind;
-    use crate::query::{Requirement, SearchQuery};
+    use crate::query::{Requirement, SearchQuery, TierRequirement};
     use crate::quests::QuestState;
     use crate::rng::{RandomStack, seed_for_depth};
     use crate::search::{SearchOptions, spawn_streaming_search};
@@ -1375,6 +1375,7 @@ mod tests {
             requirements: vec![Requirement {
                 kind: crate::catalog::ItemKind::Armor,
                 item: Some(ItemId::MailArmor),
+                tier: TierRequirement::Any,
                 upgrade: crate::query::UpgradeRequirement::Exact(2),
                 effect: None,
                 source: None,
