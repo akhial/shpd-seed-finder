@@ -175,9 +175,10 @@ class DemoNativeSeedFinder : NativeSeedFinder {
  * 5. `close(handle)` joins/releases native resources and is safe after any terminal state.
  * 6. `scoutSeed(seedBytes) -> scoutBytes` generates one canonical seed through depth 24.
  *
- * Request packet `SSF2`: magic[4], maxDepth:u8, flags:u8, requirementCount:u16, then repeated
+ * Request packet `SSF3`: magic[4], maxDepth:u8, flags:u8, requirementCount:u16, then repeated
  * kind:u8, optionalItemId:utf8_u16, upgradeMode:u8, upgradeValue:u8, modifier:utf8_u16,
- * optionalSource:u8, sameItemGroup:u8. Flag bit 0 requires an accessible blacksmith; flag
+ * optionalSource:u8, sameItemGroup:u8, requirementMaxDepth:u8 (0 uses the request limit). Flag
+ * bit 0 requires an accessible blacksmith; flag
  * bit 1 enables the lossy fast search mode (quest-only +3 weapon/armor sources); flag bit 2
  * prevents Blacksmith "Smith" rewards from satisfying item requirements.
  * Result packet `SSR1`: magic[4], count:u16, then
@@ -295,7 +296,7 @@ object SeedCode {
 }
 
 object QueryCodec {
-    private val MAGIC = byteArrayOf('S'.code.toByte(), 'S'.code.toByte(), 'F'.code.toByte(), '2'.code.toByte())
+    private val MAGIC = byteArrayOf('S'.code.toByte(), 'S'.code.toByte(), 'F'.code.toByte(), '3'.code.toByte())
 
     fun encode(request: SearchRequest): ByteArray = ByteArrayOutputStream().use { bytes ->
         DataOutputStream(bytes).use { output ->
@@ -320,6 +321,7 @@ object QueryCodec {
         writeUtf8(output, requirement.modifier.orEmpty())
         output.writeByte(requirement.source?.let { it.ordinal + 1 } ?: 0)
         output.writeByte(requirement.identityGroup ?: 0)
+        output.writeByte(requirement.maximumDepth ?: 0)
     }
 
     private fun writeUtf8(output: DataOutputStream, text: String) {

@@ -360,6 +360,7 @@ mod tests {
             effect: None,
             source: None,
             identity_group: None,
+            max_depth: None,
         };
         let query = |requirements: Vec<Requirement>, fast_mode| SearchQuery {
             requirements,
@@ -441,6 +442,7 @@ mod tests {
                 effect: None,
                 source: None,
                 identity_group: None,
+                max_depth: None,
             }],
             max_depth: 24,
             require_blacksmith: false,
@@ -553,6 +555,7 @@ mod tests {
                 effect: None,
                 source: None,
                 identity_group: None,
+                max_depth: None,
             }],
             max_depth: 24,
             require_blacksmith: false,

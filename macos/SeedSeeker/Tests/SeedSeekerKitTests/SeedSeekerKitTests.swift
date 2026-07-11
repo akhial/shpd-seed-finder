@@ -6,16 +6,17 @@ final class SeedSeekerKitTests: XCTestCase {
     func testQueryCodecGoldenTwoRequirements() throws {
         let dagger = try XCTUnwrap(ItemCatalog.findById("dagger"))
         let first = try ItemRequirement(key: 1, item: dagger, upgrade: 2, modifier: "Lucky",
-            kind: .weapon, upgradeMatch: .exactly, source: .chest, identityGroup: 1)
+            kind: .weapon, upgradeMatch: .exactly, source: .chest, identityGroup: 1,
+            maximumDepth: 5)
         let second = try ItemRequirement(key: 2, item: nil, upgrade: 0, kind: .ring,
             upgradeMatch: .atLeast)
         let request = try SearchRequest(requirements: [first, second], maximumDepth: 12,
                                         requireBlacksmith: true)
         XCTAssertEqual(Array(try QueryCodec.encode(request)), [
-            83, 83, 70, 50, 12, 1, 0, 2,
+            83, 83, 70, 51, 12, 1, 0, 2,
             0, 0, 6, 100, 97, 103, 103, 101, 114, 1, 2,
-            0, 5, 76, 117, 99, 107, 121, 2, 1,
-            3, 0, 0, 2, 0, 0, 0, 0, 0,
+            0, 5, 76, 117, 99, 107, 121, 2, 1, 5,
+            3, 0, 0, 2, 0, 0, 0, 0, 0, 0,
         ])
     }
 
@@ -24,8 +25,8 @@ final class SeedSeekerKitTests: XCTestCase {
                                               upgradeMatch: .exactly)
         let request = try SearchRequest(requirements: [requirement], fastMode: true)
         XCTAssertEqual(Array(try QueryCodec.encode(request)), [
-            83, 83, 70, 50, 24, 2, 0, 1,
-            1, 0, 0, 1, 3, 0, 0, 0, 0,
+            83, 83, 70, 51, 24, 2, 0, 1,
+            1, 0, 0, 1, 3, 0, 0, 0, 0, 0,
         ])
     }
 
@@ -34,8 +35,8 @@ final class SeedSeekerKitTests: XCTestCase {
         let request = try SearchRequest(requirements: [requirement],
                                         excludeBlacksmithRewards: true)
         XCTAssertEqual(Array(try QueryCodec.encode(request)), [
-            83, 83, 70, 50, 24, 4, 0, 1,
-            0, 0, 0, 1, 2, 0, 0, 0, 0,
+            83, 83, 70, 51, 24, 4, 0, 1,
+            0, 0, 0, 1, 2, 0, 0, 0, 0, 0,
         ])
     }
 
@@ -82,6 +83,7 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 5, kind: .ring, upgradeMatch: .atLeast))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 1, modifier: "Lucky", kind: .wand))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 1, kind: .weapon, identityGroup: 5))
+        XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 1, kind: .weapon, maximumDepth: 25))
     }
 
     func testRealFFIScout() async throws {

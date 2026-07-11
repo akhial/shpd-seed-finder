@@ -30,8 +30,9 @@ condition is satisfied only when the generated Blacksmith quest room is
 accessible within the selected maximum floor; a failed room build does not
 count. The Smith-reward exclusion independently prevents those choice items from
 satisfying requirements while still allowing the room to meet the blacksmith
-condition. The maximum floor is also passed into generation, so later regions are
-not simulated for a shallower query.
+condition. The overall maximum floor and each item's optional floor limit are
+passed into planning, so later regions are not simulated once every remaining
+requirement has reached its deadline.
 
 ## Boss-floor transitions
 

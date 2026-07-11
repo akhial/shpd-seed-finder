@@ -34,6 +34,7 @@ import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ToggleButton
@@ -63,7 +64,7 @@ import java.util.Locale
 fun RequirementSheet(
     editing: ItemRequirement?,
     onDismiss: () -> Unit,
-    onSave: (CatalogItem?, ItemKind, UpgradeMatch, Int, String?, ScoutItemSource?, Int?) -> Unit,
+    onSave: (CatalogItem?, ItemKind, UpgradeMatch, Int, String?, ScoutItemSource?, Int?, Int?) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val identity = editing?.key ?: -1L
@@ -80,6 +81,7 @@ fun RequirementSheet(
     var source by remember(identity) { mutableStateOf(editing?.source) }
     var sourceMenuExpanded by remember(identity) { mutableStateOf(false) }
     var identityGroup by remember(identity) { mutableStateOf(editing?.identityGroup) }
+    var maximumDepth by remember(identity) { mutableStateOf(editing?.maximumDepth) }
 
     fun clampUpgrade(match: UpgradeMatch, forKind: ItemKind) {
         upgrade = when (match) {
@@ -349,6 +351,31 @@ fun RequirementSheet(
                 }
 
                 Spacer(Modifier.height(18.dp))
+                Text("Floor limit", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Stop considering this requirement after its selected floor. This can reject seeds earlier.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                FilterChip(
+                    selected = maximumDepth == null,
+                    onClick = { maximumDepth = null },
+                    label = { Text("Use search limit") },
+                )
+                if (maximumDepth != null) {
+                    Text("Within the first $maximumDepth floors", style = MaterialTheme.typography.bodyMedium)
+                    Slider(
+                        value = maximumDepth!!.toFloat(),
+                        onValueChange = { maximumDepth = it.toInt() },
+                        valueRange = 1f..24f,
+                        steps = 22,
+                    )
+                } else {
+                    TextButton(onClick = { maximumDepth = 5 }) { Text("Set item-specific limit") }
+                }
+
+                Spacer(Modifier.height(18.dp))
                 Text("Same-item group", style = MaterialTheme.typography.titleMedium)
                 Text(
                     "Requirements sharing a letter must resolve to the exact same item type, using distinct copies.",
@@ -380,11 +407,12 @@ fun RequirementSheet(
                     modifierName = modifierName,
                     source = source,
                     identityGroup = identityGroup,
+                    maximumDepth = maximumDepth,
                 )
                 Spacer(Modifier.height(14.dp))
                 Button(
                     onClick = {
-                        onSave(selectedItem, kind, upgradeMatch, upgrade, modifierName, source, identityGroup)
+                        onSave(selectedItem, kind, upgradeMatch, upgrade, modifierName, source, identityGroup, maximumDepth)
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -453,6 +481,7 @@ private fun RequirementPreview(
     modifierName: String?,
     source: ScoutItemSource?,
     identityGroup: Int?,
+    maximumDepth: Int?,
 ) {
     Surface(
         shape = MaterialTheme.shapes.large,
@@ -485,6 +514,7 @@ private fun RequirementPreview(
                         identityGroup?.let {
                             append(" · group ${('A'.code + it - 1).toChar()}")
                         }
+                        maximumDepth?.let { append(" · by floor $it") }
                     },
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodySmall,

@@ -34,6 +34,9 @@ pub struct Requirement {
     pub source: Option<ItemSource>,
     /// Requirements in the same non-zero group must resolve to the same item ID.
     pub identity_group: Option<u8>,
+    /// Optional inclusive floor limit for this item, independent of the query's
+    /// overall generation limit.
+    pub max_depth: Option<u8>,
 }
 
 impl Requirement {
@@ -73,6 +76,12 @@ impl Requirement {
         }
         if self.identity_group == Some(0) {
             return Err(QueryError::InvalidIdentityGroup);
+        }
+        if self
+            .max_depth
+            .is_some_and(|depth| !(1..=24).contains(&depth))
+        {
+            return Err(QueryError::InvalidDepth);
         }
         match (self.kind, self.effect) {
             (ItemKind::Weapon, None | Some(Effect::Weapon(_)))
@@ -168,6 +177,8 @@ impl SearchQuery {
                         .enumerate()
                         .filter_map(|(index, candidate)| {
                             (candidate.depth <= self.max_depth
+                                && candidate.depth
+                                    <= requirement.max_depth.unwrap_or(self.max_depth)
                                 && (!self.exclude_blacksmith_rewards
                                     || candidate.source != ItemSource::BlacksmithReward)
                                 && requirement.matches(candidate))
@@ -330,6 +341,7 @@ mod tests {
             effect: None,
             source: None,
             identity_group: None,
+            max_depth: None,
         }
     }
 
@@ -355,6 +367,26 @@ mod tests {
             ],
         };
         assert!(query.matches(&two));
+    }
+
+    #[test]
+    fn requirement_floor_limit_is_inclusive() {
+        let world = GeneratedWorld {
+            seed: DungeonSeed::MIN,
+            items: vec![world_item(ItemId::Sword, Accessibility::Independent)],
+        };
+        let mut limited = requirement(ItemId::Sword);
+        limited.max_depth = Some(2);
+        let mut query = SearchQuery {
+            requirements: vec![limited],
+            max_depth: 24,
+            require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
+            fast_mode: false,
+        };
+        assert!(!query.matches(&world));
+        query.requirements[0].max_depth = Some(3);
+        assert!(query.matches(&world));
     }
 
     #[test]
@@ -475,6 +507,7 @@ mod tests {
             effect: None,
             source: None,
             identity_group: None,
+            max_depth: None,
         };
         assert!(invalid.validate().is_err());
     }
@@ -488,6 +521,7 @@ mod tests {
             effect: None,
             source: None,
             identity_group: None,
+            max_depth: None,
         };
         assert_eq!(ring.validate(), Ok(()));
 
@@ -498,6 +532,7 @@ mod tests {
             effect: None,
             source: None,
             identity_group: None,
+            max_depth: None,
         };
         assert_eq!(wand.validate(), Err(QueryError::InvalidUpgrade));
     }
@@ -511,6 +546,7 @@ mod tests {
             effect: None,
             source,
             identity_group: Some(1),
+            max_depth: None,
         };
         let mut query = SearchQuery {
             requirements: vec![
@@ -527,6 +563,7 @@ mod tests {
                     effect: None,
                     source: None,
                     identity_group: None,
+                    max_depth: None,
                 },
             ],
             max_depth: 14,
@@ -611,6 +648,7 @@ mod tests {
             effect: None,
             source: None,
             identity_group: Some(1),
+            max_depth: None,
         };
         let query = SearchQuery {
             requirements: vec![

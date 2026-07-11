@@ -9,15 +9,18 @@ use crate::seed::DungeonSeed;
 
 const REQUEST_MAGIC_V1: &[u8; 4] = b"SSF1";
 const REQUEST_MAGIC_V2: &[u8; 4] = b"SSF2";
+const REQUEST_MAGIC_V3: &[u8; 4] = b"SSF3";
 const RESULT_MAGIC: &[u8; 4] = b"SSR1";
 const SCOUT_RESULT_MAGIC: &[u8; 4] = b"SSC1";
 const MAX_REQUIREMENTS: usize = 64;
 
-/// Decodes Android `SSF1` and `SSF2` packets. V1 is retained for compatibility;
-/// V2 adds floor limits, source/identity constraints, upgrade predicates, and
+/// Decodes Android `SSF1`, `SSF2`, and `SSF3` packets. Older versions are
+/// retained for compatibility; V2 adds the overall floor limit,
+/// source/identity constraints, upgrade predicates, and
 /// three flag bits: bit 0 requires blacksmith availability, bit 1 enables the
 /// lossy fast search mode described on [`SearchQuery::fast_mode`], and bit 2
-/// prevents Blacksmith "Smith" rewards from satisfying item requirements.
+/// prevents Blacksmith "Smith" rewards from satisfying item requirements. V3
+/// adds an optional floor limit to every individual requirement.
 ///
 /// # Errors
 ///
@@ -28,8 +31,8 @@ pub fn decode_query(packet: &[u8]) -> Result<SearchQuery, WireError> {
     let magic = input.take(4)?;
     let query = if magic == REQUEST_MAGIC_V1 {
         decode_query_v1(&mut input)?
-    } else if magic == REQUEST_MAGIC_V2 {
-        decode_query_v2(&mut input)?
+    } else if magic == REQUEST_MAGIC_V2 || magic == REQUEST_MAGIC_V3 {
+        decode_query_v2(&mut input, magic == REQUEST_MAGIC_V3)?
     } else {
         return Err(WireError::BadMagic);
     };
@@ -66,6 +69,7 @@ fn decode_query_v1(input: &mut Input<'_>) -> Result<SearchQuery, WireError> {
             effect,
             source: None,
             identity_group: None,
+            max_depth: None,
         });
     }
     Ok(SearchQuery {
@@ -77,7 +81,10 @@ fn decode_query_v1(input: &mut Input<'_>) -> Result<SearchQuery, WireError> {
     })
 }
 
-fn decode_query_v2(input: &mut Input<'_>) -> Result<SearchQuery, WireError> {
+fn decode_query_v2(
+    input: &mut Input<'_>,
+    has_requirement_depths: bool,
+) -> Result<SearchQuery, WireError> {
     let max_depth = input.u8()?;
     let flags = input.u8()?;
     if flags & !0b111 != 0 {
@@ -122,6 +129,14 @@ fn decode_query_v2(input: &mut Input<'_>) -> Result<SearchQuery, WireError> {
             0 => None,
             value => Some(value),
         };
+        let requirement_max_depth = if has_requirement_depths {
+            match input.u8()? {
+                0 => None,
+                value => Some(value),
+            }
+        } else {
+            None
+        };
         requirements.push(Requirement {
             kind,
             item,
@@ -129,6 +144,7 @@ fn decode_query_v2(input: &mut Input<'_>) -> Result<SearchQuery, WireError> {
             effect,
             source,
             identity_group,
+            max_depth: requirement_max_depth,
         });
     }
     Ok(SearchQuery {
@@ -631,6 +647,20 @@ mod tests {
             UpgradeRequirement::AtLeast(0)
         );
         assert_eq!(query.requirements[3].identity_group, None);
+    }
+
+    #[test]
+    fn ssf3_decodes_per_requirement_floor_limit() {
+        let mut packet = b"SSF3".to_vec();
+        packet.extend_from_slice(&[24, 0, 0, 1]);
+        packet.push(0); // weapon
+        field(&mut packet, "sword");
+        packet.extend_from_slice(&[1, 2]);
+        field(&mut packet, "");
+        packet.extend_from_slice(&[0, 0, 5]);
+
+        let query = decode_query(&packet).unwrap();
+        assert_eq!(query.requirements[0].max_depth, Some(5));
     }
 
     #[test]

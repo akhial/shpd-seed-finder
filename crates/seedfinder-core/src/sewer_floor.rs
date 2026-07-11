@@ -1379,6 +1379,7 @@ mod tests {
                 effect: None,
                 source: None,
                 identity_group: None,
+                max_depth: None,
             }],
             max_depth: 4,
             require_blacksmith: false,

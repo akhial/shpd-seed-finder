@@ -32,6 +32,8 @@ struct FileRequirement {
     source: Option<FileItemSource>,
     #[serde(default)]
     identity_group: Option<u8>,
+    #[serde(default)]
+    max_depth: Option<u8>,
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -193,6 +195,7 @@ fn convert_requirement(requirement: FileRequirement) -> Result<Requirement, Stri
         effect,
         source: requirement.source.map(ItemSource::from),
         identity_group: requirement.identity_group,
+        max_depth: requirement.max_depth,
     })
 }
 
@@ -213,7 +216,8 @@ mod tests {
                 "exclude_blacksmith_rewards": true,
                 "requirements": [
                     {"item": "ring_tenacity", "upgrade": 4, "source": "imp_reward"},
-                    {"kind": "wand", "upgrade": {"at_least": 2}, "identity_group": 1}
+                    {"kind": "wand", "upgrade": {"at_least": 2}, "identity_group": 1,
+                     "max_depth": 9}
                 ]
             }"#,
         )
@@ -225,6 +229,7 @@ mod tests {
         assert_eq!(query.requirements[0].upgrade, UpgradeRequirement::Exact(4));
         assert_eq!(query.requirements[0].source, Some(ItemSource::ImpReward));
         assert_eq!(query.requirements[1].kind, ItemKind::Wand);
+        assert_eq!(query.requirements[1].max_depth, Some(9));
         assert_eq!(
             query.requirements[1].upgrade,
             UpgradeRequirement::AtLeast(2)

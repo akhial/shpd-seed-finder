@@ -29,6 +29,7 @@ data class ItemRequirement(
     val upgradeMatch: UpgradeMatch = UpgradeMatch.EXACT,
     val source: ScoutItemSource? = null,
     val identityGroup: Int? = null,
+    val maximumDepth: Int? = null,
 ) {
     init {
         require(item == null || item.kind == kind) { "Selected item must belong to its category" }
@@ -44,6 +45,7 @@ data class ItemRequirement(
             "${kind.label} cannot carry a modifier requirement"
         }
         require(identityGroup == null || identityGroup in 1..4) { "Same-item group must be A..D" }
+        require(maximumDepth == null || maximumDepth in 1..24) { "Item floor limit must be 1..24" }
     }
 
     val description: String
@@ -66,6 +68,10 @@ data class ItemRequirement(
             identityGroup?.let {
                 append(" • same item group ")
                 append(('A'.code + it - 1).toChar())
+            }
+            maximumDepth?.let {
+                append(" • by floor ")
+                append(it)
             }
         }
 }

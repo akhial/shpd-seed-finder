@@ -19,7 +19,8 @@ Seeds use the canonical `XXX-XXX-XXX` base-26 form. Searches support multiple
 AND requirements across melee and thrown weapons, armor, wands, and all twelve
 rings. Each requirement can target a concrete item or any item in its category,
 use an exact, minimum, or unrestricted upgrade predicate, constrain the loot
-source, and join a same-item group shared by other requirements. Exact upgrades
+source, set its own inclusive floor limit, and join a same-item group shared by
+other requirements. Exact upgrades
 run through `+3` for weapons, armor, and wands and through `+4` for rings; minimum
 predicates also support `+0`. Weapon enchantment/curse and armor glyph/curse
 constraints are supported. Queries can require an accessible blacksmith, prevent
@@ -155,7 +156,8 @@ searches and benchmarks remain deterministic for reproducibility.
     {
       "item": "ring_tenacity",
       "upgrade": 4,
-      "source": "imp_reward"
+      "source": "imp_reward",
+      "max_depth": 19
     },
     {
       "kind": "wand",
@@ -166,14 +168,15 @@ searches and benchmarks remain deterministic for reproducibility.
 ```
 
 Omitting `upgrade` means any upgrade; an integer means an exact upgrade. Item
-effects, loot `source`, and `identity_group` are optional.
+effects, loot `source`, `identity_group`, and per-item `max_depth` are optional.
 Set `exclude_blacksmith_rewards` when the Smith choice must remain unused so the
 Blacksmith's favor can instead be spent on reforging.
 
 Searches automatically exploit generation logic: queries that can only be
 satisfied by quest rewards stop generating floors past the quest's depth window
-(+3 wands end at floor 9, +3/+4 rings at floor 19), and a seed is abandoned as
-soon as a resolved quest rules the query out. These shortcuts are exact. The
+(+3 wands end at floor 9, +3/+4 rings at floor 19). Per-item floor limits reject
+a seed as soon as a missing item's deadline passes, and resolved quests can also
+rule a seed out early. These shortcuts are exact. The
 optional top-level `"fast_mode": true` adds one lossy shortcut: +3 weapon/armor
 requirements consider only Ghost and Blacksmith rewards, skipping the far rarer
 Crypt and Sacrificial-fire prizes, so those searches end at floor 14. Fast-mode

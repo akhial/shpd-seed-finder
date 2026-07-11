@@ -40,13 +40,14 @@ public enum ScoutItemSource: Int, Codable, CaseIterable, Sendable {
 }
 
 public enum ModelValidationError: Error, Equatable, LocalizedError {
-    case itemKind, upgrade, modifier, identityGroup, emptyRequirements, maximumDepth
+    case itemKind, upgrade, modifier, identityGroup, itemMaximumDepth, emptyRequirements, maximumDepth
     public var errorDescription: String? {
         switch self {
         case .itemKind: "Selected item must belong to its category"
         case .upgrade: "Upgrade predicate is invalid"
         case .modifier: "This category cannot carry a modifier requirement"
         case .identityGroup: "Same-item group must be A..D"
+        case .itemMaximumDepth: "Item floor limit must be 1..24"
         case .emptyRequirements: "At least one requirement is needed"
         case .maximumDepth: "Maximum floor must be 1..24"
         }
@@ -62,11 +63,13 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
     public var upgradeMatch: UpgradeMatch
     public var source: ScoutItemSource?
     public var identityGroup: Int?
+    public var maximumDepth: Int?
     public var id: Int64 { key }
 
     public init(key: Int64, item: CatalogItem?, upgrade: Int, modifier: String? = nil,
                 kind: ItemKind, upgradeMatch: UpgradeMatch = .exactly,
-                source: ScoutItemSource? = nil, identityGroup: Int? = nil) throws {
+                source: ScoutItemSource? = nil, identityGroup: Int? = nil,
+                maximumDepth: Int? = nil) throws {
         guard item == nil || item?.kind == kind else { throw ModelValidationError.itemKind }
         let valid = switch upgradeMatch {
         case .any: upgrade == 0
@@ -76,9 +79,11 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
         guard valid else { throw ModelValidationError.upgrade }
         guard kind.modifierLabel != nil || modifier == nil else { throw ModelValidationError.modifier }
         guard identityGroup == nil || (1...4).contains(identityGroup!) else { throw ModelValidationError.identityGroup }
+        guard maximumDepth == nil || (1...24).contains(maximumDepth!) else { throw ModelValidationError.itemMaximumDepth }
         self.key = key; self.item = item; self.upgrade = upgrade; self.modifier = modifier
         self.kind = kind; self.upgradeMatch = upgradeMatch; self.source = source
         self.identityGroup = identityGroup
+        self.maximumDepth = maximumDepth
     }
 
     public var title: String { item?.name ?? "Any \(kind.singularLabel)" }
@@ -91,6 +96,7 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
         if let modifier { text += " • \(modifier)" }
         if let source { text += " • \(source.label)" }
         if let identityGroup, let scalar = UnicodeScalar(64 + identityGroup) { text += " • same item group \(Character(scalar))" }
+        if let maximumDepth { text += " • by floor \(maximumDepth)" }
         return text
     }
 }

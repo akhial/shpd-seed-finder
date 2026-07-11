@@ -282,6 +282,7 @@ fn benchmark_query() -> SearchQuery {
             effect: None,
             source: None,
             identity_group: None,
+            max_depth: None,
         }],
         max_depth: 24,
         require_blacksmith: false,

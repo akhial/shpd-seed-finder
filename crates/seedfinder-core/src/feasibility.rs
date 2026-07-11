@@ -196,6 +196,7 @@ const SHOP_DEPTHS: [u8; 5] = [6, 11, 16, 20, 21];
 #[derive(Clone, Debug)]
 struct RequirementPlan {
     requirement: Requirement,
+    max_depth: u8,
     /// Bit set of quests (see [`Quest::bit`]) whose reward could satisfy the
     /// requirement inside the query's depth limit.
     quests: u8,
@@ -209,7 +210,6 @@ struct RequirementPlan {
 #[derive(Clone, Debug)]
 pub struct QueryPlan {
     requirements: Vec<RequirementPlan>,
-    max_depth: u8,
     generation_depth: u8,
     /// Latest depth by which a required Blacksmith must have appeared.
     blacksmith_deadline: Option<u8>,
@@ -224,31 +224,39 @@ impl QueryPlan {
         let mut generation_depth = 1;
         let mut requirements = Vec::with_capacity(query.requirements.len());
         for requirement in &query.requirements {
+            let requirement_max_depth = requirement.max_depth.unwrap_or(max_depth).min(max_depth);
             let mut quests = 0_u8;
             let mut open_deadline = None;
             for source in ALL_SOURCES {
                 if !source_feasible(requirement, source, query.fast_mode) {
                     continue;
                 }
+                if query.exclude_blacksmith_rewards && source == ItemSource::BlacksmithReward {
+                    continue;
+                }
                 if let Some(quest) = quest_for_source(source) {
                     let (window_start, window_end) = quest.window();
-                    if window_start <= max_depth {
+                    if window_start <= requirement_max_depth {
                         quests |= quest.bit();
-                        generation_depth = generation_depth.max(window_end.min(max_depth));
+                        generation_depth =
+                            generation_depth.max(window_end.min(requirement_max_depth));
                     }
                 } else if source == ItemSource::Shop {
-                    let deadline = SHOP_DEPTHS.into_iter().rfind(|&depth| depth <= max_depth);
+                    let deadline = SHOP_DEPTHS
+                        .into_iter()
+                        .rfind(|&depth| depth <= requirement_max_depth);
                     if let Some(deadline) = deadline {
                         open_deadline = Some(open_deadline.unwrap_or(0).max(deadline));
                         generation_depth = generation_depth.max(deadline);
                     }
                 } else {
-                    open_deadline = Some(max_depth);
-                    generation_depth = generation_depth.max(max_depth);
+                    open_deadline = Some(requirement_max_depth);
+                    generation_depth = generation_depth.max(requirement_max_depth);
                 }
             }
             requirements.push(RequirementPlan {
                 requirement: *requirement,
+                max_depth: requirement_max_depth,
                 quests,
                 open_deadline,
             });
@@ -270,7 +278,6 @@ impl QueryPlan {
 
         let mut plan = Self {
             requirements,
-            max_depth,
             generation_depth,
             blacksmith_deadline,
             unsatisfiable: false,
@@ -306,7 +313,9 @@ impl QueryPlan {
         let mut quest_only = [0_u16; 16];
         for plan in &self.requirements {
             let satisfied_by_open_item = items.iter().any(|item| {
-                quest_for_source(item.source).is_none() && plan.requirement.matches(item)
+                item.depth <= plan.max_depth
+                    && quest_for_source(item.source).is_none()
+                    && plan.requirement.matches(item)
             });
             if satisfied_by_open_item
                 || plan
@@ -318,7 +327,7 @@ impl QueryPlan {
             let mut live = 0_u8;
             for quest in QUESTS {
                 if plan.quests & quest.bit() != 0
-                    && self.quest_alive(quest, &plan.requirement, completed_depth, items)
+                    && Self::quest_alive(quest, plan, completed_depth, items)
                 {
                     live |= quest.bit();
                 }
@@ -355,9 +364,8 @@ impl QueryPlan {
     /// Reward items appear all at once on the quest's floor, so any item with
     /// the quest's source marks the quest as resolved for the whole run.
     fn quest_alive(
-        &self,
         quest: Quest,
-        requirement: &Requirement,
+        plan: &RequirementPlan,
         completed_depth: u8,
         items: &[WorldItem],
     ) -> bool {
@@ -365,13 +373,13 @@ impl QueryPlan {
         let mut resolved = false;
         for item in items {
             if item.source == source {
-                if requirement.matches(item) {
+                if item.depth <= plan.max_depth && plan.requirement.matches(item) {
                     return true;
                 }
                 resolved = true;
             }
         }
-        !resolved && completed_depth < quest.window().1.min(self.max_depth)
+        !resolved && completed_depth < quest.window().1.min(plan.max_depth)
     }
 }
 
@@ -397,6 +405,7 @@ mod tests {
             effect: None,
             source: None,
             identity_group: None,
+            max_depth: None,
         }
     }
 
@@ -587,5 +596,22 @@ mod tests {
         assert!(!plan.is_unsatisfiable());
         assert_eq!(plan.generation_depth(), 24);
         assert!(plan.viable_after_floor(23, &[]));
+    }
+
+    #[test]
+    fn per_requirement_floor_limit_short_circuits_generation() {
+        let limited = Requirement {
+            max_depth: Some(5),
+            ..requirement(ItemKind::Weapon, UpgradeRequirement::Any)
+        };
+        let plan = QueryPlan::analyze(&query(vec![limited], 24));
+        assert_eq!(plan.generation_depth(), 5);
+        assert!(plan.viable_after_floor(4, &[]));
+        assert!(!plan.viable_after_floor(5, &[]));
+
+        let in_time = [item(ItemId::Sword, 0, 5, ItemSource::Heap)];
+        assert!(plan.viable_after_floor(5, &in_time));
+        let too_late = [item(ItemId::Sword, 0, 6, ItemSource::Heap)];
+        assert!(!plan.viable_after_floor(6, &too_late));
     }
 }

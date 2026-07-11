@@ -239,6 +239,7 @@ private struct RequirementEditor: View {
     @State private var modifier: String
     @State private var sourceRaw: Int
     @State private var group: Int
+    @State private var maximumDepth: Int
 
     init(requirement: ItemRequirement, isNew: Bool, onFinish: @escaping (ItemRequirement?) -> Void) {
         original = requirement; self.isNew = isNew; self.onFinish = onFinish
@@ -247,6 +248,7 @@ private struct RequirementEditor: View {
         _modifier = State(initialValue: requirement.modifier ?? "")
         _sourceRaw = State(initialValue: requirement.source.map { $0.rawValue + 1 } ?? 0)
         _group = State(initialValue: requirement.identityGroup ?? 0)
+        _maximumDepth = State(initialValue: requirement.maximumDepth ?? 0)
     }
 
     var body: some View {
@@ -307,6 +309,16 @@ private struct RequirementEditor: View {
                     Picker("Same-item group", selection: $group) {
                         Text("None").tag(0); Text("A").tag(1); Text("B").tag(2); Text("C").tag(3); Text("D").tag(4)
                     }.pickerStyle(.segmented)
+                    Toggle("Limit this item to a floor", isOn: Binding(
+                        get: { maximumDepth != 0 },
+                        set: { maximumDepth = $0 ? 5 : 0 }
+                    ))
+                    if maximumDepth != 0 {
+                        LabeledContent("Within first") {
+                            Text("\(maximumDepth) floors").monospacedDigit().foregroundStyle(.secondary)
+                        }
+                        Slider(value: intBinding($maximumDepth), in: 1...24, step: 1)
+                    }
                 }
             }
             .formStyle(.grouped)
@@ -330,7 +342,8 @@ private struct RequirementEditor: View {
         guard let value = try? ItemRequirement(key: original.key, item: item, upgrade: upgrade,
             modifier: modifier.isEmpty ? nil : modifier, kind: kind, upgradeMatch: match,
             source: sourceRaw == 0 ? nil : ScoutItemSource(rawValue: sourceRaw - 1),
-            identityGroup: group == 0 ? nil : group) else { return }
+            identityGroup: group == 0 ? nil : group,
+            maximumDepth: maximumDepth == 0 ? nil : maximumDepth) else { return }
         onFinish(value)
     }
 }

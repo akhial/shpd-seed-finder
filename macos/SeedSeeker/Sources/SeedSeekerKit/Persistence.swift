@@ -35,7 +35,8 @@ public struct SavedQuery: Codable, Sendable {
             guard (try? ItemRequirement(key: requirement.key, item: requirement.item,
                 upgrade: requirement.upgrade, modifier: requirement.modifier, kind: requirement.kind,
                 upgradeMatch: requirement.upgradeMatch, source: requirement.source,
-                identityGroup: requirement.identityGroup)) != nil else { return nil }
+                identityGroup: requirement.identityGroup,
+                maximumDepth: requirement.maximumDepth)) != nil else { return nil }
         }
         return self
     }

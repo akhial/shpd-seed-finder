@@ -165,7 +165,8 @@ impl NativeSession {
         })
     }
 
-    /// Decodes `SSF2` and starts a canonical production search.
+    /// Decodes a supported `SSF1`/`SSF2`/`SSF3` request and starts a canonical
+    /// production search.
     ///
     /// # Errors
     ///
@@ -418,6 +419,7 @@ mod tests {
                 effect: None,
                 source: None,
                 identity_group: None,
+                max_depth: None,
             }],
             max_depth: 24,
             require_blacksmith: false,
