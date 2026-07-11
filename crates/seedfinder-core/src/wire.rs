@@ -342,6 +342,7 @@ pub fn decode_scout_world(packet: &[u8]) -> Result<GeneratedWorld, WireError> {
         };
         items.push(WorldItem {
             item: definition.id,
+            transmuted_item: None,
             upgrade,
             effect,
             cursed: flags & 1 != 0,
@@ -754,6 +755,7 @@ mod tests {
             seed: DungeonSeed::MIN,
             items: vec![WorldItem {
                 item: ItemId::WandFrost,
+                transmuted_item: None,
                 upgrade: 2,
                 effect: None,
                 cursed: true,
@@ -783,6 +785,7 @@ mod tests {
             seed: DungeonSeed::from_code("AAA-AAA-AAF").unwrap(),
             items: vec![WorldItem {
                 item: ItemId::RingSharpshooting,
+                transmuted_item: None,
                 upgrade: 4,
                 effect: None,
                 cursed: true,
@@ -823,6 +826,7 @@ mod tests {
                 };
                 WorldItem {
                     item: definition.id,
+                    transmuted_item: None,
                     upgrade: u8::try_from(index % 4).unwrap(),
                     effect,
                     cursed: index % 2 != 0,
@@ -924,6 +928,7 @@ mod tests {
             seed: DungeonSeed::MIN,
             items: vec![WorldItem {
                 item: ItemId::Sword,
+                transmuted_item: None,
                 upgrade: 3,
                 effect: Some(Effect::Weapon(WeaponEffect::Kinetic)),
                 cursed: false,
@@ -951,6 +956,7 @@ mod tests {
             seed: DungeonSeed::MIN,
             items: vec![WorldItem {
                 item: ItemId::WandFrost,
+                transmuted_item: None,
                 upgrade: 0,
                 effect: None,
                 cursed: false,
@@ -1038,6 +1044,7 @@ mod tests {
     fn scout_encoder_rejects_more_than_u16_items() {
         let item = WorldItem {
             item: ItemId::WandFrost,
+            transmuted_item: None,
             upgrade: 0,
             effect: None,
             cursed: false,

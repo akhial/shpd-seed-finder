@@ -23,7 +23,9 @@ source, set its own inclusive floor limit, and join a same-item group shared by
 other requirements. Exact upgrades
 run through `+3` for weapons, armor, and wands and through `+4` for rings; minimum
 predicates also support `+0`. Weapon enchantment/curse and armor glyph/curse
-constraints are supported. Queries can require an accessible blacksmith, prevent
+constraints are supported. A concrete `+4` ring requirement also accepts an Imp
+ring when one immediate Scroll of Transmutation roll produces the requested ring.
+Queries can require an accessible blacksmith, prevent
 the Blacksmith's Smith rewards from satisfying item requirements, and limit every
 item and facility to the first X dungeon floors.
 Mutually exclusive rewards are represented explicitly so impossible reward

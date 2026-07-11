@@ -24,6 +24,7 @@ tooling/oracle/run.sh --seed AAA-AAA-AAA --floors 1 --format ndjson
 tooling/oracle/run.sh SEE-EEE-EED 1,3-5 --format json
 tooling/oracle/run.sh AAA-AAA-AAA 6-9 --run-checkpoints
 tooling/oracle/run.sh AAA-AAA-AAA 25 --boss-skip-checkpoints
+tooling/oracle/run.sh AAA-AAA-AAF 17 --transmute-imp
 ```
 
 `--floors` accepts comma-separated depths and inclusive ranges from 1 through
@@ -43,6 +44,12 @@ immediately before and after depths 5, 10, 15, 20, and 25. The official
 three-seed regression proves that 5, 10, 15, and 25 are state-neutral under the
 canonical no-bones profile. Depth 20 is deliberately not neutral: its
 `ImpShopRoom` eagerly generates cached stock during `CityBossLevel.build()`.
+
+`--transmute-imp` uses the official `ScrollOfTransmutation.changeItem` path on
+the first generated `+4` Imp ring. It clones and restores the active Java RNG
+so the observation does not perturb the generated floor. `AAA-AAA-AAF` was the
+first result of the seed finder's any-`+4`-Imp-ring query; its pinned regression
+is available as `tests/imp-transmutation.sh`.
 
 Set `ORACLE_OFFLINE=1` to make both scripts pass `--offline` to Gradle once the
 official dependencies are cached.
@@ -80,6 +87,8 @@ Every NDJSON record has `schema: "shpd-parity-oracle/v1"` and a `record` type:
   preserved (`heap`, `chest`, `locked_chest`, `crystal_chest`, `tomb`,
   `skeleton`, or `remains`), and `accessibility` identifies independent items
   and mutually exclusive quest or CrystalVault choices.
+- `imp_transmutation`, when requested, records the original and resulting ring
+  classes and true levels for one official Scroll of Transmutation call.
 
 Non-searchable tutorial/meta items are intentionally omitted. As in the
 reference seed finder, debug journal defaults are enabled and `intro()` is

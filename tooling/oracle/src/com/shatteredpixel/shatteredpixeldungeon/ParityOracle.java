@@ -30,6 +30,7 @@ import com.shatteredpixel.shatteredpixeldungeon.items.potions.Potion;
 import com.shatteredpixel.shatteredpixeldungeon.items.quest.CeremonialCandle;
 import com.shatteredpixel.shatteredpixeldungeon.items.rings.Ring;
 import com.shatteredpixel.shatteredpixeldungeon.items.scrolls.Scroll;
+import com.shatteredpixel.shatteredpixeldungeon.items.scrolls.ScrollOfTransmutation;
 import com.shatteredpixel.shatteredpixeldungeon.items.wands.Wand;
 import com.shatteredpixel.shatteredpixeldungeon.items.weapon.Weapon;
 import com.shatteredpixel.shatteredpixeldungeon.levels.Level;
@@ -43,8 +44,13 @@ import com.shatteredpixel.shatteredpixeldungeon.utils.DungeonSeed;
 import com.watabou.noosa.Game;
 import com.watabou.utils.GameSettings;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.io.PrintWriter;
 import java.lang.reflect.Field;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -73,6 +79,8 @@ public final class ParityOracle {
 
 	private static boolean active;
 	private static boolean phases;
+	private static boolean transmuteImp;
+	private static boolean impTransmutationRecorded;
 	private static Set<Integer> requestedDepths = Collections.emptySet();
 	private static Output output;
 
@@ -100,6 +108,8 @@ public final class ParityOracle {
 	private static void run(Options options) throws Exception {
 		requestedDepths = options.depths;
 		phases = options.phases;
+		transmuteImp = options.transmuteImp;
+		impTransmutationRecorded = false;
 		output = new Output(options.format);
 
 		Game.version = GAME_VERSION;
@@ -149,6 +159,48 @@ public final class ParityOracle {
 
 		active = false;
 		output.finish();
+	}
+
+	/** Called by the optional Imp quest instrumentation immediately after reward generation. */
+	@SuppressWarnings("unchecked")
+	public static void impRewardGenerated(Ring reward) {
+		if (!active || !transmuteImp || impTransmutationRecorded || reward.trueLevel() != 4) return;
+		try {
+			ArrayDeque<java.util.Random> generators =
+					(ArrayDeque<java.util.Random>) getStaticField(com.watabou.utils.Random.class, "generators");
+			java.util.Random live = generators.pop();
+			generators.push(copyRandom(live));
+			Item transformed;
+			try {
+				transformed = ScrollOfTransmutation.changeItem(reward);
+			} finally {
+				generators.pop();
+				generators.push(live);
+			}
+
+			Map<String, Object> record = record("imp_transmutation");
+			record.put("depth", Dungeon.depth);
+			record.put("seed_code", DungeonSeed.convertToCode(Dungeon.seed));
+			record.put("original_class", className(reward));
+			record.put("original_true_level", reward.trueLevel());
+			record.put("result_class", className(transformed));
+			record.put("result_true_level", transformed.trueLevel());
+			output.emit(record);
+			impTransmutationRecorded = true;
+		} catch (Exception error) {
+			throw new RuntimeException("failed to roll Imp reward transmutation", error);
+		}
+	}
+
+	private static java.util.Random copyRandom(java.util.Random source) throws Exception {
+		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+		try (ObjectOutputStream output = new ObjectOutputStream(bytes)) {
+			output.writeObject(source);
+		}
+		try (ObjectInputStream input = new ObjectInputStream(
+				new ByteArrayInputStream(bytes.toByteArray()))) {
+			return (java.util.Random) input.readObject();
+		}
 	}
 
 	/** Called by the tiny v3.3.8 Level.java instrumentation patch. */
@@ -765,6 +817,7 @@ public final class ParityOracle {
 		System.out.println("  --no-phases        Omit prepared/built/flags/mobs/items checkpoints");
 		System.out.println("  --run-checkpoints  Emit a Generator-state hash after every generated floor");
 		System.out.println("  --boss-skip-checkpoints  Compare all persistent state around boss floors");
+		System.out.println("  --transmute-imp  Roll one Scroll of Transmutation on the first +4 Imp ring");
 		System.out.println("Positional form is also accepted: parity-oracle XXX-XXX-XXX 1,3-5");
 	}
 
@@ -854,6 +907,7 @@ public final class ParityOracle {
 		boolean phases = true;
 		boolean runCheckpoints;
 		boolean bossSkipCheckpoints;
+		boolean transmuteImp;
 		boolean help;
 
 		static Options parse(String[] args) {
@@ -869,6 +923,8 @@ public final class ParityOracle {
 					result.runCheckpoints = true;
 				} else if ("--boss-skip-checkpoints".equals(arg)) {
 					result.bossSkipCheckpoints = true;
+				} else if ("--transmute-imp".equals(arg)) {
+					result.transmuteImp = true;
 				} else if ("--seed".equals(arg)) {
 					result.seedInput = requireValue(args, ++i, arg);
 				} else if ("--floors".equals(arg) || "--depths".equals(arg)) {

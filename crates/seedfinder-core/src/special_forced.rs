@@ -1409,6 +1409,7 @@ mod tests {
             report.searchable_items,
             vec![WorldItem {
                 item: ItemId::RingTenacity,
+                transmuted_item: None,
                 upgrade: 1,
                 effect: None,
                 cursed: false,

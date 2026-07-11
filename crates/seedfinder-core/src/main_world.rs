@@ -537,16 +537,24 @@ mod tests {
     }
 
     #[test]
-    fn plus_four_imp_ring_is_present_and_searchable() {
+    fn java_oracle_plus_four_imp_transmutation_fixture_matches() {
+        // Official v3.3.8 oracle command:
+        // tooling/oracle/run.sh AAA-AAA-AAF 17 --transmute-imp
+        // RingOfSharpshooting +4 -> RingOfAccuracy +4.
         let seed = DungeonSeed::from_code("AAA-AAA-AAF").unwrap();
         let world = generate_main_world(seed, 24).unwrap();
-        assert!(world.items.iter().any(|value| {
+        let imp_ring = world.items.iter().find(|value| {
             value.item == ItemId::RingSharpshooting
                 && value.upgrade == 4
                 && value.depth == 17
                 && value.cursed
                 && value.source == ItemSource::ImpReward
-        }));
+        });
+        assert!(imp_ring.is_some());
+        let transmuted_item = imp_ring
+            .and_then(|ring| ring.transmuted_item)
+            .expect("+4 Imp rings expose one transmutation roll");
+        assert_eq!(transmuted_item, ItemId::RingAccuracy);
         let query = SearchQuery {
             requirements: vec![Requirement {
                 kind: ItemKind::Ring,
@@ -564,6 +572,15 @@ mod tests {
         };
         assert_eq!(query.validate(), Ok(()));
         assert!(query.matches(&world));
+
+        let transmuted_query = SearchQuery {
+            requirements: vec![Requirement {
+                item: Some(transmuted_item),
+                ..query.requirements[0]
+            }],
+            ..query
+        };
+        assert!(transmuted_query.matches(&world));
     }
 
     #[test]

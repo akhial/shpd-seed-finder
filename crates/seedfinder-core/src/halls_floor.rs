@@ -1074,6 +1074,7 @@ mod tests {
     ) -> WorldItem {
         WorldItem {
             item: id,
+            transmuted_item: None,
             upgrade,
             effect,
             cursed,

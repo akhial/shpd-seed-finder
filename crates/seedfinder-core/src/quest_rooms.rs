@@ -1307,6 +1307,7 @@ mod tests {
             seed_nineteen.report.searchable_items,
             [WorldItem {
                 item: ItemId::MailArmor,
+                transmuted_item: None,
                 upgrade: 0,
                 effect: None,
                 cursed: false,
@@ -1421,6 +1422,7 @@ mod tests {
             [
                 WorldItem {
                     item: ItemId::Crossbow,
+                    transmuted_item: None,
                     upgrade: 0,
                     effect: None,
                     cursed: false,
@@ -1430,6 +1432,7 @@ mod tests {
                 },
                 WorldItem {
                     item: ItemId::ThrowingSpear,
+                    transmuted_item: None,
                     upgrade: 0,
                     effect: None,
                     cursed: false,
@@ -1480,6 +1483,7 @@ mod tests {
             [
                 WorldItem {
                     item: ItemId::ThrowingSpear,
+                    transmuted_item: None,
                     upgrade: 1,
                     effect: None,
                     cursed: false,
@@ -1489,6 +1493,7 @@ mod tests {
                 },
                 WorldItem {
                     item: ItemId::Tomahawk,
+                    transmuted_item: None,
                     upgrade: 1,
                     effect: Some(Effect::Weapon(WeaponEffect::Friendly)),
                     cursed: true,

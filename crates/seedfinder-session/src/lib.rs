@@ -401,6 +401,7 @@ mod tests {
             seed,
             items: vec![WorldItem {
                 item: ItemId::WandFrost,
+                transmuted_item: None,
                 upgrade: 2,
                 effect: None,
                 cursed: false,

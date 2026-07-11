@@ -6,6 +6,9 @@ use std::fmt;
 use crate::catalog::{Effect, ItemId, ItemKind, item};
 use crate::model::{GeneratedWorld, ItemSource, WorldItem};
 
+type CandidateMatch = (usize, ItemId);
+type RequirementCandidates = (Option<u8>, Vec<CandidateMatch>);
+
 /// Upgrade predicate attached to one item requirement.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UpgradeRequirement {
@@ -42,14 +45,26 @@ pub struct Requirement {
 impl Requirement {
     #[must_use]
     pub fn matches(self, candidate: &WorldItem) -> bool {
-        let definition = item(candidate.item);
-        definition.kind == self.kind
-            && self.item.is_none_or(|wanted| wanted == candidate.item)
+        self.matching_identity(candidate).is_some()
+    }
+
+    fn matching_identity(self, candidate: &WorldItem) -> Option<ItemId> {
+        let identity = match self.item {
+            None => candidate.item,
+            Some(wanted) if wanted == candidate.item => candidate.item,
+            Some(wanted) if candidate.upgrade == 4 && candidate.transmuted_item == Some(wanted) => {
+                wanted
+            }
+            Some(_) => return None,
+        };
+        let definition = item(identity);
+        (definition.kind == self.kind
             && self.upgrade.matches(candidate.upgrade)
             && self
                 .effect
                 .is_none_or(|wanted| candidate.effect == Some(wanted))
-            && self.source.is_none_or(|wanted| wanted == candidate.source)
+            && self.source.is_none_or(|wanted| wanted == candidate.source))
+        .then_some(identity)
     }
 
     /// Checks that an item/effect/upgrade combination is meaningful.
@@ -165,7 +180,7 @@ impl SearchQuery {
             return false;
         }
 
-        let mut candidates: Vec<(Option<u8>, Vec<usize>)> = self
+        let mut candidates: Vec<RequirementCandidates> = self
             .requirements
             .iter()
             .map(|requirement| {
@@ -180,9 +195,13 @@ impl SearchQuery {
                                 && candidate.depth
                                     <= requirement.max_depth.unwrap_or(self.max_depth)
                                 && (!self.exclude_blacksmith_rewards
-                                    || candidate.source != ItemSource::BlacksmithReward)
-                                && requirement.matches(candidate))
-                            .then_some(index)
+                                    || candidate.source != ItemSource::BlacksmithReward))
+                                .then(|| {
+                                    requirement
+                                        .matching_identity(candidate)
+                                        .map(|identity| (index, identity))
+                                })
+                                .flatten()
                         })
                         .collect(),
                 )
@@ -209,7 +228,7 @@ impl SearchQuery {
 }
 
 fn match_recursive(
-    candidates: &[(Option<u8>, Vec<usize>)],
+    candidates: &[RequirementCandidates],
     requirement_index: usize,
     items: &[WorldItem],
     used: &mut [bool],
@@ -221,7 +240,7 @@ fn match_recursive(
     }
 
     let (identity_group, requirement_candidates) = &candidates[requirement_index];
-    for &item_index in requirement_candidates {
+    for &(item_index, matched_identity) in requirement_candidates {
         if used[item_index] {
             continue;
         }
@@ -229,11 +248,11 @@ fn match_recursive(
         if let Some(group) = identity_group {
             if identities
                 .get(group)
-                .is_some_and(|wanted| *wanted != items[item_index].item)
+                .is_some_and(|wanted| *wanted != matched_identity)
             {
                 continue;
             }
-            previous_identity = Some((*group, identities.insert(*group, items[item_index].item)));
+            previous_identity = Some((*group, identities.insert(*group, matched_identity)));
         }
         let mut previous_scenarios = None;
         if let Some((group, item_scenarios)) = items[item_index].accessibility.scenario_constraint()
@@ -324,6 +343,7 @@ mod tests {
     fn world_item(item: ItemId, accessibility: Accessibility) -> WorldItem {
         WorldItem {
             item,
+            transmuted_item: None,
             upgrade: 2,
             effect: None,
             cursed: false,
@@ -367,6 +387,63 @@ mod tests {
             ],
         };
         assert!(query.matches(&two));
+    }
+
+    #[test]
+    fn plus_four_ring_can_match_its_single_transmutation_roll() {
+        let mut ring = world_item(ItemId::RingAccuracy, Accessibility::Independent);
+        ring.upgrade = 4;
+        ring.transmuted_item = Some(ItemId::RingWealth);
+        let world = GeneratedWorld {
+            seed: DungeonSeed::new(0).unwrap(),
+            items: vec![ring],
+        };
+        let wealth = SearchQuery {
+            requirements: vec![Requirement {
+                kind: ItemKind::Ring,
+                item: Some(ItemId::RingWealth),
+                upgrade: UpgradeRequirement::Exact(4),
+                effect: None,
+                source: Some(ItemSource::GhostReward),
+                identity_group: None,
+                max_depth: None,
+            }],
+            max_depth: 24,
+            require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
+            fast_mode: false,
+        };
+        assert!(wealth.matches(&world));
+
+        let mut accuracy_and_wealth = wealth;
+        accuracy_and_wealth.requirements.push(Requirement {
+            kind: ItemKind::Ring,
+            item: Some(ItemId::RingAccuracy),
+            upgrade: UpgradeRequirement::Exact(4),
+            effect: None,
+            source: None,
+            identity_group: None,
+            max_depth: None,
+        });
+        assert!(!accuracy_and_wealth.matches(&world));
+    }
+
+    #[test]
+    fn lower_level_ring_does_not_use_a_transmutation_roll() {
+        let mut ring = world_item(ItemId::RingAccuracy, Accessibility::Independent);
+        ring.upgrade = 3;
+        ring.transmuted_item = Some(ItemId::RingWealth);
+        let requirement = Requirement {
+            kind: ItemKind::Ring,
+            item: Some(ItemId::RingWealth),
+            upgrade: UpgradeRequirement::Exact(3),
+            effect: None,
+            source: None,
+            identity_group: None,
+            max_depth: None,
+        };
+
+        assert!(!requirement.matches(&ring));
     }
 
     #[test]
@@ -573,6 +650,7 @@ mod tests {
         };
         let make = |item, upgrade, depth, source| WorldItem {
             item,
+            transmuted_item: None,
             upgrade,
             effect: None,
             cursed: false,
@@ -613,6 +691,7 @@ mod tests {
         };
         let make = |source| WorldItem {
             item: ItemId::Sword,
+            transmuted_item: None,
             upgrade: 2,
             effect: None,
             cursed: false,

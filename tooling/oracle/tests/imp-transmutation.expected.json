@@ -1,0 +1,11 @@
+{
+  "schema": "shpd-imp-transmutation-fixture/v1",
+  "game_commit": "7b8b845a76fe76c6b7c031ae9e570852411f56db",
+  "seed_code": "AAA-AAA-AAF",
+  "seed": 5,
+  "depth": 17,
+  "original_class": "RingOfSharpshooting",
+  "original_true_level": 4,
+  "result_class": "RingOfAccuracy",
+  "result_true_level": 4
+}

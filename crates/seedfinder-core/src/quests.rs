@@ -13,11 +13,11 @@ use crate::equipment::{EquipmentRoll, random_armor_glyph, random_weapon_enchantm
 use crate::generator::{
     GeneratedEquipment, GeneratedItem, GeneratedItemFamily, GeneratedMissile, GeneratedRing,
     GeneratorError, random_armor, random_category, random_category_target, random_missile,
-    random_wand, random_weapon, undo_drop,
+    random_using_defaults, random_wand, random_weapon, undo_drop,
 };
 use crate::model::{Accessibility, ItemSource, WorldItem};
 use crate::rng::RandomStack;
-use crate::run::{GeneratorCategory, GeneratorState};
+use crate::run::{GeneratorCategory, GeneratorState, RingKind};
 
 /// A quest-generation invariant or a malformed level-pipeline call.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -691,6 +691,7 @@ pub struct ImpQuest {
     pub depth: Option<u8>,
     pub room_accessible: bool,
     pub reward: Option<GeneratedRing>,
+    pub transmuted_reward: Option<RingKind>,
     pub rejected_cursed_rings: usize,
     room_in_current_build: bool,
 }
@@ -751,6 +752,11 @@ impl ImpQuest {
         });
         self.given = false;
         let (reward, rejected) = generate_imp_reward(random, generator, depth)?;
+        self.transmuted_reward = if reward.roll.upgrade == 4 {
+            Some(roll_transmuted_ring(random, generator, reward.kind, depth)?)
+        } else {
+            None
+        };
         self.reward = Some(reward);
         self.rejected_cursed_rings = rejected;
         Ok(())
@@ -792,13 +798,15 @@ impl ImpQuest {
         else {
             return false;
         };
-        output.push(WorldItem::from_equipment_roll(
+        let mut item = WorldItem::from_equipment_roll(
             reward.kind.item_id(),
             reward.roll,
             depth,
             ItemSource::ImpReward,
             Accessibility::Independent,
-        ));
+        );
+        item.transmuted_item = self.transmuted_reward.map(RingKind::item_id);
+        output.push(item);
         true
     }
 }
@@ -853,6 +861,32 @@ fn generate_imp_reward(
     random.int_bound(3);
     reward.roll.cursed = true;
     Ok((reward, rejected))
+}
+
+fn roll_transmuted_ring(
+    random: &RandomStack,
+    generator: &GeneratorState,
+    original: RingKind,
+    depth: u8,
+) -> Result<RingKind, QuestError> {
+    // Scroll use is a gameplay-time branch, so peek without changing the
+    // deterministic level-generation streams used by later world items.
+    let mut random = random.clone();
+    let mut generator = generator.clone();
+    loop {
+        let generated = random_using_defaults(
+            &mut random,
+            &mut generator,
+            GeneratorCategory::Ring,
+            i32::from(depth),
+        )?;
+        let GeneratedItem::Ring(ring) = generated else {
+            return Err(QuestError::ExpectedRing(generated.family()));
+        };
+        if ring.kind != original {
+            return Ok(ring.kind);
+        }
+    }
 }
 
 #[cfg(test)]
