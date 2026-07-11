@@ -407,6 +407,7 @@ mod tests {
             requirements,
             max_depth,
             require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
             fast_mode: false,
         }
     }

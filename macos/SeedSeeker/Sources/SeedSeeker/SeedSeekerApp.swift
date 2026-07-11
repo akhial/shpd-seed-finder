@@ -15,6 +15,7 @@ private struct ContentView: View {
     @State private var requirements: [ItemRequirement] = []
     @State private var maximumDepth = 24
     @State private var requireBlacksmith = false
+    @State private var excludeBlacksmithRewards = false
     @State private var fastMode = false
     @State private var restored = false
     @State private var controller = SearchController()
@@ -24,7 +25,8 @@ private struct ContentView: View {
         VStack(spacing: 0) {
             NavigationSplitView {
                 QueryView(requirements: $requirements, maximumDepth: $maximumDepth,
-                          requireBlacksmith: $requireBlacksmith, fastMode: $fastMode,
+                          requireBlacksmith: $requireBlacksmith,
+                          excludeBlacksmithRewards: $excludeBlacksmithRewards, fastMode: $fastMode,
                           controller: controller)
                     .navigationSplitViewColumnWidth(min: 300, ideal: 330, max: 380)
             } content: {
@@ -44,11 +46,13 @@ private struct ContentView: View {
             let saved = QueryPersistence.decode(savedQueryJSON)
             requirements = saved.requirements; maximumDepth = saved.maximumDepth
             requireBlacksmith = saved.requireBlacksmith
+            excludeBlacksmithRewards = saved.excludeBlacksmithRewards
             fastMode = saved.fastMode
         }
         .onChange(of: requirements) { save() }
         .onChange(of: maximumDepth) { save() }
         .onChange(of: requireBlacksmith) { save() }
+        .onChange(of: excludeBlacksmithRewards) { save() }
         .onChange(of: fastMode) { save() }
         .onChange(of: controller.selectedSeed) { _, seed in if let seed { scout.scout(seed) } }
     }
@@ -56,7 +60,8 @@ private struct ContentView: View {
     private func save() {
         guard restored else { return }
         savedQueryJSON = QueryPersistence.encode(.init(requirements: requirements,
-            maximumDepth: maximumDepth, requireBlacksmith: requireBlacksmith, fastMode: fastMode)) ?? ""
+            maximumDepth: maximumDepth, requireBlacksmith: requireBlacksmith,
+            excludeBlacksmithRewards: excludeBlacksmithRewards, fastMode: fastMode)) ?? ""
     }
 }
 
@@ -93,6 +98,7 @@ private struct QueryView: View {
     @Binding var requirements: [ItemRequirement]
     @Binding var maximumDepth: Int
     @Binding var requireBlacksmith: Bool
+    @Binding var excludeBlacksmithRewards: Bool
     @Binding var fastMode: Bool
     let controller: SearchController
     @State private var editor: EditorSession?
@@ -105,7 +111,7 @@ private struct QueryView: View {
                     Button("Add Requirement", systemImage: "plus") { addRequirement() }
                         .keyboardShortcut("n", modifiers: .command)
                 }
-                Section("Constraints") {
+                Section("Search scope") {
                     VStack(alignment: .leading, spacing: 2) {
                         LabeledContent("Floor limit") {
                             Text("first \(maximumDepth) floor\(maximumDepth == 1 ? "" : "s")")
@@ -113,7 +119,16 @@ private struct QueryView: View {
                         }
                         Slider(value: intBinding($maximumDepth), in: 1...24, step: 1)
                     }
+                }
+                Section("Blacksmith") {
                     Toggle("Require accessible blacksmith", isOn: $requireBlacksmith)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Toggle("Exclude Smith rewards", isOn: $excludeBlacksmithRewards)
+                        Text("Required items cannot come from the 2,000-favor Smith choice, leaving favor available for reforging.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Section("Performance") {
                     VStack(alignment: .leading, spacing: 2) {
                         Toggle("Fast search", isOn: $fastMode)
                         Text("Treats +3 weapons and armor as quest rewards only, skipping the rare Crypt and Sacrificial-fire prizes. Found seeds are always genuine.")
@@ -126,6 +141,7 @@ private struct QueryView: View {
                 if controller.isRunning { controller.cancel() }
                 else if let request = try? SearchRequest(requirements: requirements,
                     maximumDepth: maximumDepth, requireBlacksmith: requireBlacksmith,
+                    excludeBlacksmithRewards: excludeBlacksmithRewards,
                     fastMode: fastMode) { controller.start(request) }
             } label: {
                 Label(controller.isRunning ? "Cancel Search" : "Start Search",

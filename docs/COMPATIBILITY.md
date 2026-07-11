@@ -28,7 +28,9 @@ Same-item groups require distinct obtainable copies with the same concrete item
 ID, while normal AND requirements may match different types. The blacksmith
 condition is satisfied only when the generated Blacksmith quest room is
 accessible within the selected maximum floor; a failed room build does not
-count. The maximum floor is also passed into generation, so later regions are
+count. The Smith-reward exclusion independently prevents those choice items from
+satisfying requirements while still allowing the room to meet the blacksmith
+condition. The maximum floor is also passed into generation, so later regions are
 not simulated for a shallower query.
 
 ## Boss-floor transitions

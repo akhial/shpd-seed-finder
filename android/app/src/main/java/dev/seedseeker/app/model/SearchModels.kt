@@ -80,6 +80,8 @@ data class SearchRequest(
     val requirements: List<ItemRequirement>,
     val maximumDepth: Int = 24,
     val requireBlacksmith: Boolean = false,
+    /** Prevent the Blacksmith's 2,000-favor Smith choice from satisfying item requirements. */
+    val excludeBlacksmithRewards: Boolean = false,
     /**
      * Faster but non-exhaustive: +3 weapon/armor requirements only consider
      * quest rewards, skipping seeds whose sole match is a Crypt or

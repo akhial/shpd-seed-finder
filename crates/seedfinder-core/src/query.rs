@@ -90,6 +90,9 @@ pub struct SearchQuery {
     pub max_depth: u8,
     /// Whether an accessible blacksmith room must exist within `max_depth`.
     pub require_blacksmith: bool,
+    /// Whether Blacksmith "Smith" rewards are ineligible to satisfy item
+    /// requirements. The room may still be required separately for reforging.
+    pub exclude_blacksmith_rewards: bool,
     /// Trades exhaustiveness for speed: +3 weapon/armor requirements are
     /// assumed to come from quest rewards, ignoring the far rarer Crypt and
     /// Sacrificial-fire prizes. Matches are still always genuine, but seeds
@@ -164,8 +167,11 @@ impl SearchQuery {
                         .iter()
                         .enumerate()
                         .filter_map(|(index, candidate)| {
-                            (candidate.depth <= self.max_depth && requirement.matches(candidate))
-                                .then_some(index)
+                            (candidate.depth <= self.max_depth
+                                && (!self.exclude_blacksmith_rewards
+                                    || candidate.source != ItemSource::BlacksmithReward)
+                                && requirement.matches(candidate))
+                            .then_some(index)
                         })
                         .collect(),
                 )
@@ -333,6 +339,7 @@ mod tests {
             requirements: vec![requirement(ItemId::Sword), requirement(ItemId::Sword)],
             max_depth: 4,
             require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
             fast_mode: false,
         };
         let one = GeneratedWorld {
@@ -356,6 +363,7 @@ mod tests {
             requirements: vec![requirement(ItemId::Sword), requirement(ItemId::MailArmor)],
             max_depth: 4,
             require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
             fast_mode: false,
         };
         let world = GeneratedWorld {
@@ -386,6 +394,7 @@ mod tests {
             requirements: vec![requirement(ItemId::Sword), requirement(ItemId::MailArmor)],
             max_depth: 4,
             require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
             fast_mode: false,
         };
         let world = GeneratedWorld {
@@ -442,6 +451,7 @@ mod tests {
             requirements: vec![requirement(ItemId::Sword), requirement(ItemId::MailArmor)],
             max_depth: 4,
             require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
             fast_mode: false,
         };
         assert!(compatible.matches(&world));
@@ -450,6 +460,7 @@ mod tests {
             requirements: vec![requirement(ItemId::Sword), requirement(ItemId::WandFrost)],
             max_depth: 4,
             require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
             fast_mode: false,
         };
         assert!(!incompatible.matches(&world));
@@ -520,6 +531,7 @@ mod tests {
             ],
             max_depth: 14,
             require_blacksmith: true,
+            exclude_blacksmith_rewards: false,
             fast_mode: false,
         };
         let make = |item, upgrade, depth, source| WorldItem {
@@ -554,6 +566,43 @@ mod tests {
     }
 
     #[test]
+    fn smith_rewards_can_be_excluded_without_hiding_the_blacksmith() {
+        let mut query = SearchQuery {
+            requirements: vec![requirement(ItemId::Sword)],
+            max_depth: 14,
+            require_blacksmith: true,
+            exclude_blacksmith_rewards: true,
+            fast_mode: false,
+        };
+        let make = |source| WorldItem {
+            item: ItemId::Sword,
+            upgrade: 2,
+            effect: None,
+            cursed: false,
+            depth: 13,
+            source,
+            accessibility: Accessibility::Independent,
+        };
+        let smith_only = GeneratedWorld {
+            seed: DungeonSeed::MIN,
+            items: vec![make(ItemSource::BlacksmithReward)],
+        };
+
+        assert!(!query.matches(&smith_only));
+
+        let mut reforging_setup = smith_only.clone();
+        reforging_setup.items.push(make(ItemSource::Heap));
+        assert!(query.matches(&reforging_setup));
+
+        query.require_blacksmith = false;
+        let no_blacksmith = GeneratedWorld {
+            seed: DungeonSeed::MIN,
+            items: vec![make(ItemSource::Heap)],
+        };
+        assert!(query.matches(&no_blacksmith));
+    }
+
+    #[test]
     fn wildcard_does_not_hide_conflicting_concrete_identity_group_members() {
         let linked = |item| Requirement {
             kind: ItemKind::Wand,
@@ -571,6 +620,7 @@ mod tests {
             ],
             max_depth: 24,
             require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
             fast_mode: false,
         };
 

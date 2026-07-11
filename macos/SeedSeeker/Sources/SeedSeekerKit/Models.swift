@@ -99,17 +99,21 @@ public struct SearchRequest: Codable, Sendable {
     public var requirements: [ItemRequirement]
     public var maximumDepth: Int
     public var requireBlacksmith: Bool
+    /// Prevents the 2,000-favor Smith choice from satisfying item requirements.
+    public var excludeBlacksmithRewards: Bool
     /// Faster but non-exhaustive: +3 weapon/armor requirements only consider
     /// quest rewards, skipping seeds whose sole match is a Crypt or
     /// Sacrificial-fire prize. Found seeds are always genuine matches.
     public var fastMode: Bool
 
     public init(requirements: [ItemRequirement], maximumDepth: Int = 24,
-                requireBlacksmith: Bool = false, fastMode: Bool = false) throws {
+                requireBlacksmith: Bool = false, excludeBlacksmithRewards: Bool = false,
+                fastMode: Bool = false) throws {
         guard !requirements.isEmpty else { throw ModelValidationError.emptyRequirements }
         guard (1...24).contains(maximumDepth) else { throw ModelValidationError.maximumDepth }
         self.requirements = requirements; self.maximumDepth = maximumDepth
         self.requireBlacksmith = requireBlacksmith
+        self.excludeBlacksmithRewards = excludeBlacksmithRewards
         self.fastMode = fastMode
     }
 }

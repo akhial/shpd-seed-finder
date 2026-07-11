@@ -29,6 +29,16 @@ final class SeedSeekerKitTests: XCTestCase {
         ])
     }
 
+    func testQueryCodecExcludeBlacksmithRewardsSetsFlagBitTwo() throws {
+        let requirement = try ItemRequirement(key: 1, item: nil, upgrade: 2, kind: .weapon)
+        let request = try SearchRequest(requirements: [requirement],
+                                        excludeBlacksmithRewards: true)
+        XCTAssertEqual(Array(try QueryCodec.encode(request)), [
+            83, 83, 70, 50, 24, 4, 0, 1,
+            0, 0, 0, 1, 2, 0, 0, 0, 0,
+        ])
+    }
+
     func testResultCodecGoldenAndMalformedPackets() throws {
         let packet = Data([83, 83, 82, 49, 0, 1, 11] + Array("ABC-DEF-GHI".utf8))
         XCTAssertEqual(try ResultCodec.decode(packet, requirementCount: 2),

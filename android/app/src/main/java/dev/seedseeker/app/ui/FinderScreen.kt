@@ -69,6 +69,7 @@ fun FinderScreen(
     requirements: List<ItemRequirement>,
     maximumDepth: Int,
     requireBlacksmith: Boolean,
+    excludeBlacksmithRewards: Boolean,
     fastMode: Boolean,
     results: List<SeedResult>,
     status: SearchStatus?,
@@ -80,6 +81,7 @@ fun FinderScreen(
     onRemove: (ItemRequirement) -> Unit,
     onMaximumDepthChange: (Int) -> Unit,
     onRequireBlacksmithChange: (Boolean) -> Unit,
+    onExcludeBlacksmithRewardsChange: (Boolean) -> Unit,
     onFastModeChange: (Boolean) -> Unit,
     onSearch: () -> Unit,
     onCancel: () -> Unit,
@@ -178,10 +180,12 @@ fun FinderScreen(
                     ScopeCard(
                         maximumDepth = maximumDepth,
                         requireBlacksmith = requireBlacksmith,
+                        excludeBlacksmithRewards = excludeBlacksmithRewards,
                         fastMode = fastMode,
                         enabled = !isSearching,
                         onMaximumDepthChange = onMaximumDepthChange,
                         onRequireBlacksmithChange = onRequireBlacksmithChange,
+                        onExcludeBlacksmithRewardsChange = onExcludeBlacksmithRewardsChange,
                         onFastModeChange = onFastModeChange,
                         modifier = Modifier.padding(top = 20.dp),
                     )
@@ -360,10 +364,12 @@ private fun AndConnector() {
 private fun ScopeCard(
     maximumDepth: Int,
     requireBlacksmith: Boolean,
+    excludeBlacksmithRewards: Boolean,
     fastMode: Boolean,
     enabled: Boolean,
     onMaximumDepthChange: (Int) -> Unit,
     onRequireBlacksmithChange: (Boolean) -> Unit,
+    onExcludeBlacksmithRewardsChange: (Boolean) -> Unit,
     onFastModeChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -401,6 +407,12 @@ private fun ScopeCard(
                 enabled = enabled,
             )
             Spacer(Modifier.height(6.dp))
+            Text(
+                "Blacksmith",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+            Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Accessible blacksmith", style = MaterialTheme.typography.bodyMedium)
@@ -413,6 +425,23 @@ private fun ScopeCard(
                 Switch(
                     checked = requireBlacksmith,
                     onCheckedChange = onRequireBlacksmithChange,
+                    enabled = enabled,
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Exclude Smith rewards", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Required items cannot come from the 2,000-favor Smith choice, " +
+                            "leaving favor available for reforging.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = excludeBlacksmithRewards,
+                    onCheckedChange = onExcludeBlacksmithRewardsChange,
                     enabled = enabled,
                 )
             }

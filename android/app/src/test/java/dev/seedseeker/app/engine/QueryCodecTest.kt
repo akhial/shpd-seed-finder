@@ -79,6 +79,31 @@ class QueryCodecTest {
     }
 
     @Test
+    fun excludeBlacksmithRewardsSetsFlagBitTwo() {
+        val sword = ItemCatalog.weapons.first { it.id == "sword" }
+        val packet = QueryCodec.encode(
+            SearchRequest(
+                requirements = listOf(ItemRequirement(key = 9, item = sword, upgrade = 2)),
+                excludeBlacksmithRewards = true,
+            ),
+        )
+
+        assertArrayEquals(
+            byteArrayOf(
+                0x53, 0x53, 0x46, 0x32,
+                0x18, 0x04,
+                0x00, 0x01,
+                0x00,
+                0x00, 0x05, 0x73, 0x77, 0x6F, 0x72, 0x64,
+                0x01, 0x02,
+                0x00, 0x00,
+                0x00, 0x00,
+            ),
+            packet,
+        )
+    }
+
+    @Test
     fun generalConstraintsExpressLinkedWandReforgeSetup() {
         fun wand(
             key: Long,

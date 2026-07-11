@@ -20,8 +20,9 @@ use an exact, minimum, or unrestricted upgrade predicate, constrain the loot
 source, and join a same-item group shared by other requirements. Exact upgrades
 run through `+3` for weapons, armor, and wands and through `+4` for rings; minimum
 predicates also support `+0`. Weapon enchantment/curse and armor glyph/curse
-constraints are supported. Queries can require an accessible blacksmith and
-limit every item and facility to the first X dungeon floors.
+constraints are supported. Queries can require an accessible blacksmith, prevent
+the Blacksmith's Smith rewards from satisfying item requirements, and limit every
+item and facility to the first X dungeon floors.
 Mutually exclusive rewards are represented explicitly so impossible reward
 combinations cannot satisfy a query.
 
@@ -147,6 +148,7 @@ searches and benchmarks remain deterministic for reproducibility.
 {
   "max_depth": 24,
   "require_blacksmith": false,
+  "exclude_blacksmith_rewards": false,
   "requirements": [
     {
       "item": "ring_tenacity",
@@ -163,6 +165,8 @@ searches and benchmarks remain deterministic for reproducibility.
 
 Omitting `upgrade` means any upgrade; an integer means an exact upgrade. Item
 effects, loot `source`, and `identity_group` are optional.
+Set `exclude_blacksmith_rewards` when the Smith choice must remain unused so the
+Blacksmith's favor can instead be spent on reforging.
 
 Searches automatically exploit generation logic: queries that can only be
 satisfied by quest rewards stop generating floors past the quest's depth window

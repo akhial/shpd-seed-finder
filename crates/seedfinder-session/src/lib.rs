@@ -421,6 +421,7 @@ mod tests {
             }],
             max_depth: 24,
             require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
             fast_mode: false,
         }
     }

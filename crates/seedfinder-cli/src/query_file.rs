@@ -12,6 +12,8 @@ struct QueryDocument {
     #[serde(default)]
     require_blacksmith: bool,
     #[serde(default)]
+    exclude_blacksmith_rewards: bool,
+    #[serde(default)]
     fast_mode: bool,
 }
 
@@ -145,6 +147,7 @@ pub fn decode(contents: &str) -> Result<SearchQuery, String> {
         requirements,
         max_depth: document.max_depth,
         require_blacksmith: document.require_blacksmith,
+        exclude_blacksmith_rewards: document.exclude_blacksmith_rewards,
         fast_mode: document.fast_mode,
     };
     query
@@ -207,6 +210,7 @@ mod tests {
             r#"{
                 "max_depth": 12,
                 "require_blacksmith": true,
+                "exclude_blacksmith_rewards": true,
                 "requirements": [
                     {"item": "ring_tenacity", "upgrade": 4, "source": "imp_reward"},
                     {"kind": "wand", "upgrade": {"at_least": 2}, "identity_group": 1}
@@ -216,6 +220,7 @@ mod tests {
         .unwrap();
         assert_eq!(query.max_depth, 12);
         assert!(query.require_blacksmith);
+        assert!(query.exclude_blacksmith_rewards);
         assert_eq!(query.requirements[0].item, Some(ItemId::RingTenacity));
         assert_eq!(query.requirements[0].upgrade, UpgradeRequirement::Exact(4));
         assert_eq!(query.requirements[0].source, Some(ItemSource::ImpReward));
@@ -231,6 +236,7 @@ mod tests {
         let query = decode(r#"{"requirements":[{"item":"sword"}]}"#).unwrap();
         assert_eq!(query.max_depth, 24);
         assert!(!query.require_blacksmith);
+        assert!(!query.exclude_blacksmith_rewards);
         assert_eq!(query.requirements[0].upgrade, UpgradeRequirement::Any);
     }
 

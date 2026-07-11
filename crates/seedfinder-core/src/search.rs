@@ -733,6 +733,7 @@ mod tests {
             }],
             max_depth: 4,
             require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
             fast_mode: false,
         };
         let options = SearchOptions {
@@ -807,6 +808,7 @@ mod tests {
             }],
             max_depth: 4,
             require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
             fast_mode: false,
         };
         let options = SearchOptions {
@@ -867,6 +869,7 @@ mod tests {
             }],
             max_depth: 4,
             require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
             fast_mode: false,
         };
         let options = SearchOptions {
@@ -907,6 +910,7 @@ mod tests {
             }],
             max_depth: 4,
             require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
             fast_mode: false,
         };
         let options = SearchOptions {
@@ -952,6 +956,7 @@ mod tests {
             }],
             max_depth: 4,
             require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
             fast_mode: false,
         };
         let options = SearchOptions {
