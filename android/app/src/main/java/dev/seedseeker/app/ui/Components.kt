@@ -32,10 +32,14 @@ import dev.seedseeker.app.model.CatalogItem
 import dev.seedseeker.app.model.ItemKind
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.ScoutItem
+import dev.seedseeker.app.model.SearchStatus
 import dev.seedseeker.app.model.UpgradeMatch
 import dev.seedseeker.app.ui.theme.Amber
 import dev.seedseeker.app.ui.theme.Mint
 import java.util.Locale
+import kotlin.math.floor
+import kotlin.math.log10
+import kotlin.math.pow
 
 val LocalItemAtlas = staticCompositionLocalOf<ImageBitmap?> { null }
 
@@ -209,4 +213,49 @@ fun compactCount(value: Long): String = when {
     value >= 1_000_000L -> String.format(Locale.US, "%.1fM", value / 1_000_000.0)
     value >= 1_000L -> String.format(Locale.US, "%.1fK", value / 1_000.0)
     else -> value.toString()
+}
+
+internal fun searchEstimateText(status: SearchStatus?, seedsPerSecond: Double): String {
+    val rate = formatSeedRate(seedsPerSecond)
+    val probability = status?.matchProbability ?: 0.0
+    if (probability <= 0.0 || seedsPerSecond <= 0.0) {
+        return "Seed match probability: estimating… TTS @ $rate seeds/s: estimating…"
+    }
+    return "Seed match probability: ${formatProbabilityPercent(probability)} " +
+        "TTS @ $rate seeds/s: ${formatEstimateDuration(1.0 / probability / seedsPerSecond)}"
+}
+
+private fun formatProbabilityPercent(probability: Double): String {
+    val percent = probability * 100.0
+    var exponent = floor(log10(percent)).toInt()
+    var mantissa = percent / 10.0.pow(exponent)
+    if (mantissa >= 9.95) {
+        mantissa = 1.0
+        exponent += 1
+    }
+    return String.format(Locale.US, "%.1fx10^%d%%", mantissa, exponent)
+}
+
+private fun formatSeedRate(rate: Double): String = when {
+    rate <= 0.0 -> "—"
+    rate >= 1_000_000.0 -> String.format(Locale.US, "%.1fM", rate / 1_000_000.0)
+    rate >= 1_000.0 -> String.format(Locale.US, "%.1fk", rate / 1_000.0)
+    else -> String.format(Locale.US, "%.0f", rate)
+}
+
+private fun formatEstimateDuration(seconds: Double): String {
+    val (value, unit) = when {
+        seconds < 60.0 -> seconds to "second"
+        seconds < 3_600.0 -> seconds / 60.0 to "minute"
+        seconds < 86_400.0 -> seconds / 3_600.0 to "hour"
+        else -> seconds / 86_400.0 to "day"
+    }
+    val plural = if (value >= 0.95 && value < 1.05) "" else "s"
+    return String.format(Locale.US, "%.1f %s%s", value, unit, plural)
+}
+
+internal fun formatElapsedTime(seconds: Long): String = when {
+    seconds < 60 -> "${seconds}s"
+    seconds < 3_600 -> "${seconds / 60}m ${seconds % 60}s"
+    else -> "${seconds / 3_600}h ${(seconds % 3_600) / 60}m"
 }

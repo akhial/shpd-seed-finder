@@ -167,6 +167,7 @@ data class SearchStatus(
     val scannedSeeds: Long,
     val totalSeeds: Long,
     val errorCode: Long = 0,
+    val matchProbability: Double = 0.0,
 )
 
 data class SearchBatch(val results: List<SeedResult>)

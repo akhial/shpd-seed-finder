@@ -161,4 +161,5 @@ public struct SearchStatus: Sendable {
     public let scannedSeeds: Int64
     public let totalSeeds: Int64
     public let errorCode: Int64
+    public let matchProbability: Double
 }

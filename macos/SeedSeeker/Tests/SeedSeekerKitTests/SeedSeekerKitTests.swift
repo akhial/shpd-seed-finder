@@ -75,6 +75,14 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertFalse(SeedCode.isCanonical("abc-def-ghi"))
     }
 
+    func testSearchEstimateFormatting() {
+        XCTAssertEqual(NumberFormat.probabilityPercent(13.0 / 10_000_000.0), "1.3x10^-4%")
+        XCTAssertEqual(NumberFormat.seedRate(4_600), "4.6k")
+        XCTAssertEqual(NumberFormat.estimateDuration(167.224), "2.8 minutes")
+        XCTAssertEqual(NumberFormat.probabilityPercent(nil), "estimating…")
+        XCTAssertEqual(NumberFormat.estimateDuration(nil), "estimating…")
+    }
+
     func testRequirementValidationRules() throws {
         XCTAssertNoThrow(try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .weapon, upgradeMatch: .any))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 1, kind: .weapon, upgradeMatch: .any))

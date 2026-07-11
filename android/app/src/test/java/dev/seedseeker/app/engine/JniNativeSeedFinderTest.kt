@@ -36,6 +36,7 @@ class JniNativeSeedFinderTest {
         assertEquals(123, status.scannedSeeds)
         assertEquals(456, status.totalSeeds)
         assertEquals(0, status.errorCode)
+        assertEquals(0.125, status.matchProbability, 0.0)
 
         session.cancel()
         session.close()
@@ -60,7 +61,7 @@ class JniNativeSeedFinderTest {
         )
 
         for ((native, kotlin) in expected) {
-            bindings.statusPacket = longArrayOf(native, 7, 9, 41)
+            bindings.statusPacket = longArrayOf(native, 7, 9, 41, 0.25.toBits())
             val session = finder.startSearch(request)
             val status = session.status()
             assertEquals(kotlin, status.state)
@@ -72,7 +73,7 @@ class JniNativeSeedFinderTest {
 
     private class RecordingBindings : NativeBindings {
         var request = byteArrayOf()
-        var statusPacket = longArrayOf(1, 123, 456, 0)
+        var statusPacket = longArrayOf(1, 123, 456, 0, 0.125.toBits())
         var cancelCalls = 0
         var closeCalls = 0
 

@@ -134,6 +134,7 @@ class DemoNativeSeedFinder : NativeSeedFinder {
                 state = state,
                 scannedSeeds = min(TOTAL_SEEDS, elapsed * DEMO_SEEDS_PER_MS),
                 totalSeeds = TOTAL_SEEDS,
+                matchProbability = DEMO_MATCH_PROBABILITY,
             )
         }
 
@@ -152,6 +153,7 @@ class DemoNativeSeedFinder : NativeSeedFinder {
         const val TOTAL_SEEDS = 5_429_503_678_976L // 26^9, rendered as XXX-XXX-XXX.
         const val DEMO_DURATION_MS = 4_250L
         const val DEMO_SEEDS_PER_MS = 1_277_530_277L
+        const val DEMO_MATCH_PROBABILITY = 7.857_777_777_777_78e-9
         val SAMPLE_SEEDS = listOf(
             "QHP-YZK-NGV",
             "WDX-KMF-RTA",
@@ -170,7 +172,7 @@ class DemoNativeSeedFinder : NativeSeedFinder {
  *
  * 1. `startSearch(requestBytes) -> handle` creates a search or throws.
  * 2. `poll(handle, maxResults) -> resultBytes` drains, never blocks for new results.
- * 3. `status(handle) -> long[4]` returns `[state, scanned, total, errorCode]`.
+ * 3. `status(handle) -> long[5]` returns state, scanned, total, error, and probability bits.
  * 4. `cancel(handle)` is cooperative and safe to repeat.
  * 5. `close(handle)` joins/releases native resources and is safe after any terminal state.
  * 6. `scoutSeed(seedBytes) -> scoutBytes` generates one canonical seed through depth 24.
@@ -220,7 +222,7 @@ class JniNativeSeedFinder(
         override fun status(): SearchStatus = synchronized(this) {
             check(!closed) { "Search session is closed" }
             val values = bindings.status(handle)
-            check(values.size == 4) { "Native status must contain four values" }
+            check(values.size == 5) { "Native status must contain five values" }
             SearchStatus(
                 state = when (values[0]) {
                     0L -> SearchState.RUNNING
@@ -232,6 +234,7 @@ class JniNativeSeedFinder(
                 scannedSeeds = values[1].coerceAtLeast(0),
                 totalSeeds = values[2].coerceAtLeast(0),
                 errorCode = values[3],
+                matchProbability = Double.fromBits(values[4]).coerceIn(0.0, 1.0),
             )
         }
 

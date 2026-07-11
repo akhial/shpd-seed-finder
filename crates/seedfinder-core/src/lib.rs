@@ -33,6 +33,7 @@ pub mod painter;
 pub mod prison_floor;
 pub mod prison_mobs;
 pub mod prison_rooms;
+pub mod probability;
 pub mod query;
 pub mod quest_rooms;
 pub mod quests;

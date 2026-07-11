@@ -7,7 +7,9 @@ public final class SearchController {
     public private(set) var results: [SeedResult] = []
     public private(set) var scannedSeeds: Int64 = 0
     public private(set) var totalSeeds: Int64 = 0
+    public private(set) var matchProbability: Double?
     public private(set) var seedsPerSecond: Double = 0
+    public private(set) var elapsed: TimeInterval = 0
     public private(set) var errorCode: Int64 = 0
     public private(set) var message: String?
     public private(set) var isRunning = false
@@ -18,18 +20,18 @@ public final class SearchController {
     private var task: Task<Void, Never>?
 
     public init(engine: any SeedFinderEngine = ProductionSeedFinderEngine()) { self.engine = engine }
-    public var progress: Double { totalSeeds > 0 ? min(1, Double(scannedSeeds) / Double(totalSeeds)) : 0 }
-    public var eta: TimeInterval? {
-        guard seedsPerSecond > 0 else { return nil }
-        return Double(max(0, totalSeeds - scannedSeeds)) / seedsPerSecond
+    public var timeToSeed: TimeInterval? {
+        guard let matchProbability, seedsPerSecond > 0 else { return nil }
+        return 1 / matchProbability / seedsPerSecond
     }
     public var reachedResultCap: Bool { results.count >= 1_024 }
 
     public func start(_ request: SearchRequest) {
-        task?.cancel(); results = []; scannedSeeds = 0; totalSeeds = 0; seedsPerSecond = 0
+        task?.cancel(); results = []; scannedSeeds = 0; totalSeeds = 0; matchProbability = nil; seedsPerSecond = 0; elapsed = 0
         errorCode = 0; message = nil; state = .running; isRunning = true
         task = Task { [weak self] in
             guard let self else { return }
+            let searchStart = ContinuousClock.now
             do {
                 let session = try await engine.startSearch(request)
                 self.session = session
@@ -40,6 +42,8 @@ public final class SearchController {
                     self.results.append(contentsOf: batch)
                     let status = try await session.status()
                     let now = ContinuousClock.now
+                    let totalDuration = searchStart.duration(to: now).components
+                    self.elapsed = Double(totalDuration.seconds) + Double(totalDuration.attoseconds) / 1e18
                     let seconds = Double(previousTime.duration(to: now).components.attoseconds) / 1e18
                         + Double(previousTime.duration(to: now).components.seconds)
                     if seconds > 0 {
@@ -48,6 +52,7 @@ public final class SearchController {
                     }
                     previousCount = status.scannedSeeds; previousTime = now
                     self.scannedSeeds = status.scannedSeeds; self.totalSeeds = status.totalSeeds
+                    self.matchProbability = status.matchProbability > 0 ? status.matchProbability : nil
                     self.errorCode = status.errorCode; self.state = status.state
                     if status.state != .running {
                         let finalBatch = try await session.poll(1_024)
@@ -88,5 +93,30 @@ public enum NumberFormat {
         if total < 60 { return "\(total)s" }
         if total < 3_600 { return "\(total / 60)m \(total % 60)s" }
         return "\(total / 3_600)h \((total % 3_600) / 60)m"
+    }
+    public static func probabilityPercent(_ probability: Double?) -> String {
+        guard let probability, probability > 0 else { return "estimating…" }
+        let percent = probability * 100
+        var exponent = Int(floor(log10(percent)))
+        var mantissa = percent / pow(10, Double(exponent))
+        if mantissa >= 9.95 { mantissa = 1; exponent += 1 }
+        return String(format: "%.1fx10^%d%%", mantissa, exponent)
+    }
+    public static func estimateDuration(_ seconds: TimeInterval?) -> String {
+        guard let seconds, seconds.isFinite else { return "estimating…" }
+        let value: Double
+        let unit: String
+        if seconds < 60 { value = seconds; unit = "second" }
+        else if seconds < 3_600 { value = seconds / 60; unit = "minute" }
+        else if seconds < 86_400 { value = seconds / 3_600; unit = "hour" }
+        else { value = seconds / 86_400; unit = "day" }
+        let suffix = value >= 0.95 && value < 1.05 ? "" : "s"
+        return String(format: "%.1f %@%@", value, unit, suffix)
+    }
+    public static func seedRate(_ value: Double) -> String {
+        guard value > 0 else { return "—" }
+        if value >= 1e6 { return String(format: "%.1fM", value / 1e6) }
+        if value >= 1e3 { return String(format: "%.1fk", value / 1e3) }
+        return String(format: "%.0f", value)
     }
 }

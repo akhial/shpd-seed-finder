@@ -79,6 +79,8 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
     var showRequirementSheet by remember { mutableStateOf(false) }
     var results by remember { mutableStateOf(emptyList<SeedResult>()) }
     var searchStatus by remember { mutableStateOf<SearchStatus?>(null) }
+    var searchSeedsPerSecond by remember { mutableStateOf(0.0) }
+    var searchElapsedSeconds by remember { mutableLongStateOf(0L) }
     var activeSession by remember { mutableStateOf<NativeSearchSession?>(null) }
     var run by remember { mutableStateOf<SearchRun?>(null) }
     var nextRunId by remember { mutableLongStateOf(1L) }
@@ -106,6 +108,12 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
         searchError = null
         results = emptyList()
         searchStatus = null
+        searchSeedsPerSecond = 0.0
+        searchElapsedSeconds = 0L
+
+        val searchStartedAt = System.nanoTime()
+        var previousScannedSeeds = 0L
+        var previousStatusTime = System.nanoTime()
 
         var session: NativeSearchSession? = null
         try {
@@ -122,6 +130,19 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
                 if (batch.results.isNotEmpty()) {
                     results = results + batch.results
                 }
+                val statusTime = System.nanoTime()
+                searchElapsedSeconds = (statusTime - searchStartedAt) / 1_000_000_000L
+                val elapsedSeconds = (statusTime - previousStatusTime) / 1_000_000_000.0
+                if (elapsedSeconds > 0.0 && status.scannedSeeds > previousScannedSeeds) {
+                    val instantRate = (status.scannedSeeds - previousScannedSeeds) / elapsedSeconds
+                    searchSeedsPerSecond = if (searchSeedsPerSecond == 0.0) {
+                        instantRate
+                    } else {
+                        searchSeedsPerSecond * 0.7 + instantRate * 0.3
+                    }
+                }
+                previousScannedSeeds = status.scannedSeeds
+                previousStatusTime = statusTime
                 searchStatus = status
                 if (status.state == SearchState.FAILED) {
                     searchError = when (status.errorCode) {
@@ -191,6 +212,8 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
                 fastMode = fastMode,
                 results = results,
                 status = searchStatus,
+                seedsPerSecond = searchSeedsPerSecond,
+                elapsedSeconds = searchElapsedSeconds,
                 isSearching = isSearching,
                 error = searchError,
                 onAbout = {

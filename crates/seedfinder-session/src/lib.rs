@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use shpd_seedfinder_core::main_world::CanonicalMainWorldGenerator;
+use shpd_seedfinder_core::probability::estimate_match_probability;
 use shpd_seedfinder_core::query::SearchQuery;
 use shpd_seedfinder_core::search::{
     SearchError, SearchOptions, StreamingSearchHandle, StreamingSearchState, WorldGenerator,
@@ -120,6 +121,7 @@ pub fn production_scout_packet(request: &[u8]) -> Result<Vec<u8>, ScoutCallError
 
 pub struct NativeSession {
     search: StreamingSearchHandle,
+    match_probability: f64,
     diagnostic_claimed: AtomicBool,
 }
 
@@ -134,8 +136,10 @@ impl NativeSession {
         query: SearchQuery,
         options: SearchOptions,
     ) -> Result<Self, SearchError> {
+        let match_probability = estimate_match_probability(&query);
         spawn_streaming_search(generator, query, options).map(|search| Self {
             search,
+            match_probability,
             diagnostic_claimed: AtomicBool::new(false),
         })
     }
@@ -146,6 +150,7 @@ impl NativeSession {
     ///
     /// Returns [`SearchError`] if workers cannot be spawned.
     pub fn production(query: SearchQuery) -> Result<Self, SearchError> {
+        let match_probability = estimate_match_probability(&query);
         let options = SearchOptions {
             start_seed: 0,
             end_seed_exclusive: TOTAL_SEEDS,
@@ -161,6 +166,7 @@ impl NativeSession {
         )
         .map(|search| Self {
             search,
+            match_probability,
             diagnostic_claimed: AtomicBool::new(false),
         })
     }
@@ -190,18 +196,20 @@ impl NativeSession {
     }
 
     #[must_use]
-    pub fn status(&self) -> [i64; 4] {
+    pub fn status(&self) -> [i64; 5] {
         let (state, error) = match self.search.state() {
             StreamingSearchState::Running => (STATE_RUNNING, ERROR_NONE),
             StreamingSearchState::Completed => (STATE_COMPLETED, ERROR_NONE),
             StreamingSearchState::Cancelled => (STATE_CANCELLED, ERROR_NONE),
             StreamingSearchState::Failed => (STATE_FAILED, ERROR_SEARCH_WORKER_FAILED),
         };
+        let tested = self.search.tested();
         [
             state,
-            i64::try_from(self.search.tested()).unwrap_or(i64::MAX),
+            i64::try_from(tested).unwrap_or(i64::MAX),
             i64::try_from(self.search.total()).unwrap_or(i64::MAX),
             error,
+            i64::from_ne_bytes(self.match_probability.to_bits().to_ne_bytes()),
         ]
     }
 
@@ -469,7 +477,12 @@ mod tests {
         let generator = Arc::new(MatchingGenerator);
         let session = NativeSession::start(&generator, query(), options(16, 32)).unwrap();
         wait(&session);
-        assert_eq!(session.status(), [STATE_RUNNING, 16, 16, ERROR_NONE]);
+        let probability_bits =
+            i64::from_ne_bytes(session.match_probability.to_bits().to_ne_bytes());
+        assert_eq!(
+            session.status(),
+            [STATE_RUNNING, 16, 16, ERROR_NONE, probability_bits]
+        );
         let mut drained = 0;
         while drained < 16 {
             let packet = session.poll(3).unwrap();
@@ -478,7 +491,10 @@ mod tests {
             drained += amount;
         }
         assert_eq!(session.poll(3).unwrap(), b"SSR1\0\0");
-        assert_eq!(session.status(), [STATE_COMPLETED, 16, 16, ERROR_NONE]);
+        assert_eq!(
+            session.status(),
+            [STATE_COMPLETED, 16, 16, ERROR_NONE, probability_bits]
+        );
     }
     #[test]
     fn cancellation_is_cooperative_and_has_no_error_code() {
@@ -494,7 +510,12 @@ mod tests {
         session.cancel();
         release.open();
         wait(&session);
-        assert_eq!(session.status(), [STATE_CANCELLED, 0, 64, ERROR_NONE]);
+        let probability_bits =
+            i64::from_ne_bytes(session.match_probability.to_bits().to_ne_bytes());
+        assert_eq!(
+            session.status(),
+            [STATE_CANCELLED, 0, 64, ERROR_NONE, probability_bits]
+        );
         assert_eq!(session.poll(8).unwrap(), b"SSR1\0\0");
     }
     #[test]
@@ -503,7 +524,18 @@ mod tests {
         let session = NativeSession::start(&generator, query(), options(4, 4)).unwrap();
         wait(&session);
         let status = session.status();
-        assert_eq!(status, [STATE_FAILED, 0, 4, ERROR_SEARCH_WORKER_FAILED]);
+        let probability_bits =
+            i64::from_ne_bytes(session.match_probability.to_bits().to_ne_bytes());
+        assert_eq!(
+            status,
+            [
+                STATE_FAILED,
+                0,
+                4,
+                ERROR_SEARCH_WORKER_FAILED,
+                probability_bits
+            ]
+        );
         let diagnostic = session.take_failure_diagnostic().unwrap();
         assert!(diagnostic.contains("0 (AAA-AAA-AAA)..=3 (AAA-AAA-AAD)"));
         assert!(diagnostic.contains("intentional worker failure"));

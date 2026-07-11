@@ -149,7 +149,7 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_status<'local>
     if let Some(diagnostic) = session.take_failure_diagnostic() {
         android_error(&diagnostic);
     }
-    let array = match env.new_long_array(4) {
+    let array = match env.new_long_array(5) {
         Ok(array) => array,
         Err(error) => {
             throw_illegal_state(&mut env, format!("cannot allocate status array: {error}"));

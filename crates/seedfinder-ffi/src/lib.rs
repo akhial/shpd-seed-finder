@@ -98,7 +98,7 @@ pub extern "C" fn seedfinder_status(handle: i64, out_status: *mut i64) -> i32 {
             return UNKNOWN_HANDLE;
         };
         let status = session.status();
-        // SAFETY: `out_status` points to space for four `i64` values by contract.
+        // SAFETY: `out_status` points to space for five `i64` values by contract.
         unsafe { ptr::copy_nonoverlapping(status.as_ptr(), out_status, status.len()) };
         OK
     }))
@@ -201,7 +201,7 @@ mod tests {
         let request = query_packet();
         let handle = seedfinder_start_search(request.as_ptr(), request.len());
         assert!(handle > 0);
-        let mut status = [0; 4];
+        let mut status = [0; 5];
         assert_eq!(seedfinder_status(handle, status.as_mut_ptr()), OK);
         let mut pointer = ptr::null_mut();
         let mut len = 0;
