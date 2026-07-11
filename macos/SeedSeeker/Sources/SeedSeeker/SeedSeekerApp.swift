@@ -122,6 +122,7 @@ private struct QueryView: View {
                 }
                 Section("Blacksmith") {
                     Toggle("Require accessible blacksmith", isOn: $requireBlacksmith)
+                        .disabled(maximumDepth > 14)
                     VStack(alignment: .leading, spacing: 2) {
                         Toggle("Exclude Smith rewards", isOn: $excludeBlacksmithRewards)
                         Text("Required items cannot come from the 2,000-favor Smith choice, leaving favor available for reforging.")
