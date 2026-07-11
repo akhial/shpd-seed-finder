@@ -1,5 +1,7 @@
 # Seed Seeker for Shattered Pixel Dungeon
 
+[![CI](https://github.com/akhial/shpd-seed-finder/actions/workflows/ci.yml/badge.svg)](https://github.com/akhial/shpd-seed-finder/actions/workflows/ci.yml)
+
 An unofficial, offline seed finder for Shattered Pixel Dungeon. The engine is a
 Rust reimplementation of the game's deterministic generation path and is called
 from a standalone Android UI through JNI.
@@ -69,7 +71,7 @@ running the Swift tests. The app-bundle script repeats the release builds,
 assembles `dist/Seed Seeker.app`, and ad-hoc signs it:
 
 ```sh
-cargo build --release --target aarch64-apple-darwin -p shpd-seedfinder-ffi
+bash scripts/build-macos-native.sh
 cd macos/SeedSeeker
 swift test
 cd ../..

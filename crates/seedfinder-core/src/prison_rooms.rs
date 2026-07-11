@@ -995,15 +995,15 @@ pub fn decorate_prison(level: &mut Level, rooms: &[Room], order: &[RoomId], rng:
         };
         let bounds = rooms[room].bounds;
         for y in (bounds.top + 1..bounds.bottom).rev() {
-            let mut cell = level.point_to_cell(Point::new(bounds.left + 1, y));
-            for _ in bounds.left + 1..bounds.right {
+            let row_start = level.point_to_cell(Point::new(bounds.left + 1, y));
+            let row_end = level.point_to_cell(Point::new(bounds.right, y));
+            for cell in row_start..row_end {
                 if level.map.cells[cell] == terrain::CHASM
                     && level.map.cells[cell - width_usize] == terrain::CHASM
                     && rng.int_bound(chance) == 0
                 {
                     level.map.cells[cell] = terrain::REGION_DECO_ALT;
                 }
-                cell += 1;
             }
         }
     }

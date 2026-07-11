@@ -5,8 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PACKAGE="$ROOT/macos/SeedSeeker"
 APP="$ROOT/dist/Seed Seeker.app"
 
-cd "$ROOT"
-cargo build --release --target aarch64-apple-darwin -p shpd-seedfinder-ffi
+bash "$ROOT/scripts/build-macos-native.sh"
 
 cd "$PACKAGE"
 CLANG_MODULE_CACHE_PATH="${CLANG_MODULE_CACHE_PATH:-$ROOT/target/swift-clang-cache}" \

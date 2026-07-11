@@ -6,6 +6,7 @@
 
 use std::fmt;
 
+use crate::batch::seed_for_depth_batch4;
 use crate::caves_floor::{
     CanonicalCavesWorldGenerator, CavesFloorError, generate_caves_floor, generate_caves_world,
 };
@@ -22,7 +23,6 @@ use crate::prison_floor::{
     CanonicalPrisonWorldGenerator, PrisonFloorError, generate_prison_floor, generate_prison_world,
 };
 use crate::quests::QuestState;
-use crate::batch::seed_for_depth_batch4;
 use crate::rng::{RandomStack, seed_for_depth};
 use crate::run::RunState;
 use crate::search::{FloorGate, WorldGenerator};
@@ -211,53 +211,69 @@ fn generate_gated_world_with_roots(
         random.push(root);
         let mut floor_items = match depth {
             1..=4 => {
-                generate_sewer_floor(&mut run, &mut limited_drops, &mut quests, depth, &mut random)
-                    .map_err(MainWorldError::Sewer)?
+                generate_sewer_floor(
+                    &mut run,
+                    &mut limited_drops,
+                    &mut quests,
+                    depth,
+                    &mut random,
+                )
+                .map_err(MainWorldError::Sewer)?
+                .world_items
+            }
+            6..=9 => {
+                generate_prison_floor(
+                    &mut run,
+                    &mut limited_drops,
+                    &mut quests,
+                    &mut shop_run,
+                    depth,
+                    &mut random,
+                )
+                .map_err(MainWorldError::Prison)?
+                .world_items
+            }
+            11..=14 => {
+                generate_caves_floor(
+                    &mut run,
+                    &mut limited_drops,
+                    &mut quests,
+                    &mut shop_run,
+                    depth,
+                    &mut random,
+                )
+                .map_err(MainWorldError::Caves)?
+                .world_items
+            }
+            16..=19 => {
+                generate_city_floor(
+                    &mut run,
+                    &mut limited_drops,
+                    &mut quests,
+                    &mut shop_run,
+                    depth,
+                    &mut random,
+                )
+                .map_err(MainWorldError::City)?
+                .world_items
+            }
+            20 => {
+                generate_city_boss_shop(&mut run, &mut shop_run, &mut random)
+                    .map_err(|error| MainWorldError::Halls(HallsFloorError::BossShop(error)))?
                     .world_items
             }
-            6..=9 => generate_prison_floor(
-                &mut run,
-                &mut limited_drops,
-                &mut quests,
-                &mut shop_run,
-                depth,
-                &mut random,
-            )
-            .map_err(MainWorldError::Prison)?
-            .world_items,
-            11..=14 => generate_caves_floor(
-                &mut run,
-                &mut limited_drops,
-                &mut quests,
-                &mut shop_run,
-                depth,
-                &mut random,
-            )
-            .map_err(MainWorldError::Caves)?
-            .world_items,
-            16..=19 => generate_city_floor(
-                &mut run,
-                &mut limited_drops,
-                &mut quests,
-                &mut shop_run,
-                depth,
-                &mut random,
-            )
-            .map_err(MainWorldError::City)?
-            .world_items,
-            20 => generate_city_boss_shop(&mut run, &mut shop_run, &mut random)
-                .map_err(|error| MainWorldError::Halls(HallsFloorError::BossShop(error)))?
-                .world_items,
-            _ => generate_halls_floor(
-                &mut run,
-                &mut limited_drops,
-                &mut quests,
-                &mut shop_run,
-                depth,
-                &mut random,
-            )
-            .map_err(MainWorldError::Halls)?
-            .world_items,
+            _ => {
+                generate_halls_floor(
+                    &mut run,
+                    &mut limited_drops,
+                    &mut quests,
+                    &mut shop_run,
+                    depth,
+                    &mut random,
+                )
+                .map_err(MainWorldError::Halls)?
+                .world_items
+            }
         };
         random.pop();
         next_choice_group = remap_floor_choice_groups(&mut floor_items, next_choice_group);
@@ -308,8 +324,7 @@ mod tests {
     use crate::seed::DungeonSeed;
 
     use super::{
-        CanonicalMainWorldGenerator, MainWorldError, generate_main_world,
-        generate_main_world_gated,
+        CanonicalMainWorldGenerator, MainWorldError, generate_main_world, generate_main_world_gated,
     };
 
     struct OpenGate;
@@ -404,8 +419,7 @@ mod tests {
                     .as_ref()
                     .is_some_and(|world| query.matches(world));
                 assert_eq!(
-                    actual,
-                    expected,
+                    actual, expected,
                     "seed {} disagreed for {query:?}",
                     seeds[index]
                 );
@@ -438,8 +452,11 @@ mod tests {
         let seeds = (0..32)
             .map(|value| DungeonSeed::new(value).unwrap())
             .collect::<Vec<_>>();
-        let gated =
-            CanonicalMainWorldGenerator.generate_batch_gated(&seeds, plan.generation_depth(), &plan);
+        let gated = CanonicalMainWorldGenerator.generate_batch_gated(
+            &seeds,
+            plan.generation_depth(),
+            &plan,
+        );
         for (index, gated_world) in gated.iter().enumerate() {
             if let Some(world) = gated_world {
                 if query.matches(world) {

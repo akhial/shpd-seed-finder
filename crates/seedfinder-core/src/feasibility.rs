@@ -237,9 +237,7 @@ impl QueryPlan {
                         generation_depth = generation_depth.max(window_end.min(max_depth));
                     }
                 } else if source == ItemSource::Shop {
-                    let deadline = SHOP_DEPTHS
-                        .into_iter()
-                        .rfind(|&depth| depth <= max_depth);
+                    let deadline = SHOP_DEPTHS.into_iter().rfind(|&depth| depth <= max_depth);
                     if let Some(deadline) = deadline {
                         open_deadline = Some(open_deadline.unwrap_or(0).max(deadline));
                         generation_depth = generation_depth.max(deadline);
