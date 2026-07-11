@@ -350,6 +350,7 @@ mod tests {
             requirements,
             max_depth: 24,
             require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
             fast_mode,
         };
         let queries = [
@@ -429,6 +430,7 @@ mod tests {
             }],
             max_depth: 24,
             require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
             fast_mode: true,
         };
         let plan = QueryPlan::analyze(&query);
@@ -495,6 +497,27 @@ mod tests {
     }
 
     #[test]
+    fn ghost_rewards_are_reported_once_on_the_ghost_floor() {
+        let seed = DungeonSeed::from_code("AAA-GPY-IJW").unwrap();
+        let world = generate_main_world(seed, 24).unwrap();
+        let ghost_rewards = world
+            .items
+            .iter()
+            .filter(|item| item.source == ItemSource::GhostReward)
+            .collect::<Vec<_>>();
+
+        assert_eq!(ghost_rewards.len(), 2);
+        assert!(ghost_rewards.iter().all(|item| item.depth == 3));
+        assert!(matches!(
+            (ghost_rewards[0].accessibility, ghost_rewards[1].accessibility),
+            (
+                crate::model::Accessibility::Choice { group: first, option: 0 },
+                crate::model::Accessibility::Choice { group: second, option: 1 },
+            ) if first == second
+        ));
+    }
+
+    #[test]
     fn plus_four_imp_ring_is_present_and_searchable() {
         let seed = DungeonSeed::from_code("AAA-AAA-AAF").unwrap();
         let world = generate_main_world(seed, 24).unwrap();
@@ -516,6 +539,7 @@ mod tests {
             }],
             max_depth: 24,
             require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
             fast_mode: false,
         };
         assert_eq!(query.validate(), Ok(()));

@@ -218,11 +218,20 @@ impl GhostQuest {
         self.armor = None;
     }
 
-    /// Appends the two mutually exclusive searchable reward choices.
-    pub fn append_world_items(&self, group: u16, output: &mut Vec<WorldItem>) -> usize {
+    /// Appends the two mutually exclusive searchable reward choices on the
+    /// floor where the Ghost spawned.
+    pub fn append_world_items(
+        &self,
+        current_depth: u8,
+        group: u16,
+        output: &mut Vec<WorldItem>,
+    ) -> usize {
         let (Some(depth), Some(weapon), Some(armor)) = (self.depth, self.weapon, self.armor) else {
             return 0;
         };
+        if depth != current_depth {
+            return 0;
+        }
 
         let mut weapon_roll = weapon.roll;
         weapon_roll.effect = self.enchantment.map(Effect::Weapon);
@@ -1008,7 +1017,8 @@ mod tests {
         };
         ghost.finish_spawn(&mut random, &mut generator).unwrap();
         let mut output = Vec::new();
-        assert_eq!(ghost.append_world_items(7, &mut output), 2);
+        assert_eq!(ghost.append_world_items(2, 7, &mut output), 2);
+        assert_eq!(ghost.append_world_items(3, 8, &mut output), 0);
         assert_eq!(output[0].source, ItemSource::GhostReward);
         assert_eq!(
             output[0].accessibility,

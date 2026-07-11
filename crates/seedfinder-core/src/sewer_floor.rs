@@ -337,9 +337,11 @@ pub fn generate_sewer_floor(
     let mut world_items = painted.world_items.clone();
     append_painted_room_items(&painted.level, depth, &mut world_items);
     let ghost_group = painted.remaining_prizes.next_choice_group;
-    quests
-        .ghost
-        .append_world_items(ghost_group, &mut world_items);
+    quests.ghost.append_world_items(
+        u8::try_from(depth).expect("Sewer depth fits u8"),
+        ghost_group,
+        &mut world_items,
+    );
 
     let queue = painted
         .remaining_prizes
@@ -1380,6 +1382,7 @@ mod tests {
             }],
             max_depth: 4,
             require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
             fast_mode: false,
         };
         let options = SearchOptions {
