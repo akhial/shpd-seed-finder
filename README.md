@@ -67,9 +67,8 @@ asset.
 
 Platform notes:
 
-- The macOS app is ad-hoc signed, so Gatekeeper blocks a normal first launch. Right-click the
-  app and choose *Open*, or clear the quarantine flag with
-  `xattr -dr com.apple.quarantine "Seed Seeker.app"`.
+- The macOS app is signed with a Developer ID certificate and notarized by Apple, so it opens
+  normally after download.
 - The Android APK is unsigned and must be signed before it can be installed; see the
   [Android](#android) section below for an `apksigner` example.
 - The Windows app requires the
