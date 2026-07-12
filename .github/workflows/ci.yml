@@ -107,3 +107,33 @@ jobs:
       - name: Test Swift package
         working-directory: macos/SeedSeeker
         run: swift test
+
+  windows:
+    name: Windows
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: windows
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Test workspace
+        run: cargo test --locked --workspace
+
+      # The csproj builds and copies the Rust engine DLL itself.
+      - name: Build app
+        run: pwsh scripts/build-windows-app.ps1 -Platform x64
