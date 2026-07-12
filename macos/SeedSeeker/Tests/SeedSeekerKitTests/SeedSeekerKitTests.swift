@@ -3,12 +3,12 @@ import SeedSeekerKit
 import XCTest
 
 final class SeedSeekerKitTests: XCTestCase {
-    func testQueryCodecTierPredicateUsesSSF4() throws {
+    func testQueryCodecTierPredicateUsesSSF5WithZeroChallenges() throws {
         let requirement = try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .armor,
             tier: 4, tierMatch: .atLeast, upgradeMatch: .any)
         let request = try SearchRequest(requirements: [requirement])
         XCTAssertEqual(Array(try QueryCodec.encode(request)), [
-            83, 83, 70, 52, 24, 0, 0, 1,
+            83, 83, 70, 53, 24, 0, 0, 0, 0, 1,
             1, 0, 0, 2, 4, 0, 0, 0, 0, 0, 0, 0,
         ])
         XCTAssertEqual(requirement.title, "Any Tier 4+ armor")
@@ -22,12 +22,12 @@ final class SeedSeekerKitTests: XCTestCase {
         let second = try ItemRequirement(key: 2, item: nil, upgrade: 0, kind: .ring,
             upgradeMatch: .atLeast)
         let request = try SearchRequest(requirements: [first, second], maximumDepth: 12,
-                                        requireBlacksmith: true)
+                                        requireBlacksmith: true, challenges: 104)
         XCTAssertEqual(Array(try QueryCodec.encode(request)), [
-            83, 83, 70, 51, 12, 1, 0, 2,
-            0, 0, 6, 100, 97, 103, 103, 101, 114, 1, 2,
+            83, 83, 70, 53, 12, 1, 104, 0, 0, 2,
+            0, 0, 6, 100, 97, 103, 103, 101, 114, 0, 0, 1, 2,
             0, 5, 76, 117, 99, 107, 121, 2, 1, 5,
-            3, 0, 0, 2, 0, 0, 0, 0, 0, 0,
+            3, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0,
         ])
     }
 
@@ -36,8 +36,8 @@ final class SeedSeekerKitTests: XCTestCase {
                                               upgradeMatch: .exactly)
         let request = try SearchRequest(requirements: [requirement], fastMode: true)
         XCTAssertEqual(Array(try QueryCodec.encode(request)), [
-            83, 83, 70, 51, 24, 2, 0, 1,
-            1, 0, 0, 1, 3, 0, 0, 0, 0, 0,
+            83, 83, 70, 53, 24, 2, 0, 0, 0, 1,
+            1, 0, 0, 0, 0, 1, 3, 0, 0, 0, 0, 0,
         ])
     }
 
@@ -46,9 +46,18 @@ final class SeedSeekerKitTests: XCTestCase {
         let request = try SearchRequest(requirements: [requirement],
                                         excludeBlacksmithRewards: true)
         XCTAssertEqual(Array(try QueryCodec.encode(request)), [
-            83, 83, 70, 51, 24, 4, 0, 1,
-            0, 0, 0, 1, 2, 0, 0, 0, 0, 0,
+            83, 83, 70, 53, 24, 4, 0, 0, 0, 1,
+            0, 0, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0,
         ])
+    }
+
+    func testScoutRequestGoldenZeroAndNonzeroChallenges() throws {
+        XCTAssertEqual(Array(try ScoutCodec.encodeRequest(seed: "AAA-AAA-AAA", challenges: 0)),
+                       Array("SSQ2".utf8) + [0, 0] + Array("AAA-AAA-AAA".utf8))
+        XCTAssertEqual(Array(try ScoutCodec.encodeRequest(seed: "AAA-AAA-AAF", challenges: 320)),
+                       Array("SSQ2".utf8) + [64, 1] + Array("AAA-AAA-AAF".utf8))
+        XCTAssertThrowsError(try ScoutCodec.encodeRequest(seed: "bad", challenges: 0))
+        XCTAssertThrowsError(try ScoutCodec.encodeRequest(seed: "AAA-AAA-AAA", challenges: 512))
     }
 
     func testResultCodecGoldenAndMalformedPackets() throws {
@@ -112,7 +121,7 @@ final class SeedSeekerKitTests: XCTestCase {
     }
 
     func testRealFFIScout() async throws {
-        let world = try await ProductionSeedFinderEngine().scoutSeed("AAA-AAA-AAA")
+        let world = try await ProductionSeedFinderEngine().scoutSeed("AAA-AAA-AAA", challenges: 0)
         XCTAssertFalse(world.items.isEmpty)
         XCTAssertTrue(world.items.allSatisfy { (1...24).contains($0.depth) })
     }

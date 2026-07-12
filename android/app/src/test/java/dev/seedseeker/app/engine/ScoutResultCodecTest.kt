@@ -9,6 +9,7 @@ import java.io.DataOutputStream
 import java.io.EOFException
 import java.nio.charset.StandardCharsets
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -166,13 +167,29 @@ class ScoutResultCodecTest {
 
         val bindings = ScoutBindings(scoutPacket())
         val world = JniNativeSeedFinder(bindings).scoutSeed("AAA-AAA-AAA")
-        assertEquals("AAA-AAA-AAA", bindings.scoutRequest.toString(StandardCharsets.UTF_8))
+        assertArrayEquals(
+            byteArrayOf('S'.code.toByte(), 'S'.code.toByte(), 'Q'.code.toByte(), '2'.code.toByte(), 0, 0) +
+                "AAA-AAA-AAA".toByteArray(StandardCharsets.UTF_8),
+            bindings.scoutRequest,
+        )
         assertEquals("AAA-AAA-AAA", world.seed)
         assertThrows(IllegalArgumentException::class.java) {
             JniNativeSeedFinder(bindings).scoutSeed("abc-def-ghi")
         }
         assertThrows(IllegalStateException::class.java) {
             JniNativeSeedFinder(bindings).scoutSeed("ABC-DEF-GHI")
+        }
+    }
+
+    @Test
+    fun scoutRequestEncodesChallengeMaskLittleEndian() {
+        assertArrayEquals(
+            byteArrayOf('S'.code.toByte(), 'S'.code.toByte(), 'Q'.code.toByte(), '2'.code.toByte(), 1, 1) +
+                "AAA-AAA-AAA".toByteArray(StandardCharsets.UTF_8),
+            ScoutRequestCodec.encode("AAA-AAA-AAA", 257),
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            ScoutRequestCodec.encode("AAA-AAA-AAA", 512)
         }
     }
 

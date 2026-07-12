@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::catalog::{Effect, ItemId, ItemKind, item};
+use crate::challenges::Challenges;
 use crate::model::{GeneratedWorld, ItemSource, WorldItem};
 
 type CandidateMatch = (usize, ItemId);
@@ -143,6 +144,8 @@ impl Requirement {
 pub struct SearchQuery {
     pub requirements: Vec<Requirement>,
     pub max_depth: u8,
+    /// Upstream v3.3.8 challenge mask used while generating candidate worlds.
+    pub challenges: Challenges,
     /// Whether an accessible blacksmith room must exist within `max_depth`.
     pub require_blacksmith: bool,
     /// Whether Blacksmith "Smith" rewards are ineligible to satisfy item
@@ -404,6 +407,7 @@ mod tests {
         let query = SearchQuery {
             requirements: vec![requirement(ItemId::Sword), requirement(ItemId::Sword)],
             max_depth: 4,
+            challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             fast_mode: false,
@@ -444,6 +448,7 @@ mod tests {
                 max_depth: None,
             }],
             max_depth: 24,
+            challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             fast_mode: false,
@@ -494,6 +499,7 @@ mod tests {
         let mut query = SearchQuery {
             requirements: vec![limited],
             max_depth: 24,
+            challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             fast_mode: false,
@@ -508,6 +514,7 @@ mod tests {
         let query = SearchQuery {
             requirements: vec![requirement(ItemId::Sword), requirement(ItemId::MailArmor)],
             max_depth: 4,
+            challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             fast_mode: false,
@@ -539,6 +546,7 @@ mod tests {
         let query = SearchQuery {
             requirements: vec![requirement(ItemId::Sword), requirement(ItemId::MailArmor)],
             max_depth: 4,
+            challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             fast_mode: false,
@@ -596,6 +604,7 @@ mod tests {
         let compatible = SearchQuery {
             requirements: vec![requirement(ItemId::Sword), requirement(ItemId::MailArmor)],
             max_depth: 4,
+            challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             fast_mode: false,
@@ -605,6 +614,7 @@ mod tests {
         let incompatible = SearchQuery {
             requirements: vec![requirement(ItemId::Sword), requirement(ItemId::WandFrost)],
             max_depth: 4,
+            challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             fast_mode: false,
@@ -724,6 +734,7 @@ mod tests {
                 },
             ],
             max_depth: 14,
+            challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: true,
             exclude_blacksmith_rewards: false,
             fast_mode: false,
@@ -765,6 +776,7 @@ mod tests {
         let mut query = SearchQuery {
             requirements: vec![requirement(ItemId::Sword)],
             max_depth: 14,
+            challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: true,
             exclude_blacksmith_rewards: true,
             fast_mode: false,
@@ -817,6 +829,7 @@ mod tests {
                 linked(Some(ItemId::WandLightning)),
             ],
             max_depth: 24,
+            challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             fast_mode: false,

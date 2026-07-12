@@ -248,6 +248,9 @@ pub struct Level {
     pub intro: bool,
     /// Canonical debug journal state has the searching guide page unlocked.
     pub guide_searching_found: bool,
+    /// `Challenges.NO_HERBALISM`: terrain is still converted to grass, but no
+    /// plant object is registered.
+    pub plants_enabled: bool,
 }
 
 impl Level {
@@ -269,6 +272,7 @@ impl Level {
             room_order: Vec::new(),
             intro: false,
             guide_searching_found: true,
+            plants_enabled: true,
         }
     }
 
@@ -396,6 +400,9 @@ impl Level {
         ) {
             self.map.cells[cell] = terrain::GRASS;
         }
+        if !self.plants_enabled {
+            return;
+        }
         let plant = PaintPlant { cell, seed };
         if let Some(existing) = self.plants.iter_mut().find(|plant| plant.cell == cell) {
             *existing = plant;
@@ -478,6 +485,19 @@ mod tests {
         level.set_size(2, 2);
         level.map.cells.copy_from_slice(&[1, 4, 29, 16]);
         assert_eq!(level.java_map_hash(), 958_071);
+    }
+
+    #[test]
+    fn barren_land_keeps_grass_conversion_without_registering_a_plant() {
+        let mut level = Level::new(1, Feeling::None);
+        level.set_size(3, 3);
+        let cell = 4;
+        level.map.cells[cell] = terrain::EMPTY;
+        level.plants_enabled = false;
+        level.plant(SeedKind::Sungrass, cell);
+        assert_eq!(level.map.cells[cell], terrain::GRASS);
+        assert!(level.plants.is_empty());
+        assert!(level.paint_events.is_empty());
     }
 
     #[test]

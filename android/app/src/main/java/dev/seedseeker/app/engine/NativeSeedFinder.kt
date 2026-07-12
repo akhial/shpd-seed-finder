@@ -3,6 +3,7 @@ package dev.seedseeker.app.engine
 
 import dev.seedseeker.app.BuildConfig
 import dev.seedseeker.app.model.ItemRequirement
+import dev.seedseeker.app.model.Challenge
 import dev.seedseeker.app.model.SearchBatch
 import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.SearchState
@@ -25,7 +26,7 @@ import kotlin.math.min
 /** A deliberately small boundary shared by the Compose UI, demo engine, and Rust JNI adapter. */
 interface NativeSeedFinder {
     fun startSearch(request: SearchRequest): NativeSearchSession
-    fun scoutSeed(seed: String): ScoutWorld
+    fun scoutSeed(seed: String, challenges: Int = 0): ScoutWorld
 }
 
 interface NativeSearchSession : AutoCloseable {
@@ -50,8 +51,9 @@ object NativeSeedFinderFactory {
 class DemoNativeSeedFinder : NativeSeedFinder {
     override fun startSearch(request: SearchRequest): NativeSearchSession = DemoSession(request)
 
-    override fun scoutSeed(seed: String): ScoutWorld {
+    override fun scoutSeed(seed: String, challenges: Int): ScoutWorld {
         require(SeedCode.isCanonical(seed)) { "Seed must use XXX-XXX-XXX format" }
+        require(challenges in 0..Challenge.ALL_MASK) { "Challenge mask must be 0..${Challenge.ALL_MASK}" }
         return ScoutWorld(
             seed = seed,
             items = listOf(
@@ -176,28 +178,30 @@ class DemoNativeSeedFinder : NativeSeedFinder {
  * 3. `status(handle) -> long[5]` returns state, scanned, total, error, and probability bits.
  * 4. `cancel(handle)` is cooperative and safe to repeat.
  * 5. `close(handle)` joins/releases native resources and is safe after any terminal state.
- * 6. `scoutSeed(seedBytes) -> scoutBytes` generates one canonical seed through depth 24.
+ * 6. `scoutSeed(requestBytes) -> scoutBytes` generates one canonical seed through depth 24.
  *
- * Requests use `SSF3` without tier predicates and `SSF4` when one is present. SSF4 repeats
+ * Search requests always use `SSF5`: magic, maxDepth:u8, flags:u8, challenges:u16 little-endian,
+ * requirementCount:u16 big-endian, followed by repeated
  * kind:u8, optionalItemId:utf8_u16, tierMode:u8, tierValue:u8, upgradeMode:u8,
  * upgradeValue:u8, modifier:utf8_u16,
  * optionalSource:u8, sameItemGroup:u8, requirementMaxDepth:u8 (0 uses the request limit).
- * SSF3 has the same layout without tierMode and tierValue. Flag bit 0 requires an accessible
- * blacksmith; flag
- * bit 1 enables the lossy fast search mode (quest-only +3 weapon/armor sources); flag bit 2
+ * Flag bit 0 requires an accessible blacksmith; bit 1 enables the lossy fast search mode
+ * (quest-only +3 weapon/armor sources); flag bit 2
  * prevents Blacksmith "Smith" rewards from satisfying item requirements.
  * Result packet `SSR1`: magic[4], count:u16, then
  * repeated seedLength:u8, seed:ASCII. State codes are 0 running, 1 complete, 2 cancelled,
- * 3 failed. A non-zero handle is required. Scout packet `SSC1` contains the echoed canonical seed
+ * 3 failed. A non-zero handle is required. Scout requests use `SSQ2`, a little-endian challenge
+ * mask, then the canonical UTF-8 seed. Scout packet `SSC1` contains the echoed canonical seed
  * followed by catalog ID, depth, upgrade, curse, effect, source, and accessibility for every item.
  */
 class JniNativeSeedFinder(
     private val bindings: NativeBindings = JniBindingsAdapter,
 ) : NativeSeedFinder {
-    override fun scoutSeed(seed: String): ScoutWorld {
+    override fun scoutSeed(seed: String, challenges: Int): ScoutWorld {
         require(SeedCode.isCanonical(seed)) { "Seed must use XXX-XXX-XXX format" }
+        require(challenges in 0..Challenge.ALL_MASK) { "Challenge mask must be 0..${Challenge.ALL_MASK}" }
         val world = ScoutResultCodec.decode(
-            bindings.scoutSeed(seed.toByteArray(StandardCharsets.UTF_8)),
+            bindings.scoutSeed(ScoutRequestCodec.encode(seed, challenges)),
         )
         check(world.seed == seed) { "Native scout returned ${world.seed} for requested seed $seed" }
         return world
@@ -304,27 +308,26 @@ object SeedCode {
 object QueryCodec {
     fun encode(request: SearchRequest): ByteArray = ByteArrayOutputStream().use { bytes ->
         DataOutputStream(bytes).use { output ->
-            val hasTier = request.requirements.any { it.tierMatch != TierMatch.ANY }
-            output.write("SSF${if (hasTier) 4 else 3}".toByteArray(StandardCharsets.US_ASCII))
+            output.write("SSF5".toByteArray(StandardCharsets.US_ASCII))
             output.writeByte(request.maximumDepth)
             output.writeByte(
                 (if (request.requireBlacksmith) 1 else 0) or
                     (if (request.fastMode) 2 else 0) or
                     (if (request.excludeBlacksmithRewards) 4 else 0),
             )
+            output.writeByte(request.challenges and 0xff)
+            output.writeByte(request.challenges ushr 8)
             output.writeShort(request.requirements.size)
-            request.requirements.forEach { requirement -> writeRequirement(output, requirement, hasTier) }
+            request.requirements.forEach { requirement -> writeRequirement(output, requirement) }
         }
         bytes.toByteArray()
     }
 
-    private fun writeRequirement(output: DataOutputStream, requirement: ItemRequirement, hasTier: Boolean) {
+    private fun writeRequirement(output: DataOutputStream, requirement: ItemRequirement) {
         output.writeByte(requirement.kind.ordinal)
         writeUtf8(output, requirement.item?.id.orEmpty())
-        if (hasTier) {
-            output.writeByte(requirement.tierMatch.ordinal)
-            output.writeByte(requirement.tier)
-        }
+        output.writeByte(requirement.tierMatch.ordinal)
+        output.writeByte(requirement.tier)
         output.writeByte(requirement.upgradeMatch.ordinal)
         output.writeByte(requirement.upgrade)
         writeUtf8(output, requirement.modifier.orEmpty())
@@ -338,6 +341,21 @@ object QueryCodec {
         require(encoded.size <= 65_535) { "Wire string is too long" }
         output.writeShort(encoded.size)
         output.write(encoded)
+    }
+}
+
+object ScoutRequestCodec {
+    fun encode(seed: String, challenges: Int): ByteArray {
+        require(SeedCode.isCanonical(seed)) { "Seed must use XXX-XXX-XXX format" }
+        require(challenges in 0..Challenge.ALL_MASK) { "Challenge mask must be 0..${Challenge.ALL_MASK}" }
+        return byteArrayOf(
+            'S'.code.toByte(),
+            'S'.code.toByte(),
+            'Q'.code.toByte(),
+            '2'.code.toByte(),
+            (challenges and 0xff).toByte(),
+            (challenges ushr 8).toByte(),
+        ) + seed.toByteArray(StandardCharsets.UTF_8)
     }
 }
 

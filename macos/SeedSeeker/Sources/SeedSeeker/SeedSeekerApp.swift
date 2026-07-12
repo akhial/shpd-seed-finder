@@ -7,11 +7,13 @@ struct SeedSeekerApp: App {
     var body: some Scene {
         WindowGroup("Seed Seeker") { ContentView() }
             .defaultSize(width: 1_180, height: 720)
+        Settings { ChallengesSettingsView() }
     }
 }
 
 private struct ContentView: View {
     @AppStorage("savedQuery") private var savedQueryJSON = ""
+    @AppStorage("challenges") private var challenges = 0
     @State private var requirements: [ItemRequirement] = []
     @State private var maximumDepth = 24
     @State private var requireBlacksmith = false
@@ -27,13 +29,14 @@ private struct ContentView: View {
                 QueryView(requirements: $requirements, maximumDepth: $maximumDepth,
                           requireBlacksmith: $requireBlacksmith,
                           excludeBlacksmithRewards: $excludeBlacksmithRewards, fastMode: $fastMode,
+                          challenges: $challenges,
                           controller: controller)
                     .navigationSplitViewColumnWidth(min: 300, ideal: 330, max: 380)
             } content: {
-                ResultsView(controller: controller) { seed in scout.scout(seed) }
+                ResultsView(controller: controller) { seed in scout.scout(seed, challenges: challenges) }
                     .navigationSplitViewColumnWidth(min: 340, ideal: 420)
             } detail: {
-                SeedDetailView(model: scout, requirements: requirements)
+                SeedDetailView(model: scout, requirements: requirements, challenges: challenges)
                     .navigationSplitViewColumnWidth(min: 360, ideal: 450)
             }
             Divider()
@@ -54,7 +57,9 @@ private struct ContentView: View {
         .onChange(of: requireBlacksmith) { save() }
         .onChange(of: excludeBlacksmithRewards) { save() }
         .onChange(of: fastMode) { save() }
-        .onChange(of: controller.selectedSeed) { _, seed in if let seed { scout.scout(seed) } }
+        .onChange(of: controller.selectedSeed) { _, seed in
+            if let seed { scout.scout(seed, challenges: challenges) }
+        }
     }
 
     private func save() {
@@ -62,6 +67,40 @@ private struct ContentView: View {
         savedQueryJSON = QueryPersistence.encode(.init(requirements: requirements,
             maximumDepth: maximumDepth, requireBlacksmith: requireBlacksmith,
             excludeBlacksmithRewards: excludeBlacksmithRewards, fastMode: fastMode)) ?? ""
+    }
+}
+
+private struct ChallengesSettingsView: View {
+    @AppStorage("challenges") private var challenges = 0
+
+    var body: some View {
+        Form {
+            Section {
+                Text("Searches simulate runs with the selected challenges enabled.")
+                    .foregroundStyle(.secondary)
+            }
+            Section("Challenges") {
+                ForEach(Challenge.allCases, id: \.rawValue) { challenge in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Toggle(challenge.label, isOn: binding(for: challenge))
+                        Text(challenge.changesLevelGeneration
+                             ? "changes level generation" : "no effect on seed content")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 460, height: 570)
+    }
+
+    private func binding(for challenge: Challenge) -> Binding<Bool> {
+        Binding {
+            challenges & challenge.rawValue != 0
+        } set: { enabled in
+            if enabled { challenges |= challenge.rawValue }
+            else { challenges &= ~challenge.rawValue }
+        }
     }
 }
 
@@ -100,6 +139,7 @@ private struct QueryView: View {
     @Binding var requireBlacksmith: Bool
     @Binding var excludeBlacksmithRewards: Bool
     @Binding var fastMode: Bool
+    @Binding var challenges: Int
     let controller: SearchController
     @State private var editor: EditorSession?
 
@@ -138,12 +178,18 @@ private struct QueryView: View {
                 }
             }
             Divider()
+            if challenges.nonzeroBitCount > 0 {
+                Label("Challenges: \(challenges.nonzeroBitCount) enabled", systemImage: "flag.fill")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal).padding(.top, 8)
+            }
             Button {
                 if controller.isRunning { controller.cancel() }
                 else if let request = try? SearchRequest(requirements: requirements,
                     maximumDepth: maximumDepth, requireBlacksmith: requireBlacksmith,
                     excludeBlacksmithRewards: excludeBlacksmithRewards,
-                    fastMode: fastMode) { controller.start(request) }
+                    fastMode: fastMode, challenges: challenges) { controller.start(request) }
             } label: {
                 Label(controller.isRunning ? "Cancel Search" : "Start Search",
                       systemImage: controller.isRunning ? "stop.fill" : "play.fill")
@@ -420,17 +466,18 @@ private struct ResultsView: View {
     var error: String?
     var loading = false
     private let engine = ProductionSeedFinderEngine()
-    func scout(_ seed: String? = nil) {
+    func scout(_ seed: String? = nil, challenges: Int) {
         if let seed { input = SeedCode.formatInput(seed) }
         guard SeedCode.isCanonical(input) else { error = "Seed must use XXX-XXX-XXX format"; return }
         let requested = input; loading = true; error = nil
-        Task { do { world = try await engine.scoutSeed(requested) } catch { self.error = error.localizedDescription }; loading = false }
+        Task { do { world = try await engine.scoutSeed(requested, challenges: challenges) } catch { self.error = error.localizedDescription }; loading = false }
     }
 }
 
 private struct SeedDetailView: View {
     @Bindable var model: ScoutViewModel
     let requirements: [ItemRequirement]
+    let challenges: Int
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -452,8 +499,8 @@ private struct SeedDetailView: View {
             HStack {
                 TextField("AAA-AAA-AAA", text: $model.input).font(.system(size: 20, design: .monospaced)).focused($focused)
                     .onChange(of: model.input) { _, value in let formatted = SeedCode.formatInput(value); if formatted != value { model.input = formatted } }
-                    .onSubmit { model.scout() }
-                Button("Scout") { model.scout() }.disabled(!SeedCode.isCanonical(model.input))
+                    .onSubmit { model.scout(challenges: challenges) }
+                Button("Scout") { model.scout(challenges: challenges) }.disabled(!SeedCode.isCanonical(model.input))
                 if let seed = model.world?.seed { Button("Copy") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(seed, forType: .string) } }
                 if model.loading { ProgressView().controlSize(.small) }
             }

@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use shpd_seedfinder_core::catalog::{Effect, ItemKind, item_by_stable_id};
+use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::model::ItemSource;
 use shpd_seedfinder_core::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
 
@@ -15,6 +16,38 @@ struct QueryDocument {
     exclude_blacksmith_rewards: bool,
     #[serde(default)]
     fast_mode: bool,
+    #[serde(default)]
+    challenges: Vec<FileChallenge>,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum FileChallenge {
+    OnDiet,
+    FaithIsMyArmor,
+    Pharmacophobia,
+    BarrenLand,
+    SwarmIntelligence,
+    IntoDarkness,
+    ForbiddenRunes,
+    HostileChampions,
+    BadderBosses,
+}
+
+impl From<FileChallenge> for Challenges {
+    fn from(value: FileChallenge) -> Self {
+        match value {
+            FileChallenge::OnDiet => Self::NO_FOOD,
+            FileChallenge::FaithIsMyArmor => Self::NO_ARMOR,
+            FileChallenge::Pharmacophobia => Self::NO_HEALING,
+            FileChallenge::BarrenLand => Self::NO_HERBALISM,
+            FileChallenge::SwarmIntelligence => Self::SWARM_INTELLIGENCE,
+            FileChallenge::IntoDarkness => Self::DARKNESS,
+            FileChallenge::ForbiddenRunes => Self::NO_SCROLLS,
+            FileChallenge::HostileChampions => Self::CHAMPION_ENEMIES,
+            FileChallenge::BadderBosses => Self::STRONGER_BOSSES,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -148,6 +181,10 @@ pub fn decode(contents: &str) -> Result<SearchQuery, String> {
     let query = SearchQuery {
         requirements,
         max_depth: document.max_depth,
+        challenges: document
+            .challenges
+            .into_iter()
+            .fold(Challenges::NONE, |mask, challenge| mask | challenge.into()),
         require_blacksmith: document.require_blacksmith,
         exclude_blacksmith_rewards: document.exclude_blacksmith_rewards,
         fast_mode: document.fast_mode,
@@ -203,6 +240,7 @@ fn convert_requirement(requirement: FileRequirement) -> Result<Requirement, Stri
 #[cfg(test)]
 mod tests {
     use shpd_seedfinder_core::catalog::{ItemId, ItemKind};
+    use shpd_seedfinder_core::challenges::Challenges;
     use shpd_seedfinder_core::model::ItemSource;
     use shpd_seedfinder_core::query::UpgradeRequirement;
 
@@ -238,9 +276,24 @@ mod tests {
     }
 
     #[test]
+    fn challenge_names_map_to_the_upstream_mask() {
+        let query = decode(
+            r#"{"challenges":["barren_land","into_darkness","forbidden_runes"],
+                "requirements":[{"item":"sword"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(query.challenges, Challenges::new(104).unwrap());
+        assert!(
+            decode(r#"{"challenges":["not_a_challenge"],"requirements":[{"item":"sword"}]}"#)
+                .is_err()
+        );
+    }
+
+    #[test]
     fn defaults_scope_and_upgrade() {
         let query = decode(r#"{"requirements":[{"item":"sword"}]}"#).unwrap();
         assert_eq!(query.max_depth, 24);
+        assert_eq!(query.challenges, Challenges::NONE);
         assert!(!query.require_blacksmith);
         assert!(!query.exclude_blacksmith_rewards);
         assert_eq!(query.requirements[0].upgrade, UpgradeRequirement::Any);

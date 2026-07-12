@@ -8,7 +8,8 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use shpd_seedfinder_core::main_world::CanonicalMainWorldGenerator;
+use shpd_seedfinder_core::challenges::Challenges;
+use shpd_seedfinder_core::main_world::{CanonicalMainWorldGenerator, ConfiguredMainWorldGenerator};
 use shpd_seedfinder_core::probability::estimate_match_probability;
 use shpd_seedfinder_core::query::SearchQuery;
 use shpd_seedfinder_core::search::{
@@ -17,7 +18,7 @@ use shpd_seedfinder_core::search::{
 };
 use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
 use shpd_seedfinder_core::wire::{
-    WireError, decode_query, decode_scout_seed, encode_results, encode_scout_world,
+    WireError, decode_query, decode_scout_request, encode_results, encode_scout_world,
 };
 
 pub const STATE_RUNNING: i64 = 0;
@@ -35,7 +36,8 @@ pub const MAX_ACCEPTED_RESULTS: usize = 1_024;
 const PRODUCTION_SEARCH_START_STRIDE: u64 = 3_355_211_884_971;
 
 static REGISTRY: OnceLock<SessionRegistry> = OnceLock::new();
-static CANONICAL_GENERATOR: OnceLock<Arc<CanonicalMainWorldGenerator>> = OnceLock::new();
+static CANONICAL_GENERATORS: OnceLock<Mutex<HashMap<u16, Arc<ConfiguredMainWorldGenerator>>>> =
+    OnceLock::new();
 static NEXT_PRODUCTION_SEARCH_START: OnceLock<AtomicU64> = OnceLock::new();
 
 #[must_use]
@@ -43,8 +45,16 @@ pub fn registry() -> &'static SessionRegistry {
     REGISTRY.get_or_init(SessionRegistry::new)
 }
 
-fn canonical_generator() -> &'static Arc<CanonicalMainWorldGenerator> {
-    CANONICAL_GENERATOR.get_or_init(|| Arc::new(CanonicalMainWorldGenerator))
+fn canonical_generator(challenges: Challenges) -> Arc<ConfiguredMainWorldGenerator> {
+    let generators = CANONICAL_GENERATORS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut generators = generators
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    Arc::clone(
+        generators
+            .entry(challenges.bits())
+            .or_insert_with(|| Arc::new(CanonicalMainWorldGenerator::with_challenges(challenges))),
+    )
 }
 
 fn production_search_start() -> u64 {
@@ -82,7 +92,9 @@ pub enum ScoutCallError {
     Panicked,
 }
 
-/// Validates a scout request, generates a depth-24 world, and encodes `SSC1`.
+/// Validates an `SSQ2` scout request (`magic[4]`, little-endian challenge
+/// `u16`, remaining UTF-8 seed code) or a legacy raw-seed request, generates a
+/// depth-24 world with the supplied generator, and encodes `SSC1`.
 ///
 /// # Errors
 ///
@@ -91,7 +103,7 @@ pub fn scout_seed_packet<G: WorldGenerator + ?Sized>(
     generator: &G,
     request: &[u8],
 ) -> Result<Vec<u8>, ScoutPacketError> {
-    let seed = decode_scout_seed(request).map_err(ScoutPacketError::Request)?;
+    let (seed, _) = decode_scout_request(request).map_err(ScoutPacketError::Request)?;
     let world = generator.generate(seed, 24);
     encode_scout_world(&world).map_err(ScoutPacketError::Response)
 }
@@ -110,13 +122,17 @@ pub fn protected_scout_seed_packet<G: WorldGenerator + ?Sized>(
         .map_err(ScoutCallError::Packet)
 }
 
-/// Scouts one world with the canonical production generator.
+/// Scouts one world with the canonical production generator selected by the
+/// `SSQ2` challenge mask. Legacy raw UTF-8 seed requests use mask zero.
 ///
 /// # Errors
 ///
 /// Returns a packet error or a contained generation panic.
 pub fn production_scout_packet(request: &[u8]) -> Result<Vec<u8>, ScoutCallError> {
-    protected_scout_seed_packet(canonical_generator().as_ref(), request)
+    let (_, challenges) = decode_scout_request(request)
+        .map_err(ScoutPacketError::Request)
+        .map_err(ScoutCallError::Packet)?;
+    protected_scout_seed_packet(canonical_generator(challenges).as_ref(), request)
 }
 
 pub struct NativeSession {
@@ -158,20 +174,17 @@ impl NativeSession {
             chunk_size: NonZeroUsize::new(SEARCH_CHUNK_SIZE).unwrap_or(NonZeroUsize::MIN),
             max_results: NonZeroUsize::new(MAX_ACCEPTED_RESULTS).unwrap_or(NonZeroUsize::MIN),
         };
-        spawn_rotated_streaming_search(
-            canonical_generator(),
-            query,
-            options,
-            production_search_start(),
+        let generator = canonical_generator(query.challenges);
+        spawn_rotated_streaming_search(&generator, query, options, production_search_start()).map(
+            |search| Self {
+                search,
+                match_probability,
+                diagnostic_claimed: AtomicBool::new(false),
+            },
         )
-        .map(|search| Self {
-            search,
-            match_probability,
-            diagnostic_claimed: AtomicBool::new(false),
-        })
     }
 
-    /// Decodes a supported `SSF1`/`SSF2`/`SSF3` request and starts a canonical
+    /// Decodes a supported `SSF1` through `SSF5` request and starts a canonical
     /// production search.
     ///
     /// # Errors
@@ -434,10 +447,20 @@ mod tests {
                 max_depth: None,
             }],
             max_depth: 24,
+            challenges: Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             fast_mode: false,
         }
+    }
+
+    #[test]
+    fn production_generator_cache_is_keyed_by_challenge_mask() {
+        let normal = canonical_generator(Challenges::NONE);
+        let normal_again = canonical_generator(Challenges::NONE);
+        let forbidden = canonical_generator(Challenges::NO_SCROLLS);
+        assert!(Arc::ptr_eq(&normal, &normal_again));
+        assert!(!Arc::ptr_eq(&normal, &forbidden));
     }
     fn options(end: u64, max: usize) -> SearchOptions {
         SearchOptions {
@@ -584,6 +607,16 @@ mod tests {
             Err(ScoutPacketError::Request(WireError::InvalidUtf8))
         );
         assert_eq!(generator.calls.load(Ordering::Relaxed), 0);
+    }
+    #[test]
+    fn production_scout_uses_the_request_challenge_mask() {
+        let normal = production_scout_packet(b"SSQ2\x00\x00AAA-AAA-AAF").unwrap();
+        let challenged = production_scout_packet(b"SSQ2\x68\x00AAA-AAA-AAF").unwrap();
+        let normal = decode_scout_world(&normal).unwrap();
+        let challenged = decode_scout_world(&challenged).unwrap();
+
+        assert_eq!(normal.seed, challenged.seed);
+        assert_ne!(normal, challenged);
     }
     #[test]
     fn protected_scout_helper_contains_generator_panics() {

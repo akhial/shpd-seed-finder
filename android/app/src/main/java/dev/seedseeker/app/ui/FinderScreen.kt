@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -70,6 +71,7 @@ fun FinderScreen(
     requireBlacksmith: Boolean,
     excludeBlacksmithRewards: Boolean,
     fastMode: Boolean,
+    challenges: Int,
     results: List<SeedResult>,
     status: SearchStatus?,
     seedsPerSecond: Double,
@@ -77,6 +79,7 @@ fun FinderScreen(
     isSearching: Boolean,
     error: String?,
     onAbout: () -> Unit,
+    onChallenges: () -> Unit,
     onAdd: () -> Unit,
     onEdit: (ItemRequirement) -> Unit,
     onRemove: (ItemRequirement) -> Unit,
@@ -104,6 +107,9 @@ fun FinderScreen(
                     )
                 },
                 actions = {
+                    IconButton(onClick = onChallenges) {
+                        Icon(Icons.Filled.Settings, contentDescription = "Challenges")
+                    }
                     IconButton(onClick = onAbout) {
                         Icon(Icons.Filled.Info, contentDescription = "About and licenses")
                     }
@@ -183,11 +189,13 @@ fun FinderScreen(
                         requireBlacksmith = requireBlacksmith,
                         excludeBlacksmithRewards = excludeBlacksmithRewards,
                         fastMode = fastMode,
+                        challenges = challenges,
                         enabled = !isSearching,
                         onMaximumDepthChange = onMaximumDepthChange,
                         onRequireBlacksmithChange = onRequireBlacksmithChange,
                         onExcludeBlacksmithRewardsChange = onExcludeBlacksmithRewardsChange,
                         onFastModeChange = onFastModeChange,
+                        onChallenges = onChallenges,
                         modifier = Modifier.padding(top = 20.dp),
                     )
                 }
@@ -369,11 +377,13 @@ private fun ScopeCard(
     requireBlacksmith: Boolean,
     excludeBlacksmithRewards: Boolean,
     fastMode: Boolean,
+    challenges: Int,
     enabled: Boolean,
     onMaximumDepthChange: (Int) -> Unit,
     onRequireBlacksmithChange: (Boolean) -> Unit,
     onExcludeBlacksmithRewardsChange: (Boolean) -> Unit,
     onFastModeChange: (Boolean) -> Unit,
+    onChallenges: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Card(
@@ -389,6 +399,28 @@ private fun ScopeCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (challenges != 0) {
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onChallenges)
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Challenges: ${Integer.bitCount(challenges)} enabled",
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    Icon(
+                        Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
             Spacer(Modifier.height(14.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(

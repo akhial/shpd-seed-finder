@@ -327,6 +327,7 @@ impl SpecialPrizeContext for PrizePool {
     }
 
     fn is_item_blocked(&self, _item: &SpecialItem) -> bool {
+        // v3.3.8 challenges block only Dewdrops, which this loot pool cannot hold.
         false
     }
 

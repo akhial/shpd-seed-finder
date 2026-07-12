@@ -39,6 +39,7 @@ def main():
     assert run_init["game_commit"] == "7b8b845a76fe76c6b7c031ae9e570852411f56db"
     assert run_init["seed_code"] == "AAA-AAA-AAA"
     assert run_init["seed"] == 0
+    assert run_init["challenges"] == 0
     assert run_init["requested_depths"] == [1]
     assert level["depth"] == 1
 

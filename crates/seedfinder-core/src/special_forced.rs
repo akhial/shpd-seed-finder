@@ -285,6 +285,7 @@ impl ForcedPrizeContext for ForcedPrizePool {
     }
 
     fn is_item_blocked(&self, _item: RegularItem) -> bool {
+        // v3.3.8 challenges block only Dewdrops, which are never queued here.
         false
     }
 

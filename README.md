@@ -121,6 +121,7 @@ combinations cannot satisfy a query.
   "max_depth": 24,
   "require_blacksmith": false,
   "exclude_blacksmith_rewards": false,
+  "challenges": ["barren_land", "into_darkness", "forbidden_runes"],
   "requirements": [
     {
       "item": "ring_tenacity",
@@ -141,6 +142,10 @@ Omitting `upgrade` means any upgrade; an integer means an exact upgrade. Item ef
 required for wildcard requirements; concrete items use the stable IDs from
 `crates/seedfinder-core/src/catalog.rs`. Set `exclude_blacksmith_rewards` when the Smith choice
 must remain unused so the Blacksmith's favor can instead be spent on reforging.
+
+The optional `challenges` array accepts `on_diet`, `faith_is_my_armor`, `pharmacophobia`,
+`barren_land`, `swarm_intelligence`, `into_darkness`, `forbidden_runes`,
+`hostile_champions`, and `badder_bosses`. An omitted or empty array uses the normal game rules.
 
 Searches automatically exploit generation logic: queries that can only be satisfied by quest
 rewards stop generating floors past the quest's depth window (+3 wands end at floor 9, +3/+4

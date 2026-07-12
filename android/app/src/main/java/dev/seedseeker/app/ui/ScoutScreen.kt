@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -70,6 +71,7 @@ fun ScoutScreen(
     requirements: List<ItemRequirement>,
     onSeedChange: (String) -> Unit,
     onScout: () -> Unit,
+    onChallenges: () -> Unit,
     onAbout: () -> Unit,
     bottomBar: @Composable () -> Unit,
 ) {
@@ -89,6 +91,9 @@ fun ScoutScreen(
                     )
                 },
                 actions = {
+                    IconButton(onClick = onChallenges) {
+                        Icon(Icons.Filled.Settings, contentDescription = "Challenges")
+                    }
                     IconButton(onClick = onAbout) {
                         Icon(Icons.Filled.Info, contentDescription = "About and licenses")
                     }

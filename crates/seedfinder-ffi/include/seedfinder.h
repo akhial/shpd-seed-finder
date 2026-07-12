@@ -9,7 +9,12 @@ extern "C" {
 #endif
 
 // All functions are thread-safe. Packets use the same wire formats as JNI:
-// request SSF2/SSF3, results SSR1, scout SSC1 (documented in the Kotlin adapter).
+// Search requests SSF1..SSF5 and results SSR1. SSF5 globals are:
+// magic[4], max_depth:u8, flags:u8, challenges:u16 little-endian,
+// requirement_count:u16 big-endian; requirement records are identical to SSF4.
+// Scout requests are SSQ2 magic[4], challenges:u16 little-endian, then the
+// UTF-8 seed code in all remaining bytes. Legacy raw UTF-8 seed codes use mask 0.
+// Scout responses remain SSC1.
 int64_t seedfinder_start_search(const uint8_t *request, size_t request_len); // >0 handle, 0 on invalid request or spawn failure
 int32_t seedfinder_poll(int64_t handle, uint32_t max_results, uint8_t **out_packet, size_t *out_len);
 int32_t seedfinder_status(int64_t handle, int64_t out_status[5]); // [state, scanned, total, errorCode, probabilityBits]

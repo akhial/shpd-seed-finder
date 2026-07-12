@@ -8,6 +8,12 @@ trap 'rm -f "$ACTUAL"' EXIT
 
 "$ORACLE_DIR/run.sh" --seed AAA-AAA-AAF --floors 17 --format json \
     --no-phases --transmute-imp >"$ACTUAL"
-python3 "$ORACLE_DIR/tests/assert_imp_transmutation.py" "$EXPECTED" "$ACTUAL"
+MODE="$EXPECTED"
+if [[ "${1:-}" == "--print" ]]; then
+    MODE=--print
+fi
+python3 "$ORACLE_DIR/tests/assert_imp_transmutation.py" "$MODE" "$ACTUAL"
 
-echo "AAA-AAA-AAF +4 Imp ring transmutation oracle fixture passed"
+if [[ "$MODE" != "--print" ]]; then
+    echo "AAA-AAA-AAF +4 Imp ring transmutation oracle fixture passed"
+fi

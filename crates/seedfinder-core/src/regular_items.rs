@@ -16,6 +16,7 @@
 use std::fmt;
 
 use crate::catalog::Effect;
+use crate::challenges::Challenges;
 use crate::equipment::EquipmentRoll;
 use crate::generator::{
     GeneratedArtifact, GeneratedItem, GeneratorError, MissileKind, random as generator_random,
@@ -230,6 +231,7 @@ pub fn create_regular_items<P: RegularItemPlacement>(
     generator: &mut GeneratorState,
     depth: u8,
     feeling: Feeling,
+    challenges: Challenges,
     mut queue: Vec<RegularItem>,
     placement: &mut P,
 ) -> Result<RegularItemsResult, RegularItemsError> {
@@ -268,7 +270,15 @@ pub fn create_regular_items<P: RegularItemPlacement>(
         );
     }
 
-    let isolated_streams = consume_canonical_isolated_streams(random);
+    let isolated_streams = consume_isolated_streams(
+        random,
+        challenges,
+        feeling,
+        depth,
+        placement,
+        &mut placements,
+        &mut world_items,
+    );
     Ok(RegularItemsResult {
         generated_item_count,
         final_queue: queue,
@@ -627,7 +637,15 @@ fn append_world_item(
     }
 }
 
-fn consume_canonical_isolated_streams(random: &mut RandomStack) -> [IsolatedItemStream; 8] {
+fn consume_isolated_streams<P: RegularItemPlacement>(
+    random: &mut RandomStack,
+    challenges: Challenges,
+    feeling: Feeling,
+    depth: u8,
+    placement: &mut P,
+    records: &mut Vec<RegularItemPlacementRecord>,
+    world_items: &mut Vec<WorldItem>,
+) -> [IsolatedItemStream; 8] {
     const KINDS: [IsolatedItemStreamKind; 8] = [
         IsolatedItemStreamKind::DarknessTorches,
         IsolatedItemStreamKind::Bones,
@@ -643,6 +661,21 @@ fn consume_canonical_isolated_streams(random: &mut RandomStack) -> [IsolatedItem
         let seed = random.long();
         random.push(seed);
         match kind {
+            IsolatedItemStreamKind::DarknessTorches
+                if challenges.contains(Challenges::DARKNESS) =>
+            {
+                let count = if feeling == Feeling::Large { 2 } else { 1 };
+                for _ in 0..count {
+                    place_queued_item(
+                        depth,
+                        random,
+                        placement,
+                        RegularItem::Queued(QueuedItemKind::Torch),
+                        records,
+                        world_items,
+                    );
+                }
+            }
             IsolatedItemStreamKind::EbonyMimic => {
                 // `Float() < 0` is false, but the left side is unconditional.
                 let _unused_ebony_roll = random.float();
@@ -757,6 +790,22 @@ mod tests {
         feeling: Feeling,
         queue: Vec<RegularItem>,
     ) -> (super::RegularItemsResult, LinearPlacement, i64) {
+        run_fixture_with_challenges(
+            depth,
+            outer_seed,
+            feeling,
+            crate::challenges::Challenges::NONE,
+            queue,
+        )
+    }
+
+    fn run_fixture_with_challenges(
+        depth: u8,
+        outer_seed: i64,
+        feeling: Feeling,
+        challenges: crate::challenges::Challenges,
+        queue: Vec<RegularItem>,
+    ) -> (super::RegularItemsResult, LinearPlacement, i64) {
         let mut generator = RunState::new(0).generator;
         let mut random = RandomStack::with_base_seed(0);
         random.push(outer_seed);
@@ -766,6 +815,7 @@ mod tests {
             &mut generator,
             depth,
             feeling,
+            challenges,
             queue,
             &mut placement,
         )
@@ -953,6 +1003,41 @@ mod tests {
         assert_eq!(
             result.isolated_streams.map(|stream| stream.kind as u8),
             [0, 1, 2, 3, 4, 5, 6, 7]
+        );
+    }
+
+    #[test]
+    fn darkness_torches_use_only_the_always_consumed_child_stream() {
+        let (normal, _, normal_next) = run_fixture(16, 16, Feeling::None, vec![]);
+        let (dark, _, dark_next) = run_fixture_with_challenges(
+            16,
+            16,
+            Feeling::None,
+            crate::challenges::Challenges::DARKNESS,
+            vec![],
+        );
+        assert_eq!(dark_next, normal_next);
+        assert_eq!(dark.isolated_streams, normal.isolated_streams);
+        assert_eq!(dark.placements.len(), normal.placements.len() + 1);
+        assert_eq!(
+            dark.placements.last().unwrap().items,
+            [RegularItem::Queued(QueuedItemKind::Torch),]
+        );
+
+        let (large, _, _) = run_fixture_with_challenges(
+            16,
+            16,
+            Feeling::Large,
+            crate::challenges::Challenges::DARKNESS,
+            vec![],
+        );
+        assert_eq!(
+            large
+                .placements
+                .iter()
+                .filter(|record| record.items == [RegularItem::Queued(QueuedItemKind::Torch)])
+                .count(),
+            2,
         );
     }
 }

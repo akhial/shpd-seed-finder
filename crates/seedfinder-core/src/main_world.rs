@@ -10,6 +10,7 @@ use crate::batch::seed_for_depth_batch4;
 use crate::caves_floor::{
     CanonicalCavesWorldGenerator, CavesFloorError, generate_caves_floor, generate_caves_world,
 };
+use crate::challenges::Challenges;
 use crate::city_boss_shop::generate_city_boss_shop;
 use crate::city_floor::{
     CanonicalCityWorldGenerator, CityFloorError, generate_city_floor, generate_city_world,
@@ -36,6 +37,57 @@ use crate::shop::ShopRunState;
 /// Exact version-pinned generator used by production search sessions.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CanonicalMainWorldGenerator;
+
+impl CanonicalMainWorldGenerator {
+    /// Builds a production generator for one validated challenge mask.
+    #[must_use]
+    pub const fn with_challenges(challenges: Challenges) -> ConfiguredMainWorldGenerator {
+        ConfiguredMainWorldGenerator { challenges }
+    }
+}
+
+/// Canonical main-dungeon generator configured for one challenge mask.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ConfiguredMainWorldGenerator {
+    challenges: Challenges,
+}
+
+impl WorldGenerator for ConfiguredMainWorldGenerator {
+    fn generate(&self, seed: DungeonSeed, max_depth: u8) -> GeneratedWorld {
+        generate_main_world_with_challenges(seed, max_depth, self.challenges)
+            .expect("ConfiguredMainWorldGenerator accepts depths 1..=24")
+    }
+
+    fn generate_batch(&self, seeds: &[DungeonSeed], max_depth: u8) -> Vec<GeneratedWorld> {
+        if self.challenges == Challenges::NONE {
+            return CanonicalMainWorldGenerator.generate_batch(seeds, max_depth);
+        }
+        seeds
+            .iter()
+            .copied()
+            .map(|seed| self.generate(seed, max_depth))
+            .collect()
+    }
+
+    fn generate_batch_gated(
+        &self,
+        seeds: &[DungeonSeed],
+        max_depth: u8,
+        gate: &dyn FloorGate,
+    ) -> Vec<Option<GeneratedWorld>> {
+        if self.challenges == Challenges::NONE {
+            return CanonicalMainWorldGenerator.generate_batch_gated(seeds, max_depth, gate);
+        }
+        seeds
+            .iter()
+            .copied()
+            .map(|seed| {
+                generate_main_world_gated_with_challenges(seed, max_depth, self.challenges, gate)
+                    .expect("validated gated batch satisfies canonical invariants")
+            })
+            .collect()
+    }
+}
 
 impl WorldGenerator for CanonicalMainWorldGenerator {
     fn generate(&self, seed: DungeonSeed, max_depth: u8) -> GeneratedWorld {
@@ -96,8 +148,14 @@ impl WorldGenerator for CanonicalMainWorldGenerator {
                     .map(|depth_roots| depth_roots[lane])
                     .collect::<Vec<_>>();
                 output.push(
-                    generate_gated_world_with_roots(chunk[lane], target, &roots, gate)
-                        .expect("validated gated batch satisfies canonical invariants"),
+                    generate_gated_world_with_roots(
+                        chunk[lane],
+                        target,
+                        &roots,
+                        Challenges::NONE,
+                        gate,
+                    )
+                    .expect("validated gated batch satisfies canonical invariants"),
                 );
             }
         }
@@ -141,6 +199,36 @@ pub fn generate_main_world(
         21..=24 => generate_halls_world(seed, maximum_depth).map_err(MainWorldError::Halls),
         _ => Err(MainWorldError::InvalidMaximumDepth(maximum_depth)),
     }
+}
+
+/// Challenge-aware form of [`generate_main_world`].
+///
+/// # Errors
+///
+/// Returns [`MainWorldError`] when `maximum_depth` is outside `1..=24` or a
+/// regional generator rejects its inputs.
+///
+/// # Panics
+///
+/// Panics only if the ungated generation pipeline abandons a world, which the
+/// open gate makes unreachable.
+pub fn generate_main_world_with_challenges(
+    seed: DungeonSeed,
+    maximum_depth: u8,
+    challenges: Challenges,
+) -> Result<GeneratedWorld, MainWorldError> {
+    struct OpenGate;
+    impl FloorGate for OpenGate {
+        fn continue_after_floor(
+            &self,
+            _completed_depth: u8,
+            _items: &[crate::model::WorldItem],
+        ) -> bool {
+            true
+        }
+    }
+    generate_main_world_gated_with_challenges(seed, maximum_depth, challenges, &OpenGate)
+        .map(|world| world.expect("open gate never abandons a world"))
 }
 
 /// Regular (non-boss) depths generated for a prefix through `target`.
@@ -187,7 +275,24 @@ pub fn generate_main_world_gated(
     let roots = regular_depths(target)
         .map(|depth| seed_for_depth(dungeon_seed, depth, 0))
         .collect::<Vec<_>>();
-    generate_gated_world_with_roots(seed, target, &roots, gate)
+    generate_gated_world_with_roots(seed, target, &roots, Challenges::NONE, gate)
+}
+
+fn generate_main_world_gated_with_challenges(
+    seed: DungeonSeed,
+    maximum_depth: u8,
+    challenges: Challenges,
+    gate: &dyn FloorGate,
+) -> Result<Option<GeneratedWorld>, MainWorldError> {
+    if !(1..=24).contains(&maximum_depth) {
+        return Err(MainWorldError::InvalidMaximumDepth(maximum_depth));
+    }
+    let target = effective_regular_depth(maximum_depth);
+    let dungeon_seed = i64::try_from(seed.value()).expect("base-26 seed range fits Java long");
+    let roots = regular_depths(target)
+        .map(|depth| seed_for_depth(dungeon_seed, depth, 0))
+        .collect::<Vec<_>>();
+    generate_gated_world_with_roots(seed, target, &roots, challenges, gate)
 }
 
 /// Sequential gated composite over the canonical per-region floor generators.
@@ -196,10 +301,11 @@ fn generate_gated_world_with_roots(
     seed: DungeonSeed,
     target: u8,
     roots: &[i64],
+    challenges: Challenges,
     gate: &dyn FloorGate,
 ) -> Result<Option<GeneratedWorld>, MainWorldError> {
     let dungeon_seed = i64::try_from(seed.value()).expect("base-26 seed range fits Java long");
-    let mut run = RunState::new(dungeon_seed);
+    let mut run = RunState::with_challenges(dungeon_seed, challenges);
     let mut limited_drops = LimitedDrops::default();
     let mut quests = QuestState::new();
     let mut shop_run = ShopRunState::default();
@@ -366,6 +472,7 @@ mod tests {
         let query = |requirements: Vec<Requirement>, fast_mode| SearchQuery {
             requirements,
             max_depth: 24,
+            challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             fast_mode,
@@ -447,6 +554,7 @@ mod tests {
                 max_depth: None,
             }],
             max_depth: 24,
+            challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             fast_mode: true,
@@ -569,6 +677,7 @@ mod tests {
                 max_depth: None,
             }],
             max_depth: 24,
+            challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             fast_mode: false,
@@ -607,5 +716,20 @@ mod tests {
             CanonicalMainWorldGenerator.generate_batch(&seeds, 24),
             scalar
         );
+    }
+
+    #[test]
+    fn explicit_zero_challenge_generator_is_byte_for_byte_compatible() {
+        let configured =
+            CanonicalMainWorldGenerator::with_challenges(crate::challenges::Challenges::NONE);
+        for value in [0, 1, 5, 26, 8_687_205_886] {
+            let seed = DungeonSeed::new(value).unwrap();
+            let configured_world = configured.generate(seed, 24);
+            let legacy_world = generate_main_world(seed, 24).unwrap();
+            assert_eq!(
+                crate::wire::encode_scout_world(&configured_world).unwrap(),
+                crate::wire::encode_scout_world(&legacy_world).unwrap(),
+            );
+        }
     }
 }

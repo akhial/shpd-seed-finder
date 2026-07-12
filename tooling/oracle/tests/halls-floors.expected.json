@@ -1,5 +1,5 @@
 {
-  "schema": "shpd-halls-parity-fixture/v1",
+  "schema": "shpd-halls-parity-fixture/v2",
   "game_version": "3.3.8",
   "game_commit": "7b8b845a76fe76c6b7c031ae9e570852411f56db",
   "runtime": {
@@ -37,6 +37,7 @@
   "seeds": {
     "AAA-AAA-AAA": {
       "seed": 0,
+      "challenges": 0,
       "requested_depths": [
         21,
         22,
@@ -526,6 +527,7 @@
     },
     "AAA-AAA-AAB": {
       "seed": 1,
+      "challenges": 0,
       "requested_depths": [
         21
       ],
@@ -647,6 +649,7 @@
     },
     "ABC-DEF-GHI": {
       "seed": 8687205886,
+      "challenges": 0,
       "requested_depths": [
         21
       ],
@@ -737,6 +740,7 @@
     },
     "ZZZ-ZZZ-ZZZ": {
       "seed": 5429503678975,
+      "challenges": 0,
       "requested_depths": [
         21
       ],
@@ -839,6 +843,7 @@
     },
     "AAA-AAA-AIC": {
       "seed": 210,
+      "challenges": 0,
       "requested_depths": [
         22
       ],

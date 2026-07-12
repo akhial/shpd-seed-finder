@@ -10,6 +10,7 @@ pub mod catalog;
 pub mod caves_floor;
 pub mod caves_mobs;
 pub mod caves_rooms;
+pub mod challenges;
 pub mod city_boss_shop;
 pub mod city_floor;
 pub mod city_mobs;

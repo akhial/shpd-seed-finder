@@ -6,7 +6,7 @@ import pathlib
 import sys
 
 
-FIXTURE_SCHEMA = "shpd-boss-transition-fixture/v1"
+FIXTURE_SCHEMA = "shpd-boss-transition-fixture/v2"
 NEUTRAL_BOSSES = {5, 10, 15, 25}
 
 
@@ -61,6 +61,7 @@ def fixture(documents):
         "game_version": first_run["game_version"],
         "game_commit": first_run["game_commit"],
         "runtime": first_run["runtime"],
+        "challenges": first_run["challenges"],
         "item_columns": [
             "choice", "class", "kind", "upgrade", "cursed", "quantity", "effect"
         ],
@@ -71,6 +72,7 @@ def fixture(documents):
         assert run["game_version"] == result["game_version"]
         assert run["game_commit"] == result["game_commit"]
         assert run["runtime"] == result["runtime"]
+        assert run["challenges"] == result["challenges"]
         transitions = [
             summarize_transition(record)
             for record in document["records"]

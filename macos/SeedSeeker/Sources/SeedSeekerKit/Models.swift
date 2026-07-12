@@ -44,8 +44,38 @@ public enum ScoutItemSource: Int, Codable, CaseIterable, Sendable {
     }
 }
 
+public enum Challenge: Int, CaseIterable, Sendable {
+    case noFood = 1
+    case noArmor = 2
+    case noHealing = 4
+    case noHerbalism = 8
+    case swarmIntelligence = 16
+    case darkness = 32
+    case noScrolls = 64
+    case championEnemies = 128
+    case strongerBosses = 256
+
+    public var label: String {
+        switch self {
+        case .noFood: "On diet"
+        case .noArmor: "Faith is my armor"
+        case .noHealing: "Pharmacophobia"
+        case .noHerbalism: "Barren land"
+        case .swarmIntelligence: "Swarm intelligence"
+        case .darkness: "Into darkness"
+        case .noScrolls: "Forbidden runes"
+        case .championEnemies: "Hostile champions"
+        case .strongerBosses: "Badder bosses"
+        }
+    }
+
+    public var changesLevelGeneration: Bool {
+        self == .noHerbalism || self == .darkness || self == .noScrolls
+    }
+}
+
 public enum ModelValidationError: Error, Equatable, LocalizedError {
-    case itemKind, tier, upgrade, modifier, identityGroup, itemMaximumDepth, emptyRequirements, maximumDepth
+    case itemKind, tier, upgrade, modifier, identityGroup, itemMaximumDepth, emptyRequirements, maximumDepth, challenges
     public var errorDescription: String? {
         switch self {
         case .itemKind: "Selected item must belong to its category"
@@ -56,6 +86,7 @@ public enum ModelValidationError: Error, Equatable, LocalizedError {
         case .itemMaximumDepth: "Item floor limit must be 1..24"
         case .emptyRequirements: "At least one requirement is needed"
         case .maximumDepth: "Maximum floor must be 1..24"
+        case .challenges: "Challenge mask must be 0..511"
         }
     }
 }
@@ -166,16 +197,19 @@ public struct SearchRequest: Codable, Sendable {
     /// quest rewards, skipping seeds whose sole match is a Crypt or
     /// Sacrificial-fire prize. Found seeds are always genuine matches.
     public var fastMode: Bool
+    public var challenges: Int
 
     public init(requirements: [ItemRequirement], maximumDepth: Int = 24,
                 requireBlacksmith: Bool = false, excludeBlacksmithRewards: Bool = false,
-                fastMode: Bool = false) throws {
+                fastMode: Bool = false, challenges: Int = 0) throws {
         guard !requirements.isEmpty else { throw ModelValidationError.emptyRequirements }
         guard (1...24).contains(maximumDepth) else { throw ModelValidationError.maximumDepth }
+        guard (0...511).contains(challenges) else { throw ModelValidationError.challenges }
         self.requirements = requirements; self.maximumDepth = maximumDepth
         self.requireBlacksmith = requireBlacksmith
         self.excludeBlacksmithRewards = excludeBlacksmithRewards
         self.fastMode = fastMode
+        self.challenges = challenges
     }
 }
 

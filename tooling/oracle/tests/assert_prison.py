@@ -6,7 +6,7 @@ import pathlib
 import sys
 
 
-FIXTURE_SCHEMA = "shpd-prison-parity-fixture/v1"
+FIXTURE_SCHEMA = "shpd-prison-parity-fixture/v2"
 
 
 def simple_name(value):
@@ -64,6 +64,7 @@ def summarize(document):
 
     return {
         "seed": run["seed"],
+        "challenges": run["challenges"],
         "requested_depths": run["requested_depths"],
         "generator_checkpoints": [
             [record["depth"], simple_name(record["level_class"]),

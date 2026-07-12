@@ -7,6 +7,7 @@
 //! this layer makes pre-painter RNG and graph parity independently testable.
 
 use crate::builder::{Builder, RegularLevelBuilder};
+use crate::challenges::Challenges;
 use crate::generator::{GeneratedItem, GeneratorError, random_category};
 use crate::level_prelude::{Feeling, LimitedDrops, MandatoryDrops, roll_feeling};
 use crate::quests::{QuestError, QuestState, WandmakerQuestType};
@@ -68,7 +69,13 @@ pub fn prepare_regular_floor(
         GeneratorCategory::Food,
         depth_i32,
     )?];
-    let mandatory_drops = limited_drops.roll_for_floor(depth_i32, random);
+    let mut mandatory_drops = limited_drops.roll_for_floor(depth_i32, random);
+    if mandatory_drops.upgrade_scroll
+        && run.challenges.contains(Challenges::NO_SCROLLS)
+        && limited_drops.upgrade_scrolls % 2 == 0
+    {
+        mandatory_drops.upgrade_scroll = false;
+    }
     let feeling = roll_feeling(depth_i32, random);
     if feeling == Feeling::Large {
         queued_generated_items.push(random_category(
@@ -696,6 +703,44 @@ mod tests {
             graph.rooms[graph.exit].kind,
             RoomKind::Exit(crate::room::StandardRoomKind::WaterBridge)
         );
+    }
+
+    #[test]
+    fn forbidden_runes_omits_every_second_scheduled_upgrade_scroll() {
+        let mut normal = RunState::new(0);
+        let mut forbidden = RunState::with_challenges(0, crate::challenges::Challenges::NO_SCROLLS);
+        let mut normal_limited = LimitedDrops::default();
+        let mut forbidden_limited = LimitedDrops::default();
+        let mut normal_presence = Vec::new();
+        let mut forbidden_presence = Vec::new();
+        for depth in 1..=4 {
+            let root = seed_for_depth(0, depth, 0);
+            let mut normal_random = RandomStack::with_base_seed(0);
+            let mut forbidden_random = RandomStack::with_base_seed(0);
+            normal_random.push(root);
+            forbidden_random.push(root);
+            normal_presence.push(
+                prepare_regular_floor(&mut normal, &mut normal_limited, depth, &mut normal_random)
+                    .unwrap()
+                    .mandatory_drops
+                    .upgrade_scroll,
+            );
+            forbidden_presence.push(
+                prepare_regular_floor(
+                    &mut forbidden,
+                    &mut forbidden_limited,
+                    depth,
+                    &mut forbidden_random,
+                )
+                .unwrap()
+                .mandatory_drops
+                .upgrade_scroll,
+            );
+        }
+        assert_eq!(normal_presence, [false, true, true, true]);
+        assert_eq!(forbidden_presence, [false, true, false, true]);
+        assert_eq!(normal_limited.upgrade_scrolls, 3);
+        assert_eq!(forbidden_limited.upgrade_scrolls, 3);
     }
 
     #[test]

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package dev.seedseeker.app.ui
 
+import android.content.Context
 import android.graphics.BitmapFactory
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.layout.size
@@ -31,6 +32,7 @@ import dev.seedseeker.app.engine.NativeSearchSession
 import dev.seedseeker.app.engine.NativeSeedFinder
 import dev.seedseeker.app.engine.SeedCode
 import dev.seedseeker.app.model.ItemRequirement
+import dev.seedseeker.app.model.Challenge
 import dev.seedseeker.app.model.ScoutWorld
 import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.SearchState
@@ -45,10 +47,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val ATLAS_PATH = "third_party/shattered-pixel-dungeon/items.png"
+private const val SETTINGS_PREFERENCES = "seed_seeker_settings"
+private const val CHALLENGES_KEY = "challenges_mask"
 
-private enum class Destination { FINDER, SCOUT, ABOUT }
+private enum class Destination { FINDER, SCOUT, CHALLENGES, ABOUT }
 private data class SearchRun(val id: Long, val request: SearchRequest)
-private data class ScoutRun(val id: Long, val seed: String)
+private data class ScoutRun(val id: Long, val seed: String, val challenges: Int)
 
 @Composable
 fun SeedFinderApp(engine: NativeSeedFinder) {
@@ -59,9 +63,13 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
         }.getOrNull()
     }
     val scope = rememberCoroutineScope()
+    val preferences = remember(context) {
+        context.getSharedPreferences(SETTINGS_PREFERENCES, Context.MODE_PRIVATE)
+    }
 
     var destination by remember { mutableStateOf(Destination.FINDER) }
     var aboutReturnDestination by remember { mutableStateOf(Destination.FINDER) }
+    var challengesReturnDestination by remember { mutableStateOf(Destination.FINDER) }
     var requirements by remember {
         mutableStateOf(
             listOf(
@@ -75,6 +83,11 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
     var requireBlacksmith by remember { mutableStateOf(false) }
     var excludeBlacksmithRewards by remember { mutableStateOf(false) }
     var fastMode by remember { mutableStateOf(false) }
+    var challenges by remember {
+        mutableStateOf(
+            preferences.getInt(CHALLENGES_KEY, 0).takeIf { it in 0..Challenge.ALL_MASK } ?: 0,
+        )
+    }
     var editingRequirement by remember { mutableStateOf<ItemRequirement?>(null) }
     var showRequirementSheet by remember { mutableStateOf(false) }
     var results by remember { mutableStateOf(emptyList<SeedResult>()) }
@@ -95,10 +108,10 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
 
     PredictiveBackHandler(enabled = destination != Destination.FINDER) { progress ->
         progress.collect { }
-        destination = if (destination == Destination.ABOUT) {
-            aboutReturnDestination
-        } else {
-            Destination.FINDER
+        destination = when (destination) {
+            Destination.ABOUT -> aboutReturnDestination
+            Destination.CHALLENGES -> challengesReturnDestination
+            else -> Destination.FINDER
         }
     }
 
@@ -174,7 +187,7 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
         scoutResult = null
         try {
             scoutResult = withContext(Dispatchers.Default) {
-                engine.scoutSeed(currentRun.seed)
+                engine.scoutSeed(currentRun.seed, currentRun.challenges)
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -191,7 +204,7 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
         scoutError = null
         destination = Destination.SCOUT
         if (SeedCode.isCanonical(formatted)) {
-            scoutRun = ScoutRun(nextScoutRunId++, formatted)
+            scoutRun = ScoutRun(nextScoutRunId++, formatted, challenges)
         }
     }
 
@@ -210,6 +223,7 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
                 requireBlacksmith = requireBlacksmith,
                 excludeBlacksmithRewards = excludeBlacksmithRewards,
                 fastMode = fastMode,
+                challenges = challenges,
                 results = results,
                 status = searchStatus,
                 seedsPerSecond = searchSeedsPerSecond,
@@ -219,6 +233,10 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
                 onAbout = {
                     aboutReturnDestination = Destination.FINDER
                     destination = Destination.ABOUT
+                },
+                onChallenges = {
+                    challengesReturnDestination = Destination.FINDER
+                    destination = Destination.CHALLENGES
                 },
                 onAdd = {
                     editingRequirement = null
@@ -242,6 +260,7 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
                             SearchRequest(
                                 requirements = requirements,
                                 maximumDepth = maximumDepth,
+                                challenges = challenges,
                                 requireBlacksmith = requireBlacksmith,
                                 excludeBlacksmithRewards = excludeBlacksmithRewards,
                                 fastMode = fastMode,
@@ -273,14 +292,34 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
                 },
                 onScout = {
                     if (SeedCode.isCanonical(scoutInput)) {
-                        scoutRun = ScoutRun(nextScoutRunId++, scoutInput)
+                        scoutRun = ScoutRun(nextScoutRunId++, scoutInput, challenges)
                     }
+                },
+                onChallenges = {
+                    challengesReturnDestination = Destination.SCOUT
+                    destination = Destination.CHALLENGES
                 },
                 onAbout = {
                     aboutReturnDestination = Destination.SCOUT
                     destination = Destination.ABOUT
                 },
                 bottomBar = navBar,
+            )
+
+            Destination.CHALLENGES -> ChallengesScreen(
+                challenges = challenges,
+                enabled = !isSearching && !isScouting,
+                onChallengeChange = { challenge, checked ->
+                    val updatedChallenges = if (checked) {
+                        challenges or challenge.bit
+                    } else {
+                        challenges and challenge.bit.inv()
+                    }
+                    challenges = updatedChallenges
+                    scoutResult = null
+                    preferences.edit().putInt(CHALLENGES_KEY, updatedChallenges).apply()
+                },
+                onBack = { destination = challengesReturnDestination },
             )
 
             Destination.ABOUT -> AboutScreen(onBack = { destination = aboutReturnDestination })

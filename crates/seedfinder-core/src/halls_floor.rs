@@ -451,6 +451,7 @@ pub fn generate_halls_floor(
             &mut run.generator,
             u8::try_from(depth).expect("Halls depth fits u8"),
             painted.prepared.feeling,
+            run.challenges,
             queue,
             &mut placement,
         )?
@@ -531,6 +532,9 @@ pub fn paint_halls_floor(
 
     let mut rooms = built.rooms;
     let mut level = Level::new(depth, prepared.feeling);
+    level.plants_enabled = !run
+        .challenges
+        .contains(crate::challenges::Challenges::NO_HERBALISM);
     HallsPainter::new(prepared.feeling, trap_count).paint(
         &mut level,
         &mut rooms,

@@ -12,6 +12,7 @@ use std::process::ExitCode;
 
 use shpd_seedfinder_core::SHPD_VERSION;
 use shpd_seedfinder_core::catalog::{ItemId, ItemKind};
+use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::feasibility::QueryPlan;
 use shpd_seedfinder_core::main_world::CanonicalMainWorldGenerator;
 use shpd_seedfinder_core::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
@@ -201,7 +202,7 @@ fn benchmark_command(benchmark: &BenchmarkOptions) -> Result<String, String> {
         max_results: NonZeroUsize::MAX,
     };
     let outcome = search_parallel(
-        &CanonicalMainWorldGenerator,
+        &CanonicalMainWorldGenerator::with_challenges(query.challenges),
         &query,
         options,
         &SearchProgress::default(),
@@ -242,7 +243,7 @@ fn search_command(items: &Path, workers: Option<NonZeroUsize>) -> Result<(), Str
             .saturating_add(SEARCH_WINDOW_SEEDS)
             .min(TOTAL_SEEDS);
         let outcome = search_parallel(
-            &CanonicalMainWorldGenerator,
+            &CanonicalMainWorldGenerator::with_challenges(query.challenges),
             &query,
             SearchOptions {
                 start_seed,
@@ -286,6 +287,7 @@ fn benchmark_query() -> SearchQuery {
             max_depth: None,
         }],
         max_depth: 24,
+        challenges: Challenges::NONE,
         require_blacksmith: false,
         exclude_blacksmith_rewards: false,
         fast_mode: false,

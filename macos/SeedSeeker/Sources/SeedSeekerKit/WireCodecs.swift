@@ -18,6 +18,7 @@ private struct Writer {
     mutating func bytes(_ value: some Sequence<UInt8>) { data.append(contentsOf: value) }
     mutating func u8(_ value: Int) { data.append(UInt8(value)) }
     mutating func u16(_ value: Int) { bytes([UInt8((value >> 8) & 0xff), UInt8(value & 0xff)]) }
+    mutating func u16LittleEndian(_ value: Int) { bytes([UInt8(value & 0xff), UInt8((value >> 8) & 0xff)]) }
     mutating func text(_ value: String) throws {
         let encoded = Array(value.utf8)
         guard encoded.count <= 65_535 else { throw WireCodecError.invalidValue("Wire string is too long") }
@@ -69,15 +70,15 @@ public enum SeedCode {
 
 public enum QueryCodec {
     public static func encode(_ request: SearchRequest) throws -> Data {
-        let hasTier = request.requirements.contains { $0.tierMatch != .any }
-        var output = Writer(); output.bytes((hasTier ? "SSF4" : "SSF3").utf8); output.u8(request.maximumDepth)
+        var output = Writer(); output.bytes("SSF5".utf8); output.u8(request.maximumDepth)
         output.u8((request.requireBlacksmith ? 1 : 0)
             | (request.fastMode ? 2 : 0)
             | (request.excludeBlacksmithRewards ? 4 : 0))
+        output.u16LittleEndian(request.challenges)
         output.u16(request.requirements.count)
         for requirement in request.requirements {
             output.u8(requirement.kind.rawValue); try output.text(requirement.item?.id ?? "")
-            if hasTier { output.u8(requirement.tierMatch.rawValue); output.u8(requirement.tier) }
+            output.u8(requirement.tierMatch.rawValue); output.u8(requirement.tier)
             output.u8(requirement.upgradeMatch.rawValue); output.u8(requirement.upgrade)
             try output.text(requirement.modifier ?? "")
             output.u8(requirement.source.map { $0.rawValue + 1 } ?? 0)
@@ -103,6 +104,16 @@ public enum ResultCodec {
 }
 
 public enum ScoutCodec {
+    public static func encodeRequest(seed: String, challenges: Int) throws -> Data {
+        guard SeedCode.isCanonical(seed) else { throw WireCodecError.invalidValue("Seed must use XXX-XXX-XXX format") }
+        guard (0...511).contains(challenges) else { throw WireCodecError.invalidValue("Challenge mask must be 0..511") }
+        var output = Writer()
+        output.bytes("SSQ2".utf8)
+        output.u16LittleEndian(challenges)
+        output.bytes(seed.utf8)
+        return output.data
+    }
+
     public static func decode(_ packet: Data) throws -> ScoutWorld {
         var input = Reader(data: packet)
         guard try input.bytes(4) == Data("SSC1".utf8) else { throw WireCodecError.badMagic }

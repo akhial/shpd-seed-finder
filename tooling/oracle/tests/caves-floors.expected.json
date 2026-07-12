@@ -1,5 +1,5 @@
 {
-  "schema": "shpd-caves-parity-fixture/v1",
+  "schema": "shpd-caves-parity-fixture/v2",
   "game_version": "3.3.8",
   "game_commit": "7b8b845a76fe76c6b7c031ae9e570852411f56db",
   "runtime": {
@@ -17,6 +17,7 @@
   "seeds": {
     "AAA-AAA-AAA": {
       "seed": 0,
+      "challenges": 0,
       "requested_depths": [11, 12, 13, 14],
       "generator_checkpoints": [
         [1, "SewerLevel", 859790557],
@@ -140,6 +141,7 @@
     },
     "AAA-AAA-AAB": {
       "seed": 1,
+      "challenges": 0,
       "requested_depths": [11],
       "generator_checkpoints": [
         [1, "SewerLevel", -898459919],
@@ -181,6 +183,7 @@
     },
     "ABC-DEF-GHI": {
       "seed": 8687205886,
+      "challenges": 0,
       "requested_depths": [11],
       "generator_checkpoints": [
         [1, "SewerLevel", -114202195],
@@ -219,6 +222,7 @@
     },
     "ZZZ-ZZZ-ZZZ": {
       "seed": 5429503678975,
+      "challenges": 0,
       "requested_depths": [11],
       "generator_checkpoints": [
         [1, "SewerLevel", -991817379],

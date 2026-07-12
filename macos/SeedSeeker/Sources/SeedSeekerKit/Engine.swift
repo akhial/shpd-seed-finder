@@ -22,7 +22,7 @@ public protocol SeedFinderSearchSession: Sendable {
 
 public protocol SeedFinderEngine: Sendable {
     func startSearch(_ request: SearchRequest) async throws -> any SeedFinderSearchSession
-    func scoutSeed(_ seed: String) async throws -> ScoutWorld
+    func scoutSeed(_ seed: String, challenges: Int) async throws -> ScoutWorld
 }
 
 private func ffiError(_ code: Int32) -> SeedFinderEngineError {
@@ -47,9 +47,8 @@ public struct ProductionSeedFinderEngine: SeedFinderEngine {
         return NativeSearchSession(handle: handle, requirementCount: request.requirements.count)
     }
 
-    public func scoutSeed(_ seed: String) async throws -> ScoutWorld {
-        guard SeedCode.isCanonical(seed) else { throw SeedFinderEngineError.invalidArgument }
-        let request = Data(seed.utf8)
+    public func scoutSeed(_ seed: String, challenges: Int = 0) async throws -> ScoutWorld {
+        let request = try ScoutCodec.encodeRequest(seed: seed, challenges: challenges)
         let packet: Data = try await Task.detached {
             var pointer: UnsafeMutablePointer<UInt8>?
             var length = 0

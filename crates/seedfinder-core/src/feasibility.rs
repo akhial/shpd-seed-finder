@@ -20,6 +20,11 @@
 //! the rare Crypt/Sacrificial-fire +3 prizes so that +3 weapon/armor
 //! requirements become quest-only and inherit the Blacksmith's depth-14
 //! deadline.
+//!
+//! The searchable catalog contains equipment only. `NO_SCROLLS` halves the
+//! scheduled Scroll of Upgrade drops, but no current requirement can target a
+//! consumable or torch, so there is no challenge-dependent availability bound
+//! to apply here. Its RNG knock-on effects are handled by generation itself.
 
 use crate::catalog::{Effect, ItemKind};
 use crate::model::{ItemSource, WorldItem};
@@ -414,6 +419,7 @@ mod tests {
         SearchQuery {
             requirements,
             max_depth,
+            challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             fast_mode: false,

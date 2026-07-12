@@ -1,4 +1,8 @@
 //! Query probability estimates derived from the canonical v3.3.8 item tables.
+//!
+//! Challenges can shift concrete equipment placement/generation draws, but
+//! none changes the intrinsic equipment tables estimated here. Scrolls of
+//! Upgrade and torches are not searchable catalog kinds.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -251,6 +255,7 @@ mod tests {
         SearchQuery {
             requirements,
             max_depth: 24,
+            challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             fast_mode: false,

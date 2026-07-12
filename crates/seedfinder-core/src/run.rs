@@ -5,6 +5,7 @@
 //! The generated state is intentionally data-only so each seed-search worker
 //! can own an independent copy without touching process-global state.
 
+use crate::challenges::Challenges;
 use crate::rng::RandomStack;
 
 /// Number of entries in `Generator.Category.values()` in v3.3.8.
@@ -501,6 +502,7 @@ impl GeneratorState {
 #[derive(Clone, Debug, PartialEq)]
 pub struct RunState {
     pub dungeon_seed: i64,
+    pub challenges: Challenges,
     pub appearances: ItemAppearanceState,
     pub special_rooms: SpecialRoomState,
     pub secret_rooms: SecretRoomState,
@@ -511,6 +513,13 @@ impl RunState {
     /// Mirrors the deterministic portion of `Dungeon.init()` for v3.3.8.
     #[must_use]
     pub fn new(dungeon_seed: i64) -> Self {
+        Self::with_challenges(dungeon_seed, Challenges::NONE)
+    }
+
+    /// Mirrors the deterministic portion of `Dungeon.init()` with a validated
+    /// v3.3.8 challenge mask.
+    #[must_use]
+    pub fn with_challenges(dungeon_seed: i64, challenges: Challenges) -> Self {
         let mut random = RandomStack::with_base_seed(0);
         random.push(dungeon_seed.wrapping_add(1));
 
@@ -523,6 +532,7 @@ impl RunState {
         random.pop();
         Self {
             dungeon_seed,
+            challenges,
             appearances,
             special_rooms,
             secret_rooms,

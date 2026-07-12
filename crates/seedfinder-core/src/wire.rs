@@ -3,6 +3,7 @@
 use std::fmt;
 
 use crate::catalog::{Effect, ItemKind, item, item_by_stable_id};
+use crate::challenges::Challenges;
 use crate::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
 use crate::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
 use crate::seed::DungeonSeed;
@@ -11,18 +12,21 @@ const REQUEST_MAGIC_V1: &[u8; 4] = b"SSF1";
 const REQUEST_MAGIC_V2: &[u8; 4] = b"SSF2";
 const REQUEST_MAGIC_V3: &[u8; 4] = b"SSF3";
 const REQUEST_MAGIC_V4: &[u8; 4] = b"SSF4";
+const REQUEST_MAGIC_V5: &[u8; 4] = b"SSF5";
+const SCOUT_REQUEST_MAGIC_V2: &[u8; 4] = b"SSQ2";
 const RESULT_MAGIC: &[u8; 4] = b"SSR1";
 const SCOUT_RESULT_MAGIC: &[u8; 4] = b"SSC1";
 const MAX_REQUIREMENTS: usize = 64;
 
-/// Decodes Android `SSF1` through `SSF4` packets. Older versions are
+/// Decodes Android `SSF1` through `SSF5` packets. Older versions are
 /// retained for compatibility; V2 adds the overall floor limit,
 /// source/identity constraints, upgrade predicates, and
 /// three flag bits: bit 0 requires blacksmith availability, bit 1 enables the
 /// lossy fast search mode described on [`SearchQuery::fast_mode`], and bit 2
 /// prevents Blacksmith "Smith" rewards from satisfying item requirements. V3
 /// adds an optional floor limit to every individual requirement, and V4 adds
-/// an optional exact or minimum equipment-tier predicate.
+/// an optional exact or minimum equipment-tier predicate. V5 adds a
+/// little-endian `u16` challenge mask after the flags byte.
 ///
 /// # Errors
 ///
@@ -34,11 +38,13 @@ pub fn decode_query(packet: &[u8]) -> Result<SearchQuery, WireError> {
     let query = if magic == REQUEST_MAGIC_V1 {
         decode_query_v1(&mut input)?
     } else if magic == REQUEST_MAGIC_V2 {
-        decode_query_v2(&mut input, false, false)?
+        decode_query_v2(&mut input, false, false, false)?
     } else if magic == REQUEST_MAGIC_V3 {
-        decode_query_v2(&mut input, false, true)?
+        decode_query_v2(&mut input, false, true, false)?
     } else if magic == REQUEST_MAGIC_V4 {
-        decode_query_v2(&mut input, true, true)?
+        decode_query_v2(&mut input, true, true, false)?
+    } else if magic == REQUEST_MAGIC_V5 {
+        decode_query_v2(&mut input, true, true, true)?
     } else {
         return Err(WireError::BadMagic);
     };
@@ -47,6 +53,64 @@ pub fn decode_query(packet: &[u8]) -> Result<SearchQuery, WireError> {
     }
     query.validate().map_err(|_| WireError::InvalidQuery)?;
     Ok(query)
+}
+
+/// Encodes a validated query using the challenge-aware `SSF5` request schema.
+///
+/// # Errors
+///
+/// Returns [`WireError`] when the query is invalid, has too many requirements,
+/// or contains a string that cannot fit the protocol's `u16` length field.
+pub fn encode_query(query: &SearchQuery) -> Result<Vec<u8>, WireError> {
+    query.validate().map_err(|_| WireError::InvalidQuery)?;
+    let count =
+        u16::try_from(query.requirements.len()).map_err(|_| WireError::InvalidRequirementCount)?;
+    if usize::from(count) > MAX_REQUIREMENTS {
+        return Err(WireError::InvalidRequirementCount);
+    }
+    let mut output = Vec::new();
+    output.extend_from_slice(REQUEST_MAGIC_V5);
+    output.push(query.max_depth);
+    output.push(
+        u8::from(query.require_blacksmith)
+            | (u8::from(query.fast_mode) << 1)
+            | (u8::from(query.exclude_blacksmith_rewards) << 2),
+    );
+    output.extend_from_slice(&query.challenges.bits().to_le_bytes());
+    output.extend_from_slice(&count.to_be_bytes());
+    for requirement in &query.requirements {
+        output.push(item_kind_wire_id(requirement.kind));
+        push_utf8_u16(
+            &mut output,
+            requirement
+                .item
+                .map_or("", |item_id| item(item_id).stable_id),
+        )?;
+        let (tier_mode, tier_value) = match requirement.tier {
+            TierRequirement::Any => (0, 0),
+            TierRequirement::Exact(value) => (1, value),
+            TierRequirement::AtLeast(value) => (2, value),
+        };
+        output.extend_from_slice(&[tier_mode, tier_value]);
+        let (upgrade_mode, upgrade_value) = match requirement.upgrade {
+            UpgradeRequirement::Any => (0, 0),
+            UpgradeRequirement::Exact(value) => (1, value),
+            UpgradeRequirement::AtLeast(value) => (2, value),
+        };
+        output.extend_from_slice(&[upgrade_mode, upgrade_value]);
+        push_utf8_u16(
+            &mut output,
+            requirement.effect.map_or("", Effect::wire_name),
+        )?;
+        output.push(
+            requirement
+                .source
+                .map_or(0, |source| source_wire_id(source) + 1),
+        );
+        output.push(requirement.identity_group.unwrap_or(0));
+        output.push(requirement.max_depth.unwrap_or(0));
+    }
+    Ok(output)
 }
 
 fn decode_query_v1(input: &mut Input<'_>) -> Result<SearchQuery, WireError> {
@@ -82,6 +146,7 @@ fn decode_query_v1(input: &mut Input<'_>) -> Result<SearchQuery, WireError> {
     Ok(SearchQuery {
         requirements,
         max_depth: 24,
+        challenges: Challenges::NONE,
         require_blacksmith: false,
         exclude_blacksmith_rewards: false,
         fast_mode: false,
@@ -92,12 +157,18 @@ fn decode_query_v2(
     input: &mut Input<'_>,
     has_tier: bool,
     has_requirement_depths: bool,
+    has_challenges: bool,
 ) -> Result<SearchQuery, WireError> {
     let max_depth = input.u8()?;
     let flags = input.u8()?;
     if flags & !0b111 != 0 {
         return Err(WireError::InvalidFlags);
     }
+    let challenges = if has_challenges {
+        Challenges::new(input.u16_le()?).map_err(|_| WireError::InvalidChallenges)?
+    } else {
+        Challenges::NONE
+    };
     let count = usize::from(input.u16()?);
     if count == 0 || count > MAX_REQUIREMENTS {
         return Err(WireError::InvalidRequirementCount);
@@ -171,6 +242,7 @@ fn decode_query_v2(
     Ok(SearchQuery {
         requirements,
         max_depth,
+        challenges,
         require_blacksmith: flags & 1 != 0,
         exclude_blacksmith_rewards: flags & 0b100 != 0,
         fast_mode: flags & 0b10 != 0,
@@ -185,6 +257,15 @@ const fn item_kind_from_wire_id(id: u8) -> Option<ItemKind> {
         3 => ItemKind::Ring,
         _ => return None,
     })
+}
+
+const fn item_kind_wire_id(kind: ItemKind) -> u8 {
+    match kind {
+        ItemKind::Weapon => 0,
+        ItemKind::Armor => 1,
+        ItemKind::Wand => 2,
+        ItemKind::Ring => 3,
+    }
 }
 
 /// Encodes the seed-only `SSR1` result batch consumed by Android.
@@ -215,19 +296,42 @@ pub fn empty_results() -> Vec<u8> {
     output
 }
 
-/// Parses the UTF-8 seed-code request accepted by `JniBindings.scoutSeed`.
+/// Decodes a challenge-aware scouting request.
 ///
-/// The request deliberately contains no duplicated envelope: the JNI method
-/// identifies its schema, while [`DungeonSeed::from_code`] supplies the exact
-/// game-compatible syntax and range validation.
+/// `SSQ2` requests contain the magic, a little-endian `u16` challenge mask,
+/// and the UTF-8 seed code in all remaining bytes. Any request without the
+/// `SSQ2` prefix is a legacy raw UTF-8 seed code with no challenges.
 ///
 /// # Errors
 ///
-/// Returns [`WireError::InvalidUtf8`] or [`WireError::InvalidSeedCode`] when
-/// the request is not one user-enterable dungeon seed.
+/// Returns [`WireError`] when the V2 mask is truncated or invalid, or when the
+/// remaining request is not one user-enterable dungeon seed.
+pub fn decode_scout_request(request: &[u8]) -> Result<(DungeonSeed, Challenges), WireError> {
+    let (seed_code, challenges) =
+        if let Some(payload) = request.strip_prefix(SCOUT_REQUEST_MAGIC_V2) {
+            let mask = payload
+                .get(..2)
+                .ok_or(WireError::Truncated)?
+                .try_into()
+                .map(u16::from_le_bytes)
+                .map_err(|_| WireError::Truncated)?;
+            let challenges = Challenges::new(mask).map_err(|_| WireError::InvalidChallenges)?;
+            (&payload[2..], challenges)
+        } else {
+            (request, Challenges::NONE)
+        };
+    let code = std::str::from_utf8(seed_code).map_err(|_| WireError::InvalidUtf8)?;
+    let seed = DungeonSeed::from_code(code).map_err(|_| WireError::InvalidSeedCode)?;
+    Ok((seed, challenges))
+}
+
+/// Decodes the seed from either an `SSQ2` or legacy scouting request.
+///
+/// # Errors
+///
+/// Returns the same validation errors as [`decode_scout_request`].
 pub fn decode_scout_seed(request: &[u8]) -> Result<DungeonSeed, WireError> {
-    let code = std::str::from_utf8(request).map_err(|_| WireError::InvalidUtf8)?;
-    DungeonSeed::from_code(code).map_err(|_| WireError::InvalidSeedCode)
+    decode_scout_request(request).map(|(seed, _)| seed)
 }
 
 /// Encodes every searchable item in one generated world for scouting mode.
@@ -459,6 +563,11 @@ impl<'a> Input<'a> {
         Ok(u16::from_be_bytes(bytes))
     }
 
+    fn u16_le(&mut self) -> Result<u16, WireError> {
+        let bytes: [u8; 2] = self.take(2)?.try_into().map_err(|_| WireError::Truncated)?;
+        Ok(u16::from_le_bytes(bytes))
+    }
+
     fn u64(&mut self) -> Result<u64, WireError> {
         let bytes: [u8; 8] = self.take(8)?.try_into().map_err(|_| WireError::Truncated)?;
         Ok(u64::from_be_bytes(bytes))
@@ -498,6 +607,7 @@ pub enum WireError {
     TooManyWorldItems,
     FieldTooLong,
     InvalidFlags,
+    InvalidChallenges,
     InvalidItemDepth,
     InvalidItemUpgrade,
     UnknownItemSource,
@@ -523,6 +633,7 @@ impl fmt::Display for WireError {
             Self::TooManyWorldItems => "scouted world exceeds the protocol item limit",
             Self::FieldTooLong => "packet string exceeds its declared field width",
             Self::InvalidFlags => "packet contains unknown flag bits",
+            Self::InvalidChallenges => "packet challenge mask must be in 0..=511",
             Self::InvalidItemDepth => "scouted item depth must be in 1..=24",
             Self::InvalidItemUpgrade => "scouted item upgrade must be in 0..=3",
             Self::UnknownItemSource => "packet names an unknown item source",
@@ -537,6 +648,7 @@ impl std::error::Error for WireError {}
 #[cfg(test)]
 mod tests {
     use crate::catalog::{ArmorEffect, Effect, ITEMS, ItemId, ItemKind, WeaponEffect, item};
+    use crate::challenges::Challenges;
     use crate::main_world::CanonicalMainWorldGenerator;
     use crate::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
     use crate::query::{TierRequirement, UpgradeRequirement};
@@ -544,8 +656,8 @@ mod tests {
     use crate::seed::DungeonSeed;
 
     use super::{
-        WireError, decode_query, decode_scout_seed, decode_scout_world, empty_results,
-        encode_results, encode_scout_world,
+        WireError, decode_query, decode_scout_request, decode_scout_seed, decode_scout_world,
+        empty_results, encode_query, encode_results, encode_scout_world,
     };
 
     const SOURCES: [ItemSource; 17] = [
@@ -735,6 +847,36 @@ mod tests {
     }
 
     #[test]
+    fn ssf5_golden_bytes_decode_little_endian_challenges() {
+        let mut packet = b"SSF5\x18\x05\x68\x00\x00\x01\x03\x00\x00".to_vec();
+        // ring wildcard; any tier, any upgrade, no effect/source/group/depth
+        packet.extend_from_slice(&[0, 0, 0, 0]);
+        packet.extend_from_slice(&[0, 0, 0, 0, 0]);
+
+        let query = decode_query(&packet).unwrap();
+        assert_eq!(query.max_depth, 24);
+        assert_eq!(query.challenges, Challenges::new(104).unwrap());
+        assert!(query.require_blacksmith);
+        assert!(query.exclude_blacksmith_rewards);
+        assert_eq!(query.requirements[0].kind, ItemKind::Ring);
+        assert_eq!(encode_query(&query).unwrap(), packet);
+
+        let mut invalid = packet;
+        invalid[6..8].copy_from_slice(&512_u16.to_le_bytes());
+        assert_eq!(decode_query(&invalid), Err(WireError::InvalidChallenges));
+    }
+
+    #[test]
+    fn legacy_query_versions_default_to_no_challenges() {
+        let mut packet = b"SSF1".to_vec();
+        packet.extend_from_slice(&1_u16.to_be_bytes());
+        field(&mut packet, "sword");
+        packet.push(1);
+        field(&mut packet, "");
+        assert_eq!(decode_query(&packet).unwrap().challenges, Challenges::NONE);
+    }
+
+    #[test]
     fn ssf2_rejects_reserved_flags_kinds_and_upgrade_modes() {
         assert_eq!(
             decode_query(b"SSF2\x18\x08\0\x01"),
@@ -787,6 +929,31 @@ mod tests {
         );
         assert_eq!(decode_scout_seed(&[0xff]), Err(WireError::InvalidUtf8));
         assert_eq!(decode_scout_seed(b""), Err(WireError::InvalidSeedCode));
+    }
+
+    #[test]
+    fn ssq2_golden_bytes_decode_challenges_and_legacy_fallback() {
+        let request = b"SSQ2\x40\x00AAA-AAA-AAF";
+        assert_eq!(
+            decode_scout_request(request),
+            Ok((
+                DungeonSeed::from_code("AAA-AAA-AAF").unwrap(),
+                Challenges::NO_SCROLLS,
+            ))
+        );
+        assert_eq!(
+            decode_scout_request(b"AAA-AAA-AAF"),
+            Ok((
+                DungeonSeed::from_code("AAA-AAA-AAF").unwrap(),
+                Challenges::NONE,
+            ))
+        );
+
+        let invalid_mask = b"SSQ2\x00\x02AAA-AAA-AAF";
+        assert_eq!(
+            decode_scout_request(invalid_mask),
+            Err(WireError::InvalidChallenges)
+        );
     }
 
     #[test]

@@ -399,6 +399,7 @@ pub fn generate_caves_floor(
             &mut run.generator,
             u8::try_from(depth).expect("Caves depth fits u8"),
             painted.prepared.feeling,
+            run.challenges,
             queue,
             &mut placement,
         )?
@@ -483,6 +484,9 @@ pub fn paint_caves_floor(
 
     let mut rooms = built.rooms;
     let mut level = Level::new(depth, prepared.feeling);
+    level.plants_enabled = !run
+        .challenges
+        .contains(crate::challenges::Challenges::NO_HERBALISM);
     if let Err(error) = CavesPainter::new(prepared.feeling, trap_count).paint(
         &mut level,
         &mut rooms,
@@ -887,8 +891,20 @@ mod tests {
     );
 
     fn generate_caves_prefix(seed: DungeonSeed, maximum_depth: u32) -> Vec<GeneratedCavesFloor> {
+        generate_caves_prefix_with_challenges(
+            seed,
+            maximum_depth,
+            crate::challenges::Challenges::NONE,
+        )
+    }
+
+    fn generate_caves_prefix_with_challenges(
+        seed: DungeonSeed,
+        maximum_depth: u32,
+        challenges: crate::challenges::Challenges,
+    ) -> Vec<GeneratedCavesFloor> {
         let dungeon_seed = i64::try_from(seed.value()).unwrap();
-        let mut run = RunState::new(dungeon_seed);
+        let mut run = RunState::with_challenges(dungeon_seed, challenges);
         let mut limited = LimitedDrops::default();
         let mut quests = QuestState::new();
         let mut shop_run = ShopRunState::default();
@@ -929,6 +945,44 @@ mod tests {
                 floor
             })
             .collect()
+    }
+
+    #[test]
+    fn aaf_challenge_caves_match_official_oracle_reduced_fixtures() {
+        use crate::challenges::Challenges;
+
+        let fixtures = [
+            (
+                Challenges::NONE,
+                [1_019_694_273, 1_480_294_126, 1_728_692_213, -2_037_398_484],
+            ),
+            (
+                Challenges::NO_HERBALISM,
+                [-1_886_738_028, 1_480_294_126, 222_561_544, 1_382_767_999],
+            ),
+            (
+                Challenges::DARKNESS,
+                [-60_845_842, -234_339_807, 1_728_692_213, -2_037_398_484],
+            ),
+            (
+                Challenges::NO_SCROLLS,
+                [1_019_694_273, 1_480_294_126, 1_728_692_213, -2_037_398_484],
+            ),
+            (
+                Challenges::NO_HERBALISM | Challenges::DARKNESS | Challenges::NO_SCROLLS,
+                [-1_820_831_865, 1_480_294_126, 222_561_544, -1_734_856_910],
+            ),
+        ];
+        let seed = DungeonSeed::new(5).unwrap();
+        for (challenges, hashes) in fixtures {
+            let floors = generate_caves_prefix_with_challenges(seed, 14, challenges);
+            assert_eq!(
+                std::array::from_fn(|index| floors[index].painted.level.java_map_hash()),
+                hashes,
+                "mask {}",
+                challenges.bits(),
+            );
+        }
     }
 
     fn occupied_cells(floor: &GeneratedCavesFloor) -> Vec<usize> {

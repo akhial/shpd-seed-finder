@@ -107,6 +107,7 @@ enum class UpgradeMatch(val label: String) {
 data class SearchRequest(
     val requirements: List<ItemRequirement>,
     val maximumDepth: Int = 24,
+    val challenges: Int = 0,
     val requireBlacksmith: Boolean = false,
     /** Prevent the Blacksmith's 2,000-favor Smith choice from satisfying item requirements. */
     val excludeBlacksmithRewards: Boolean = false,
@@ -120,6 +121,28 @@ data class SearchRequest(
     init {
         require(requirements.isNotEmpty()) { "At least one requirement is needed" }
         require(maximumDepth in 1..24) { "Maximum floor must be 1..24" }
+        require(challenges in 0..Challenge.ALL_MASK) { "Challenge mask must be 0..${Challenge.ALL_MASK}" }
+    }
+}
+
+enum class Challenge(
+    val bit: Int,
+    val displayName: String,
+    val changesLevelGeneration: Boolean = false,
+) {
+    NO_FOOD(1, "On diet"),
+    NO_ARMOR(2, "Faith is my armor"),
+    NO_HEALING(4, "Pharmacophobia"),
+    NO_HERBALISM(8, "Barren land", changesLevelGeneration = true),
+    SWARM_INTELLIGENCE(16, "Swarm intelligence"),
+    DARKNESS(32, "Into darkness", changesLevelGeneration = true),
+    NO_SCROLLS(64, "Forbidden runes", changesLevelGeneration = true),
+    CHAMPION_ENEMIES(128, "Hostile champions"),
+    STRONGER_BOSSES(256, "Badder bosses"),
+    ;
+
+    companion object {
+        const val ALL_MASK = 511
     }
 }
 

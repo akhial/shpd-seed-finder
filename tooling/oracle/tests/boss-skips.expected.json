@@ -1,5 +1,5 @@
 {
-  "schema": "shpd-boss-transition-fixture/v1",
+  "schema": "shpd-boss-transition-fixture/v2",
   "game_version": "3.3.8",
   "game_commit": "7b8b845a76fe76c6b7c031ae9e570852411f56db",
   "runtime": {
@@ -7,6 +7,7 @@
     "java_vendor": "Eclipse Adoptium",
     "java_vm": "OpenJDK 64-Bit Server VM"
   },
+  "challenges": 0,
   "item_columns": ["choice", "class", "kind", "upgrade", "cursed", "quantity", "effect"],
   "seeds": {
     "AAA-AAA-AAA": [
