@@ -24,4 +24,12 @@ install -d "$APP/Contents/MacOS"
 install -m 755 "$PACKAGE/.build/release/SeedSeeker" "$APP/Contents/MacOS/SeedSeeker"
 install -m 644 "$PACKAGE/Info.plist" "$APP/Contents/Info.plist"
 install -m 644 "$PACKAGE/PkgInfo" "$APP/Contents/PkgInfo"
-codesign --force --deep --sign - "$APP"
+# With MACOS_SIGN_IDENTITY set (a "Developer ID Application" identity),
+# sign for notarized distribution; otherwise fall back to ad-hoc signing
+# for local development builds.
+if [ -n "${MACOS_SIGN_IDENTITY:-}" ]; then
+    codesign --force --options runtime --timestamp \
+        --sign "$MACOS_SIGN_IDENTITY" "$APP"
+else
+    codesign --force --sign - "$APP"
+fi

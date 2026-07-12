@@ -138,6 +138,12 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 30
 
+    # Signing/notarization activates once the repository secrets exist;
+    # without them the build falls back to the ad-hoc signature.
+    env:
+      HAVE_CERT: ${{ secrets.MACOS_CERT_P12 != '' }}
+      HAVE_NOTARY: ${{ secrets.NOTARY_KEY != '' }}
+
     steps:
       - uses: actions/checkout@v6
 
@@ -151,11 +157,52 @@ jobs:
         with:
           shared-key: release-macos-app
 
+      - name: Import Developer ID certificate
+        if: env.HAVE_CERT == 'true'
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          CERT="$RUNNER_TEMP/certificate.p12"
+          echo "$MACOS_CERT_P12" | base64 --decode > "$CERT"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$CERT" -P "$MACOS_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          rm "$CERT"
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" \
+            | awk -F'"' '/Developer ID Application/ {print $2; exit}')
+          if [ -z "$IDENTITY" ]; then
+            echo "::error::No Developer ID Application identity in the imported certificate"
+            exit 1
+          fi
+          echo "MACOS_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+
       - name: Build app bundle
         run: bash scripts/build-macos-app.sh
 
-      # ditto preserves the ad-hoc code signature and bundle metadata that a
-      # plain zip would strip.
+      - name: Notarize and staple
+        if: env.HAVE_CERT == 'true' && env.HAVE_NOTARY == 'true'
+        env:
+          NOTARY_KEY: ${{ secrets.NOTARY_KEY }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          KEY="$RUNNER_TEMP/notary-key.p8"
+          echo "$NOTARY_KEY" > "$KEY"
+          ditto -c -k --keepParent "dist/Seed Seeker.app" "$RUNNER_TEMP/notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
+            --key "$KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" \
+            --wait --timeout 30m
+          xcrun stapler staple "dist/Seed Seeker.app"
+          rm "$KEY"
+
+      # ditto preserves the code signature, notarization ticket, and bundle
+      # metadata that a plain zip would strip.
       - name: Package app
         run: |
           ditto -c -k --keepParent "dist/Seed Seeker.app" \
