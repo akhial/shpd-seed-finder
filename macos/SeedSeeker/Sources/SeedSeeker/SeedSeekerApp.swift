@@ -450,6 +450,16 @@ private struct ResultsView: View {
                 Text("Time elapsed: \(NumberFormat.duration(controller.elapsed))")
                     .font(.caption2).foregroundStyle(.tertiary)
             }
+        } else if controller.isImpossibleQuery {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Impossible query").font(.caption.bold())
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .foregroundStyle(.orange).background(.quaternary, in: Capsule())
+                Text("No seed can satisfy these requirements within the current floor limit. " +
+                     "Quest-reward-only items need their quest floors in range: +3 wands floor 9, " +
+                     "+3/+4 rings floor 19.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         } else if let state = controller.state {
             Text(state == .failed ? "Failed (error \(controller.errorCode))" : state == .completed ? "Completed" : "Cancelled")
                 .font(.caption.bold()).padding(.horizontal, 10).padding(.vertical, 4).background(.quaternary, in: Capsule())

@@ -25,6 +25,11 @@ public final class SearchController {
         return 1 / matchProbability / seedsPerSecond
     }
     public var reachedResultCap: Bool { results.count >= 1_024 }
+    /// The engine completes an unsatisfiable plan before scanning any seed,
+    /// which would otherwise be indistinguishable from a malfunction.
+    public var isImpossibleQuery: Bool {
+        state == .completed && scannedSeeds == 0 && results.isEmpty
+    }
 
     public func start(_ request: SearchRequest) {
         task?.cancel(); results = []; scannedSeeds = 0; totalSeeds = 0; matchProbability = nil; seedsPerSecond = 0; elapsed = 0
