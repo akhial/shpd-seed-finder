@@ -18,6 +18,12 @@
 # SwiftPM build products.
 /macos/SeedSeeker/.build/
 
+# Windows/.NET build products and local restore caches.
+/windows/SeedSeeker/bin/
+/windows/SeedSeeker/obj/
+/.dotnet-home/
+/.nuget-packages/
+
 # Locally signed release artifacts.
 /dist/
 

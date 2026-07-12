@@ -4,7 +4,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](COPYING)
 
 An extremely fast, offline seed finder for [Shattered Pixel Dungeon](https://shatteredpixel.com/),
-written in Rust — with native Android and macOS apps.
+written in Rust — with native Android, macOS, and Windows apps.
 
 <p align="center">
   <img alt="Bar chart of seed-search throughput. Seed Seeker tests 4,528 seeds per second on 12 cores and 604 on one core; the incumbent Java shpd-seed-finder tests 421 seeds per second across 6 processes and 93 in one process." src="assets/benchmark.svg">
@@ -26,6 +26,7 @@ written in Rust — with native Android and macOS apps.
   upgrade, enchantment, cursed state, source, and choice constraints
 - 📱 **Android app** (Jetpack Compose) with streaming results and bounded memory
 - 🍎 **Native macOS app** (SwiftUI, Apple Silicon) sharing the same Rust engine over a C ABI
+- 🪟 **Native Windows app** (WinUI 3, ARM64) using Fluent Design 2 and the same Rust engine
 - 🧵 **Multicore scheduler** with per-search cancellation, atomic progress, and NEON-batched RNG
   on ARM64
 - 🧪 **Oracle-verified**: Java-parity tests and reproducible whole-floor snapshots generated from
@@ -236,6 +237,8 @@ O3. See the compatibility notes for the on-device parity gate.
   contract.
 - `macos/SeedSeeker`: native arm64 macOS 14+ SwiftUI app and SwiftPM package, linked to the
   shared Rust engine through its C ABI.
+- `windows/SeedSeeker`: native ARM64 WinUI 3 desktop app using Fluent Design 2 and the shared
+  Rust engine through its C ABI.
 - `tooling/oracle`: reproducible, machine-readable whole-floor snapshots from an isolated export
   of the exact pinned game revision.
 - `tooling/parity`: focused Java fixture generators for individual RNG and reward paths.

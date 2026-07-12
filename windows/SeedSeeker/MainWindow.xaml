@@ -1,0 +1,251 @@
+<Window
+    x:Class="SeedSeeker.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:SeedSeeker"
+    Title="Seed Seeker">
+  <Grid>
+    <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition/></Grid.RowDefinitions>
+
+    <!-- Unified title bar drawn over Mica -->
+    <Grid x:Name="AppTitleBar">
+      <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center" Margin="18,0,0,0">
+        <FontIcon Glyph="&#xE721;" FontSize="14" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+        <TextBlock Text="Seed Seeker" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center"/>
+      </StackPanel>
+    </Grid>
+
+    <Grid Grid.Row="1">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="324"/><ColumnDefinition/></Grid.ColumnDefinitions>
+
+      <!-- Query sidebar, directly on Mica -->
+      <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+        <TextBlock Text="Query" Style="{StaticResource SubtitleTextBlockStyle}" Margin="20,2,20,10"/>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+          <StackPanel Padding="20,0,20,20">
+            <TextBlock Text="Requirements" Style="{StaticResource SectionHeader}" Margin="1,2,0,8"/>
+            <ItemsRepeater x:Name="RequirementList">
+              <ItemsRepeater.Layout><StackLayout Spacing="4"/></ItemsRepeater.Layout>
+              <ItemsRepeater.ItemTemplate>
+                <DataTemplate>
+                  <Button Style="{StaticResource CardButton}" Click="Requirement_Click">
+                    <Grid ColumnSpacing="12">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                      <FontIcon Glyph="{Binding Glyph}" Foreground="{Binding Tint}" FontSize="16" VerticalAlignment="Center"/>
+                      <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Title}" TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding Description}" Style="{StaticResource Caption}"/>
+                      </StackPanel>
+                      <Button Grid.Column="2" Style="{StaticResource SubtleIconButton}" Tag="{Binding}" Click="RemoveRequirement_Click" ToolTipService.ToolTip="Remove requirement" VerticalAlignment="Center" Margin="0,0,-6,0">
+                        <FontIcon Glyph="&#xE711;" FontSize="12"/>
+                      </Button>
+                    </Grid>
+                  </Button>
+                </DataTemplate>
+              </ItemsRepeater.ItemTemplate>
+            </ItemsRepeater>
+            <TextBlock x:Name="NoRequirements" Text="No requirements yet. Add one to describe the item you're hunting for." Style="{StaticResource Caption}" Margin="1,0,1,10"/>
+            <Button Click="AddRequirement_Click" HorizontalAlignment="Stretch" Margin="0,4,0,0">
+              <StackPanel Orientation="Horizontal" Spacing="8">
+                <FontIcon Glyph="&#xE710;" FontSize="13"/><TextBlock Text="Add requirement"/>
+              </StackPanel>
+              <Button.KeyboardAccelerators><KeyboardAccelerator Modifiers="Control" Key="N"/></Button.KeyboardAccelerators>
+            </Button>
+
+            <TextBlock Text="Search scope" Style="{StaticResource SectionHeader}"/>
+            <Border Style="{StaticResource SettingsCard}">
+              <StackPanel>
+                <Grid>
+                  <TextBlock Text="Floor limit" VerticalAlignment="Center"/>
+                  <TextBlock x:Name="FloorLabel" Style="{StaticResource Caption}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                </Grid>
+                <Slider x:Name="FloorSlider" StepFrequency="1" ValueChanged="FloorSlider_ValueChanged" HorizontalAlignment="Stretch" Margin="0,2,0,-8"/>
+              </StackPanel>
+            </Border>
+
+            <TextBlock Text="Blacksmith" Style="{StaticResource SectionHeader}"/>
+            <Border Style="{StaticResource SettingsCard}" Margin="0,0,0,4">
+              <Grid ColumnSpacing="14">
+                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <TextBlock Text="Require accessible blacksmith" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                <ToggleSwitch Grid.Column="1" x:Name="RequireBlacksmith" Style="{StaticResource CompactToggle}" Toggled="SettingChanged"/>
+              </Grid>
+            </Border>
+            <Border Style="{StaticResource SettingsCard}">
+              <Grid ColumnSpacing="14" RowSpacing="4">
+                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                <TextBlock Text="Exclude Smith rewards" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="1" Text="Required items cannot come from the 2,000-favor Smith choice, leaving favor available for reforging." Style="{StaticResource Caption}"/>
+                <ToggleSwitch Grid.Column="1" x:Name="ExcludeRewards" Style="{StaticResource CompactToggle}" Toggled="SettingChanged" VerticalAlignment="Top" Margin="0,-4,0,0"/>
+              </Grid>
+            </Border>
+
+            <TextBlock Text="Performance" Style="{StaticResource SectionHeader}"/>
+            <Border Style="{StaticResource SettingsCard}">
+              <Grid ColumnSpacing="14" RowSpacing="4">
+                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                <TextBlock Text="Fast search" VerticalAlignment="Center"/>
+                <TextBlock Grid.Row="1" Text="Treats +3 weapons and armor as quest rewards only, skipping rare Crypt and Sacrificial-fire prizes. Found seeds are always genuine." Style="{StaticResource Caption}"/>
+                <ToggleSwitch Grid.Column="1" x:Name="FastMode" Style="{StaticResource CompactToggle}" Toggled="SettingChanged" VerticalAlignment="Top" Margin="0,-4,0,0"/>
+              </Grid>
+            </Border>
+
+            <TextBlock Text="Challenges" Style="{StaticResource SectionHeader}"/>
+            <Button Style="{StaticResource CardButton}" Click="Challenges_Click">
+              <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <FontIcon Glyph="&#xE7C1;" FontSize="16" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}"/>
+                <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                  <TextBlock Text="Challenges"/>
+                  <TextBlock Text="Simulate runs with challenges enabled" Style="{StaticResource Caption}"/>
+                </StackPanel>
+                <TextBlock x:Name="ChallengeSummary" Grid.Column="2" Style="{StaticResource Caption}" VerticalAlignment="Center"/>
+                <FontIcon Grid.Column="3" Glyph="&#xE76C;" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" VerticalAlignment="Center"/>
+              </Grid>
+            </Button>
+          </StackPanel>
+        </ScrollViewer>
+        <StackPanel Grid.Row="2" Padding="20,14,20,10" Spacing="10" BorderThickness="0,1,0,0" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
+          <Button x:Name="StartButton" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch" Padding="0,9" Click="Start_Click">
+            <StackPanel Orientation="Horizontal" Spacing="8">
+              <FontIcon x:Name="StartIcon" Glyph="&#xE768;" FontSize="14"/>
+              <TextBlock x:Name="StartLabel" Text="Start Search"/>
+            </StackPanel>
+            <Button.KeyboardAccelerators><KeyboardAccelerator Modifiers="Control" Key="Enter"/></Button.KeyboardAccelerators>
+          </Button>
+          <TextBlock Text="Shattered Pixel Dungeon v3.3.8" Style="{StaticResource Caption}" HorizontalAlignment="Center"/>
+        </StackPanel>
+      </Grid>
+
+      <!-- Content island: Results + Seed Detail on a raised layer, Windows 11 Settings style -->
+      <Grid Grid.Column="1" Background="{ThemeResource LayerFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1,1,0,0"
+            CornerRadius="8,0,0,0">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="*" MinWidth="320"/>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="1.25*" MinWidth="360"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Results -->
+        <Grid Padding="24,18,24,0">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
+          <TextBlock Text="Results" Style="{StaticResource SubtitleTextBlockStyle}"/>
+          <TextBlock x:Name="SearchStatus" Grid.Row="1" Text="Add requirements, then press Start Search." Style="{StaticResource Caption}" MinHeight="32" Margin="0,10,0,10"/>
+          <Grid Grid.Row="2" Padding="12,0,12,8" BorderThickness="0,0,0,1" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="40"/><ColumnDefinition/></Grid.ColumnDefinitions>
+            <TextBlock Text="#" Style="{StaticResource Caption}"/>
+            <TextBlock Grid.Column="1" Text="Seed" Style="{StaticResource Caption}"/>
+          </Grid>
+          <ListView x:Name="ResultsList" Grid.Row="3" Margin="-12,4,-12,0" Padding="12,0,12,16"
+                    SelectionChanged="ResultsList_SelectionChanged" DoubleTapped="ResultsList_DoubleTapped">
+            <ListView.ItemContainerStyle>
+              <Style TargetType="ListViewItem">
+                <Setter Property="MinHeight" Value="36"/>
+                <Setter Property="Padding" Value="12,0"/>
+                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+              </Style>
+            </ListView.ItemContainerStyle>
+            <ListView.ItemTemplate>
+              <DataTemplate>
+                <Grid>
+                  <Grid.ColumnDefinitions><ColumnDefinition Width="40"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                  <TextBlock Text="{Binding Number}" Style="{StaticResource Caption}" VerticalAlignment="Center"/>
+                  <TextBlock Grid.Column="1" Text="{Binding Seed}" FontFamily="Cascadia Mono, Consolas" VerticalAlignment="Center"/>
+                  <Grid.ContextFlyout>
+                    <MenuFlyout>
+                      <MenuFlyoutItem Text="Copy seed" Click="CopyResult_Click">
+                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8C8;"/></MenuFlyoutItem.Icon>
+                      </MenuFlyoutItem>
+                      <MenuFlyoutItem Text="Scout seed" Click="ScoutResult_Click">
+                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE721;"/></MenuFlyoutItem.Icon>
+                      </MenuFlyoutItem>
+                    </MenuFlyout>
+                  </Grid.ContextFlyout>
+                </Grid>
+              </DataTemplate>
+            </ListView.ItemTemplate>
+          </ListView>
+        </Grid>
+
+        <Border Grid.Column="1" Width="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}"/>
+
+        <!-- Seed detail -->
+        <Grid Grid.Column="2">
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
+          <StackPanel Padding="24,18,24,14" Spacing="10" BorderThickness="0,0,0,1" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
+            <TextBlock Text="Seed Detail" Style="{StaticResource SubtitleTextBlockStyle}" Margin="0,0,0,4"/>
+            <Grid ColumnSpacing="8">
+              <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+              <TextBox x:Name="SeedInput" PlaceholderText="AAA-AAA-AAA" FontFamily="Cascadia Mono, Consolas" FontSize="17"
+                       TextChanged="SeedInput_TextChanged" KeyDown="SeedInput_KeyDown"/>
+              <Button Grid.Column="1" x:Name="ScoutButton" Content="Scout" Click="Scout_Click" VerticalAlignment="Stretch"/>
+              <Button Grid.Column="2" Content="Copy" Click="CopySeed_Click" VerticalAlignment="Stretch"/>
+            </Grid>
+            <TextBlock x:Name="ScoutStatus" Style="{StaticResource Caption}" Margin="0,-2,0,0"/>
+          </StackPanel>
+
+          <Grid Grid.Row="1">
+            <StackPanel x:Name="EmptyScout" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8" MaxWidth="320" Margin="24,0">
+              <FontIcon Glyph="&#xE707;" FontSize="36" Foreground="{ThemeResource TextFillColorSecondaryBrush}" HorizontalAlignment="Center" Margin="0,0,0,4"/>
+              <TextBlock Text="No seed scouted" Style="{StaticResource BodyStrongTextBlockStyle}" HorizontalAlignment="Center"/>
+              <TextBlock Text="Enter a canonical seed, or select a search result, to inspect its item manifest." Style="{StaticResource Caption}" TextAlignment="Center"/>
+            </StackPanel>
+            <ListView x:Name="ScoutList" Visibility="Collapsed" SelectionMode="None" Padding="12,4,12,16">
+              <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem">
+                  <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                  <Setter Property="Padding" Value="12,2"/>
+                </Style>
+              </ListView.ItemContainerStyle>
+              <ListView.GroupStyle>
+                <GroupStyle>
+                  <GroupStyle.HeaderTemplate>
+                    <DataTemplate>
+                      <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock Text="{Binding Floor}" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                        <TextBlock Text="{Binding Region}" Style="{StaticResource Caption}" VerticalAlignment="Bottom" Margin="0,0,0,1"/>
+                      </StackPanel>
+                    </DataTemplate>
+                  </GroupStyle.HeaderTemplate>
+                </GroupStyle>
+              </ListView.GroupStyle>
+              <ListView.ItemTemplate>
+                <DataTemplate>
+                  <Grid ColumnSpacing="10" Padding="0,6">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <FontIcon Glyph="{Binding Glyph}" Foreground="{Binding Tint}" FontSize="15" Width="20" VerticalAlignment="Top" Margin="0,3,0,0"/>
+                    <StackPanel Grid.Column="1" Spacing="2">
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock Text="{Binding ItemName}" FontWeight="{Binding Weight}" TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding Upgrade}" Visibility="{Binding UpgradeVisibility}" Foreground="{ThemeResource SystemFillColorSuccessBrush}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                        <Border Visibility="{Binding CurseVisibility}" Background="{ThemeResource SystemFillColorCriticalBackgroundBrush}" CornerRadius="8" Padding="7,1" VerticalAlignment="Center">
+                          <TextBlock Text="cursed" FontSize="11" Foreground="{ThemeResource SystemFillColorCriticalBrush}"/>
+                        </Border>
+                      </StackPanel>
+                      <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock Text="{Binding Effect}" Visibility="{Binding EffectVisibility}" Foreground="{Binding EffectBrush}" FontSize="12"/>
+                        <TextBlock Text="·" Visibility="{Binding EffectVisibility}" Style="{StaticResource Caption}"/>
+                        <TextBlock Text="{Binding Source}" Style="{StaticResource Caption}"/>
+                      </StackPanel>
+                      <TextBlock Text="{Binding Accessibility}" Visibility="{Binding AccessibilityVisibility}" FontSize="11" Foreground="{ThemeResource TextFillColorTertiaryBrush}" TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <Border Grid.Column="2" Visibility="{Binding MatchVisibility}" Background="{ThemeResource SystemFillColorSuccessBackgroundBrush}" CornerRadius="10" Padding="8,2" VerticalAlignment="Top" Margin="8,2,0,0">
+                      <StackPanel Orientation="Horizontal" Spacing="5">
+                        <FontIcon Glyph="&#xE73E;" FontSize="10" Foreground="{ThemeResource SystemFillColorSuccessBrush}"/>
+                        <TextBlock Text="Match" FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource SystemFillColorSuccessBrush}"/>
+                      </StackPanel>
+                    </Border>
+                  </Grid>
+                </DataTemplate>
+              </ListView.ItemTemplate>
+            </ListView>
+          </Grid>
+        </Grid>
+      </Grid>
+    </Grid>
+  </Grid>
+</Window>
