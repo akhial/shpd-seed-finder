@@ -1,6 +1,6 @@
 # Seed Seeker
 
-[![CI](https://github.com/akhial/shpd-seed-finder/actions/workflows/ci.yml/badge.svg)](https://github.com/akhial/shpd-seed-finder/actions/workflows/ci.yml)
+[![CI](https://github.com/akhial/shpd-seed-seeker/actions/workflows/ci.yml/badge.svg)](https://github.com/akhial/shpd-seed-seeker/actions/workflows/ci.yml)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](COPYING)
 
 An extremely fast, offline seed finder for [Shattered Pixel Dungeon](https://shatteredpixel.com/),
@@ -54,7 +54,7 @@ game — will generate.
 ### Download a release
 
 Prebuilt binaries for every tagged version are published on the
-[GitHub Releases page](https://github.com/akhial/shpd-seed-finder/releases). Each release is
+[GitHub Releases page](https://github.com/akhial/shpd-seed-seeker/releases). Each release is
 built by the Release workflow from a `v*` tag and includes a `SHA256SUMS.txt` covering every
 asset.
 
