@@ -63,13 +63,14 @@ asset.
 | `seed-seeker-cli-<tag>-<target>.tar.gz` / `.zip` | CLI for Linux (x86_64, arm64), macOS (Apple Silicon, Intel), and Windows (x86_64, arm64) |
 | `seed-seeker-<tag>-macos-arm64.app.zip` | Native macOS app (Apple Silicon, macOS 14+) |
 | `seed-seeker-<tag>-windows-<arch>.zip` | Native Windows app (x64, ARM64) |
-| `seed-seeker-<tag>-android-unsigned.apk` | Android app (arm64-v8a and x86_64) |
+| `seed-seeker-<tag>-android.apk` | Android app (arm64-v8a and x86_64) |
 
 Platform notes:
 
 - The macOS app is signed with a Developer ID certificate and notarized by Apple, so it opens
   normally after download.
-- The Android APK is unsigned and must be signed before it can be installed; see the
+- The Android APK is signed with the project's release key and installs directly once
+  installing from unknown sources is allowed. Locally built APKs are unsigned; see the
   [Android](#android) section below for an `apksigner` example.
 - The Windows app requires the
   [Windows App SDK 1.8 runtime](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/downloads)
