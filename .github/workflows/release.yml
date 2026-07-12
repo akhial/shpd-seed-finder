@@ -83,6 +83,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
+    # Signing activates once the repository secrets exist; without them the
+    # release ships the unsigned APK.
+    env:
+      HAVE_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE != '' }}
+
     steps:
       - uses: actions/checkout@v6
 
@@ -119,7 +124,28 @@ jobs:
         working-directory: android
         run: ./gradlew :app:assembleRelease --stacktrace
 
-      - name: Stage APK
+      # Must match the apksigner example in the README's Android section.
+      - name: Sign APK
+        if: env.HAVE_KEYSTORE == 'true'
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;36.1.0"
+          KEYSTORE="$RUNNER_TEMP/release-keystore"
+          echo "$ANDROID_KEYSTORE" | base64 --decode > "$KEYSTORE"
+          "$ANDROID_HOME/build-tools/36.1.0/apksigner" sign \
+            --ks "$KEYSTORE" --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
+            --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --out "seed-seeker-${{ github.ref_name }}-android.apk" \
+            android/app/build/outputs/apk/release/app-release-unsigned.apk
+          "$ANDROID_HOME/build-tools/36.1.0/apksigner" verify --print-certs \
+            "seed-seeker-${{ github.ref_name }}-android.apk"
+          rm "$KEYSTORE"
+
+      - name: Stage unsigned APK
+        if: env.HAVE_KEYSTORE != 'true'
         run: |
           cp android/app/build/outputs/apk/release/app-release-unsigned.apk \
             "seed-seeker-${{ github.ref_name }}-android-unsigned.apk"
@@ -128,7 +154,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: seed-seeker-*-android-unsigned.apk
+          path: seed-seeker-*-android*.apk
           if-no-files-found: error
 
   macos-app:
