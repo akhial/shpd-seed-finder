@@ -50,6 +50,31 @@ game — will generate.
 
 ## Getting started<a id="getting-started"></a>
 
+### Download a release
+
+Prebuilt binaries for every tagged version are published on the
+[GitHub Releases page](https://github.com/akhial/shpd-seed-finder/releases). Each release is
+built by the Release workflow from a `v*` tag and includes a `SHA256SUMS.txt` covering every
+asset.
+
+| Asset | Platforms |
+| --- | --- |
+| `seed-seeker-cli-<tag>-<target>.tar.gz` / `.zip` | CLI for Linux (x86_64, arm64), macOS (Apple Silicon, Intel), and Windows (x86_64, arm64) |
+| `seed-seeker-<tag>-macos-arm64.app.zip` | Native macOS app (Apple Silicon, macOS 14+) |
+| `seed-seeker-<tag>-windows-arm64.zip` | Native Windows app (ARM64) |
+| `seed-seeker-<tag>-android-unsigned.apk` | Android app (arm64-v8a and x86_64) |
+
+Platform notes:
+
+- The macOS app is ad-hoc signed, so Gatekeeper blocks a normal first launch. Right-click the
+  app and choose *Open*, or clear the quarantine flag with
+  `xattr -dr com.apple.quarantine "Seed Seeker.app"`.
+- The Android APK is unsigned and must be signed before it can be installed; see the
+  [Android](#android) section below for an `apksigner` example.
+- The Windows app is ARM64-only and requires the
+  [Windows App SDK 1.8 runtime](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/downloads)
+  to be installed.
+
 ### CLI
 
 Build and run the canonical depth-24 benchmark (10,000 seeds on all available CPUs by default):

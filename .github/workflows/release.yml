@@ -1,0 +1,241 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  # Dry run: builds every artifact but skips the release job below.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  cli:
+    name: CLI (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            archive: tar.gz
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+            archive: tar.gz
+          - target: aarch64-apple-darwin
+            runner: macos-15
+            archive: tar.gz
+          # Cross-compiled; Apple hosts carry both darwin toolchains.
+          - target: x86_64-apple-darwin
+            runner: macos-15
+            archive: tar.gz
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            archive: zip
+          - target: aarch64-pc-windows-msvc
+            runner: windows-11-arm
+            archive: zip
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ matrix.target }}
+
+      - name: Build CLI
+        run: cargo build --release --locked -p shpd-seedfinder-cli --target ${{ matrix.target }}
+
+      - name: Package (tar.gz)
+        if: matrix.archive == 'tar.gz'
+        run: |
+          tar -czf "seed-seeker-cli-${{ github.ref_name }}-${{ matrix.target }}.tar.gz" \
+            -C "target/${{ matrix.target }}/release" seed-seeker
+
+      - name: Package (zip)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "target/${{ matrix.target }}/release/seed-seeker.exe" `
+            -DestinationPath "seed-seeker-cli-${{ github.ref_name }}-${{ matrix.target }}.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.target }}
+          path: seed-seeker-cli-*
+          if-no-files-found: error
+
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install Rust targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-android
+
+      # Must match ndkVersion in android/app/build.gradle.kts. The runner
+      # image exports ANDROID_NDK_HOME pointing at its bundled NDK, so it has
+      # to be repointed or scripts/build-android-native.sh links with the
+      # wrong toolchain.
+      - name: Install Android NDK
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      # Tests and lint run in CI; releases only assemble.
+      - name: Assemble release APK
+        working-directory: android
+        run: ./gradlew :app:assembleRelease --stacktrace
+
+      - name: Stage APK
+        run: |
+          cp android/app/build/outputs/apk/release/app-release-unsigned.apk \
+            "seed-seeker-${{ github.ref_name }}-android-unsigned.apk"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: seed-seeker-*-android-unsigned.apk
+          if-no-files-found: error
+
+  macos-app:
+    name: macOS app
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-macos-app
+
+      - name: Build app bundle
+        run: bash scripts/build-macos-app.sh
+
+      # ditto preserves the ad-hoc code signature and bundle metadata that a
+      # plain zip would strip.
+      - name: Package app
+        run: |
+          ditto -c -k --keepParent "dist/Seed Seeker.app" \
+            "seed-seeker-${{ github.ref_name }}-macos-arm64.app.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-app
+          path: seed-seeker-*-macos-arm64.app.zip
+          if-no-files-found: error
+
+  windows-app:
+    name: Windows app
+    runs-on: windows-11-arm
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-pc-windows-msvc
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-windows-app
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
+      # The csproj builds and copies the Rust engine DLL itself.
+      - name: Build app
+        run: pwsh scripts/build-windows-app.ps1
+
+      # Resolve the output directory instead of hard-coding the
+      # bin/<platform>/<config>/<tfm>/<rid> segments, which shift with SDK
+      # and target-framework updates.
+      - name: Package app
+        shell: pwsh
+        run: |
+          $out = Get-ChildItem -Path windows/SeedSeeker/bin -Recurse -Directory -Filter win-arm64 |
+            Where-Object { $_.FullName -match 'Release' } | Select-Object -First 1
+          if (-not $out) { throw "win-arm64 Release output directory not found" }
+          Compress-Archive -Path "$($out.FullName)/*" `
+            -DestinationPath "seed-seeker-${{ github.ref_name }}-windows-arm64.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-app
+          path: seed-seeker-*-windows-arm64.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: [cli, android, macos-app, windows-app]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS.txt
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
