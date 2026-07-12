@@ -18,7 +18,10 @@ let package = Package(
         .target(
             name: "CSeedFinder",
             publicHeadersPath: "include",
-            linkerSettings: [.unsafeFlags(["-L", rustLibrary, "-lshpd_seedfinder_ffi"])]
+            // Link the static archive by explicit path: with `-l`, ld prefers
+            // the cdylib that the same cargo build emits for other platforms,
+            // and the app then cannot launch off the build machine.
+            linkerSettings: [.unsafeFlags([rustLibrary + "/libshpd_seedfinder_ffi.a"])]
         ),
         .target(name: "SeedSeekerKit", dependencies: ["CSeedFinder"]),
         .executableTarget(name: "SeedSeeker", dependencies: ["SeedSeekerKit"]),
