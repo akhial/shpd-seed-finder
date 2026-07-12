@@ -40,8 +40,29 @@ import java.util.Locale
 import kotlin.math.floor
 import kotlin.math.log10
 import kotlin.math.pow
+import kotlin.math.roundToInt
 
 val LocalItemAtlas = staticCompositionLocalOf<ImageBitmap?> { null }
+val LocalItemIconAtlas = staticCompositionLocalOf<ImageBitmap?> { null }
+
+private const val ITEM_SPRITE_SIZE = 16
+private const val ITEM_ATLAS_COLUMNS = 16
+private const val ITEM_ICON_SIZE = 8
+private const val ITEM_ICON_COLUMNS = 16
+private val RingTypeIconSizes = listOf(
+    IntSize(7, 7), // Accuracy
+    IntSize(7, 7), // Arcana
+    IntSize(7, 7), // Elements
+    IntSize(7, 5), // Energy
+    IntSize(7, 7), // Evasion
+    IntSize(5, 6), // Force
+    IntSize(7, 6), // Furor
+    IntSize(6, 6), // Haste
+    IntSize(7, 7), // Might
+    IntSize(7, 7), // Sharpshooting
+    IntSize(6, 6), // Tenacity
+    IntSize(7, 6), // Wealth
+)
 
 /** Original compass mark used as the app's brand glyph. */
 @Composable
@@ -68,6 +89,7 @@ fun ItemSprite(
     modifier: Modifier = Modifier,
 ) {
     val atlas = LocalItemAtlas.current
+    val iconAtlas = LocalItemIconAtlas.current
     val placeholderColor = MaterialTheme.colorScheme.outline
     Canvas(
         modifier = modifier.semantics { contentDescription = item.name },
@@ -81,16 +103,40 @@ fun ItemSprite(
             drawImage(
                 image = atlas,
                 srcOffset = IntOffset(
-                    x = (item.spriteIndex % 16) * 16,
-                    y = (item.spriteIndex / 16) * 16,
+                    x = (item.spriteIndex % ITEM_ATLAS_COLUMNS) * ITEM_SPRITE_SIZE,
+                    y = (item.spriteIndex / ITEM_ATLAS_COLUMNS) * ITEM_SPRITE_SIZE,
                 ),
-                srcSize = IntSize(16, 16),
+                srcSize = IntSize(ITEM_SPRITE_SIZE, ITEM_SPRITE_SIZE),
                 dstOffset = IntOffset.Zero,
                 dstSize = IntSize(size.width.toInt(), size.height.toInt()),
                 filterQuality = FilterQuality.None,
             )
         } else {
             drawCircle(placeholderColor, radius = size.minDimension * 0.28f)
+        }
+
+        val typeIconIndex = item.typeIconIndex
+        if (iconAtlas != null && typeIconIndex != null) {
+            val iconSize = RingTypeIconSizes[typeIconIndex]
+            val scale = size.minDimension / ITEM_SPRITE_SIZE
+            val destinationSize = IntSize(
+                (iconSize.width * scale).roundToInt(),
+                (iconSize.height * scale).roundToInt(),
+            )
+            drawImage(
+                image = iconAtlas,
+                srcOffset = IntOffset(
+                    x = (typeIconIndex % ITEM_ICON_COLUMNS) * ITEM_ICON_SIZE,
+                    y = (typeIconIndex / ITEM_ICON_COLUMNS) * ITEM_ICON_SIZE,
+                ),
+                srcSize = iconSize,
+                dstOffset = IntOffset(
+                    x = ((size.width + size.minDimension) / 2).roundToInt() - destinationSize.width,
+                    y = ((size.height - size.minDimension) / 2).roundToInt(),
+                ),
+                dstSize = destinationSize,
+                filterQuality = FilterQuality.None,
+            )
         }
     }
 }

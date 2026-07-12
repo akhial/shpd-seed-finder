@@ -127,13 +127,14 @@ fun AboutScreen(onBack: () -> Unit) {
 
                 item {
                     AboutSection("Artwork attribution") {
-                        Text("The item sprites are an unchanged copy of Shattered Pixel Dungeon's items.png atlas.")
+                        Text("The item sprites and type icons are unchanged copies of Shattered Pixel Dungeon's item atlases.")
                         Spacer(Modifier.height(10.dp))
                         AttributionLine("Upstream", "Shattered Pixel Dungeon v3.3.8")
                         AttributionLine("Commit", "7b8b845a76fe76c6b7c031ae9e570852411f56db")
                         AttributionLine("Pixel Dungeon", "© 2012–2015 Oleg Dolya")
                         AttributionLine("Shattered Pixel Dungeon", "© 2014–2026 Evan Debenham")
                         AttributionLine("Atlas SHA-256", "ce2496368660e9b2…a294caacaf")
+                        AttributionLine("Icon SHA-256", "38df728d32842d9f…24d7eb9b72")
                     }
                 }
 

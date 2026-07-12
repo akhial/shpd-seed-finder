@@ -17,5 +17,16 @@
     "cellSize": 16,
     "columns": 16,
     "indexFormula": "(x - 1) + 16 * (y - 1)"
+  },
+  "iconAsset": {
+    "file": "item_icons.png",
+    "upstreamPath": "core/src/main/assets/sprites/item_icons.png",
+    "sha256": "38df728d32842d9fb032ddf5e6052b31ddb9987c2624a36048492c24d7eb9b72",
+    "byteLength": 1614,
+    "width": 128,
+    "height": 64,
+    "cellSize": 8,
+    "columns": 16,
+    "indexFormula": "(x - 1) + 16 * (y - 1)"
   }
 }

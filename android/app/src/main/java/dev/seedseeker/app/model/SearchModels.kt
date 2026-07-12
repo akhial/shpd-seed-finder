@@ -19,6 +19,7 @@ data class CatalogItem(
     val kind: ItemKind,
     val spriteIndex: Int,
     val tier: Int? = null,
+    val typeIconIndex: Int? = null,
 )
 
 data class ItemRequirement(

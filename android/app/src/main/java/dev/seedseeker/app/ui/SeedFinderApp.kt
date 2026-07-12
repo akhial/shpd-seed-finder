@@ -2,7 +2,11 @@
 package dev.seedseeker.app.ui
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Rect
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
@@ -47,6 +51,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val ATLAS_PATH = "third_party/shattered-pixel-dungeon/items.png"
+private const val ITEM_ICONS_PATH = "third_party/shattered-pixel-dungeon/item_icons.png"
 private const val SETTINGS_PREFERENCES = "seed_seeker_settings"
 private const val CHALLENGES_KEY = "challenges_mask"
 
@@ -59,7 +64,14 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
     val context = LocalContext.current
     val atlas = remember(context) {
         runCatching {
-            context.assets.open(ATLAS_PATH).use(BitmapFactory::decodeStream)?.asImageBitmap()
+            context.assets.open(ATLAS_PATH).use(BitmapFactory::decodeStream)
+                ?.centerSpriteCells()
+                ?.asImageBitmap()
+        }.getOrNull()
+    }
+    val itemIcons = remember(context) {
+        runCatching {
+            context.assets.open(ITEM_ICONS_PATH).use(BitmapFactory::decodeStream)?.asImageBitmap()
         }.getOrNull()
     }
     val scope = rememberCoroutineScope()
@@ -215,7 +227,10 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
         )
     }
 
-    CompositionLocalProvider(LocalItemAtlas provides atlas) {
+    CompositionLocalProvider(
+        LocalItemAtlas provides atlas,
+        LocalItemIconAtlas provides itemIcons,
+    ) {
         when (destination) {
             Destination.FINDER -> FinderScreen(
                 requirements = requirements,
@@ -370,6 +385,58 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
             )
         }
     }
+}
+
+/**
+ * The upstream atlas packs each item against the top-left of its 16 px cell. Recenter the
+ * non-transparent pixels while retaining every sprite's original size and pixel-art scaling.
+ */
+private fun Bitmap.centerSpriteCells(cellSize: Int = 16): Bitmap {
+    require(width % cellSize == 0 && height % cellSize == 0)
+
+    val sourcePixels = IntArray(width * height)
+    getPixels(sourcePixels, 0, width, 0, 0, width, height)
+
+    val centered = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
+        it.density = density
+    }
+    val canvas = Canvas(centered)
+    val paint = Paint().apply { isFilterBitmap = false }
+
+    for (cellY in 0 until height step cellSize) {
+        for (cellX in 0 until width step cellSize) {
+            var minX = cellSize
+            var minY = cellSize
+            var maxX = -1
+            var maxY = -1
+
+            for (y in 0 until cellSize) {
+                for (x in 0 until cellSize) {
+                    if (sourcePixels[(cellY + y) * width + cellX + x] ushr 24 != 0) {
+                        minX = minOf(minX, x)
+                        minY = minOf(minY, y)
+                        maxX = maxOf(maxX, x)
+                        maxY = maxOf(maxY, y)
+                    }
+                }
+            }
+
+            if (maxX < 0) continue
+
+            val offsetX = (cellSize - 1 - minX - maxX) / 2
+            val offsetY = (cellSize - 1 - minY - maxY) / 2
+            val source = Rect(cellX, cellY, cellX + cellSize, cellY + cellSize)
+            val destination = Rect(
+                cellX + offsetX,
+                cellY + offsetY,
+                cellX + cellSize + offsetX,
+                cellY + cellSize + offsetY,
+            )
+            canvas.drawBitmap(this, source, destination, paint)
+        }
+    }
+
+    return centered
 }
 
 @Composable

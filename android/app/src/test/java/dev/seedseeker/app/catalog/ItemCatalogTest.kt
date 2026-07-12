@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package dev.seedseeker.app.catalog
 
+import dev.seedseeker.app.model.ItemKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -22,6 +23,8 @@ class ItemCatalogTest {
         assertEquals((176..180).toList(), ItemCatalog.armor.map { it.spriteIndex })
         assertEquals((208..220).toList(), ItemCatalog.wands.map { it.spriteIndex })
         assertEquals((224..235).toList(), ItemCatalog.rings.map { it.spriteIndex })
+        assertEquals((0..11).toList(), ItemCatalog.rings.map { it.typeIconIndex })
+        assertTrue(ItemCatalog.all.filterNot { it.kind == ItemKind.RING }.all { it.typeIconIndex == null })
     }
 
     @Test
