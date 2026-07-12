@@ -86,6 +86,110 @@ public sealed record ScoutItem(CatalogItem Item, int Depth, int Upgrade, string?
 public sealed record ScoutWorld(string Seed, IReadOnlyList<ScoutItem> Items);
 public sealed record SearchStatus(SearchState State, long Scanned, long Total, long ErrorCode, double Probability);
 
+public static class ScoutMatcher
+{
+    public static HashSet<int> SelectMatches(IReadOnlyList<ScoutItem> items,
+        IEnumerable<ItemRequirement> requirements, int maximumDepth = 24,
+        bool excludeBlacksmithRewards = false)
+    {
+        bool Matches(ScoutItem item, ItemRequirement requirement)
+        {
+            var tierMatches = requirement.TierMatch switch
+            {
+                TierMatch.Any => true,
+                TierMatch.Exactly => item.Item.Tier == requirement.Tier,
+                TierMatch.AtLeast => item.Item.Tier >= requirement.Tier,
+                _ => false,
+            };
+            var upgradeMatches = requirement.UpgradeMatch switch
+            {
+                UpgradeMatch.Any => true,
+                UpgradeMatch.Exactly => item.Upgrade == requirement.Upgrade,
+                UpgradeMatch.AtLeast => item.Upgrade >= requirement.Upgrade,
+                _ => false,
+            };
+            return item.Depth <= maximumDepth
+                && item.Depth <= (requirement.MaximumDepth ?? maximumDepth)
+                && (!excludeBlacksmithRewards || item.Source != ScoutItemSource.BlacksmithReward)
+                && requirement.Kind == item.Item.Kind
+                && (requirement.Item is null || requirement.Item.Id == item.Item.Id)
+                && tierMatches && upgradeMatches
+                && (requirement.Modifier is null || requirement.Modifier == item.Effect)
+                && (requirement.Source is null || requirement.Source == item.Source);
+        }
+
+        var candidates = requirements
+            .Select(requirement => (Requirement: requirement, Items: Enumerable.Range(0, items.Count)
+                .Where(index => Matches(items[index], requirement)).ToArray()))
+            .OrderBy(candidate => candidate.Items.Length).ToArray();
+        var used = new HashSet<int>();
+        var selected = new HashSet<int>();
+        var best = new HashSet<int>();
+        var scenarios = new Dictionary<int, ulong>();
+        var identities = new Dictionary<int, string>();
+
+        void Visit(int position)
+        {
+            if (position == candidates.Length)
+            {
+                if (selected.Count > best.Count) best = [.. selected];
+                return;
+            }
+            if (selected.Count + candidates.Length - position <= best.Count) return;
+            var (requirement, itemCandidates) = candidates[position];
+            foreach (var index in itemCandidates)
+            {
+                if (used.Contains(index)) continue;
+                var item = items[index];
+                string? previousIdentity = null;
+                if (requirement.IdentityGroup is int identityGroup)
+                {
+                    identities.TryGetValue(identityGroup, out previousIdentity);
+                    if (previousIdentity is not null && previousIdentity != item.Item.Id) continue;
+                    identities[identityGroup] = item.Item.Id;
+                }
+                (int Group, ulong Mask)? constraint = item.AccessibilityTag switch
+                {
+                    1 => (item.AccessibilityGroup, 1UL << (int)item.AccessibilityValue),
+                    2 => (item.AccessibilityGroup, item.AccessibilityValue),
+                    _ => null,
+                };
+                ulong? previousScenarios = null;
+                if (constraint is { } value)
+                {
+                    if (scenarios.TryGetValue(value.Group, out var previous)) previousScenarios = previous;
+                    var compatible = (previousScenarios ?? ulong.MaxValue) & value.Mask;
+                    if (compatible == 0)
+                    {
+                        RestoreIdentity(requirement, previousIdentity);
+                        continue;
+                    }
+                    scenarios[value.Group] = compatible;
+                }
+                used.Add(index); selected.Add(index);
+                Visit(position + 1);
+                used.Remove(index); selected.Remove(index);
+                if (constraint is { } oldConstraint)
+                {
+                    if (previousScenarios is ulong previous) scenarios[oldConstraint.Group] = previous;
+                    else scenarios.Remove(oldConstraint.Group);
+                }
+                RestoreIdentity(requirement, previousIdentity);
+            }
+            Visit(position + 1);
+        }
+
+        void RestoreIdentity(ItemRequirement requirement, string? previous)
+        {
+            if (requirement.IdentityGroup is not int group) return;
+            if (previous is null) identities.Remove(group); else identities[group] = previous;
+        }
+
+        Visit(0);
+        return best;
+    }
+}
+
 public static class ItemCatalog
 {
     private sealed class Root { public Entry[] Entries { get; set; } = []; }

@@ -69,6 +69,8 @@ fun ScoutScreen(
     isScouting: Boolean,
     error: String?,
     requirements: List<ItemRequirement>,
+    maximumDepth: Int,
+    excludeBlacksmithRewards: Boolean,
     onSeedChange: (String) -> Unit,
     onScout: () -> Unit,
     onChallenges: () -> Unit,
@@ -161,16 +163,23 @@ fun ScoutScreen(
                 }
 
                 result?.let { world ->
+                    val matchIndices = scoutMatchIndices(
+                        items = world.items,
+                        requirements = requirements,
+                        maximumDepth = maximumDepth,
+                        excludeBlacksmithRewards = excludeBlacksmithRewards,
+                    )
                     item {
                         ScoutSummaryCard(
                             world = world,
-                            requirements = requirements,
+                            matchCount = matchIndices.size,
+                            showMatchCount = requirements.isNotEmpty(),
                             modifier = Modifier.padding(top = 22.dp),
                         )
                     }
 
-                    world.items
-                        .groupBy(ScoutItem::depth)
+                    world.items.withIndex()
+                        .groupBy { it.value.depth }
                         .toSortedMap()
                         .forEach { (depth, floorItems) ->
                             item(key = "floor-$depth") {
@@ -180,11 +189,12 @@ fun ScoutScreen(
                                     modifier = Modifier.padding(top = 20.dp, bottom = 10.dp),
                                 )
                             }
-                            floorItems.forEachIndexed { index, scoutItem ->
-                                item(key = "scout-$depth-$index-${scoutItem.item.id}") {
+                            floorItems.forEach { indexedItem ->
+                                val scoutItem = indexedItem.value
+                                item(key = "scout-$depth-${indexedItem.index}-${scoutItem.item.id}") {
                                     ScoutItemCard(
                                         scoutItem = scoutItem,
-                                        matches = scoutItem.matchesAny(requirements),
+                                        matches = indexedItem.index in matchIndices,
                                         modifier = Modifier.padding(bottom = 8.dp),
                                     )
                                 }
@@ -275,12 +285,12 @@ private fun SeedInputCard(
 @Composable
 private fun ScoutSummaryCard(
     world: ScoutWorld,
-    requirements: List<ItemRequirement>,
+    matchCount: Int,
+    showMatchCount: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val clipboard = LocalClipboardManager.current
     val floors = world.items.map(ScoutItem::depth).distinct().size
-    val matchCount = world.items.count { it.matchesAny(requirements) }
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
@@ -310,7 +320,7 @@ private fun ScoutSummaryCard(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatusPill("${world.items.size} items")
                 StatusPill("$floors floors")
-                if (requirements.isNotEmpty()) {
+                if (showMatchCount) {
                     StatusPill(
                         text = if (matchCount == 1) "1 match" else "$matchCount matches",
                         container = if (matchCount > 0) {

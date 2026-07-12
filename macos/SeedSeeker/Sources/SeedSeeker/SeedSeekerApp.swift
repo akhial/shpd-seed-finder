@@ -36,7 +36,8 @@ private struct ContentView: View {
                 ResultsView(controller: controller) { seed in scout.scout(seed, challenges: challenges) }
                     .navigationSplitViewColumnWidth(min: 340, ideal: 420)
             } detail: {
-                SeedDetailView(model: scout, requirements: requirements, challenges: challenges)
+                SeedDetailView(model: scout, requirements: requirements, maximumDepth: maximumDepth,
+                               excludeBlacksmithRewards: excludeBlacksmithRewards, challenges: challenges)
                     .navigationSplitViewColumnWidth(min: 360, ideal: 450)
             }
             Divider()
@@ -487,6 +488,8 @@ private struct ResultsView: View {
 private struct SeedDetailView: View {
     @Bindable var model: ScoutViewModel
     let requirements: [ItemRequirement]
+    let maximumDepth: Int
+    let excludeBlacksmithRewards: Bool
     let challenges: Int
     @FocusState private var focused: Bool
 
@@ -521,14 +524,16 @@ private struct SeedDetailView: View {
     private func manifest(_ world: ScoutWorld) -> some View {
         let byDepth = Dictionary(grouping: world.items, by: \.depth)
         let depths = byDepth.keys.sorted()
-        let matchCount = world.items.count { matches($0) }
+        let matches = scoutMatchIndices(items: world.items, requirements: requirements,
+                                        maximumDepth: maximumDepth,
+                                        excludeBlacksmithRewards: excludeBlacksmithRewards)
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 4) {
                 Text("\(world.items.count) items across \(depths.count) floors")
                 if !requirements.isEmpty {
                     Text("·")
-                    Label("\(matchCount) requirement match\(matchCount == 1 ? "" : "es")", systemImage: "checkmark.circle")
-                        .foregroundStyle(matchCount > 0 ? Color.green : Color.secondary)
+                    Label("\(matches.count) requirement match\(matches.count == 1 ? "" : "es")", systemImage: "checkmark.circle")
+                        .foregroundStyle(matches.isEmpty ? Color.secondary : Color.green)
                 }
             }
             .font(.caption).foregroundStyle(.secondary)
@@ -536,8 +541,8 @@ private struct SeedDetailView: View {
             List {
                 ForEach(depths, id: \.self) { depth in
                     Section {
-                        ForEach(byDepth[depth] ?? []) { item in
-                            ScoutItemRow(item: item, matches: matches(item))
+                        ForEach(Array(world.items.enumerated()).filter { $0.element.depth == depth }, id: \.offset) { entry in
+                            ScoutItemRow(item: entry.element, matches: matches.contains(entry.offset))
                         }
                     } header: {
                         HStack {
@@ -560,15 +565,6 @@ private struct SeedDetailView: View {
         }
     }
 
-    private func matches(_ item: ScoutItem) -> Bool {
-        // Per-item hint only; this does not re-verify joint/exclusive-reward satisfiability.
-        requirements.contains { requirement in
-            requirement.kind == item.item.kind && (requirement.item == nil || requirement.item?.id == item.item.id)
-                && (requirement.upgradeMatch == .any || requirement.upgradeMatch == .exactly && item.upgrade == requirement.upgrade || requirement.upgradeMatch == .atLeast && item.upgrade >= requirement.upgrade)
-                && (requirement.modifier == nil || requirement.modifier == item.effect)
-                && (requirement.source == nil || requirement.source == item.source)
-        }
-    }
 }
 
 private struct ScoutItemRow: View {
@@ -608,7 +604,7 @@ private struct ScoutItemRow: View {
                     .font(.caption.bold()).foregroundStyle(.green)
                     .padding(.horizontal, 7).padding(.vertical, 2)
                     .background(.green.opacity(0.12), in: Capsule())
-                    .help("Matches one of your search requirements")
+                    .help("Selected as part of a jointly obtainable requirement match")
             }
         }
         .padding(.vertical, 1)

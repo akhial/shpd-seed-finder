@@ -169,20 +169,21 @@ public sealed partial class MainWindow : Window
         try
         {
             var world = await Task.Run(() => engine.Scout(seed, query.Challenges));
-            var groups = world.Items.GroupBy(x => x.Depth).OrderBy(g => g.Key).Select(g =>
+            var matches = ScoutMatcher.SelectMatches(world.Items, query.Requirements,
+                query.MaximumDepth, query.ExcludeBlacksmithRewards);
+            var groups = world.Items.Select((item, index) => (Item: item, Index: index))
+                .GroupBy(x => x.Item.Depth).OrderBy(g => g.Key).Select(g =>
             {
                 var group = new ScoutGroup { Floor = $"Floor {g.Key}", Region = Region(g.Key) };
-                group.AddRange(g.Select(item => ScoutRow.From(item, Matches(item)))); return group;
+                group.AddRange(g.Select(entry => ScoutRow.From(entry.Item, matches.Contains(entry.Index)))); return group;
             }).ToList();
             ScoutList.ItemsSource = new CollectionViewSource { IsSourceGrouped = true, Source = groups }.View;
-            var matches = world.Items.Count(Matches);
-            ScoutStatus.Text = $"{world.Items.Count} items across {groups.Count} floors" + (query.Requirements.Count == 0 ? "" : $"  ·  {matches} requirement match{(matches == 1 ? "" : "es")}");
+            ScoutStatus.Text = $"{world.Items.Count} items across {groups.Count} floors" + (query.Requirements.Count == 0 ? "" : $"  ·  {matches.Count} requirement match{(matches.Count == 1 ? "" : "es")}");
             EmptyScout.Visibility = Visibility.Collapsed; ScoutList.Visibility = Visibility.Visible;
         }
         catch (Exception ex) { ScoutStatus.Text = ex.Message; } finally { ScoutButton.IsEnabled = SeedCode.IsCanonical(SeedInput.Text); }
     }
     private static string Region(int depth) => depth switch { <= 5 => "Sewers", <= 10 => "Prison", <= 15 => "Caves", <= 20 => "Dwarven City", _ => "Demon Halls" };
-    private bool Matches(ScoutItem item) => query.Requirements.Any(r => r.Kind == item.Item.Kind && (r.Item is null || r.Item.Id == item.Item.Id) && (r.UpgradeMatch == UpgradeMatch.Any || r.UpgradeMatch == UpgradeMatch.Exactly && item.Upgrade == r.Upgrade || r.UpgradeMatch == UpgradeMatch.AtLeast && item.Upgrade >= r.Upgrade) && (r.Modifier is null || r.Modifier == item.Effect) && (r.Source is null || r.Source == item.Source));
     private void CopySeed_Click(object sender, RoutedEventArgs e) { if (SeedCode.IsCanonical(SeedInput.Text)) Copy(SeedInput.Text); }
     private static void Copy(string text) { var data = new DataPackage(); data.SetText(text); Clipboard.SetContent(data); }
 }

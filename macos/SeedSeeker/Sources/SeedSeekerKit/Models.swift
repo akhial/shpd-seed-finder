@@ -235,12 +235,103 @@ public struct ScoutItem: Identifiable, Sendable {
     public let source: ScoutItemSource
     public let accessibility: ScoutAccessibility
     public var id: String { "\(depth):\(item.id):\(upgrade):\(source.rawValue):\(accessibility)" }
+    public init(item: CatalogItem, depth: Int, upgrade: Int, effect: String? = nil,
+                cursed: Bool = false, source: ScoutItemSource,
+                accessibility: ScoutAccessibility = .independent) {
+        self.item = item; self.depth = depth; self.upgrade = upgrade; self.effect = effect
+        self.cursed = cursed; self.source = source; self.accessibility = accessibility
+    }
 }
 
 public enum ScoutAccessibility: Hashable, Sendable {
     case independent
     case choice(group: Int, option: Int)
     case scenarios(group: Int, mask: UInt64)
+}
+
+/// Selects a deterministic, jointly obtainable set of scouted items for the
+/// current requirements. Each selected item satisfies one distinct requirement;
+/// choice and scenario groups are constrained to a compatible outcome.
+public func scoutMatchIndices(items: [ScoutItem], requirements: [ItemRequirement],
+                              maximumDepth: Int = 24,
+                              excludeBlacksmithRewards: Bool = false) -> Set<Int> {
+    func matches(_ item: ScoutItem, _ requirement: ItemRequirement) -> Bool {
+        guard item.depth <= maximumDepth,
+              item.depth <= (requirement.maximumDepth ?? maximumDepth),
+              !excludeBlacksmithRewards || item.source != .blacksmithReward,
+              requirement.kind == item.item.kind,
+              requirement.item == nil || requirement.item?.id == item.item.id,
+              requirement.modifier == nil || requirement.modifier == item.effect,
+              requirement.source == nil || requirement.source == item.source else { return false }
+        let tierMatches = switch requirement.tierMatch {
+        case .any: true
+        case .exactly: item.item.tier == requirement.tier
+        case .atLeast: item.item.tier.map { $0 >= requirement.tier } ?? false
+        }
+        let upgradeMatches = switch requirement.upgradeMatch {
+        case .any: true
+        case .exactly: item.upgrade == requirement.upgrade
+        case .atLeast: item.upgrade >= requirement.upgrade
+        }
+        return tierMatches && upgradeMatches
+    }
+
+    let candidates = requirements.map { requirement in
+        (requirement, items.indices.filter { matches(items[$0], requirement) })
+    }.sorted { $0.1.count < $1.1.count }
+    var used = Set<Int>()
+    var selected = Set<Int>()
+    var best = Set<Int>()
+    var scenarios: [Int: UInt64] = [:]
+    var identities: [Int: String] = [:]
+
+    func visit(_ position: Int) {
+        guard position < candidates.count else {
+            if selected.count > best.count { best = selected }
+            return
+        }
+        if selected.count + candidates.count - position <= best.count { return }
+        let (requirement, itemCandidates) = candidates[position]
+        for index in itemCandidates where !used.contains(index) {
+            let item = items[index]
+            var oldIdentity: String?
+            if let group = requirement.identityGroup {
+                if let identity = identities[group], identity != item.item.id { continue }
+                oldIdentity = identities.updateValue(item.item.id, forKey: group)
+            }
+            let constraint: (Int, UInt64)? = switch item.accessibility {
+            case .independent: nil
+            case .choice(let group, let option): (group, UInt64(1) << UInt64(option))
+            case .scenarios(let group, let mask): (group, mask)
+            }
+            var oldScenarios: UInt64?
+            if let (group, mask) = constraint {
+                let compatible = (scenarios[group] ?? UInt64.max) & mask
+                if compatible == 0 {
+                    if let identityGroup = requirement.identityGroup {
+                        if let oldIdentity { identities[identityGroup] = oldIdentity }
+                        else { identities.removeValue(forKey: identityGroup) }
+                    }
+                    continue
+                }
+                oldScenarios = scenarios.updateValue(compatible, forKey: group)
+            }
+            used.insert(index); selected.insert(index)
+            visit(position + 1)
+            used.remove(index); selected.remove(index)
+            if let (group, _) = constraint {
+                if let oldScenarios { scenarios[group] = oldScenarios }
+                else { scenarios.removeValue(forKey: group) }
+            }
+            if let identityGroup = requirement.identityGroup {
+                if let oldIdentity { identities[identityGroup] = oldIdentity }
+                else { identities.removeValue(forKey: identityGroup) }
+            }
+        }
+        visit(position + 1)
+    }
+    visit(0)
+    return best
 }
 
 public enum SearchState: Int, Sendable { case running, completed, cancelled, failed }

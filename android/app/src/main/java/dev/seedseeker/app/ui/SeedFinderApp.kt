@@ -299,6 +299,8 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
                 isScouting = isScouting,
                 error = scoutError,
                 requirements = requirements,
+                maximumDepth = maximumDepth,
+                excludeBlacksmithRewards = excludeBlacksmithRewards,
                 onSeedChange = {
                     val formatted = SeedCode.formatInput(it)
                     scoutInput = formatted

@@ -31,7 +31,9 @@ import androidx.compose.ui.unit.sp
 import dev.seedseeker.app.model.CatalogItem
 import dev.seedseeker.app.model.ItemKind
 import dev.seedseeker.app.model.ItemRequirement
+import dev.seedseeker.app.model.ScoutAccessibility
 import dev.seedseeker.app.model.ScoutItem
+import dev.seedseeker.app.model.ScoutItemSource
 import dev.seedseeker.app.model.SearchStatus
 import dev.seedseeker.app.model.UpgradeMatch
 import dev.seedseeker.app.ui.theme.Amber
@@ -236,22 +238,93 @@ fun floorRegion(depth: Int): String = when {
     else -> "Demon Halls"
 }
 
-/**
- * Per-item hint that a scouted item satisfies one of the query requirements.
- * Does not re-verify joint or exclusive-reward satisfiability.
- */
-fun ScoutItem.matchesAny(requirements: List<ItemRequirement>): Boolean =
-    requirements.any { requirement ->
-        requirement.kind == item.kind &&
-            (requirement.item == null || requirement.item.id == item.id) &&
+/** Selects one distinct, jointly obtainable scout item per matched requirement. */
+internal fun scoutMatchIndices(
+    items: List<ScoutItem>,
+    requirements: List<ItemRequirement>,
+    maximumDepth: Int = 24,
+    excludeBlacksmithRewards: Boolean = false,
+): Set<Int> {
+    fun matches(item: ScoutItem, requirement: ItemRequirement): Boolean =
+        item.depth <= maximumDepth &&
+            item.depth <= (requirement.maximumDepth ?: maximumDepth) &&
+            (!excludeBlacksmithRewards || item.source != ScoutItemSource.BLACKSMITH_REWARD) &&
+            requirement.kind == item.item.kind &&
+            (requirement.item == null || requirement.item.id == item.item.id) &&
+            when (requirement.tierMatch) {
+                dev.seedseeker.app.model.TierMatch.ANY -> true
+                dev.seedseeker.app.model.TierMatch.EXACT -> item.item.tier == requirement.tier
+                dev.seedseeker.app.model.TierMatch.AT_LEAST ->
+                    item.item.tier?.let { it >= requirement.tier } == true
+            } &&
             when (requirement.upgradeMatch) {
                 UpgradeMatch.ANY -> true
-                UpgradeMatch.EXACT -> upgrade == requirement.upgrade
-                UpgradeMatch.AT_LEAST -> upgrade >= requirement.upgrade
+                UpgradeMatch.EXACT -> item.upgrade == requirement.upgrade
+                UpgradeMatch.AT_LEAST -> item.upgrade >= requirement.upgrade
             } &&
-            (requirement.modifier == null || requirement.modifier == effect) &&
-            (requirement.source == null || requirement.source == source)
+            (requirement.modifier == null || requirement.modifier == item.effect) &&
+            (requirement.source == null || requirement.source == item.source)
+
+    val candidates = requirements
+        .map { requirement -> requirement to items.indices.filter { matches(items[it], requirement) } }
+        .sortedBy { it.second.size }
+    val used = mutableSetOf<Int>()
+    val selected = mutableSetOf<Int>()
+    var best = emptySet<Int>()
+    val scenarios = mutableMapOf<Int, ULong>()
+    val identities = mutableMapOf<Int, String>()
+
+    fun visit(position: Int) {
+        if (position == candidates.size) {
+            if (selected.size > best.size) best = selected.toSet()
+            return
+        }
+        if (selected.size + candidates.size - position <= best.size) return
+        val (requirement, itemCandidates) = candidates[position]
+        for (index in itemCandidates) {
+            if (index in used) continue
+            val item = items[index]
+            val identityGroup = requirement.identityGroup
+            val previousIdentity = identityGroup?.let { identities[it] }
+            if (identityGroup != null && previousIdentity != null && previousIdentity != item.item.id) continue
+            if (identityGroup != null) identities[identityGroup] = item.item.id
+
+            val constraint = when (val accessibility = item.accessibility) {
+                ScoutAccessibility.Independent -> null
+                is ScoutAccessibility.Choice -> accessibility.group to (1UL shl accessibility.option)
+                is ScoutAccessibility.Scenarios -> accessibility.group to accessibility.mask
+            }
+            val previousScenarios = constraint?.first?.let { scenarios[it] }
+            if (constraint != null) {
+                val compatible = (previousScenarios ?: ULong.MAX_VALUE) and constraint.second
+                if (compatible == 0UL) {
+                    if (identityGroup != null) {
+                        if (previousIdentity == null) identities.remove(identityGroup)
+                        else identities[identityGroup] = previousIdentity
+                    }
+                    continue
+                }
+                scenarios[constraint.first] = compatible
+            }
+            used += index
+            selected += index
+            visit(position + 1)
+            used -= index
+            selected -= index
+            if (constraint != null) {
+                if (previousScenarios == null) scenarios.remove(constraint.first)
+                else scenarios[constraint.first] = previousScenarios
+            }
+            if (identityGroup != null) {
+                if (previousIdentity == null) identities.remove(identityGroup)
+                else identities[identityGroup] = previousIdentity
+            }
+        }
+        visit(position + 1)
     }
+    visit(0)
+    return best
+}
 
 fun compactCount(value: Long): String = when {
     value >= 1_000_000_000_000L -> String.format(Locale.US, "%.2fT", value / 1_000_000_000_000.0)

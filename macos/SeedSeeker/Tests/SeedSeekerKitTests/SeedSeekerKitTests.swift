@@ -3,6 +3,42 @@ import SeedSeekerKit
 import XCTest
 
 final class SeedSeekerKitTests: XCTestCase {
+    func testScoutMatchesSelectOnlyOneMutuallyExclusiveReward() throws {
+        let warding = try XCTUnwrap(ItemCatalog.findById("wand_warding"))
+        let light = try XCTUnwrap(ItemCatalog.findById("wand_prismatic_light"))
+        let requirement = try ItemRequirement(key: 1, item: nil, upgrade: 3, kind: .wand,
+                                              upgradeMatch: .exactly, source: .wandmakerReward)
+        let items = [
+            ScoutItem(item: warding, depth: 8, upgrade: 3, source: .wandmakerReward,
+                      accessibility: .choice(group: 2, option: 0)),
+            ScoutItem(item: light, depth: 8, upgrade: 3, source: .wandmakerReward,
+                      accessibility: .choice(group: 2, option: 1)),
+        ]
+
+        XCTAssertEqual(scoutMatchIndices(items: items, requirements: [requirement]), [0])
+    }
+
+    func testScoutMatchesRespectCompatibleScenarioMasksAndDistinctRequirements() throws {
+        let warding = try XCTUnwrap(ItemCatalog.findById("wand_warding"))
+        let light = try XCTUnwrap(ItemCatalog.findById("wand_prismatic_light"))
+        let requirements = try [warding, light].enumerated().map { index, item in
+            try ItemRequirement(key: Int64(index), item: item, upgrade: 3, kind: .wand,
+                                upgradeMatch: .exactly)
+        }
+        let compatible = [
+            ScoutItem(item: warding, depth: 8, upgrade: 3, source: .wandmakerReward,
+                      accessibility: .scenarios(group: 4, mask: 0b11)),
+            ScoutItem(item: light, depth: 8, upgrade: 3, source: .wandmakerReward,
+                      accessibility: .scenarios(group: 4, mask: 0b10)),
+        ]
+        let incompatible = [compatible[0],
+            ScoutItem(item: light, depth: 8, upgrade: 3, source: .wandmakerReward,
+                      accessibility: .scenarios(group: 4, mask: 0b100))]
+
+        XCTAssertEqual(scoutMatchIndices(items: compatible, requirements: requirements), [0, 1])
+        XCTAssertEqual(scoutMatchIndices(items: incompatible, requirements: requirements).count, 1)
+    }
+
     func testQueryCodecTierPredicateUsesSSF5WithZeroChallenges() throws {
         let requirement = try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .armor,
             tier: 4, tierMatch: .atLeast, upgradeMatch: .any)
