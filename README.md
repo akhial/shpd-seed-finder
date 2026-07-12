@@ -26,7 +26,8 @@ written in Rust — with native Android, macOS, and Windows apps.
   upgrade, enchantment, cursed state, source, and choice constraints
 - 📱 **Android app** (Jetpack Compose) with streaming results and bounded memory
 - 🍎 **Native macOS app** (SwiftUI, Apple Silicon) sharing the same Rust engine over a C ABI
-- 🪟 **Native Windows app** (WinUI 3, ARM64) using Fluent Design 2 and the same Rust engine
+- 🪟 **Native Windows app** (WinUI 3, x64 and ARM64) using Fluent Design 2 and the same Rust
+  engine
 - 🧵 **Multicore scheduler** with per-search cancellation, atomic progress, and NEON-batched RNG
   on ARM64
 - 🧪 **Oracle-verified**: Java-parity tests and reproducible whole-floor snapshots generated from
@@ -61,7 +62,7 @@ asset.
 | --- | --- |
 | `seed-seeker-cli-<tag>-<target>.tar.gz` / `.zip` | CLI for Linux (x86_64, arm64), macOS (Apple Silicon, Intel), and Windows (x86_64, arm64) |
 | `seed-seeker-<tag>-macos-arm64.app.zip` | Native macOS app (Apple Silicon, macOS 14+) |
-| `seed-seeker-<tag>-windows-arm64.zip` | Native Windows app (ARM64) |
+| `seed-seeker-<tag>-windows-<arch>.zip` | Native Windows app (x64, ARM64) |
 | `seed-seeker-<tag>-android-unsigned.apk` | Android app (arm64-v8a and x86_64) |
 
 Platform notes:
@@ -71,7 +72,7 @@ Platform notes:
   `xattr -dr com.apple.quarantine "Seed Seeker.app"`.
 - The Android APK is unsigned and must be signed before it can be installed; see the
   [Android](#android) section below for an `apksigner` example.
-- The Windows app is ARM64-only and requires the
+- The Windows app requires the
   [Windows App SDK 1.8 runtime](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/downloads)
   to be installed.
 
@@ -262,8 +263,8 @@ O3. See the compatibility notes for the on-device parity gate.
   contract.
 - `macos/SeedSeeker`: native arm64 macOS 14+ SwiftUI app and SwiftPM package, linked to the
   shared Rust engine through its C ABI.
-- `windows/SeedSeeker`: native ARM64 WinUI 3 desktop app using Fluent Design 2 and the shared
-  Rust engine through its C ABI.
+- `windows/SeedSeeker`: native WinUI 3 desktop app (x64 and ARM64) using Fluent Design 2 and the
+  shared Rust engine through its C ABI.
 - `tooling/oracle`: reproducible, machine-readable whole-floor snapshots from an isolated export
   of the exact pinned game revision.
 - `tooling/parity`: focused Java fixture generators for individual RNG and reward paths.

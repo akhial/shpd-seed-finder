@@ -5,9 +5,7 @@
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <RootNamespace>SeedSeeker</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Platforms>ARM64</Platforms>
-    <PlatformTarget>ARM64</PlatformTarget>
-    <RuntimeIdentifier>win-arm64</RuntimeIdentifier>
+    <Platforms>ARM64;x64</Platforms>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>false</WindowsAppSDKSelfContained>
     <UseWinUI>true</UseWinUI>
@@ -16,12 +14,23 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Platform)' == 'ARM64'">
+    <PlatformTarget>ARM64</PlatformTarget>
+    <RuntimeIdentifier>win-arm64</RuntimeIdentifier>
+    <RustTarget>aarch64-pc-windows-msvc</RustTarget>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Platform)' == 'x64'">
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <RustTarget>x86_64-pc-windows-msvc</RustTarget>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
     <Content Include="..\..\android\app\src\main\assets\third_party\shattered-pixel-dungeon\catalog-v3.3.8.json" Link="Assets\catalog-v3.3.8.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="BuildRustEngine" BeforeTargets="Build">
-    <Exec WorkingDirectory="..\.." Command="cargo build --release -p shpd-seedfinder-ffi --target aarch64-pc-windows-msvc" />
-    <Copy SourceFiles="..\..\target\aarch64-pc-windows-msvc\release\shpd_seedfinder_ffi.dll" DestinationFolder="$(OutDir)" />
+    <Error Condition="'$(RustTarget)' == ''" Text="Build with -p:Platform=ARM64 or -p:Platform=x64; platform '$(Platform)' has no Rust target mapping." />
+    <Exec WorkingDirectory="..\.." Command="cargo build --release -p shpd-seedfinder-ffi --target $(RustTarget)" />
+    <Copy SourceFiles="..\..\target\$(RustTarget)\release\shpd_seedfinder_ffi.dll" DestinationFolder="$(OutDir)" />
   </Target>
 </Project>
