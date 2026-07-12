@@ -84,7 +84,8 @@ jobs:
 
   macos:
     name: macOS
-    runs-on: macos-15
+    # Matches the release macos-app job so tests exercise the shipping SDK.
+    runs-on: macos-26
     timeout-minutes: 30
 
     steps:
