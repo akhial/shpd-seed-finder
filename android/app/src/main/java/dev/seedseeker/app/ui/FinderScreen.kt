@@ -460,7 +460,7 @@ private fun ScopeCard(
                 Switch(
                     checked = requireBlacksmith,
                     onCheckedChange = onRequireBlacksmithChange,
-                    enabled = enabled && maximumDepth <= 14,
+                    enabled = enabled && maximumDepth < 14,
                 )
             }
             Spacer(Modifier.height(6.dp))
