@@ -9,6 +9,13 @@ rust-version.workspace = true
 [lib]
 name = "shpd_seedfinder_core"
 
+[features]
+json-query = ["dep:serde", "dep:serde_json"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+
 [lints]
 workspace = true
 

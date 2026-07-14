@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Original Seed Seeker compass mark, shared with the Android client. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="108" height="108" viewBox="0 0 108 108">
+  <rect width="108" height="108" rx="24" fill="#151c1b"/>
+  <path fill="#7de2b8" fill-rule="evenodd" d="M54 17a37 37 0 1 0 0 74 37 37 0 1 0 0-74Zm0 8a29 29 0 1 1 0 58 29 29 0 1 1 0-58Z"/>
+  <path fill="#ffc96b" d="m70 36-10 23-23 11 11-23Z"/>
+  <path fill="#fff5de" d="M60 59 37 70l11-23Z"/>
+  <circle cx="54" cy="54" r="4" fill="#151c1b"/>
+</svg>

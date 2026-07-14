@@ -5,6 +5,7 @@ members = [
     "crates/seedfinder-session",
     "crates/seedfinder-jni",
     "crates/seedfinder-ffi",
+    "linux",
 ]
 resolver = "3"
 

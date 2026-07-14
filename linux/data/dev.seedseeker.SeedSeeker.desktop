@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+[Desktop Entry]
+Name=Seed Seeker
+Comment=Find and inspect Shattered Pixel Dungeon seeds
+Exec=seed-seeker-gtk
+Icon=dev.seedseeker.SeedSeeker
+Terminal=false
+Type=Application
+Categories=Utility;
+Keywords=seed;dungeon;search;
+StartupNotify=true

@@ -1,8 +1,10 @@
+//! JSON search-query document decoding shared by the CLI and native frontends.
+
+use crate::catalog::{Effect, ItemKind, item_by_stable_id};
+use crate::challenges::Challenges;
+use crate::model::ItemSource;
+use crate::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
 use serde::Deserialize;
-use shpd_seedfinder_core::catalog::{Effect, ItemKind, item_by_stable_id};
-use shpd_seedfinder_core::challenges::Challenges;
-use shpd_seedfinder_core::model::ItemSource;
-use shpd_seedfinder_core::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -166,6 +168,12 @@ const fn default_max_depth() -> u8 {
     24
 }
 
+/// Decodes and validates a JSON query document into a [`SearchQuery`].
+///
+/// # Errors
+///
+/// Returns a human-readable message for malformed JSON, unknown items,
+/// effects, upgrade modes, or challenge names, and for invalid queries.
 pub fn decode(contents: &str) -> Result<SearchQuery, String> {
     let document: QueryDocument =
         serde_json::from_str(contents).map_err(|error| format!("invalid JSON: {error}"))?;
@@ -239,10 +247,10 @@ fn convert_requirement(requirement: FileRequirement) -> Result<Requirement, Stri
 
 #[cfg(test)]
 mod tests {
-    use shpd_seedfinder_core::catalog::{ItemId, ItemKind};
-    use shpd_seedfinder_core::challenges::Challenges;
-    use shpd_seedfinder_core::model::ItemSource;
-    use shpd_seedfinder_core::query::UpgradeRequirement;
+    use crate::catalog::{ItemId, ItemKind};
+    use crate::challenges::Challenges;
+    use crate::model::ItemSource;
+    use crate::query::UpgradeRequirement;
 
     use super::decode;
 

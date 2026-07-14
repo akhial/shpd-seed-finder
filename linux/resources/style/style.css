@@ -1,0 +1,33 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+
+/* Seed codes are always monospace, everywhere they appear. */
+.seed-code,
+row.seed-row .title {
+  font-family: monospace;
+}
+
+entry.seed-entry {
+  font-family: monospace;
+  font-size: 120%;
+}
+
+/* Small capsule tags on manifest rows, e.g. enchantments and curses. */
+.tag {
+  font-size: 0.8em;
+  font-weight: bold;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: alpha(currentColor, 0.1);
+}
+
+.tag.success {
+  color: var(--success-color);
+}
+
+.tag.error {
+  color: var(--error-color);
+}
+
+.tag.accent {
+  color: var(--accent-color);
+}

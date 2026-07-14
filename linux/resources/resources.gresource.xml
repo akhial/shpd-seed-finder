@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<gresources>
+  <gresource prefix="/dev/seedseeker/SeedSeeker">
+    <file preprocess="xml-stripblanks">icons/scalable/apps/dev.seedseeker.SeedSeeker-symbolic.svg</file>
+    <file preprocess="xml-stripblanks">icons/scalable/actions/kind-weapon-symbolic.svg</file>
+    <file preprocess="xml-stripblanks">icons/scalable/actions/kind-armor-symbolic.svg</file>
+    <file preprocess="xml-stripblanks">icons/scalable/actions/kind-wand-symbolic.svg</file>
+    <file preprocess="xml-stripblanks">icons/scalable/actions/kind-ring-symbolic.svg</file>
+    <file>style/style.css</file>
+  </gresource>
+</gresources>

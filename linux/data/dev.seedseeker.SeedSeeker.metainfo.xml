@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: CC0-1.0 -->
+<component type="desktop-application">
+  <id>dev.seedseeker.SeedSeeker</id>
+  <name>Seed Seeker</name>
+  <summary>Find promising Shattered Pixel Dungeon seeds</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer id="dev.seedseeker">
+    <name>Seed Seeker contributors</name>
+  </developer>
+  <description>
+    <p>
+      Seed Seeker is an offline utility for finding and inspecting promising
+      Shattered Pixel Dungeon seeds.
+    </p>
+    <p>
+      Describe the equipment you are hunting for — items, tiers, upgrade
+      levels, enchantments, sources, and challenges — then search the full
+      seed space on all processor cores with live progress and time-to-match
+      estimates. Scout any seed to browse its complete item manifest floor by
+      floor, with your requirement matches highlighted.
+    </p>
+    <p>
+      It is an independent, unofficial project and is not affiliated with or
+      endorsed by Shattered Pixel Dungeon or its developers.
+    </p>
+  </description>
+  <url type="homepage">https://github.com/akhial/shpd-seed-seeker</url>
+  <launchable type="desktop-id">dev.seedseeker.SeedSeeker.desktop</launchable>
+  <provides>
+    <binary>seed-seeker-gtk</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-07-14">
+      <description>
+        <p>Initial native Linux application scaffold.</p>
+      </description>
+    </release>
+  </releases>
+</component>

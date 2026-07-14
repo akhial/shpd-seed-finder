@@ -36,11 +36,50 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      # The GTK crate needs GTK 4.22 and libadwaita 1.9 system libraries,
+      # which this runner image predates; the linux-app job covers it.
       - name: Lint workspace
-        run: cargo clippy --locked --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --exclude shpd-seedfinder-gtk --all-targets -- -D warnings
 
       - name: Test workspace
-        run: cargo test --locked --workspace
+        run: cargo test --locked --workspace --exclude shpd-seedfinder-gtk
+
+  linux-app:
+    name: Linux
+    runs-on: ubuntu-latest
+    # Fedora ships the GTK 4.22 and libadwaita 1.9 stack the app targets.
+    container: registry.fedoraproject.org/fedora:44
+    timeout-minutes: 30
+
+    steps:
+      - name: Install system dependencies
+        run: >-
+          dnf install -y gcc git tar xz gtk4-devel libadwaita-devel
+          pkgconf-pkg-config desktop-file-utils appstream
+
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: linux-app
+
+      - name: Lint app
+        run: cargo clippy --locked -p shpd-seedfinder-gtk --all-targets -- -D warnings
+
+      - name: Test app
+        run: cargo test --locked -p shpd-seedfinder-gtk
+
+      - name: Validate desktop entry
+        run: desktop-file-validate linux/data/dev.seedseeker.SeedSeeker.desktop
+
+      - name: Validate AppStream metadata
+        run: appstreamcli validate --no-net linux/data/dev.seedseeker.SeedSeeker.metainfo.xml
 
   android:
     name: Android
@@ -131,8 +170,9 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
+      # The GTK app is Linux-only; its system libraries do not exist here.
       - name: Test workspace
-        run: cargo test --locked --workspace
+        run: cargo test --locked --workspace --exclude shpd-seedfinder-gtk
 
       # The csproj builds and copies the Rust engine DLL itself.
       - name: Build app

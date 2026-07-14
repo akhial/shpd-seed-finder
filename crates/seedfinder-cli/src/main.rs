@@ -1,5 +1,3 @@
-mod query_file;
-
 #[global_allocator]
 static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
@@ -270,7 +268,7 @@ fn search_command(items: &Path, workers: Option<NonZeroUsize>) -> Result<(), Str
 fn load_query(path: &Path) -> Result<SearchQuery, String> {
     let contents = fs::read_to_string(path)
         .map_err(|error| format!("could not read '{}': {error}", path.display()))?;
-    query_file::decode(&contents)
+    shpd_seedfinder_core::json_query::decode(&contents)
         .map_err(|error| format!("could not parse '{}': {error}", path.display()))
 }
 

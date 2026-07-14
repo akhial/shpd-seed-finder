@@ -23,6 +23,8 @@ pub mod halls_floor;
 pub mod halls_mobs;
 pub mod halls_rooms;
 pub mod java_math;
+#[cfg(feature = "json-query")]
+pub mod json_query;
 pub mod level;
 pub mod level_flags;
 pub mod level_prelude;

@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::main_world::{CanonicalMainWorldGenerator, ConfiguredMainWorldGenerator};
+use shpd_seedfinder_core::model::GeneratedWorld;
 use shpd_seedfinder_core::probability::estimate_match_probability;
 use shpd_seedfinder_core::query::SearchQuery;
 use shpd_seedfinder_core::search::{
@@ -135,6 +136,22 @@ pub fn production_scout_packet(request: &[u8]) -> Result<Vec<u8>, ScoutCallError
     protected_scout_seed_packet(canonical_generator(challenges).as_ref(), request)
 }
 
+/// Scouts one depth-24 world with the cached canonical production generator,
+/// returning it typed for in-process Rust frontends. Generation panics are
+/// contained like in [`production_scout_packet`].
+///
+/// # Errors
+///
+/// Returns [`ScoutCallError::Panicked`] when world generation panics.
+pub fn production_scout_world(
+    seed: DungeonSeed,
+    challenges: Challenges,
+) -> Result<GeneratedWorld, ScoutCallError> {
+    let generator = canonical_generator(challenges);
+    catch_unwind(AssertUnwindSafe(|| generator.generate(seed, 24)))
+        .map_err(|_| ScoutCallError::Panicked)
+}
+
 pub struct NativeSession {
     search: StreamingSearchHandle,
     match_probability: f64,
@@ -202,6 +219,14 @@ impl NativeSession {
     /// Returns a wire error when the result count cannot be encoded.
     pub fn poll(&self, maximum: usize) -> Result<Vec<u8>, WireError> {
         encode_results(&self.search.drain_results(maximum))
+    }
+
+    /// Drains at most `maximum` matches as typed worlds. This is the in-process
+    /// sibling of [`Self::poll`] for frontends linking the session layer as a
+    /// Rust crate rather than over a wire boundary.
+    #[must_use]
+    pub fn drain_worlds(&self, maximum: usize) -> Vec<GeneratedWorld> {
+        self.search.drain_results(maximum)
     }
 
     pub fn cancel(&self) {
@@ -567,6 +592,49 @@ mod tests {
         assert!(diagnostic.contains("intentional worker failure"));
         assert!(session.take_failure_diagnostic().is_none());
     }
+    #[test]
+    fn typed_draining_matches_wire_polling_semantics() {
+        let generator = Arc::new(MatchingGenerator);
+        let session = NativeSession::start(&generator, query(), options(8, 8)).unwrap();
+        wait(&session);
+        let mut worlds = Vec::new();
+        while worlds.len() < 8 {
+            let drained = session.drain_worlds(3);
+            assert!(drained.len() <= 3);
+            worlds.extend(drained);
+        }
+        for world in &worlds {
+            assert_eq!(world, &matching_world(world.seed));
+        }
+        assert!(session.drain_worlds(3).is_empty());
+        assert_eq!(session.status()[0], STATE_COMPLETED);
+    }
+
+    #[test]
+    fn typed_production_scout_matches_the_packet_scout() {
+        let seed = DungeonSeed::from_code("AAA-AAA-AAF").unwrap();
+        let world = production_scout_world(seed, Challenges::NONE).unwrap();
+        let packet = production_scout_packet(b"SSQ2\x00\x00AAA-AAA-AAF").unwrap();
+
+        // The typed path keeps the transmuted Imp-ring identity that the SSC1
+        // wire format intentionally drops.
+        assert!(
+            world
+                .items
+                .iter()
+                .any(|item| item.transmuted_item.is_some())
+        );
+        let mut wire_view = world.clone();
+        for item in &mut wire_view.items {
+            item.transmuted_item = None;
+        }
+        assert_eq!(wire_view, decode_scout_world(&packet).unwrap());
+
+        let challenged = production_scout_world(seed, Challenges::new(0x68).unwrap()).unwrap();
+        assert_eq!(challenged.seed, world.seed);
+        assert_ne!(challenged, world);
+    }
+
     #[test]
     fn registry_close_removes_first_and_is_idempotent() {
         let generator = Arc::new(MatchingGenerator);
