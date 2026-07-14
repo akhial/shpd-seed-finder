@@ -280,6 +280,7 @@ fn benchmark_query() -> SearchQuery {
             tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Exact(4),
             effect: None,
+            require_uncursed: false,
             source: None,
             identity_group: None,
             max_depth: None,

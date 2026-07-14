@@ -75,13 +75,14 @@ public enum Challenge: Int, CaseIterable, Sendable {
 }
 
 public enum ModelValidationError: Error, Equatable, LocalizedError {
-    case itemKind, tier, upgrade, modifier, identityGroup, itemMaximumDepth, emptyRequirements, maximumDepth, challenges
+    case itemKind, tier, upgrade, modifier, uncursedCurse, identityGroup, itemMaximumDepth, emptyRequirements, maximumDepth, challenges
     public var errorDescription: String? {
         switch self {
         case .itemKind: "Selected item must belong to its category"
         case .tier: "Tier predicate requires a wildcard weapon or armor and a non-redundant tier"
         case .upgrade: "Upgrade predicate is invalid"
         case .modifier: "This category cannot carry a modifier requirement"
+        case .uncursedCurse: "An uncursed item cannot have a curse"
         case .identityGroup: "Same-item group must be A..D"
         case .itemMaximumDepth: "Item floor limit must be 1..24"
         case .emptyRequirements: "At least one requirement is needed"
@@ -103,13 +104,14 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
     public var source: ScoutItemSource?
     public var identityGroup: Int?
     public var maximumDepth: Int?
+    public var requireUncursed: Bool
     public var id: Int64 { key }
 
     public init(key: Int64, item: CatalogItem?, upgrade: Int, modifier: String? = nil,
                 kind: ItemKind, tier: Int = 0, tierMatch: TierMatch = .any,
                 upgradeMatch: UpgradeMatch = .exactly,
                 source: ScoutItemSource? = nil, identityGroup: Int? = nil,
-                maximumDepth: Int? = nil) throws {
+                maximumDepth: Int? = nil, requireUncursed: Bool = false) throws {
         guard item == nil || item?.kind == kind else { throw ModelValidationError.itemKind }
         let tierable = item == nil && (kind == .weapon || kind == .armor)
         let validTier = switch tierMatch {
@@ -125,6 +127,9 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
         }
         guard valid else { throw ModelValidationError.upgrade }
         guard kind.modifierLabel != nil || modifier == nil else { throw ModelValidationError.modifier }
+        guard !requireUncursed || !ItemCatalog.cursesFor(kind).contains(modifier ?? "") else {
+            throw ModelValidationError.uncursedCurse
+        }
         guard identityGroup == nil || (1...4).contains(identityGroup!) else { throw ModelValidationError.identityGroup }
         guard maximumDepth == nil || (1...24).contains(maximumDepth!) else { throw ModelValidationError.itemMaximumDepth }
         self.key = key; self.item = item; self.upgrade = upgrade; self.modifier = modifier
@@ -132,10 +137,11 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
         self.upgradeMatch = upgradeMatch; self.source = source
         self.identityGroup = identityGroup
         self.maximumDepth = maximumDepth
+        self.requireUncursed = requireUncursed
     }
 
     private enum CodingKeys: String, CodingKey {
-        case key, item, upgrade, modifier, kind, tier, tierMatch, upgradeMatch, source, identityGroup, maximumDepth
+        case key, item, upgrade, modifier, kind, tier, tierMatch, upgradeMatch, source, identityGroup, maximumDepth, requireUncursed
     }
 
     public init(from decoder: Decoder) throws {
@@ -151,7 +157,8 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
             upgradeMatch: values.decode(UpgradeMatch.self, forKey: .upgradeMatch),
             source: values.decodeIfPresent(ScoutItemSource.self, forKey: .source),
             identityGroup: values.decodeIfPresent(Int.self, forKey: .identityGroup),
-            maximumDepth: values.decodeIfPresent(Int.self, forKey: .maximumDepth)
+            maximumDepth: values.decodeIfPresent(Int.self, forKey: .maximumDepth),
+            requireUncursed: values.decodeIfPresent(Bool.self, forKey: .requireUncursed) ?? false
         )
     }
 
@@ -164,6 +171,7 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
         try values.encodeIfPresent(source, forKey: .source)
         try values.encodeIfPresent(identityGroup, forKey: .identityGroup)
         try values.encodeIfPresent(maximumDepth, forKey: .maximumDepth)
+        try values.encode(requireUncursed, forKey: .requireUncursed)
     }
 
     public var title: String {
@@ -182,6 +190,7 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
         case .atLeast: "+\(upgrade) or higher"
         }
         if let modifier { text += " • \(modifier)" }
+        if requireUncursed { text += " • uncursed" }
         if let source { text += " • \(source.label)" }
         if let identityGroup, let scalar = UnicodeScalar(64 + identityGroup) { text += " • same item group \(Character(scalar))" }
         if let maximumDepth { text += " • by floor \(maximumDepth)" }
@@ -264,6 +273,7 @@ public func scoutMatchIndices(items: [ScoutItem], requirements: [ItemRequirement
               requirement.kind == item.item.kind,
               requirement.item == nil || requirement.item?.id == item.item.id,
               requirement.modifier == nil || requirement.modifier == item.effect,
+              !requirement.requireUncursed || !item.cursed,
               requirement.source == nil || requirement.source == item.source else { return false }
         let tierMatches = switch requirement.tierMatch {
         case .any: true

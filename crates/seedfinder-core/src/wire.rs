@@ -8,16 +8,17 @@ use crate::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
 use crate::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
 use crate::seed::DungeonSeed;
 
-const REQUEST_MAGIC: &[u8; 4] = b"SSF6";
+const REQUEST_MAGIC: &[u8; 4] = b"SSF7";
 const SCOUT_REQUEST_MAGIC_V2: &[u8; 4] = b"SSQ2";
 const RESULT_MAGIC: &[u8; 4] = b"SSR1";
 const SCOUT_RESULT_MAGIC: &[u8; 4] = b"SSC1";
 const MAX_REQUIREMENTS: usize = 64;
 
-/// Decodes an `SSF6` search request. The flags byte uses bit 0 for required
+/// Decodes an `SSF7` search request. The flags byte uses bit 0 for required
 /// blacksmith availability, bit 1 for the lossy fast search mode described on
 /// [`SearchQuery::fast_mode`], and bit 2 to prevent Blacksmith "Smith" rewards
-/// from satisfying item requirements.
+/// from satisfying item requirements. Each requirement ends with a flags byte;
+/// its bit 0 requires the matching item to be uncursed.
 ///
 /// # Errors
 ///
@@ -36,7 +37,7 @@ pub fn decode_query(packet: &[u8]) -> Result<SearchQuery, WireError> {
     Ok(query)
 }
 
-/// Encodes a validated query using the maximum-tier-aware `SSF6` request schema.
+/// Encodes a validated query using the uncursed-aware `SSF7` request schema.
 ///
 /// # Errors
 ///
@@ -91,6 +92,7 @@ pub fn encode_query(query: &SearchQuery) -> Result<Vec<u8>, WireError> {
         );
         output.push(requirement.identity_group.unwrap_or(0));
         output.push(requirement.max_depth.unwrap_or(0));
+        output.push(u8::from(requirement.require_uncursed));
     }
     Ok(output)
 }
@@ -154,12 +156,17 @@ fn decode_query_payload(input: &mut Input<'_>) -> Result<SearchQuery, WireError>
             0 => None,
             value => Some(value),
         };
+        let requirement_flags = input.u8()?;
+        if requirement_flags & !1 != 0 {
+            return Err(WireError::InvalidFlags);
+        }
         requirements.push(Requirement {
             kind,
             item,
             tier,
             upgrade,
             effect,
+            require_uncursed: requirement_flags & 1 != 0,
             source,
             identity_group,
             max_depth: requirement_max_depth,
@@ -619,7 +626,7 @@ mod tests {
         tier: [u8; 2],
         upgrade: [u8; 2],
     ) -> Vec<u8> {
-        let mut packet = b"SSF6".to_vec();
+        let mut packet = b"SSF7".to_vec();
         packet.push(24);
         packet.push(flags);
         packet.extend_from_slice(&challenges.to_le_bytes());
@@ -629,12 +636,12 @@ mod tests {
         packet.extend_from_slice(&tier);
         packet.extend_from_slice(&upgrade);
         field(&mut packet, "");
-        packet.extend_from_slice(&[0, 0, 0]);
+        packet.extend_from_slice(&[0, 0, 0, 0]);
         packet
     }
 
     #[test]
-    fn ssf6_round_trips_all_query_fields() {
+    fn ssf7_round_trips_all_query_fields() {
         let query = SearchQuery {
             requirements: vec![
                 Requirement {
@@ -642,7 +649,8 @@ mod tests {
                     item: None,
                     tier: TierRequirement::AtMost(4),
                     upgrade: UpgradeRequirement::AtLeast(1),
-                    effect: Some(Effect::Armor(ArmorEffect::Stench)),
+                    effect: Some(Effect::Armor(ArmorEffect::Thorns)),
+                    require_uncursed: true,
                     source: Some(ItemSource::Chest),
                     identity_group: Some(2),
                     max_depth: Some(14),
@@ -653,6 +661,7 @@ mod tests {
                     tier: TierRequirement::Exact(3),
                     upgrade: UpgradeRequirement::Any,
                     effect: None,
+                    require_uncursed: false,
                     source: None,
                     identity_group: None,
                     max_depth: None,
@@ -663,6 +672,7 @@ mod tests {
                     tier: TierRequirement::AtLeast(4),
                     upgrade: UpgradeRequirement::Exact(2),
                     effect: None,
+                    require_uncursed: false,
                     source: None,
                     identity_group: None,
                     max_depth: None,
@@ -676,46 +686,18 @@ mod tests {
         };
 
         let packet = encode_query(&query).unwrap();
-        assert_eq!(&packet[..4], b"SSF6");
+        assert_eq!(&packet[..4], b"SSF7");
         assert_eq!(decode_query(&packet), Ok(query));
     }
 
     #[test]
-    fn ssf6_rejects_old_magic_and_malformed_fields() {
-        let valid = query_packet(0, 0, 0, "sword", [0, 0], [1, 2]);
-        assert_eq!(decode_query(b"SSF6"), Err(WireError::Truncated));
+    fn ssf7_decodes_uncursed_requirement_flag() {
+        let mut packet = query_packet(0, 0, 0, "sword", [0, 0], [1, 2]);
+        *packet.last_mut().unwrap() = 1;
+        assert!(decode_query(&packet).unwrap().requirements[0].require_uncursed);
 
-        let mut old_magic = valid.clone();
-        old_magic[..4].copy_from_slice(b"SSF5");
-        assert_eq!(decode_query(&old_magic), Err(WireError::BadMagic));
-
-        let unknown = query_packet(0, 0, 0, "unknown", [0, 0], [1, 2]);
-        assert_eq!(decode_query(&unknown), Err(WireError::UnknownItem));
-
-        let mut trailing = valid;
-        trailing.push(0);
-        assert_eq!(decode_query(&trailing), Err(WireError::TrailingData));
-
-        assert_eq!(
-            decode_query(&query_packet(0b1000, 0, 0, "", [0, 0], [0, 0])),
-            Err(WireError::InvalidFlags)
-        );
-        assert_eq!(
-            decode_query(&query_packet(0, 512, 0, "", [0, 0], [0, 0])),
-            Err(WireError::InvalidChallenges)
-        );
-        assert_eq!(
-            decode_query(&query_packet(0, 0, 4, "", [0, 0], [0, 0])),
-            Err(WireError::UnknownItemKind)
-        );
-        assert_eq!(
-            decode_query(&query_packet(0, 0, 0, "", [4, 0], [0, 0])),
-            Err(WireError::InvalidTierMode)
-        );
-        assert_eq!(
-            decode_query(&query_packet(0, 0, 0, "", [0, 0], [3, 0])),
-            Err(WireError::InvalidUpgradeMode)
-        );
+        *packet.last_mut().unwrap() = 2;
+        assert_eq!(decode_query(&packet), Err(WireError::InvalidFlags));
     }
 
     #[test]

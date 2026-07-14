@@ -49,6 +49,7 @@ pub struct UiRequirement {
     pub tier: TierRequirement,
     pub upgrade: UpgradeRequirement,
     pub effect: Option<Effect>,
+    pub require_uncursed: bool,
     pub source: Option<ItemSource>,
     pub identity_group: Option<u8>,
     pub max_depth: Option<u8>,
@@ -63,6 +64,7 @@ impl UiRequirement {
             tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Any,
             effect: None,
+            require_uncursed: false,
             source: None,
             identity_group: None,
             max_depth: None,
@@ -77,6 +79,7 @@ impl UiRequirement {
             tier: self.tier,
             upgrade: self.upgrade,
             effect: self.effect,
+            require_uncursed: self.require_uncursed,
             source: self.source,
             identity_group: self.identity_group,
             max_depth: self.max_depth,
@@ -113,6 +116,9 @@ impl UiRequirement {
         };
         if let Some(effect) = self.effect {
             let _ = write!(text, " · {}", effect.wire_name());
+        }
+        if self.require_uncursed {
+            text.push_str(" · uncursed");
         }
         if let Some(source) = self.source {
             let _ = write!(text, " · {}", source_label(source));
@@ -323,10 +329,11 @@ mod tests {
         requirement.upgrade = UpgradeRequirement::Exact(2);
         requirement.identity_group = Some(2);
         requirement.max_depth = Some(9);
+        requirement.require_uncursed = true;
         assert_eq!(requirement.title(), "Any Tier 4+ weapon");
         assert_eq!(
             requirement.subtitle(),
-            "+2 exactly · same item group B · by floor 9"
+            "+2 exactly · uncursed · same item group B · by floor 9"
         );
 
         requirement.tier = TierRequirement::AtMost(3);

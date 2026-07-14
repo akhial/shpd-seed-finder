@@ -27,6 +27,7 @@ struct Editor {
     upgrade_value: adw::SpinRow,
     effect_row: adw::ComboRow,
     effects: RefCell<Vec<Option<Effect>>>,
+    uncursed: adw::SwitchRow,
     source_row: adw::ComboRow,
     group_row: adw::ComboRow,
     floor_switch: adw::SwitchRow,
@@ -114,6 +115,7 @@ fn build(requirement: &UiRequirement) -> Editor {
         upgrade_value: spin_row("Level", 1.0, 0.0, 4.0),
         effect_row: searchable_combo_row("Enchantment"),
         effects: RefCell::new(vec![None]),
+        uncursed: adw::SwitchRow::builder().title("Require uncursed").build(),
         source_row: combo_row(
             "Source",
             &std::iter::once("Any")
@@ -150,6 +152,7 @@ fn groups(editor: &Rc<Editor>) -> Vec<adw::PreferencesGroup> {
         .description("Same-item group members must resolve to the same item.")
         .build();
     details_group.add(&editor.effect_row);
+    details_group.add(&editor.uncursed);
     details_group.add(&editor.source_row);
     details_group.add(&editor.group_row);
     details_group.add(&editor.floor_switch);
@@ -202,6 +205,16 @@ fn connect(editor: &Rc<Editor>) {
             refresh_visibility(editor);
         }));
     editor
+        .effect_row
+        .connect_selected_notify(hook(Rc::clone(editor), refresh_visibility));
+    editor
+        .uncursed
+        .connect_active_notify(hook(Rc::clone(editor), |editor| {
+            let selection = selected_effect(editor)
+                .filter(|effect| !editor.uncursed.is_active() || !effect.is_curse());
+            populate_effects(editor, selection);
+        }));
+    editor
         .floor_switch
         .connect_active_notify(hook(Rc::clone(editor), refresh_visibility));
 }
@@ -227,6 +240,7 @@ fn restore(editor: &Rc<Editor>, requirement: &UiRequirement) {
     editor
         .category
         .set_selected(u32::try_from(kind_index).unwrap_or(0));
+    editor.uncursed.set_active(requirement.require_uncursed);
     populate_items(editor, requirement.item);
     populate_effects(editor, requirement.effect);
     match requirement.tier {
@@ -325,6 +339,7 @@ fn collect(editor: &Rc<Editor>) -> UiRequirement {
         tier,
         upgrade,
         effect,
+        require_uncursed: editor.uncursed.is_active(),
         source,
         identity_group,
         max_depth,
@@ -343,6 +358,15 @@ fn selected_item(editor: &Rc<Editor>) -> Option<ItemId> {
         .items
         .borrow()
         .get(editor.item_row.selected() as usize)
+        .copied()
+        .flatten()
+}
+
+fn selected_effect(editor: &Rc<Editor>) -> Option<Effect> {
+    editor
+        .effects
+        .borrow()
+        .get(editor.effect_row.selected() as usize)
         .copied()
         .flatten()
 }
@@ -393,6 +417,7 @@ fn populate_items(editor: &Rc<Editor>, selection: Option<ItemId>) {
 
 fn populate_effects(editor: &Rc<Editor>, selection: Option<Effect>) {
     let kind = selected_kind(editor);
+    let hide_curses = editor.uncursed.is_active();
     editor.effect_row.set_title(if kind == ItemKind::Armor {
         "Glyph"
     } else {
@@ -403,12 +428,18 @@ fn populate_effects(editor: &Rc<Editor>, selection: Option<Effect>) {
     match kind {
         ItemKind::Weapon => {
             for effect in ALL_WEAPON_EFFECTS {
+                if hide_curses && effect.is_curse() {
+                    continue;
+                }
                 effects.push(Some(Effect::Weapon(*effect)));
                 labels.push(effect_label(effect.wire_name(), effect.is_curse()));
             }
         }
         ItemKind::Armor => {
             for effect in ALL_ARMOR_EFFECTS {
+                if hide_curses && effect.is_curse() {
+                    continue;
+                }
                 effects.push(Some(Effect::Armor(*effect)));
                 labels.push(effect_label(effect.wire_name(), effect.is_curse()));
             }

@@ -39,13 +39,26 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertEqual(scoutMatchIndices(items: incompatible, requirements: requirements).count, 1)
     }
 
-    func testQueryCodecTierPredicateUsesSSF6WithZeroChallenges() throws {
+    func testScoutMatchesRequireUncursedItems() throws {
+        let warding = try XCTUnwrap(ItemCatalog.findById("wand_warding"))
+        let requirement = try ItemRequirement(key: 1, item: warding, upgrade: 3,
+                                               kind: .wand, requireUncursed: true)
+        let clean = ScoutItem(item: warding, depth: 8, upgrade: 3,
+                              source: .wandmakerReward)
+        let cursed = ScoutItem(item: warding, depth: 8, upgrade: 3, cursed: true,
+                               source: .wandmakerReward)
+
+        XCTAssertEqual(scoutMatchIndices(items: [clean, cursed], requirements: [requirement]), [0])
+        XCTAssertTrue(scoutMatchIndices(items: [cursed], requirements: [requirement]).isEmpty)
+    }
+
+    func testQueryCodecTierPredicateUsesSSF7WithZeroChallenges() throws {
         let requirement = try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .armor,
             tier: 4, tierMatch: .atLeast, upgradeMatch: .any)
         let request = try SearchRequest(requirements: [requirement])
         XCTAssertEqual(Array(try QueryCodec.encode(request)), [
-            83, 83, 70, 54, 24, 0, 0, 0, 0, 1,
-            1, 0, 0, 2, 4, 0, 0, 0, 0, 0, 0, 0,
+            83, 83, 70, 55, 24, 0, 0, 0, 0, 1,
+            1, 0, 0, 2, 4, 0, 0, 0, 0, 0, 0, 0, 0,
         ])
         XCTAssertEqual(requirement.title, "Any Tier 4+ armor")
     }
@@ -69,10 +82,10 @@ final class SeedSeekerKitTests: XCTestCase {
         let request = try SearchRequest(requirements: [first, second], maximumDepth: 12,
                                         requireBlacksmith: true, challenges: 104)
         XCTAssertEqual(Array(try QueryCodec.encode(request)), [
-            83, 83, 70, 54, 12, 1, 104, 0, 0, 2,
+            83, 83, 70, 55, 12, 1, 104, 0, 0, 2,
             0, 0, 6, 100, 97, 103, 103, 101, 114, 0, 0, 1, 2,
-            0, 5, 76, 117, 99, 107, 121, 2, 1, 5,
-            3, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0,
+            0, 5, 76, 117, 99, 107, 121, 2, 1, 5, 0,
+            3, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0,
         ])
     }
 
@@ -81,8 +94,8 @@ final class SeedSeekerKitTests: XCTestCase {
                                               upgradeMatch: .exactly)
         let request = try SearchRequest(requirements: [requirement], fastMode: true)
         XCTAssertEqual(Array(try QueryCodec.encode(request)), [
-            83, 83, 70, 54, 24, 2, 0, 0, 0, 1,
-            1, 0, 0, 0, 0, 1, 3, 0, 0, 0, 0, 0,
+            83, 83, 70, 55, 24, 2, 0, 0, 0, 1,
+            1, 0, 0, 0, 0, 1, 3, 0, 0, 0, 0, 0, 0,
         ])
     }
 
@@ -91,9 +104,18 @@ final class SeedSeekerKitTests: XCTestCase {
         let request = try SearchRequest(requirements: [requirement],
                                         excludeBlacksmithRewards: true)
         XCTAssertEqual(Array(try QueryCodec.encode(request)), [
-            83, 83, 70, 54, 24, 4, 0, 0, 0, 1,
-            0, 0, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0,
+            83, 83, 70, 55, 24, 4, 0, 0, 0, 1,
+            0, 0, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0,
         ])
+    }
+
+    func testQueryCodecUncursedRequirementSetsFlagBitZero() throws {
+        let requirement = try ItemRequirement(key: 1, item: nil, upgrade: 0,
+                                               kind: .ring, upgradeMatch: .any,
+                                               requireUncursed: true)
+        let request = try SearchRequest(requirements: [requirement])
+
+        XCTAssertEqual(try QueryCodec.encode(request).last, 1)
     }
 
     func testScoutRequestGoldenZeroAndNonzeroChallenges() throws {
@@ -155,6 +177,8 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertNoThrow(try ItemRequirement(key: 1, item: nil, upgrade: 4, kind: .ring, upgradeMatch: .atLeast))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 5, kind: .ring, upgradeMatch: .atLeast))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 1, modifier: "Lucky", kind: .wand))
+        XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 1,
+            modifier: "Displacing", kind: .weapon, requireUncursed: true))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 1, kind: .weapon, identityGroup: 5))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 1, kind: .weapon, maximumDepth: 25))
         XCTAssertNoThrow(try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .weapon,

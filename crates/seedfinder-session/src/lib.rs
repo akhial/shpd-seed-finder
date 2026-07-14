@@ -201,7 +201,7 @@ impl NativeSession {
         )
     }
 
-    /// Decodes an `SSF6` request and starts a canonical production search.
+    /// Decodes an `SSF7` request and starts a canonical production search.
     ///
     /// # Errors
     ///
@@ -469,6 +469,7 @@ mod tests {
                 source: None,
                 identity_group: None,
                 max_depth: None,
+                require_uncursed: false,
             }],
             max_depth: 24,
             challenges: Challenges::NONE,

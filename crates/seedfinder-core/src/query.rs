@@ -56,6 +56,8 @@ pub struct Requirement {
     pub tier: TierRequirement,
     pub upgrade: UpgradeRequirement,
     pub effect: Option<Effect>,
+    /// Whether cursed candidate items are ineligible for this requirement.
+    pub require_uncursed: bool,
     pub source: Option<ItemSource>,
     /// Requirements in the same non-zero group must resolve to the same item ID.
     pub identity_group: Option<u8>,
@@ -86,6 +88,7 @@ impl Requirement {
             && self
                 .effect
                 .is_none_or(|wanted| candidate.effect == Some(wanted))
+            && (!self.require_uncursed || !candidate.cursed)
             && self.source.is_none_or(|wanted| wanted == candidate.source))
         .then_some(identity)
     }
@@ -136,9 +139,13 @@ impl Requirement {
         match (self.kind, self.effect) {
             (ItemKind::Weapon, None | Some(Effect::Weapon(_)))
             | (ItemKind::Armor, None | Some(Effect::Armor(_)))
-            | (ItemKind::Wand | ItemKind::Ring, None) => Ok(()),
-            _ => Err(QueryError::EffectKindMismatch),
+            | (ItemKind::Wand | ItemKind::Ring, None) => {}
+            _ => return Err(QueryError::EffectKindMismatch),
         }
+        if self.require_uncursed && self.effect.is_some_and(Effect::is_curse) {
+            return Err(QueryError::UncursedWithCurse);
+        }
+        Ok(())
     }
 }
 
@@ -347,6 +354,7 @@ pub enum QueryError {
     InvalidTier,
     ItemKindMismatch,
     EffectKindMismatch,
+    UncursedWithCurse,
     InvalidIdentityGroup,
     InconsistentIdentityGroup,
 }
@@ -362,6 +370,7 @@ impl fmt::Display for QueryError {
             }
             Self::ItemKindMismatch => "selected item is in a different category",
             Self::EffectKindMismatch => "selected enchantment or glyph is inapplicable",
+            Self::UncursedWithCurse => "an uncursed item cannot have a curse",
             Self::InvalidIdentityGroup => "identity group zero is reserved for no group",
             Self::InconsistentIdentityGroup => {
                 "linked item requirements must use the same category and item"
@@ -375,7 +384,7 @@ impl std::error::Error for QueryError {}
 
 #[cfg(test)]
 mod tests {
-    use crate::catalog::{ItemId, ItemKind};
+    use crate::catalog::{Effect, ItemId, ItemKind, WeaponEffect};
     use crate::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
     use crate::seed::DungeonSeed;
 
@@ -401,6 +410,7 @@ mod tests {
             tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Exact(2),
             effect: None,
+            require_uncursed: false,
             source: None,
             identity_group: None,
             max_depth: None,
@@ -448,6 +458,7 @@ mod tests {
                 tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Exact(4),
                 effect: None,
+                require_uncursed: false,
                 source: Some(ItemSource::GhostReward),
                 identity_group: None,
                 max_depth: None,
@@ -467,6 +478,7 @@ mod tests {
             tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Exact(4),
             effect: None,
+            require_uncursed: false,
             source: None,
             identity_group: None,
             max_depth: None,
@@ -485,12 +497,26 @@ mod tests {
             tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Exact(3),
             effect: None,
+            require_uncursed: false,
             source: None,
             identity_group: None,
             max_depth: None,
         };
 
         assert!(!requirement.matches(&ring));
+    }
+
+    #[test]
+    fn uncursed_requirement_rejects_cursed_copies() {
+        let mut candidate = world_item(ItemId::Sword, Accessibility::Independent);
+        let mut wanted = requirement(ItemId::Sword);
+        wanted.require_uncursed = true;
+
+        assert!(wanted.matches(&candidate));
+        candidate.cursed = true;
+        assert!(!wanted.matches(&candidate));
+        wanted.require_uncursed = false;
+        assert!(wanted.matches(&candidate));
     }
 
     #[test]
@@ -635,11 +661,22 @@ mod tests {
             tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Exact(2),
             effect: None,
+            require_uncursed: false,
             source: None,
             identity_group: None,
             max_depth: None,
         };
         assert!(invalid.validate().is_err());
+    }
+
+    #[test]
+    fn validation_rejects_uncursed_items_with_a_curse() {
+        let invalid = Requirement {
+            effect: Some(Effect::Weapon(WeaponEffect::Displacing)),
+            require_uncursed: true,
+            ..requirement(ItemId::Sword)
+        };
+        assert_eq!(invalid.validate(), Err(QueryError::UncursedWithCurse));
     }
 
     #[test]
@@ -650,6 +687,7 @@ mod tests {
             tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Exact(4),
             effect: None,
+            require_uncursed: false,
             source: None,
             identity_group: None,
             max_depth: None,
@@ -662,6 +700,7 @@ mod tests {
             tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Exact(4),
             effect: None,
+            require_uncursed: false,
             source: None,
             identity_group: None,
             max_depth: None,
@@ -677,6 +716,7 @@ mod tests {
             tier: TierRequirement::Exact(5),
             upgrade: UpgradeRequirement::Exact(2),
             effect: None,
+            require_uncursed: false,
             source: None,
             identity_group: None,
             max_depth: None,
@@ -749,6 +789,7 @@ mod tests {
             tier: TierRequirement::Any,
             upgrade,
             effect: None,
+            require_uncursed: false,
             source,
             identity_group: Some(1),
             max_depth: None,
@@ -767,6 +808,7 @@ mod tests {
                     tier: TierRequirement::Any,
                     upgrade: UpgradeRequirement::Exact(1),
                     effect: None,
+                    require_uncursed: false,
                     source: None,
                     identity_group: None,
                     max_depth: None,
@@ -857,6 +899,7 @@ mod tests {
             tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Any,
             effect: None,
+            require_uncursed: false,
             source: None,
             identity_group: Some(1),
             max_depth: None,

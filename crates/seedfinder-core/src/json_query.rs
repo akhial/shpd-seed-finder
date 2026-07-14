@@ -64,6 +64,8 @@ struct FileRequirement {
     #[serde(default)]
     effect: Option<String>,
     #[serde(default)]
+    uncursed: bool,
+    #[serde(default)]
     source: Option<FileItemSource>,
     #[serde(default)]
     identity_group: Option<u8>,
@@ -239,6 +241,7 @@ fn convert_requirement(requirement: FileRequirement) -> Result<Requirement, Stri
         tier: TierRequirement::Any,
         upgrade,
         effect,
+        require_uncursed: requirement.uncursed,
         source: requirement.source.map(ItemSource::from),
         identity_group: requirement.identity_group,
         max_depth: requirement.max_depth,
@@ -263,7 +266,7 @@ mod tests {
                 "exclude_blacksmith_rewards": true,
                 "requirements": [
                     {"item": "ring_tenacity", "upgrade": 4, "source": "imp_reward"},
-                    {"kind": "wand", "upgrade": {"at_least": 2}, "identity_group": 1,
+                    {"kind": "wand", "upgrade": {"at_least": 2}, "identity_group": 1, "uncursed": true,
                      "max_depth": 9}
                 ]
             }"#,
@@ -275,7 +278,9 @@ mod tests {
         assert_eq!(query.requirements[0].item, Some(ItemId::RingTenacity));
         assert_eq!(query.requirements[0].upgrade, UpgradeRequirement::Exact(4));
         assert_eq!(query.requirements[0].source, Some(ItemSource::ImpReward));
+        assert!(!query.requirements[0].require_uncursed);
         assert_eq!(query.requirements[1].kind, ItemKind::Wand);
+        assert!(query.requirements[1].require_uncursed);
         assert_eq!(query.requirements[1].max_depth, Some(9));
         assert_eq!(
             query.requirements[1].upgrade,

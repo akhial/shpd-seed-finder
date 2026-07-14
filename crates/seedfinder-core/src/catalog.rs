@@ -712,6 +712,14 @@ impl Effect {
     }
 
     #[must_use]
+    pub const fn is_curse(self) -> bool {
+        match self {
+            Self::Weapon(effect) => effect.is_curse(),
+            Self::Armor(effect) => effect.is_curse(),
+        }
+    }
+
+    #[must_use]
     pub const fn wire_name(self) -> &'static str {
         match self {
             Self::Weapon(effect) => effect.wire_name(),

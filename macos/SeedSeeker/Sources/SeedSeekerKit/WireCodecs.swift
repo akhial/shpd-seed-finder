@@ -70,7 +70,7 @@ public enum SeedCode {
 
 public enum QueryCodec {
     public static func encode(_ request: SearchRequest) throws -> Data {
-        var output = Writer(); output.bytes("SSF6".utf8); output.u8(request.maximumDepth)
+        var output = Writer(); output.bytes("SSF7".utf8); output.u8(request.maximumDepth)
         output.u8((request.requireBlacksmith ? 1 : 0)
             | (request.fastMode ? 2 : 0)
             | (request.excludeBlacksmithRewards ? 4 : 0))
@@ -84,6 +84,7 @@ public enum QueryCodec {
             output.u8(requirement.source.map { $0.rawValue + 1 } ?? 0)
             output.u8(requirement.identityGroup ?? 0)
             output.u8(requirement.maximumDepth ?? 0)
+            output.u8(requirement.requireUncursed ? 1 : 0)
         }
         return output.data
     }

@@ -1383,6 +1383,7 @@ mod tests {
                 tier: TierRequirement::Any,
                 upgrade: crate::query::UpgradeRequirement::Exact(2),
                 effect: None,
+                require_uncursed: false,
                 source: None,
                 identity_group: None,
                 max_depth: None,

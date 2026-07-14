@@ -55,14 +55,14 @@ public sealed class NativeEngine
 {
     public NativeSearch Start(QuerySettings query)
     {
-        var w = new Writer(); w.Bytes("SSF6"u8.ToArray()); w.U8(query.MaximumDepth);
+        var w = new Writer(); w.Bytes("SSF7"u8.ToArray()); w.U8(query.MaximumDepth);
         w.U8((query.RequireBlacksmith ? 1 : 0) | (query.FastMode ? 2 : 0) | (query.ExcludeBlacksmithRewards ? 4 : 0));
         w.U16Le(query.Challenges); w.U16(query.Requirements.Count);
         foreach (var r in query.Requirements)
         {
             w.U8((int)r.Kind); w.Text(r.Item?.Id ?? ""); w.U8((int)r.TierMatch); w.U8(r.Tier);
             w.U8((int)r.UpgradeMatch); w.U8(r.Upgrade); w.Text(r.Modifier ?? "");
-            w.U8(r.Source is null ? 0 : (int)r.Source + 1); w.U8(r.IdentityGroup ?? 0); w.U8(r.MaximumDepth ?? 0);
+            w.U8(r.Source is null ? 0 : (int)r.Source + 1); w.U8(r.IdentityGroup ?? 0); w.U8(r.MaximumDepth ?? 0); w.U8(r.RequireUncursed ? 1 : 0);
         }
         var packet = w.Finish(); var handle = Native.seedfinder_start_search(packet, (nuint)packet.Length);
         if (handle == 0) throw new InvalidOperationException("The native engine rejected the query.");

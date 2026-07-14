@@ -22,6 +22,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -66,7 +67,7 @@ import kotlin.math.roundToInt
 fun RequirementSheet(
     editing: ItemRequirement?,
     onDismiss: () -> Unit,
-    onSave: (CatalogItem?, ItemKind, TierMatch, Int, UpgradeMatch, Int, String?, ScoutItemSource?, Int?, Int?) -> Unit,
+    onSave: (CatalogItem?, ItemKind, TierMatch, Int, UpgradeMatch, Int, String?, ScoutItemSource?, Int?, Int?, Boolean) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val identity = editing?.key ?: -1L
@@ -91,6 +92,7 @@ fun RequirementSheet(
     var sourceMenuExpanded by remember(identity) { mutableStateOf(false) }
     var identityGroup by remember(identity) { mutableStateOf(editing?.identityGroup) }
     var maximumDepth by remember(identity) { mutableStateOf(editing?.maximumDepth) }
+    var requireUncursed by remember(identity) { mutableStateOf(editing?.requireUncursed ?: false) }
 
     fun clampUpgrade(match: UpgradeMatch, forKind: ItemKind) {
         upgrade = when (match) {
@@ -393,28 +395,47 @@ fun RequirementSheet(
                                     },
                                 )
                             }
-                            HorizontalDivider(
-                                modifier = Modifier.padding(vertical = 5.dp),
-                                color = MaterialTheme.colorScheme.outlineVariant,
-                            )
-                            Text(
-                                "CURSES",
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                style = MaterialTheme.typography.labelSmall,
-                                letterSpacing = 1.sp,
-                                color = MaterialTheme.colorScheme.error,
-                            )
-                            ItemCatalog.cursesFor(kind).forEach { option ->
-                                DropdownMenuItem(
-                                    text = { Text(option) },
-                                    onClick = {
-                                        modifierName = option
-                                        modifierMenuExpanded = false
-                                    },
+                            if (!requireUncursed) {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(vertical = 5.dp),
+                                    color = MaterialTheme.colorScheme.outlineVariant,
                                 )
+                                Text(
+                                    "CURSES",
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    letterSpacing = 1.sp,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                                ItemCatalog.cursesFor(kind).forEach { option ->
+                                    DropdownMenuItem(
+                                        text = { Text(option) },
+                                        onClick = {
+                                            modifierName = option
+                                            modifierMenuExpanded = false
+                                        },
+                                    )
+                                }
                             }
                         }
                     }
+                }
+
+                Spacer(Modifier.height(18.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(
+                        checked = requireUncursed,
+                        onCheckedChange = { checked ->
+                            if (checked && modifierName in ItemCatalog.cursesFor(kind)) {
+                                modifierName = null
+                            }
+                            requireUncursed = checked
+                        },
+                    )
+                    Text("Require uncursed", style = MaterialTheme.typography.titleMedium)
                 }
 
                 Spacer(Modifier.height(18.dp))
@@ -521,12 +542,14 @@ fun RequirementSheet(
                     source = source,
                     identityGroup = identityGroup,
                     maximumDepth = maximumDepth,
+                    requireUncursed = requireUncursed,
                 )
                 Spacer(Modifier.height(14.dp))
                 Button(
                     onClick = {
                         onSave(selectedItem, kind, tierMatch, if (tierMatch == TierMatch.ANY) 0 else tier,
-                            upgradeMatch, upgrade, modifierName, source, identityGroup, maximumDepth)
+                            upgradeMatch, upgrade, modifierName, source, identityGroup, maximumDepth,
+                            requireUncursed)
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -598,6 +621,7 @@ private fun RequirementPreview(
     source: ScoutItemSource?,
     identityGroup: Int?,
     maximumDepth: Int?,
+    requireUncursed: Boolean,
 ) {
     Surface(
         shape = MaterialTheme.shapes.large,
@@ -631,6 +655,7 @@ private fun RequirementPreview(
                             },
                         )
                         modifierName?.let { append(" · $it") }
+                        if (requireUncursed) append(" · uncursed")
                         source?.let { append(" · ${it.label}") }
                         identityGroup?.let {
                             append(" · group ${('A'.code + it - 1).toChar()}")

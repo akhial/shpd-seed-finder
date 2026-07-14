@@ -165,6 +165,15 @@ fn source_feasible(requirement: &Requirement, source: ItemSource, fast_mode: boo
     if requirement.source.is_some_and(|wanted| wanted != source) {
         return false;
     }
+    if requirement.require_uncursed
+        && (source == ItemSource::ImpReward
+            || requirement.effect.is_some_and(|effect| match effect {
+                Effect::Weapon(effect) => effect.is_curse(),
+                Effect::Armor(effect) => effect.is_curse(),
+            }))
+    {
+        return false;
+    }
     // An explicit source pin is the user's claim, not ours: honor it verbatim
     // rather than applying the fast-mode refinement.
     let fast_mode = fast_mode && requirement.source.is_none();
@@ -409,6 +418,7 @@ mod tests {
             tier: TierRequirement::Any,
             upgrade,
             effect: None,
+            require_uncursed: false,
             source: None,
             identity_group: None,
             max_depth: None,
@@ -488,6 +498,14 @@ mod tests {
     }
 
     #[test]
+    fn uncursed_plus_four_ring_is_impossible() {
+        let mut ring = requirement(ItemKind::Ring, UpgradeRequirement::Exact(4));
+        ring.require_uncursed = true;
+
+        assert!(QueryPlan::analyze(&query(vec![ring], 24)).is_unsatisfiable());
+    }
+
+    #[test]
     fn exclusive_quest_choices_respect_capacity_after_resolution() {
         // +3 weapon and +3 armor can come from Ghost and Blacksmith, one each.
         let plan = QueryPlan::analyze(&query(
@@ -532,6 +550,7 @@ mod tests {
         // A cursed enchantment on a +3 weapon leaves only the Sacrificial fire.
         let cursed = Requirement {
             effect: Some(Effect::Weapon(WeaponEffect::Sacrificial)),
+            require_uncursed: false,
             ..requirement(ItemKind::Weapon, UpgradeRequirement::Exact(3))
         };
         let plan = QueryPlan::analyze(&query(vec![cursed], 24));
@@ -547,6 +566,7 @@ mod tests {
         // A good glyph on +3 armor is still reachable via Ghost/Blacksmith.
         let good = Requirement {
             effect: Some(Effect::Armor(ArmorEffect::Thorns)),
+            require_uncursed: false,
             ..requirement(ItemKind::Armor, UpgradeRequirement::Exact(3))
         };
         let fast_good = QueryPlan::analyze(&SearchQuery {

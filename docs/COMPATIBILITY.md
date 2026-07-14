@@ -24,6 +24,7 @@ The seed scout reports this same static, searchable set rather than claiming to
 be a complete inventory of every consumable or future drop in a run.
 
 Search source constraints refer to the source stored on these static records.
+Per-item uncursed constraints reject records whose cursed flag is set.
 Same-item groups require distinct obtainable copies with the same concrete item
 ID, while normal AND requirements may match different types. The blacksmith
 condition is satisfied only when the generated Blacksmith quest room is

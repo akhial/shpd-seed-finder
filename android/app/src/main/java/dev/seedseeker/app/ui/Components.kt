@@ -265,6 +265,7 @@ internal fun scoutMatchIndices(
                 UpgradeMatch.AT_LEAST -> item.upgrade >= requirement.upgrade
             } &&
             (requirement.modifier == null || requirement.modifier == item.effect) &&
+            (!requirement.requireUncursed || !item.cursed) &&
             (requirement.source == null || requirement.source == item.source)
 
     val candidates = requirements

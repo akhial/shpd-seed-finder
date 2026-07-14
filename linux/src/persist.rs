@@ -35,6 +35,8 @@ struct SavedRequirement {
     tier: Option<SavedPredicate>,
     upgrade: Option<SavedPredicate>,
     effect: Option<String>,
+    #[serde(default)]
+    require_uncursed: bool,
     source: Option<String>,
     identity_group: Option<u8>,
     max_depth: Option<u8>,
@@ -117,6 +119,7 @@ fn save_requirement(requirement: &UiRequirement) -> SavedRequirement {
         effect: requirement
             .effect
             .map(|effect| effect.wire_name().to_owned()),
+        require_uncursed: requirement.require_uncursed,
         source: requirement
             .source
             .map(|source| source_key(source).to_owned()),
@@ -160,6 +163,7 @@ fn restore_requirement(saved: &SavedRequirement, key: u64) -> Option<UiRequireme
         tier,
         upgrade,
         effect,
+        require_uncursed: saved.require_uncursed,
         source,
         identity_group: saved.identity_group,
         max_depth: saved.max_depth,
@@ -265,6 +269,7 @@ mod tests {
             tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::AtLeast(2),
             effect: Some(Effect::Weapon(WeaponEffect::Blazing)),
+            require_uncursed: true,
             source: Some(ItemSource::SacrificialFire),
             identity_group: Some(3),
             max_depth: Some(21),

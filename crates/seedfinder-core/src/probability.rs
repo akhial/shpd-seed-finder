@@ -48,6 +48,7 @@ pub fn estimate_match_probability(query: &SearchQuery) -> f64 {
         probability *= identity
             * upgrade_probability_for_requirement(*requirement)
             * modifier_probability_for_requirement(*requirement)
+            * uncursed_probability_for_requirement(*requirement)
             * source_availability(*requirement, query.max_depth);
     }
     probability.clamp(0.0, 1.0)
@@ -215,6 +216,23 @@ fn modifier_probability_for_requirement(requirement: Requirement) -> f64 {
     }
 }
 
+fn uncursed_probability_for_requirement(requirement: Requirement) -> f64 {
+    if !requirement.require_uncursed {
+        return 1.0;
+    }
+    if requirement.source == Some(ItemSource::ImpReward) {
+        return 0.0;
+    }
+    match requirement.effect {
+        Some(Effect::Weapon(effect)) if effect.is_curse() => 0.0,
+        Some(Effect::Armor(effect)) if effect.is_curse() => 0.0,
+        // Positive enchantments and glyphs are generated only on clean items.
+        Some(_) => 1.0,
+        // Natural equipment, wands, rings, and artifacts are cursed 30% of the time.
+        None => 0.7,
+    }
+}
+
 fn source_availability(requirement: Requirement, max_depth: u8) -> f64 {
     if requirement.source != Some(ItemSource::GhostReward) {
         return 1.0;
@@ -271,6 +289,7 @@ mod tests {
                 tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Exact(2),
                 effect: Some(Effect::Weapon(WeaponEffect::Lucky)),
+                require_uncursed: false,
                 source: None,
                 identity_group: None,
                 max_depth: None,
@@ -281,6 +300,7 @@ mod tests {
                 tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Exact(1),
                 effect: Some(Effect::Armor(ArmorEffect::Brimstone)),
+                require_uncursed: false,
                 source: None,
                 identity_group: None,
                 max_depth: None,
@@ -299,6 +319,7 @@ mod tests {
                 tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Exact(3),
                 effect: None,
+                require_uncursed: false,
                 source: Some(ItemSource::GhostReward),
                 identity_group: None,
                 max_depth: None,
@@ -309,6 +330,7 @@ mod tests {
                 tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Exact(3),
                 effect: None,
+                require_uncursed: false,
                 source: None,
                 identity_group: Some(1),
                 max_depth: None,
@@ -319,6 +341,7 @@ mod tests {
                 tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Any,
                 effect: None,
+                require_uncursed: false,
                 source: None,
                 identity_group: Some(1),
                 max_depth: None,
@@ -329,6 +352,7 @@ mod tests {
                 tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Any,
                 effect: None,
+                require_uncursed: false,
                 source: None,
                 identity_group: Some(1),
                 max_depth: None,
@@ -339,6 +363,7 @@ mod tests {
                 tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::AtLeast(1),
                 effect: None,
+                require_uncursed: false,
                 source: None,
                 identity_group: None,
                 max_depth: None,
@@ -349,6 +374,7 @@ mod tests {
                 tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Exact(4),
                 effect: None,
+                require_uncursed: false,
                 source: None,
                 identity_group: None,
                 max_depth: None,

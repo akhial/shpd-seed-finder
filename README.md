@@ -161,7 +161,8 @@ Each requirement can target a concrete item or any item in its category, use an 
 or unrestricted upgrade predicate, constrain the loot source, set its own inclusive floor limit,
 and join a same-item group shared by other requirements. Exact upgrades run through `+3` for
 weapons, armor, and wands and through `+4` for rings; minimum predicates also support `+0`.
-Weapon enchantment/curse and armor glyph/curse constraints are supported. A concrete `+4` ring
+Weapon enchantment/curse and armor glyph/curse constraints are supported, and any requirement can
+demand that its matching copy be uncursed. A concrete `+4` ring
 requirement also accepts an Imp ring when one immediate Scroll of Transmutation roll produces the
 requested ring. Queries can require an accessible blacksmith, prevent the Blacksmith's Smith
 rewards from satisfying item requirements, and limit every item and facility to the first X
@@ -183,13 +184,14 @@ combinations cannot satisfy a query.
     },
     {
       "kind": "wand",
-      "upgrade": { "at_least": 2 }
+      "upgrade": { "at_least": 2 },
+      "uncursed": true
     }
   ]
 }
 ```
 
-Omitting `upgrade` means any upgrade; an integer means an exact upgrade. Item effects, loot
+Omitting `upgrade` means any upgrade; an integer means an exact upgrade. Item effects, `uncursed`, loot
 `source`, `identity_group`, and per-item `max_depth` are optional. The `kind` field is only
 required for wildcard requirements; concrete items use the stable IDs from
 `crates/seedfinder-core/src/catalog.rs`. Set `exclude_blacksmith_rewards` when the Smith choice

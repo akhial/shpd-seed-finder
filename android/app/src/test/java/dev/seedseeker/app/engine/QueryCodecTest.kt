@@ -15,7 +15,7 @@ import org.junit.Test
 
 class QueryCodecTest {
     @Test
-    fun tierPredicateUsesSsf6AndEncodesExactTierWithZeroChallengeMask() {
+    fun tierPredicateUsesSsf7AndEncodesExactTierWithZeroChallengeMask() {
         val requirement = ItemRequirement(
             key = 1,
             item = null,
@@ -28,13 +28,14 @@ class QueryCodecTest {
 
         assertArrayEquals(
             byteArrayOf(
-                'S'.code.toByte(), 'S'.code.toByte(), 'F'.code.toByte(), '6'.code.toByte(),
+                'S'.code.toByte(), 'S'.code.toByte(), 'F'.code.toByte(), '7'.code.toByte(),
                 24, 0, 0, 0, 0, 1,
                 0, 0, 0, // weapon, any item
                 1, 5, // exact tier 5
                 0, 0, // any upgrade
                 0, 0, // no modifier
                 0, 0, 0, // any source, no identity group, no requirement floor limit
+                0, // curse state does not matter
             ),
             QueryCodec.encode(SearchRequest(listOf(requirement))),
         )
@@ -73,7 +74,7 @@ class QueryCodecTest {
     }
 
     @Test
-    fun encodesStableSsf6PacketWithExactUpgradeAndFloorLimit() {
+    fun encodesStableSsf7PacketWithExactUpgradeAndFloorLimit() {
         val sword = ItemCatalog.weapons.first { it.id == "sword" }
         val request = SearchRequest(
             listOf(ItemRequirement(key = 9, item = sword, upgrade = 2, modifier = "Lucky", maximumDepth = 5)),
@@ -81,7 +82,7 @@ class QueryCodecTest {
 
         assertArrayEquals(
             byteArrayOf(
-                0x53, 0x53, 0x46, 0x36, // SSF6
+                0x53, 0x53, 0x46, 0x37, // SSF7
                 0x18, 0x00, // floor 24, no world flags
                 0x00, 0x00, // no challenges, little-endian
                 0x00, 0x01, // one requirement
@@ -92,6 +93,7 @@ class QueryCodecTest {
                 0x02, // exactly +2
                 0x00, 0x05, 0x4C, 0x75, 0x63, 0x6B, 0x79, // Lucky
                 0x00, 0x00, 0x05, // any source, no identity group, by floor 5
+                0x00, // curse state does not matter
             ),
             QueryCodec.encode(request),
         )
@@ -104,13 +106,13 @@ class QueryCodecTest {
         val packet = QueryCodec.encode(request)
         assertArrayEquals(
             byteArrayOf(
-                0x53, 0x53, 0x46, 0x36,
+                0x53, 0x53, 0x46, 0x37,
                 24, 0,
                 0, 0,
                 0, 1,
                 3,
                 0, 18,
-            ) + "ring_sharpshooting".encodeToByteArray() + byteArrayOf(0, 0, 1, 4, 0, 0, 0, 0, 0),
+            ) + "ring_sharpshooting".encodeToByteArray() + byteArrayOf(0, 0, 1, 4, 0, 0, 0, 0, 0, 0),
             packet,
         )
         assertThrows(IllegalArgumentException::class.java) {
@@ -127,7 +129,7 @@ class QueryCodecTest {
         )
         assertArrayEquals(
             byteArrayOf(
-                0x53, 0x53, 0x46, 0x36,
+                0x53, 0x53, 0x46, 0x37,
                 0x18, 0x02, // floor 24, fast-mode flag
                 0x00, 0x00,
                 0x00, 0x01,
@@ -136,8 +138,7 @@ class QueryCodecTest {
                 0x00, 0x00,
                 0x01,
                 0x03,
-                0x00, 0x00, 0x00,
-                0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             ),
             QueryCodec.encode(request),
         )
@@ -155,7 +156,7 @@ class QueryCodecTest {
 
         assertArrayEquals(
             byteArrayOf(
-                0x53, 0x53, 0x46, 0x36,
+                0x53, 0x53, 0x46, 0x37,
                 0x18, 0x04,
                 0x00, 0x00,
                 0x00, 0x01,
@@ -163,8 +164,7 @@ class QueryCodecTest {
                 0x00, 0x05, 0x73, 0x77, 0x6F, 0x72, 0x64,
                 0x00, 0x00,
                 0x01, 0x02,
-                0x00, 0x00, 0x00,
-                0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             ),
             packet,
         )
@@ -201,12 +201,12 @@ class QueryCodecTest {
         val packet = QueryCodec.encode(request)
         assertArrayEquals(
             byteArrayOf(
-                'S'.code.toByte(), 'S'.code.toByte(), 'F'.code.toByte(), '6'.code.toByte(),
+                'S'.code.toByte(), 'S'.code.toByte(), 'F'.code.toByte(), '7'.code.toByte(),
                 14, 1, 0, 0, 0, 4,
-                2, 0, 0, 0, 0, 1, 3, 0, 0, 15, 1, 0,
-                2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1, 0,
-                2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1, 0,
-                2, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0,
+                2, 0, 0, 0, 0, 1, 3, 0, 0, 15, 1, 0, 0,
+                2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1, 0, 0,
+                2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1, 0, 0,
+                2, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0,
             ),
             packet,
         )
@@ -223,6 +223,31 @@ class QueryCodecTest {
         assertArrayEquals(byteArrayOf(1, 1), packet.copyOfRange(6, 8))
         assertThrows(IllegalArgumentException::class.java) {
             request.copy(challenges = 512)
+        }
+    }
+
+    @Test
+    fun uncursedRequirementSetsRequirementFlagBitZero() {
+        val requirement = ItemRequirement(
+            key = 1,
+            item = ItemCatalog.rings.first(),
+            upgrade = 1,
+            requireUncursed = true,
+        )
+
+        assertEquals(1, QueryCodec.encode(SearchRequest(listOf(requirement))).last().toInt())
+    }
+
+    @Test
+    fun uncursedRequirementRejectsCurseModifier() {
+        assertThrows(IllegalArgumentException::class.java) {
+            ItemRequirement(
+                key = 1,
+                item = ItemCatalog.weapons.first(),
+                upgrade = 1,
+                modifier = "Displacing",
+                requireUncursed = true,
+            )
         }
     }
 }

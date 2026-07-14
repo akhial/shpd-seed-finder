@@ -162,10 +162,10 @@ mod tests {
     use super::*;
 
     fn query_packet() -> Vec<u8> {
-        let mut packet = b"SSF6".to_vec();
+        let mut packet = b"SSF7".to_vec();
         packet.extend_from_slice(&[24, 0, 0, 0, 0, 1, 2, 0, 10]);
         packet.extend_from_slice(b"wand_frost");
-        packet.extend_from_slice(&[0, 0, 1, 2, 0, 0, 0, 0, 0]);
+        packet.extend_from_slice(&[0, 0, 1, 2, 0, 0, 0, 0, 0, 0]);
         packet
     }
 

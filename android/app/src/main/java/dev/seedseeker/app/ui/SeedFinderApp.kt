@@ -346,7 +346,7 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
             RequirementSheet(
                 editing = editingRequirement,
                 onDismiss = { showRequirementSheet = false },
-                onSave = { item, kind, tierMatch, tier, upgradeMatch, upgrade, modifier, source, identityGroup, itemMaximumDepth ->
+                onSave = { item, kind, tierMatch, tier, upgradeMatch, upgrade, modifier, source, identityGroup, itemMaximumDepth, requireUncursed ->
                     val existing = editingRequirement
                     if (existing == null) {
                         requirements = requirements + ItemRequirement(
@@ -361,6 +361,7 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
                             source = source,
                             identityGroup = identityGroup,
                             maximumDepth = itemMaximumDepth,
+                            requireUncursed = requireUncursed,
                         )
                     } else {
                         requirements = requirements.map {
@@ -376,6 +377,7 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
                                     source = source,
                                     identityGroup = identityGroup,
                                     maximumDepth = itemMaximumDepth,
+                                    requireUncursed = requireUncursed,
                                 )
                             } else {
                                 it

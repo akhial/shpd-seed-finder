@@ -9,9 +9,10 @@ extern "C" {
 #endif
 
 // All functions are thread-safe. Packets use the same wire formats as JNI:
-// Search requests use SSF6 and results use SSR1. SSF6 globals are:
+// Search requests use SSF7 and results use SSR1. SSF7 globals are:
 // magic[4], max_depth:u8, flags:u8, challenges:u16 little-endian,
-// requirement_count:u16 big-endian; tier mode 3 means at most.
+// requirement_count:u16 big-endian; tier mode 3 means at most. Each requirement
+// appends flags:u8 where bit 0 requires an uncursed item.
 // Scout requests are SSQ2 magic[4], challenges:u16 little-endian, then the
 // UTF-8 seed code in all remaining bytes. Legacy raw UTF-8 seed codes use mask 0.
 // Scout responses remain SSC1.

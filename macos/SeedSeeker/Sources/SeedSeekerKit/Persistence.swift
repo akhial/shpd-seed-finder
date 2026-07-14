@@ -37,7 +37,8 @@ public struct SavedQuery: Codable, Sendable {
                 tier: requirement.tier, tierMatch: requirement.tierMatch,
                 upgradeMatch: requirement.upgradeMatch, source: requirement.source,
                 identityGroup: requirement.identityGroup,
-                maximumDepth: requirement.maximumDepth)) != nil else { return nil }
+                maximumDepth: requirement.maximumDepth,
+                requireUncursed: requirement.requireUncursed)) != nil else { return nil }
         }
         return self
     }

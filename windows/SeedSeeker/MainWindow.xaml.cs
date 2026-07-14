@@ -80,10 +80,11 @@ public sealed partial class MainWindow : Window
         var tierMatch = Combo(["Any tier", "Exactly", "At least", "At most"], (int)r.TierMatch); tierMatch.Header = "Tier predicate"; var selectedTier = r.Tier is >= 2 and <= 5 ? r.Tier : 2; var tier = Number("Tier", selectedTier, 2, 5); var tierBound = Combo(["Tier 3", "Tier 4"], Math.Clamp(selectedTier, 3, 4) - 3);
         var upgradeMatch = Combo(["Any", "Exactly", "At least"], (int)r.UpgradeMatch); upgradeMatch.Header = "Upgrade predicate"; var upgrade = Number("Upgrade level", r.Upgrade, 0, 4);
         var modifier = new ComboBox { Header = "Enchantment or glyph", HorizontalAlignment = HorizontalAlignment.Stretch };
+        var uncursed = new CheckBox { Content = "Require uncursed", IsChecked = r.RequireUncursed };
         var source = Combo(new[] { "Any source" }.Concat(Enum.GetValues<ScoutItemSource>().Select(Labels.Source)), r.Source is null ? 0 : (int)r.Source + 1); source.Header = "Source";
         var group = Combo(["None", "A", "B", "C", "D"], r.IdentityGroup ?? 0); group.Header = "Same-item group";
         var depthToggle = ToggleRow("Limit this item to a floor", r.MaximumDepth is not null, out var depthRow); var depth = Number("Within first floors", r.MaximumDepth ?? 5, 1, 24);
-        var content = new StackPanel { Spacing = 12, Padding = new Thickness(2, 4, 2, 4) }; foreach (var control in new UIElement[] { kind, item, tierMatch, tier, tierBound, upgradeMatch, upgrade, modifier, source, group, depthRow, depth }) content.Children.Add(control);
+        var content = new StackPanel { Spacing = 12, Padding = new Thickness(2, 4, 2, 4) }; foreach (var control in new UIElement[] { kind, item, tierMatch, tier, tierBound, upgradeMatch, upgrade, modifier, uncursed, source, group, depthRow, depth }) content.Children.Add(control);
         void NormalizeTier()
         {
             var predicate = (TierMatch)Math.Max(0, tierMatch.SelectedIndex);
@@ -100,19 +101,29 @@ public sealed partial class MainWindow : Window
             tierBound.Header = predicate == TierMatch.AtLeast ? "Minimum tier" : "Maximum tier";
             upgrade.Visibility = upgradeMatch.SelectedIndex > 0 ? Visibility.Visible : Visibility.Collapsed;
         }
+        void PopulateModifiers(string? selection)
+        {
+            var k = (ItemKind)Math.Max(0, kind.SelectedIndex);
+            var modifiers = ItemCatalog.Modifiers(k)
+                .Where(effect => uncursed.IsChecked != true || !ItemCatalog.IsCurse(k, effect))
+                .ToList();
+            modifier.Items.Clear(); modifier.Items.Add("None"); foreach (var value in modifiers) modifier.Items.Add(value);
+            modifier.SelectedIndex = selection is null ? 0 : Math.Max(0, modifiers.IndexOf(selection) + 1);
+            modifier.Visibility = k is ItemKind.Weapon or ItemKind.Armor ? Visibility.Visible : Visibility.Collapsed;
+        }
         void Populate()
         {
             var k = (ItemKind)Math.Max(0, kind.SelectedIndex); var oldId = r.Item?.Id; var items = ItemCatalog.For(k).ToList(); item.Items.Clear(); item.Items.Add($"Any {Labels.Singular(k)}"); foreach (var value in items) item.Items.Add(value.Name); item.SelectedIndex = Math.Max(0, items.FindIndex(x => x.Id == oldId) + 1);
-            modifier.Items.Clear(); modifier.Items.Add("None"); foreach (var value in ItemCatalog.Modifiers(k)) modifier.Items.Add(value); modifier.SelectedIndex = r.Modifier is null ? 0 : Math.Max(0, ItemCatalog.Modifiers(k).ToList().IndexOf(r.Modifier) + 1); modifier.Visibility = k is ItemKind.Weapon or ItemKind.Armor ? Visibility.Visible : Visibility.Collapsed;
+            PopulateModifiers(r.Modifier);
             upgrade.Maximum = k == ItemKind.Ring ? 4 : 3; SyncVisibility();
         }
-        kind.SelectionChanged += (_, _) => { r.Item = null; r.Modifier = null; Populate(); }; item.SelectionChanged += (_, _) => SyncVisibility(); tier.ValueChanged += (_, _) => { if (!double.IsNaN(tier.Value)) selectedTier = (int)tier.Value; }; tierBound.SelectionChanged += (_, _) => { if (tierBound.SelectedIndex >= 0) selectedTier = tierBound.SelectedIndex + 3; }; tierMatch.SelectionChanged += (_, _) => { NormalizeTier(); SyncVisibility(); }; upgradeMatch.SelectionChanged += (_, _) => SyncVisibility(); depthToggle.Toggled += (_, _) => depth.Visibility = depthToggle.IsOn ? Visibility.Visible : Visibility.Collapsed;
+        kind.SelectionChanged += (_, _) => { r.Item = null; r.Modifier = null; Populate(); }; item.SelectionChanged += (_, _) => SyncVisibility(); tier.ValueChanged += (_, _) => { if (!double.IsNaN(tier.Value)) selectedTier = (int)tier.Value; }; tierBound.SelectionChanged += (_, _) => { if (tierBound.SelectedIndex >= 0) selectedTier = tierBound.SelectedIndex + 3; }; tierMatch.SelectionChanged += (_, _) => { NormalizeTier(); SyncVisibility(); }; upgradeMatch.SelectionChanged += (_, _) => SyncVisibility(); uncursed.Checked += (_, _) => PopulateModifiers(modifier.SelectedItem is string effect && !ItemCatalog.IsCurse((ItemKind)Math.Max(0, kind.SelectedIndex), effect) ? effect : null); uncursed.Unchecked += (_, _) => PopulateModifiers(modifier.SelectedItem?.ToString()); depthToggle.Toggled += (_, _) => depth.Visibility = depthToggle.IsOn ? Visibility.Visible : Visibility.Collapsed;
         Populate(); NormalizeTier(); SyncVisibility(); depth.Visibility = depthToggle.IsOn ? Visibility.Visible : Visibility.Collapsed;
         var dialog = new ContentDialog { XamlRoot = Content.XamlRoot, Title = isNew ? "New Requirement" : "Edit Requirement", PrimaryButtonText = isNew ? "Add" : "Save", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Primary, Content = new ScrollViewer { Content = content, MaxHeight = 510, Width = 430 } };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return false;
         r.Kind = (ItemKind)kind.SelectedIndex; r.Item = item.SelectedIndex > 0 ? ItemCatalog.For(r.Kind).ElementAt(item.SelectedIndex - 1) : null; r.TierMatch = r.Item is null && r.Kind is ItemKind.Weapon or ItemKind.Armor ? (TierMatch)tierMatch.SelectedIndex : TierMatch.Any; r.Tier = r.TierMatch == TierMatch.Any ? 0 : selectedTier;
         r.UpgradeMatch = (UpgradeMatch)upgradeMatch.SelectedIndex; r.Upgrade = r.UpgradeMatch == UpgradeMatch.Any ? 0 : Math.Max(r.UpgradeMatch == UpgradeMatch.Exactly ? 1 : 0, (int)upgrade.Value); r.Modifier = modifier.Visibility == Visibility.Visible && modifier.SelectedIndex > 0 ? modifier.SelectedItem?.ToString() : null;
-        r.Source = source.SelectedIndex == 0 ? null : (ScoutItemSource)(source.SelectedIndex - 1); r.IdentityGroup = group.SelectedIndex == 0 ? null : group.SelectedIndex; r.MaximumDepth = depthToggle.IsOn ? (int)depth.Value : null; return true;
+        r.RequireUncursed = uncursed.IsChecked == true; r.Source = source.SelectedIndex == 0 ? null : (ScoutItemSource)(source.SelectedIndex - 1); r.IdentityGroup = group.SelectedIndex == 0 ? null : group.SelectedIndex; r.MaximumDepth = depthToggle.IsOn ? (int)depth.Value : null; return true;
     }
     private static ComboBox Combo(IEnumerable<string> values, int selected) { var c = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch }; foreach (var v in values) c.Items.Add(v); c.SelectedIndex = selected; return c; }
     private static NumberBox Number(string header, double value, double min, double max) => new() { Header = header, Value = value, Minimum = min, Maximum = max, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact };

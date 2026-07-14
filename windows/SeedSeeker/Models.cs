@@ -54,6 +54,7 @@ public sealed class ItemRequirement
     public ScoutItemSource? Source { get; set; }
     public int? IdentityGroup { get; set; }
     public int? MaximumDepth { get; set; }
+    public bool RequireUncursed { get; set; }
     [JsonIgnore] public string Glyph => KindStyle.Glyph(Kind);
     [JsonIgnore] public Brush Tint => KindStyle.Tint(Kind);
     [JsonIgnore] public string Title => Item?.Name ?? (TierMatch switch { TierMatch.Exactly => $"Any Tier {Tier} {Labels.Singular(Kind)}", TierMatch.AtLeast => $"Any Tier {Tier}+ {Labels.Singular(Kind)}", TierMatch.AtMost => $"Any Tier {Tier} or lower {Labels.Singular(Kind)}", _ => $"Any {Labels.Singular(Kind)}" });
@@ -62,7 +63,7 @@ public sealed class ItemRequirement
         get
         {
             var parts = new List<string> { UpgradeMatch switch { UpgradeMatch.Exactly => $"+{Upgrade} exactly", UpgradeMatch.AtLeast => $"+{Upgrade} or higher", _ => "Any upgrade" } };
-            if (Modifier is not null) parts.Add(Modifier); if (Source is not null) parts.Add(Labels.Source(Source.Value));
+            if (Modifier is not null) parts.Add(Modifier); if (RequireUncursed) parts.Add("uncursed"); if (Source is not null) parts.Add(Labels.Source(Source.Value));
             if (IdentityGroup is int g) parts.Add($"same item group {(char)(64 + g)}"); if (MaximumDepth is int d) parts.Add($"by floor {d}");
             return string.Join(" • ", parts);
         }
@@ -116,6 +117,7 @@ public static class ScoutMatcher
                 && (requirement.Item is null || requirement.Item.Id == item.Item.Id)
                 && tierMatches && upgradeMatches
                 && (requirement.Modifier is null || requirement.Modifier == item.Effect)
+                && (!requirement.RequireUncursed || !item.Cursed)
                 && (requirement.Source is null || requirement.Source == item.Source);
         }
 

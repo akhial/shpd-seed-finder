@@ -217,6 +217,21 @@ mod tests {
     }
 
     #[test]
+    fn uncursed_requirement_rejects_cursed_copies() {
+        let clean = world_item(ItemId::Sword, 3, Accessibility::Independent);
+        let mut cursed = clean.clone();
+        cursed.cursed = true;
+        let mut wanted = requirement(1, ItemKind::Weapon, Some(ItemId::Sword));
+        wanted.require_uncursed = true;
+
+        assert_eq!(
+            scout_match_indices(&[clean, cursed.clone()], &[wanted], 24, false),
+            [0].into()
+        );
+        assert!(scout_match_indices(&[cursed], &[wanted], 24, false).is_empty());
+    }
+
+    #[test]
     fn identity_groups_bind_wildcards_to_one_item() {
         let items = [
             world_item(ItemId::WandFrost, 2, Accessibility::Independent),

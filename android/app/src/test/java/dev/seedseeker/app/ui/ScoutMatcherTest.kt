@@ -57,6 +57,21 @@ class ScoutMatcherTest {
         assertEquals(1, scoutMatchIndices(incompatible, requirements).size)
     }
 
+    @Test
+    fun uncursedRequirementRejectsCursedCopies() {
+        val requirement = ItemRequirement(
+            key = 1,
+            item = warding,
+            upgrade = 3,
+            requireUncursed = true,
+        )
+        val clean = scoutItem(warding, ScoutAccessibility.Independent)
+        val cursed = clean.copy(cursed = true)
+
+        assertEquals(setOf(0), scoutMatchIndices(listOf(clean, cursed), listOf(requirement)))
+        assertEquals(emptySet<Int>(), scoutMatchIndices(listOf(cursed), listOf(requirement)))
+    }
+
     private fun scoutItem(item: CatalogItem, accessibility: ScoutAccessibility) = ScoutItem(
         item = item,
         depth = 8,
