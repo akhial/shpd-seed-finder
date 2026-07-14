@@ -8,25 +8,16 @@ use crate::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
 use crate::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
 use crate::seed::DungeonSeed;
 
-const REQUEST_MAGIC_V1: &[u8; 4] = b"SSF1";
-const REQUEST_MAGIC_V2: &[u8; 4] = b"SSF2";
-const REQUEST_MAGIC_V3: &[u8; 4] = b"SSF3";
-const REQUEST_MAGIC_V4: &[u8; 4] = b"SSF4";
-const REQUEST_MAGIC_V5: &[u8; 4] = b"SSF5";
+const REQUEST_MAGIC: &[u8; 4] = b"SSF6";
 const SCOUT_REQUEST_MAGIC_V2: &[u8; 4] = b"SSQ2";
 const RESULT_MAGIC: &[u8; 4] = b"SSR1";
 const SCOUT_RESULT_MAGIC: &[u8; 4] = b"SSC1";
 const MAX_REQUIREMENTS: usize = 64;
 
-/// Decodes Android `SSF1` through `SSF5` packets. Older versions are
-/// retained for compatibility; V2 adds the overall floor limit,
-/// source/identity constraints, upgrade predicates, and
-/// three flag bits: bit 0 requires blacksmith availability, bit 1 enables the
-/// lossy fast search mode described on [`SearchQuery::fast_mode`], and bit 2
-/// prevents Blacksmith "Smith" rewards from satisfying item requirements. V3
-/// adds an optional floor limit to every individual requirement, and V4 adds
-/// an optional exact or minimum equipment-tier predicate. V5 adds a
-/// little-endian `u16` challenge mask after the flags byte.
+/// Decodes an `SSF6` search request. The flags byte uses bit 0 for required
+/// blacksmith availability, bit 1 for the lossy fast search mode described on
+/// [`SearchQuery::fast_mode`], and bit 2 to prevent Blacksmith "Smith" rewards
+/// from satisfying item requirements.
 ///
 /// # Errors
 ///
@@ -34,20 +25,10 @@ const MAX_REQUIREMENTS: usize = 64;
 /// invalid upgrades, trailing data, or an inconsistent query.
 pub fn decode_query(packet: &[u8]) -> Result<SearchQuery, WireError> {
     let mut input = Input::new(packet);
-    let magic = input.take(4)?;
-    let query = if magic == REQUEST_MAGIC_V1 {
-        decode_query_v1(&mut input)?
-    } else if magic == REQUEST_MAGIC_V2 {
-        decode_query_v2(&mut input, false, false, false)?
-    } else if magic == REQUEST_MAGIC_V3 {
-        decode_query_v2(&mut input, false, true, false)?
-    } else if magic == REQUEST_MAGIC_V4 {
-        decode_query_v2(&mut input, true, true, false)?
-    } else if magic == REQUEST_MAGIC_V5 {
-        decode_query_v2(&mut input, true, true, true)?
-    } else {
+    if input.take(4)? != REQUEST_MAGIC {
         return Err(WireError::BadMagic);
-    };
+    }
+    let query = decode_query_payload(&mut input)?;
     if !input.is_empty() {
         return Err(WireError::TrailingData);
     }
@@ -55,7 +36,7 @@ pub fn decode_query(packet: &[u8]) -> Result<SearchQuery, WireError> {
     Ok(query)
 }
 
-/// Encodes a validated query using the challenge-aware `SSF5` request schema.
+/// Encodes a validated query using the maximum-tier-aware `SSF6` request schema.
 ///
 /// # Errors
 ///
@@ -69,7 +50,7 @@ pub fn encode_query(query: &SearchQuery) -> Result<Vec<u8>, WireError> {
         return Err(WireError::InvalidRequirementCount);
     }
     let mut output = Vec::new();
-    output.extend_from_slice(REQUEST_MAGIC_V5);
+    output.extend_from_slice(REQUEST_MAGIC);
     output.push(query.max_depth);
     output.push(
         u8::from(query.require_blacksmith)
@@ -90,6 +71,7 @@ pub fn encode_query(query: &SearchQuery) -> Result<Vec<u8>, WireError> {
             TierRequirement::Any => (0, 0),
             TierRequirement::Exact(value) => (1, value),
             TierRequirement::AtLeast(value) => (2, value),
+            TierRequirement::AtMost(value) => (3, value),
         };
         output.extend_from_slice(&[tier_mode, tier_value]);
         let (upgrade_mode, upgrade_value) = match requirement.upgrade {
@@ -113,62 +95,13 @@ pub fn encode_query(query: &SearchQuery) -> Result<Vec<u8>, WireError> {
     Ok(output)
 }
 
-fn decode_query_v1(input: &mut Input<'_>) -> Result<SearchQuery, WireError> {
-    let count = usize::from(input.u16()?);
-    if count == 0 || count > MAX_REQUIREMENTS {
-        return Err(WireError::InvalidRequirementCount);
-    }
-    let mut requirements = Vec::with_capacity(count);
-    for _ in 0..count {
-        let stable_id = input.utf8_u16()?;
-        let definition = item_by_stable_id(stable_id).ok_or(WireError::UnknownItem)?;
-        let upgrade = input.u8()?;
-        let modifier = input.utf8_u16()?;
-        let effect = if modifier.is_empty() {
-            None
-        } else {
-            Some(
-                Effect::from_wire_name(definition.kind, modifier)
-                    .ok_or(WireError::UnknownModifier)?,
-            )
-        };
-        requirements.push(Requirement {
-            kind: definition.kind,
-            item: Some(definition.id),
-            tier: TierRequirement::Any,
-            upgrade: UpgradeRequirement::Exact(upgrade),
-            effect,
-            source: None,
-            identity_group: None,
-            max_depth: None,
-        });
-    }
-    Ok(SearchQuery {
-        requirements,
-        max_depth: 24,
-        challenges: Challenges::NONE,
-        require_blacksmith: false,
-        exclude_blacksmith_rewards: false,
-        fast_mode: false,
-    })
-}
-
-fn decode_query_v2(
-    input: &mut Input<'_>,
-    has_tier: bool,
-    has_requirement_depths: bool,
-    has_challenges: bool,
-) -> Result<SearchQuery, WireError> {
+fn decode_query_payload(input: &mut Input<'_>) -> Result<SearchQuery, WireError> {
     let max_depth = input.u8()?;
     let flags = input.u8()?;
     if flags & !0b111 != 0 {
         return Err(WireError::InvalidFlags);
     }
-    let challenges = if has_challenges {
-        Challenges::new(input.u16_le()?).map_err(|_| WireError::InvalidChallenges)?
-    } else {
-        Challenges::NONE
-    };
+    let challenges = Challenges::new(input.u16_le()?).map_err(|_| WireError::InvalidChallenges)?;
     let count = usize::from(input.u16()?);
     if count == 0 || count > MAX_REQUIREMENTS {
         return Err(WireError::InvalidRequirementCount);
@@ -186,17 +119,14 @@ fn decode_query_v2(
                     .id,
             )
         };
-        let tier = if has_tier {
-            let mode = input.u8()?;
-            let value = input.u8()?;
-            match mode {
-                0 if value == 0 => TierRequirement::Any,
-                1 => TierRequirement::Exact(value),
-                2 => TierRequirement::AtLeast(value),
-                _ => return Err(WireError::InvalidTierMode),
-            }
-        } else {
-            TierRequirement::Any
+        let tier_mode = input.u8()?;
+        let tier_value = input.u8()?;
+        let tier = match tier_mode {
+            0 if tier_value == 0 => TierRequirement::Any,
+            1 => TierRequirement::Exact(tier_value),
+            2 => TierRequirement::AtLeast(tier_value),
+            3 => TierRequirement::AtMost(tier_value),
+            _ => return Err(WireError::InvalidTierMode),
         };
         let upgrade_mode = input.u8()?;
         let upgrade_value = input.u8()?;
@@ -220,13 +150,9 @@ fn decode_query_v2(
             0 => None,
             value => Some(value),
         };
-        let requirement_max_depth = if has_requirement_depths {
-            match input.u8()? {
-                0 => None,
-                value => Some(value),
-            }
-        } else {
-            None
+        let requirement_max_depth = match input.u8()? {
+            0 => None,
+            value => Some(value),
         };
         requirements.push(Requirement {
             kind,
@@ -651,7 +577,7 @@ mod tests {
     use crate::challenges::Challenges;
     use crate::main_world::CanonicalMainWorldGenerator;
     use crate::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
-    use crate::query::{TierRequirement, UpgradeRequirement};
+    use crate::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
     use crate::search::WorldGenerator;
     use crate::seed::DungeonSeed;
 
@@ -685,211 +611,122 @@ mod tests {
         output.extend_from_slice(value.as_bytes());
     }
 
-    #[test]
-    fn kotlin_ssf1_shape_decodes_to_exact_and_query() {
-        let mut packet = b"SSF1".to_vec();
-        packet.extend_from_slice(&2_u16.to_be_bytes());
-        field(&mut packet, "wand_frost");
-        packet.push(2);
-        field(&mut packet, "");
-        field(&mut packet, "mail_armor");
-        packet.push(3);
-        field(&mut packet, "Stench");
-
-        let query = decode_query(&packet).unwrap();
-        assert_eq!(query.requirements.len(), 2);
-        assert_eq!(query.requirements[0].item, Some(ItemId::WandFrost));
-        assert_eq!(query.requirements[0].upgrade, UpgradeRequirement::Exact(2));
-        assert_eq!(
-            query.requirements[1].effect,
-            Some(Effect::Armor(ArmorEffect::Stench))
-        );
-        assert_eq!(query.max_depth, 24);
-    }
-
-    #[test]
-    fn decoder_rejects_truncation_unknown_ids_and_trailing_data() {
-        assert_eq!(decode_query(b"SSF1\0"), Err(WireError::Truncated));
-
-        let mut packet = b"SSF1\0\x01\0\x07unknown\x01\0\0".to_vec();
-        assert_eq!(decode_query(&packet), Err(WireError::UnknownItem));
-        packet = b"SSF1\0\x01\0\x05sword\x01\0\0x".to_vec();
-        assert_eq!(decode_query(&packet), Err(WireError::TrailingData));
-    }
-
-    #[test]
-    fn appended_tipped_dart_ids_decode_without_changing_v1_wire_shape() {
-        let mut packet = b"SSF1".to_vec();
+    fn query_packet(
+        flags: u8,
+        challenges: u16,
+        kind: u8,
+        stable_id: &str,
+        tier: [u8; 2],
+        upgrade: [u8; 2],
+    ) -> Vec<u8> {
+        let mut packet = b"SSF6".to_vec();
+        packet.push(24);
+        packet.push(flags);
+        packet.extend_from_slice(&challenges.to_le_bytes());
         packet.extend_from_slice(&1_u16.to_be_bytes());
-        field(&mut packet, "cleansing_dart");
-        packet.push(1);
+        packet.push(kind);
+        field(&mut packet, stable_id);
+        packet.extend_from_slice(&tier);
+        packet.extend_from_slice(&upgrade);
         field(&mut packet, "");
+        packet.extend_from_slice(&[0, 0, 0]);
+        packet
+    }
 
-        let query = decode_query(&packet).unwrap();
-        assert_eq!(query.requirements[0].item, Some(ItemId::CleansingDart));
-        assert_eq!(query.requirements[0].upgrade, UpgradeRequirement::Exact(1));
-        assert_eq!(query.requirements[0].effect, None);
+    #[test]
+    fn ssf6_round_trips_all_query_fields() {
+        let query = SearchQuery {
+            requirements: vec![
+                Requirement {
+                    kind: ItemKind::Armor,
+                    item: None,
+                    tier: TierRequirement::AtMost(4),
+                    upgrade: UpgradeRequirement::AtLeast(1),
+                    effect: Some(Effect::Armor(ArmorEffect::Stench)),
+                    source: Some(ItemSource::Chest),
+                    identity_group: Some(2),
+                    max_depth: Some(14),
+                },
+                Requirement {
+                    kind: ItemKind::Weapon,
+                    item: None,
+                    tier: TierRequirement::Exact(3),
+                    upgrade: UpgradeRequirement::Any,
+                    effect: None,
+                    source: None,
+                    identity_group: None,
+                    max_depth: None,
+                },
+                Requirement {
+                    kind: ItemKind::Armor,
+                    item: None,
+                    tier: TierRequirement::AtLeast(4),
+                    upgrade: UpgradeRequirement::Exact(2),
+                    effect: None,
+                    source: None,
+                    identity_group: None,
+                    max_depth: None,
+                },
+            ],
+            max_depth: 20,
+            challenges: Challenges::new(104).unwrap(),
+            require_blacksmith: true,
+            exclude_blacksmith_rewards: true,
+            fast_mode: true,
+        };
+
+        let packet = encode_query(&query).unwrap();
+        assert_eq!(&packet[..4], b"SSF6");
+        assert_eq!(decode_query(&packet), Ok(query));
+    }
+
+    #[test]
+    fn ssf6_rejects_old_magic_and_malformed_fields() {
+        let valid = query_packet(0, 0, 0, "sword", [0, 0], [1, 2]);
+        assert_eq!(decode_query(b"SSF6"), Err(WireError::Truncated));
+
+        let mut old_magic = valid.clone();
+        old_magic[..4].copy_from_slice(b"SSF5");
+        assert_eq!(decode_query(&old_magic), Err(WireError::BadMagic));
+
+        let unknown = query_packet(0, 0, 0, "unknown", [0, 0], [1, 2]);
+        assert_eq!(decode_query(&unknown), Err(WireError::UnknownItem));
+
+        let mut trailing = valid;
+        trailing.push(0);
+        assert_eq!(decode_query(&trailing), Err(WireError::TrailingData));
+
+        assert_eq!(
+            decode_query(&query_packet(0b1000, 0, 0, "", [0, 0], [0, 0])),
+            Err(WireError::InvalidFlags)
+        );
+        assert_eq!(
+            decode_query(&query_packet(0, 512, 0, "", [0, 0], [0, 0])),
+            Err(WireError::InvalidChallenges)
+        );
+        assert_eq!(
+            decode_query(&query_packet(0, 0, 4, "", [0, 0], [0, 0])),
+            Err(WireError::UnknownItemKind)
+        );
+        assert_eq!(
+            decode_query(&query_packet(0, 0, 0, "", [4, 0], [0, 0])),
+            Err(WireError::InvalidTierMode)
+        );
+        assert_eq!(
+            decode_query(&query_packet(0, 0, 0, "", [0, 0], [3, 0])),
+            Err(WireError::InvalidUpgradeMode)
+        );
     }
 
     #[test]
     fn query_wire_accepts_plus_four_only_for_rings() {
-        let mut ring = b"SSF1".to_vec();
-        ring.extend_from_slice(&1_u16.to_be_bytes());
-        field(&mut ring, "ring_sharpshooting");
-        ring.push(4);
-        field(&mut ring, "");
+        let ring = query_packet(0, 0, 3, "ring_sharpshooting", [0, 0], [1, 4]);
         let query = decode_query(&ring).unwrap();
         assert_eq!(query.requirements[0].kind, ItemKind::Ring);
         assert_eq!(query.requirements[0].upgrade, UpgradeRequirement::Exact(4));
 
-        let mut sword = b"SSF1".to_vec();
-        sword.extend_from_slice(&1_u16.to_be_bytes());
-        field(&mut sword, "sword");
-        sword.push(4);
-        field(&mut sword, "");
+        let sword = query_packet(0, 0, 0, "sword", [0, 0], [1, 4]);
         assert_eq!(decode_query(&sword), Err(WireError::InvalidQuery));
-    }
-
-    #[test]
-    fn ssf2_decodes_general_linked_source_and_floor_constraints() {
-        let mut packet = b"SSF2".to_vec();
-        packet.extend_from_slice(&[14, 1, 0, 4]); // floor, blacksmith flag, count
-        for (mode, value, source, group) in [
-            (1, 3, 15, 1), // exact +3 from Wandmaker, linked group 1
-            (2, 0, 0, 1),  // at least +0, linked group 1
-            (2, 0, 0, 1),
-            (1, 1, 0, 0), // any +1 wand
-        ] {
-            packet.push(2); // wand
-            field(&mut packet, ""); // any wand type
-            packet.extend_from_slice(&[mode, value]);
-            field(&mut packet, "");
-            packet.extend_from_slice(&[source, group]);
-        }
-
-        let query = decode_query(&packet).unwrap();
-        assert_eq!(query.max_depth, 14);
-        assert!(query.require_blacksmith);
-        assert_eq!(query.requirements.len(), 4);
-        assert_eq!(query.requirements[0].item, None);
-        assert_eq!(query.requirements[0].upgrade, UpgradeRequirement::Exact(3));
-        assert_eq!(
-            query.requirements[0].source,
-            Some(ItemSource::WandmakerReward)
-        );
-        assert_eq!(query.requirements[0].identity_group, Some(1));
-        assert_eq!(
-            query.requirements[1].upgrade,
-            UpgradeRequirement::AtLeast(0)
-        );
-        assert_eq!(query.requirements[3].identity_group, None);
-    }
-
-    #[test]
-    fn ssf3_decodes_per_requirement_floor_limit() {
-        let mut packet = b"SSF3".to_vec();
-        packet.extend_from_slice(&[24, 0, 0, 1]);
-        packet.push(0); // weapon
-        field(&mut packet, "sword");
-        packet.extend_from_slice(&[1, 2]);
-        field(&mut packet, "");
-        packet.extend_from_slice(&[0, 0, 5]);
-
-        let query = decode_query(&packet).unwrap();
-        assert_eq!(query.requirements[0].max_depth, Some(5));
-    }
-
-    #[test]
-    fn ssf2_flag_bit_one_selects_fast_mode() {
-        let mut packet = b"SSF2".to_vec();
-        packet.extend_from_slice(&[24, 0b10, 0, 1]); // floor, fast-mode flag, count
-        packet.push(1); // armor
-        field(&mut packet, "");
-        packet.extend_from_slice(&[1, 3]); // exact +3
-        field(&mut packet, "");
-        packet.extend_from_slice(&[0, 0]);
-
-        let query = decode_query(&packet).unwrap();
-        assert!(query.fast_mode);
-        assert!(!query.require_blacksmith);
-    }
-
-    #[test]
-    fn ssf2_flag_bit_two_excludes_blacksmith_rewards() {
-        let mut packet = b"SSF2".to_vec();
-        packet.extend_from_slice(&[24, 0b100, 0, 1]);
-        packet.push(0); // weapon
-        field(&mut packet, "sword");
-        packet.extend_from_slice(&[1, 2]);
-        field(&mut packet, "");
-        packet.extend_from_slice(&[0, 0]);
-
-        let query = decode_query(&packet).unwrap();
-        assert!(query.exclude_blacksmith_rewards);
-        assert!(!query.require_blacksmith);
-    }
-
-    #[test]
-    fn ssf4_decodes_exact_and_minimum_tier_predicates() {
-        let mut packet = b"SSF4".to_vec();
-        packet.extend_from_slice(&[24, 0, 0, 2]);
-        for (kind, tier_mode, tier) in [(0, 1, 5), (1, 2, 4)] {
-            packet.push(kind);
-            field(&mut packet, "");
-            packet.extend_from_slice(&[tier_mode, tier, 0, 0]);
-            field(&mut packet, "");
-            packet.extend_from_slice(&[0, 0, 0]);
-        }
-
-        let query = decode_query(&packet).unwrap();
-        assert_eq!(query.requirements[0].tier, TierRequirement::Exact(5));
-        assert_eq!(query.requirements[1].tier, TierRequirement::AtLeast(4));
-    }
-
-    #[test]
-    fn ssf5_golden_bytes_decode_little_endian_challenges() {
-        let mut packet = b"SSF5\x18\x05\x68\x00\x00\x01\x03\x00\x00".to_vec();
-        // ring wildcard; any tier, any upgrade, no effect/source/group/depth
-        packet.extend_from_slice(&[0, 0, 0, 0]);
-        packet.extend_from_slice(&[0, 0, 0, 0, 0]);
-
-        let query = decode_query(&packet).unwrap();
-        assert_eq!(query.max_depth, 24);
-        assert_eq!(query.challenges, Challenges::new(104).unwrap());
-        assert!(query.require_blacksmith);
-        assert!(query.exclude_blacksmith_rewards);
-        assert_eq!(query.requirements[0].kind, ItemKind::Ring);
-        assert_eq!(encode_query(&query).unwrap(), packet);
-
-        let mut invalid = packet;
-        invalid[6..8].copy_from_slice(&512_u16.to_le_bytes());
-        assert_eq!(decode_query(&invalid), Err(WireError::InvalidChallenges));
-    }
-
-    #[test]
-    fn legacy_query_versions_default_to_no_challenges() {
-        let mut packet = b"SSF1".to_vec();
-        packet.extend_from_slice(&1_u16.to_be_bytes());
-        field(&mut packet, "sword");
-        packet.push(1);
-        field(&mut packet, "");
-        assert_eq!(decode_query(&packet).unwrap().challenges, Challenges::NONE);
-    }
-
-    #[test]
-    fn ssf2_rejects_reserved_flags_kinds_and_upgrade_modes() {
-        assert_eq!(
-            decode_query(b"SSF2\x18\x08\0\x01"),
-            Err(WireError::InvalidFlags)
-        );
-
-        let mut bad_kind = b"SSF2\x18\0\0\x01".to_vec();
-        bad_kind.push(4);
-        assert_eq!(decode_query(&bad_kind), Err(WireError::UnknownItemKind));
-
-        let mut bad_mode = b"SSF2\x18\0\0\x01\x02\0\0".to_vec();
-        bad_mode.extend_from_slice(&[3, 0]);
-        assert_eq!(decode_query(&bad_mode), Err(WireError::InvalidUpgradeMode));
     }
 
     #[test]

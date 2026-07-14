@@ -55,7 +55,7 @@ public sealed class NativeEngine
 {
     public NativeSearch Start(QuerySettings query)
     {
-        var w = new Writer(); w.Bytes("SSF5"u8.ToArray()); w.U8(query.MaximumDepth);
+        var w = new Writer(); w.Bytes("SSF6"u8.ToArray()); w.U8(query.MaximumDepth);
         w.U8((query.RequireBlacksmith ? 1 : 0) | (query.FastMode ? 2 : 0) | (query.ExcludeBlacksmithRewards ? 4 : 0));
         w.U16Le(query.Challenges); w.U16(query.Requirements.Count);
         foreach (var r in query.Requirements)

@@ -27,8 +27,8 @@ public enum UpgradeMatch: Int, Codable, CaseIterable, Sendable {
 }
 
 public enum TierMatch: Int, Codable, CaseIterable, Sendable {
-    case any, exactly, atLeast
-    public var label: String { ["Any tier", "Exactly", "At least"][rawValue] }
+    case any, exactly, atLeast, atMost
+    public var label: String { ["Any tier", "Exactly", "At least", "At most"][rawValue] }
 }
 
 public enum ScoutItemSource: Int, Codable, CaseIterable, Sendable {
@@ -79,7 +79,7 @@ public enum ModelValidationError: Error, Equatable, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .itemKind: "Selected item must belong to its category"
-        case .tier: "Tier predicate requires any tier-2 through tier-5 weapon or armor"
+        case .tier: "Tier predicate requires a wildcard weapon or armor and a non-redundant tier"
         case .upgrade: "Upgrade predicate is invalid"
         case .modifier: "This category cannot carry a modifier requirement"
         case .identityGroup: "Same-item group must be A..D"
@@ -111,10 +111,11 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
                 source: ScoutItemSource? = nil, identityGroup: Int? = nil,
                 maximumDepth: Int? = nil) throws {
         guard item == nil || item?.kind == kind else { throw ModelValidationError.itemKind }
+        let tierable = item == nil && (kind == .weapon || kind == .armor)
         let validTier = switch tierMatch {
         case .any: tier == 0
-        case .exactly, .atLeast:
-            item == nil && (kind == .weapon || kind == .armor) && (2...5).contains(tier)
+        case .exactly: tierable && (2...5).contains(tier)
+        case .atLeast, .atMost: tierable && (3...4).contains(tier)
         }
         guard validTier else { throw ModelValidationError.tier }
         let valid = switch upgradeMatch {
@@ -171,6 +172,7 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
         case .any: "Any \(kind.singularLabel)"
         case .exactly: "Any Tier \(tier) \(kind.singularLabel)"
         case .atLeast: "Any Tier \(tier)+ \(kind.singularLabel)"
+        case .atMost: "Any Tier \(tier) or lower \(kind.singularLabel)"
         }
     }
     public var description: String {
@@ -267,6 +269,7 @@ public func scoutMatchIndices(items: [ScoutItem], requirements: [ItemRequirement
         case .any: true
         case .exactly: item.item.tier == requirement.tier
         case .atLeast: item.item.tier.map { $0 >= requirement.tier } ?? false
+        case .atMost: item.item.tier.map { $0 <= requirement.tier } ?? false
         }
         let upgradeMatches = switch requirement.upgradeMatch {
         case .any: true

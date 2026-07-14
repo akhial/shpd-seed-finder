@@ -256,6 +256,8 @@ internal fun scoutMatchIndices(
                 dev.seedseeker.app.model.TierMatch.EXACT -> item.item.tier == requirement.tier
                 dev.seedseeker.app.model.TierMatch.AT_LEAST ->
                     item.item.tier?.let { it >= requirement.tier } == true
+                dev.seedseeker.app.model.TierMatch.AT_MOST ->
+                    item.item.tier?.let { it <= requirement.tier } == true
             } &&
             when (requirement.upgradeMatch) {
                 UpgradeMatch.ANY -> true

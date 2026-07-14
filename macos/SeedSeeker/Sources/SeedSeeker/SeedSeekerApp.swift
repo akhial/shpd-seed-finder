@@ -336,14 +336,28 @@ private struct RequirementEditor: View {
                             ForEach(TierMatch.allCases, id: \.self) { Text($0.label).tag($0) }
                         }
                         .pickerStyle(.segmented)
-                        if tierMatch != .any {
+                        .onChange(of: tierMatch) { _, value in
+                            if value == .atLeast || value == .atMost {
+                                tier = max(3, min(tier, 4))
+                            }
+                        }
+                        if tierMatch == .exactly {
                             VStack(alignment: .leading, spacing: 2) {
-                                LabeledContent(tierMatch == .exactly ? "Exact tier" : "Minimum tier") {
-                                    Text("Tier \(tier)\(tierMatch == .atLeast ? "+" : "")")
+                                LabeledContent("Exact tier") {
+                                    Text("Tier \(tier)")
                                         .monospacedDigit().foregroundStyle(.secondary)
                                 }
                                 Slider(value: intBinding($tier), in: 2...5, step: 1)
                             }
+                        } else if tierMatch == .atLeast || tierMatch == .atMost {
+                            Picker(tierMatch == .atLeast ? "Minimum tier" : "Maximum tier",
+                                   selection: $tier) {
+                                ForEach(3...4, id: \.self) { option in
+                                    Text(tierMatch == .atLeast ? "Tier \(option) or higher" :
+                                        "Tier \(option) or lower").tag(option)
+                                }
+                            }
+                            .pickerStyle(.menu)
                         }
                     }
                 }

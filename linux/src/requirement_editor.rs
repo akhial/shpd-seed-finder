@@ -21,7 +21,8 @@ struct Editor {
     item_row: adw::ComboRow,
     items: RefCell<Vec<Option<ItemId>>>,
     tier_row: adw::ComboRow,
-    tier_value: adw::SpinRow,
+    exact_tier: adw::SpinRow,
+    bounded_tier: adw::ComboRow,
     upgrade_row: adw::ComboRow,
     upgrade_value: adw::SpinRow,
     effect_row: adw::ComboRow,
@@ -106,8 +107,9 @@ fn build(requirement: &UiRequirement) -> Editor {
         ),
         item_row: searchable_combo_row("Item"),
         items: RefCell::new(vec![None]),
-        tier_row: combo_row("Tier", &["Any tier", "Exactly", "At least"]),
-        tier_value: spin_row("Tier value", 2.0, 2.0, 5.0),
+        tier_row: combo_row("Tier", &["Any tier", "Exactly", "At least", "At most"]),
+        exact_tier: spin_row("Exact tier", 2.0, 2.0, 5.0),
+        bounded_tier: combo_row("Minimum tier", &["Tier 3", "Tier 4"]),
         upgrade_row: combo_row("Upgrade", &["Any", "Exactly", "At least"]),
         upgrade_value: spin_row("Level", 1.0, 0.0, 4.0),
         effect_row: searchable_combo_row("Enchantment"),
@@ -134,7 +136,8 @@ fn groups(editor: &Rc<Editor>) -> Vec<adw::PreferencesGroup> {
     item_group.add(&editor.category);
     item_group.add(&editor.item_row);
     item_group.add(&editor.tier_row);
-    item_group.add(&editor.tier_value);
+    item_group.add(&editor.exact_tier);
+    item_group.add(&editor.bounded_tier);
 
     let upgrade_group = adw::PreferencesGroup::builder()
         .title("Upgrade Level")
@@ -177,6 +180,22 @@ fn connect(editor: &Rc<Editor>) {
         .tier_row
         .connect_selected_notify(hook(Rc::clone(editor), refresh_visibility));
     editor
+        .exact_tier
+        .connect_value_notify(hook(Rc::clone(editor), |editor| {
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let tier = editor.exact_tier.value().round() as u8;
+            editor
+                .bounded_tier
+                .set_selected(u32::from(tier.clamp(3, 4) - 3));
+        }));
+    editor
+        .bounded_tier
+        .connect_selected_notify(hook(Rc::clone(editor), |editor| {
+            editor
+                .exact_tier
+                .set_value(f64::from(editor.bounded_tier.selected() + 3));
+        }));
+    editor
         .upgrade_row
         .connect_selected_notify(hook(Rc::clone(editor), |editor| {
             clamp_upgrade(editor);
@@ -214,11 +233,15 @@ fn restore(editor: &Rc<Editor>, requirement: &UiRequirement) {
         TierRequirement::Any => editor.tier_row.set_selected(0),
         TierRequirement::Exact(tier) => {
             editor.tier_row.set_selected(1);
-            editor.tier_value.set_value(f64::from(tier));
+            set_tier_value(editor, tier);
         }
         TierRequirement::AtLeast(tier) => {
             editor.tier_row.set_selected(2);
-            editor.tier_value.set_value(f64::from(tier));
+            set_tier_value(editor, tier);
+        }
+        TierRequirement::AtMost(tier) => {
+            editor.tier_row.set_selected(3);
+            set_tier_value(editor, tier);
         }
     }
     match requirement.upgrade {
@@ -257,10 +280,12 @@ fn collect(editor: &Rc<Editor>) -> UiRequirement {
     let item = selected_item(editor);
     let tier_eligible = item.is_none() && matches!(kind, ItemKind::Weapon | ItemKind::Armor);
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let tier_value = editor.tier_value.value().round() as u8;
+    let exact_tier = editor.exact_tier.value().round() as u8;
+    let bounded_tier = u8::try_from(editor.bounded_tier.selected() + 3).unwrap_or(3);
     let tier = match editor.tier_row.selected() {
-        1 if tier_eligible => TierRequirement::Exact(tier_value),
-        2 if tier_eligible => TierRequirement::AtLeast(tier_value),
+        1 if tier_eligible => TierRequirement::Exact(exact_tier),
+        2 if tier_eligible => TierRequirement::AtLeast(bounded_tier),
+        3 if tier_eligible => TierRequirement::AtMost(bounded_tier),
         _ => TierRequirement::Any,
     };
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -320,6 +345,13 @@ fn selected_item(editor: &Rc<Editor>) -> Option<ItemId> {
         .get(editor.item_row.selected() as usize)
         .copied()
         .flatten()
+}
+
+fn set_tier_value(editor: &Rc<Editor>, tier: u8) {
+    editor.exact_tier.set_value(f64::from(tier));
+    editor
+        .bounded_tier
+        .set_selected(u32::from(tier.clamp(3, 4) - 3));
 }
 
 /// Items offered for one family. Tier-1 equipment is starting gear and never
@@ -423,17 +455,19 @@ fn refresh_visibility(editor: &Rc<Editor>) {
     let kind = selected_kind(editor);
     let wildcard_equipment =
         selected_item(editor).is_none() && matches!(kind, ItemKind::Weapon | ItemKind::Armor);
+    let tier_mode = editor.tier_row.selected();
     editor.tier_row.set_visible(wildcard_equipment);
     editor
-        .tier_value
-        .set_visible(wildcard_equipment && editor.tier_row.selected() != 0);
+        .exact_tier
+        .set_visible(wildcard_equipment && tier_mode == 1);
     editor
-        .tier_value
-        .set_title(if editor.tier_row.selected() == 1 {
-            "Exact tier"
-        } else {
-            "Minimum tier"
-        });
+        .bounded_tier
+        .set_visible(wildcard_equipment && matches!(tier_mode, 2 | 3));
+    editor.bounded_tier.set_title(if tier_mode == 2 {
+        "Minimum tier"
+    } else {
+        "Maximum tier"
+    });
     editor
         .upgrade_value
         .set_visible(editor.upgrade_row.selected() != 0);

@@ -97,6 +97,9 @@ impl UiRequirement {
             TierRequirement::AtLeast(tier) => {
                 format!("Any Tier {tier}+ {}", kind_singular(self.kind))
             }
+            TierRequirement::AtMost(tier) => {
+                format!("Any Tier {tier} or lower {}", kind_singular(self.kind))
+            }
         }
     }
 
@@ -325,6 +328,9 @@ mod tests {
             requirement.subtitle(),
             "+2 exactly · same item group B · by floor 9"
         );
+
+        requirement.tier = TierRequirement::AtMost(3);
+        assert_eq!(requirement.title(), "Any Tier 3 or lower weapon");
 
         requirement.item = Some(ItemId::Greatsword);
         assert_eq!(requirement.title(), "Greatsword");

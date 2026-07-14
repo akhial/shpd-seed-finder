@@ -107,6 +107,7 @@ fn save_requirement(requirement: &UiRequirement) -> SavedRequirement {
             TierRequirement::Any => None,
             TierRequirement::Exact(value) => Some(("exact", value)),
             TierRequirement::AtLeast(value) => Some(("at_least", value)),
+            TierRequirement::AtMost(value) => Some(("at_most", value)),
         }),
         upgrade: save_predicate(match requirement.upgrade {
             UpgradeRequirement::Any => None,
@@ -137,12 +138,7 @@ fn restore_requirement(saved: &SavedRequirement, key: u64) -> Option<UiRequireme
         None => None,
         Some(stable_id) => Some(item_by_stable_id(stable_id)?.id),
     };
-    let tier = restore_predicate(
-        saved.tier.as_ref(),
-        TierRequirement::Any,
-        TierRequirement::Exact,
-        TierRequirement::AtLeast,
-    )?;
+    let tier = restore_tier_predicate(saved.tier.as_ref())?;
     let upgrade = restore_predicate(
         saved.upgrade.as_ref(),
         UpgradeRequirement::Any,
@@ -168,6 +164,22 @@ fn restore_requirement(saved: &SavedRequirement, key: u64) -> Option<UiRequireme
         identity_group: saved.identity_group,
         max_depth: saved.max_depth,
     })
+}
+
+fn restore_tier_predicate(saved: Option<&SavedPredicate>) -> Option<TierRequirement> {
+    match saved {
+        None => Some(TierRequirement::Any),
+        Some(predicate) if predicate.mode == "exact" => {
+            Some(TierRequirement::Exact(predicate.value))
+        }
+        Some(predicate) if predicate.mode == "at_least" => {
+            Some(TierRequirement::AtLeast(predicate.value))
+        }
+        Some(predicate) if predicate.mode == "at_most" => {
+            Some(TierRequirement::AtMost(predicate.value))
+        }
+        Some(_) => None,
+    }
 }
 
 /// Maps an optional saved predicate into a typed one; an unknown mode drops
@@ -259,6 +271,11 @@ mod tests {
         };
         let restored = restore_requirement(&save_requirement(&requirement), 7).unwrap();
         assert_eq!(restored, requirement);
+
+        let mut bounded = UiRequirement::new(8);
+        bounded.tier = TierRequirement::AtMost(3);
+        let restored = restore_requirement(&save_requirement(&bounded), 8).unwrap();
+        assert_eq!(restored, bounded);
     }
 
     #[test]

@@ -9,12 +9,13 @@ import dev.seedseeker.app.model.ScoutItemSource
 import dev.seedseeker.app.model.UpgradeMatch
 import dev.seedseeker.app.model.TierMatch
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class QueryCodecTest {
     @Test
-    fun tierPredicateUsesSsf5AndEncodesExactTierWithZeroChallengeMask() {
+    fun tierPredicateUsesSsf6AndEncodesExactTierWithZeroChallengeMask() {
         val requirement = ItemRequirement(
             key = 1,
             item = null,
@@ -27,7 +28,7 @@ class QueryCodecTest {
 
         assertArrayEquals(
             byteArrayOf(
-                'S'.code.toByte(), 'S'.code.toByte(), 'F'.code.toByte(), '5'.code.toByte(),
+                'S'.code.toByte(), 'S'.code.toByte(), 'F'.code.toByte(), '6'.code.toByte(),
                 24, 0, 0, 0, 0, 1,
                 0, 0, 0, // weapon, any item
                 1, 5, // exact tier 5
@@ -43,7 +44,36 @@ class QueryCodecTest {
     }
 
     @Test
-    fun encodesStableSsf5PacketWithExactUpgradeAndFloorLimit() {
+    fun encodesAtMostTierPredicate() {
+        val requirement = ItemRequirement(
+            key = 1,
+            item = null,
+            upgrade = 0,
+            kind = ItemKind.ARMOR,
+            tier = 4,
+            tierMatch = TierMatch.AT_MOST,
+            upgradeMatch = UpgradeMatch.ANY,
+        )
+
+        val packet = QueryCodec.encode(SearchRequest(listOf(requirement)))
+        assertArrayEquals(byteArrayOf(3, 4), packet.copyOfRange(13, 15))
+        assertEquals("Any Tier 4 or lower armor", requirement.title)
+        assertThrows(IllegalArgumentException::class.java) {
+            requirement.copy(tier = 5)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            requirement.copy(tier = 2)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            requirement.copy(tier = 2, tierMatch = TierMatch.AT_LEAST)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            requirement.copy(tier = 5, tierMatch = TierMatch.AT_LEAST)
+        }
+    }
+
+    @Test
+    fun encodesStableSsf6PacketWithExactUpgradeAndFloorLimit() {
         val sword = ItemCatalog.weapons.first { it.id == "sword" }
         val request = SearchRequest(
             listOf(ItemRequirement(key = 9, item = sword, upgrade = 2, modifier = "Lucky", maximumDepth = 5)),
@@ -51,7 +81,7 @@ class QueryCodecTest {
 
         assertArrayEquals(
             byteArrayOf(
-                0x53, 0x53, 0x46, 0x35, // SSF5
+                0x53, 0x53, 0x46, 0x36, // SSF6
                 0x18, 0x00, // floor 24, no world flags
                 0x00, 0x00, // no challenges, little-endian
                 0x00, 0x01, // one requirement
@@ -74,7 +104,7 @@ class QueryCodecTest {
         val packet = QueryCodec.encode(request)
         assertArrayEquals(
             byteArrayOf(
-                0x53, 0x53, 0x46, 0x35,
+                0x53, 0x53, 0x46, 0x36,
                 24, 0,
                 0, 0,
                 0, 1,
@@ -97,7 +127,7 @@ class QueryCodecTest {
         )
         assertArrayEquals(
             byteArrayOf(
-                0x53, 0x53, 0x46, 0x35,
+                0x53, 0x53, 0x46, 0x36,
                 0x18, 0x02, // floor 24, fast-mode flag
                 0x00, 0x00,
                 0x00, 0x01,
@@ -125,7 +155,7 @@ class QueryCodecTest {
 
         assertArrayEquals(
             byteArrayOf(
-                0x53, 0x53, 0x46, 0x35,
+                0x53, 0x53, 0x46, 0x36,
                 0x18, 0x04,
                 0x00, 0x00,
                 0x00, 0x01,
@@ -171,7 +201,7 @@ class QueryCodecTest {
         val packet = QueryCodec.encode(request)
         assertArrayEquals(
             byteArrayOf(
-                'S'.code.toByte(), 'S'.code.toByte(), 'F'.code.toByte(), '5'.code.toByte(),
+                'S'.code.toByte(), 'S'.code.toByte(), 'F'.code.toByte(), '6'.code.toByte(),
                 14, 1, 0, 0, 0, 4,
                 2, 0, 0, 0, 0, 1, 3, 0, 0, 15, 1, 0,
                 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1, 0,

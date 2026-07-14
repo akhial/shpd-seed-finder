@@ -8,7 +8,7 @@ namespace SeedSeeker;
 
 public enum ItemKind { Weapon, Armor, Wand, Ring }
 public enum UpgradeMatch { Any, Exactly, AtLeast }
-public enum TierMatch { Any, Exactly, AtLeast }
+public enum TierMatch { Any, Exactly, AtLeast, AtMost }
 public enum SearchState { Running, Completed, Cancelled, Failed }
 
 public sealed record CatalogItem(string Id, string Name, ItemKind Kind, int SpriteIndex, int? Tier);
@@ -56,7 +56,7 @@ public sealed class ItemRequirement
     public int? MaximumDepth { get; set; }
     [JsonIgnore] public string Glyph => KindStyle.Glyph(Kind);
     [JsonIgnore] public Brush Tint => KindStyle.Tint(Kind);
-    [JsonIgnore] public string Title => Item?.Name ?? (TierMatch switch { TierMatch.Exactly => $"Any Tier {Tier} {Labels.Singular(Kind)}", TierMatch.AtLeast => $"Any Tier {Tier}+ {Labels.Singular(Kind)}", _ => $"Any {Labels.Singular(Kind)}" });
+    [JsonIgnore] public string Title => Item?.Name ?? (TierMatch switch { TierMatch.Exactly => $"Any Tier {Tier} {Labels.Singular(Kind)}", TierMatch.AtLeast => $"Any Tier {Tier}+ {Labels.Singular(Kind)}", TierMatch.AtMost => $"Any Tier {Tier} or lower {Labels.Singular(Kind)}", _ => $"Any {Labels.Singular(Kind)}" });
     [JsonIgnore] public string Description
     {
         get
@@ -99,6 +99,7 @@ public static class ScoutMatcher
                 TierMatch.Any => true,
                 TierMatch.Exactly => item.Item.Tier == requirement.Tier,
                 TierMatch.AtLeast => item.Item.Tier >= requirement.Tier,
+                TierMatch.AtMost => item.Item.Tier <= requirement.Tier,
                 _ => false,
             };
             var upgradeMatches = requirement.UpgradeMatch switch

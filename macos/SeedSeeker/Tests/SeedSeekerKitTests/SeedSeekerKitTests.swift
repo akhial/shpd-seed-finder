@@ -39,15 +39,24 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertEqual(scoutMatchIndices(items: incompatible, requirements: requirements).count, 1)
     }
 
-    func testQueryCodecTierPredicateUsesSSF5WithZeroChallenges() throws {
+    func testQueryCodecTierPredicateUsesSSF6WithZeroChallenges() throws {
         let requirement = try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .armor,
             tier: 4, tierMatch: .atLeast, upgradeMatch: .any)
         let request = try SearchRequest(requirements: [requirement])
         XCTAssertEqual(Array(try QueryCodec.encode(request)), [
-            83, 83, 70, 53, 24, 0, 0, 0, 0, 1,
+            83, 83, 70, 54, 24, 0, 0, 0, 0, 1,
             1, 0, 0, 2, 4, 0, 0, 0, 0, 0, 0, 0,
         ])
         XCTAssertEqual(requirement.title, "Any Tier 4+ armor")
+    }
+
+    func testQueryCodecEncodesAtMostTierPredicate() throws {
+        let requirement = try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .armor,
+            tier: 4, tierMatch: .atMost, upgradeMatch: .any)
+        let request = try SearchRequest(requirements: [requirement])
+        let packet = Array(try QueryCodec.encode(request))
+        XCTAssertEqual(Array(packet[13..<15]), [3, 4])
+        XCTAssertEqual(requirement.title, "Any Tier 4 or lower armor")
     }
 
     func testQueryCodecGoldenTwoRequirements() throws {
@@ -60,7 +69,7 @@ final class SeedSeekerKitTests: XCTestCase {
         let request = try SearchRequest(requirements: [first, second], maximumDepth: 12,
                                         requireBlacksmith: true, challenges: 104)
         XCTAssertEqual(Array(try QueryCodec.encode(request)), [
-            83, 83, 70, 53, 12, 1, 104, 0, 0, 2,
+            83, 83, 70, 54, 12, 1, 104, 0, 0, 2,
             0, 0, 6, 100, 97, 103, 103, 101, 114, 0, 0, 1, 2,
             0, 5, 76, 117, 99, 107, 121, 2, 1, 5,
             3, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0,
@@ -72,7 +81,7 @@ final class SeedSeekerKitTests: XCTestCase {
                                               upgradeMatch: .exactly)
         let request = try SearchRequest(requirements: [requirement], fastMode: true)
         XCTAssertEqual(Array(try QueryCodec.encode(request)), [
-            83, 83, 70, 53, 24, 2, 0, 0, 0, 1,
+            83, 83, 70, 54, 24, 2, 0, 0, 0, 1,
             1, 0, 0, 0, 0, 1, 3, 0, 0, 0, 0, 0,
         ])
     }
@@ -82,7 +91,7 @@ final class SeedSeekerKitTests: XCTestCase {
         let request = try SearchRequest(requirements: [requirement],
                                         excludeBlacksmithRewards: true)
         XCTAssertEqual(Array(try QueryCodec.encode(request)), [
-            83, 83, 70, 53, 24, 4, 0, 0, 0, 1,
+            83, 83, 70, 54, 24, 4, 0, 0, 0, 1,
             0, 0, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0,
         ])
     }
@@ -150,6 +159,16 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 1, kind: .weapon, maximumDepth: 25))
         XCTAssertNoThrow(try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .weapon,
             tier: 5, tierMatch: .exactly, upgradeMatch: .any))
+        XCTAssertNoThrow(try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .armor,
+            tier: 4, tierMatch: .atMost, upgradeMatch: .any))
+        XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .armor,
+            tier: 5, tierMatch: .atMost, upgradeMatch: .any))
+        XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .armor,
+            tier: 2, tierMatch: .atMost, upgradeMatch: .any))
+        XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .armor,
+            tier: 2, tierMatch: .atLeast, upgradeMatch: .any))
+        XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .armor,
+            tier: 5, tierMatch: .atLeast, upgradeMatch: .any))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .weapon,
             tier: 1, tierMatch: .exactly, upgradeMatch: .any))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: ItemCatalog.weapons[0], upgrade: 1,

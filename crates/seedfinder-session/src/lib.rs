@@ -201,8 +201,7 @@ impl NativeSession {
         )
     }
 
-    /// Decodes a supported `SSF1` through `SSF5` request and starts a canonical
-    /// production search.
+    /// Decodes an `SSF6` request and starts a canonical production search.
     ///
     /// # Errors
     ///

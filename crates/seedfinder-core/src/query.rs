@@ -24,6 +24,7 @@ pub enum TierRequirement {
     Any,
     Exact(u8),
     AtLeast(u8),
+    AtMost(u8),
 }
 
 impl TierRequirement {
@@ -32,6 +33,7 @@ impl TierRequirement {
             Self::Any => true,
             Self::Exact(wanted) => tier == Some(wanted),
             Self::AtLeast(minimum) => tier.is_some_and(|tier| tier >= minimum),
+            Self::AtMost(maximum) => tier.is_some_and(|tier| tier <= maximum),
         }
     }
 }
@@ -101,12 +103,13 @@ impl Requirement {
         {
             return Err(QueryError::ItemKindMismatch);
         }
+        let tierable =
+            self.item.is_none() && matches!(self.kind, ItemKind::Weapon | ItemKind::Armor);
         let valid_tier = match self.tier {
             TierRequirement::Any => true,
-            TierRequirement::Exact(tier) | TierRequirement::AtLeast(tier) => {
-                self.item.is_none()
-                    && matches!(self.kind, ItemKind::Weapon | ItemKind::Armor)
-                    && (2..=5).contains(&tier)
+            TierRequirement::Exact(tier) => tierable && (2..=5).contains(&tier),
+            TierRequirement::AtLeast(tier) | TierRequirement::AtMost(tier) => {
+                tierable && (3..=4).contains(&tier)
             }
         };
         if !valid_tier {
@@ -354,7 +357,9 @@ impl fmt::Display for QueryError {
             Self::Empty => "at least one item requirement is needed",
             Self::InvalidDepth => "maximum depth must be between 1 and 24",
             Self::InvalidUpgrade => "upgrade must be +1, +2, or +3 (+4 for rings)",
-            Self::InvalidTier => "tier filters require any tier-2 through tier-5 weapon or armor",
+            Self::InvalidTier => {
+                "tier filters require a wildcard weapon or armor and a non-redundant tier"
+            }
             Self::ItemKindMismatch => "selected item is in a different category",
             Self::EffectKindMismatch => "selected enchantment or glyph is inapplicable",
             Self::InvalidIdentityGroup => "identity group zero is reserved for no group",
@@ -665,7 +670,7 @@ mod tests {
     }
 
     #[test]
-    fn tier_predicates_match_exact_and_minimum_tiers() {
+    fn tier_predicates_match_exact_minimum_and_maximum_tiers() {
         let tier_five = Requirement {
             kind: ItemKind::Weapon,
             item: None,
@@ -689,6 +694,19 @@ mod tests {
         );
         assert!(!tier_four_plus.matches(&world_item(ItemId::Sword, Accessibility::Independent)));
 
+        let tier_four_or_lower = Requirement {
+            tier: TierRequirement::AtMost(4),
+            ..tier_five
+        };
+        assert!(
+            tier_four_or_lower.matches(&world_item(ItemId::Longsword, Accessibility::Independent))
+        );
+        assert!(tier_four_or_lower.matches(&world_item(ItemId::Sword, Accessibility::Independent)));
+        assert!(
+            !tier_four_or_lower
+                .matches(&world_item(ItemId::Greatsword, Accessibility::Independent))
+        );
+
         let invalid = Requirement {
             kind: ItemKind::Wand,
             ..tier_five
@@ -700,6 +718,27 @@ mod tests {
             ..tier_five
         };
         assert_eq!(tier_one.validate(), Err(QueryError::InvalidTier));
+
+        let redundant_maximum = Requirement {
+            tier: TierRequirement::AtMost(5),
+            ..tier_five
+        };
+        assert_eq!(redundant_maximum.validate(), Err(QueryError::InvalidTier));
+
+        for redundant in [
+            TierRequirement::AtLeast(2),
+            TierRequirement::AtLeast(5),
+            TierRequirement::AtMost(2),
+        ] {
+            assert_eq!(
+                Requirement {
+                    tier: redundant,
+                    ..tier_five
+                }
+                .validate(),
+                Err(QueryError::InvalidTier)
+            );
+        }
     }
 
     #[test]

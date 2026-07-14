@@ -180,7 +180,7 @@ class DemoNativeSeedFinder : NativeSeedFinder {
  * 5. `close(handle)` joins/releases native resources and is safe after any terminal state.
  * 6. `scoutSeed(requestBytes) -> scoutBytes` generates one canonical seed through depth 24.
  *
- * Search requests always use `SSF5`: magic, maxDepth:u8, flags:u8, challenges:u16 little-endian,
+ * Search requests always use `SSF6`: magic, maxDepth:u8, flags:u8, challenges:u16 little-endian,
  * requirementCount:u16 big-endian, followed by repeated
  * kind:u8, optionalItemId:utf8_u16, tierMode:u8, tierValue:u8, upgradeMode:u8,
  * upgradeValue:u8, modifier:utf8_u16,
@@ -308,7 +308,7 @@ object SeedCode {
 object QueryCodec {
     fun encode(request: SearchRequest): ByteArray = ByteArrayOutputStream().use { bytes ->
         DataOutputStream(bytes).use { output ->
-            output.write("SSF5".toByteArray(StandardCharsets.US_ASCII))
+            output.write("SSF6".toByteArray(StandardCharsets.US_ASCII))
             output.writeByte(request.maximumDepth)
             output.writeByte(
                 (if (request.requireBlacksmith) 1 else 0) or

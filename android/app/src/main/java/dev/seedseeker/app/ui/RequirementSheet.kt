@@ -84,6 +84,7 @@ fun RequirementSheet(
     var upgrade by remember(identity) { mutableStateOf(editing?.upgrade ?: 1) }
     var tierMatch by remember(identity) { mutableStateOf(editing?.tierMatch ?: TierMatch.ANY) }
     var tier by remember(identity) { mutableStateOf(editing?.tier?.takeIf { it >= 2 } ?: 2) }
+    var tierMenuExpanded by remember(identity) { mutableStateOf(false) }
     var modifierName by remember(identity) { mutableStateOf(editing?.modifier) }
     var modifierMenuExpanded by remember(identity) { mutableStateOf(false) }
     var source by remember(identity) { mutableStateOf(editing?.source) }
@@ -180,12 +181,18 @@ fun RequirementSheet(
                     TierMatch.entries.forEach { match ->
                         FilterChip(
                             selected = tierMatch == match,
-                            onClick = { tierMatch = match },
+                            onClick = {
+                                tierMatch = match
+                                if (match in setOf(TierMatch.AT_LEAST, TierMatch.AT_MOST)) {
+                                    tier = tier.coerceIn(3, 4)
+                                }
+                                tierMenuExpanded = false
+                            },
                             label = { Text(match.label) },
                         )
                     }
                 }
-                if (tierMatch != TierMatch.ANY) {
+                if (tierMatch == TierMatch.EXACT) {
                     Column(
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
                     ) {
@@ -194,11 +201,20 @@ fun RequirementSheet(
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Text(
-                                if (tierMatch == TierMatch.EXACT) "Exact tier" else "Minimum tier",
+                                when (tierMatch) {
+                                    TierMatch.EXACT -> "Exact tier"
+                                    TierMatch.AT_LEAST -> "Minimum tier"
+                                    TierMatch.AT_MOST -> "Maximum tier"
+                                    TierMatch.ANY -> "Tier"
+                                },
                                 style = MaterialTheme.typography.labelLarge,
                             )
                             Text(
-                                "Tier $tier${if (tierMatch == TierMatch.AT_LEAST) "+" else ""}",
+                                when (tierMatch) {
+                                    TierMatch.AT_LEAST -> "Tier $tier or higher"
+                                    TierMatch.AT_MOST -> "Tier $tier or lower"
+                                    else -> "Tier $tier"
+                                },
                                 style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.primary,
                             )
@@ -209,6 +225,46 @@ fun RequirementSheet(
                             valueRange = 2f..5f,
                             steps = 2,
                         )
+                    }
+                } else if (tierMatch in setOf(TierMatch.AT_LEAST, TierMatch.AT_MOST)) {
+                    ExposedDropdownMenuBox(
+                        expanded = tierMenuExpanded,
+                        onExpandedChange = { tierMenuExpanded = it },
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                    ) {
+                        OutlinedTextField(
+                            value = if (tierMatch == TierMatch.AT_LEAST) {
+                                "Tier $tier or higher"
+                            } else {
+                                "Tier $tier or lower"
+                            },
+                            onValueChange = { },
+                            readOnly = true,
+                            singleLine = true,
+                            label = {
+                                Text(if (tierMatch == TierMatch.AT_LEAST) "Minimum tier" else "Maximum tier")
+                            },
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = tierMenuExpanded)
+                            },
+                            modifier = Modifier
+                                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true)
+                                .fillMaxWidth(),
+                        )
+                        ExposedDropdownMenu(
+                            expanded = tierMenuExpanded,
+                            onDismissRequest = { tierMenuExpanded = false },
+                        ) {
+                            (3..4).forEach { option ->
+                                DropdownMenuItem(
+                                    text = { Text("Tier $option") },
+                                    onClick = {
+                                        tier = option
+                                        tierMenuExpanded = false
+                                    },
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -561,6 +617,7 @@ private fun RequirementPreview(
                         TierMatch.ANY -> "Any ${kind.singularLabel}"
                         TierMatch.EXACT -> "Any Tier $tier ${kind.singularLabel}"
                         TierMatch.AT_LEAST -> "Any Tier $tier+ ${kind.singularLabel}"
+                        TierMatch.AT_MOST -> "Any Tier $tier or lower ${kind.singularLabel}"
                     },
                     style = MaterialTheme.typography.titleMedium,
                 )
