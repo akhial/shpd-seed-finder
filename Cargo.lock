@@ -713,7 +713,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "shpd-seedfinder-cli"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "mimalloc",
  "shpd-seedfinder-core",
@@ -721,7 +721,7 @@ dependencies = [
 
 [[package]]
 name = "shpd-seedfinder-core"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -729,14 +729,14 @@ dependencies = [
 
 [[package]]
 name = "shpd-seedfinder-ffi"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "shpd-seedfinder-session",
 ]
 
 [[package]]
 name = "shpd-seedfinder-gtk"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "glib-build-tools",
  "gtk4",
@@ -749,7 +749,7 @@ dependencies = [
 
 [[package]]
 name = "shpd-seedfinder-jni"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "jni",
  "shpd-seedfinder-session",
@@ -757,7 +757,7 @@ dependencies = [
 
 [[package]]
 name = "shpd-seedfinder-session"
-version = "0.1.0"
+version = "0.4.0"
 dependencies = [
  "shpd-seedfinder-core",
 ]
