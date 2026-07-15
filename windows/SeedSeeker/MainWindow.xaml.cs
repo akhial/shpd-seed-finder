@@ -22,10 +22,12 @@ public sealed partial class MainWindow : Window
     private readonly NativeEngine engine = new();
     private readonly ObservableCollection<SeedResult> results = [];
     private QuerySettings query = new();
+    private List<QueryPreset> userPresets = [];
     private NativeSearch? search;
     private bool restoring = true;
     private const int ResultCap = 1024;
     private static readonly string SettingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Seed Seeker", "query.json");
+    private static readonly string PresetsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Seed Seeker", "presets.json");
 
     [DllImport("user32.dll")] private static extern uint GetDpiForWindow(nint hwnd);
 
@@ -45,7 +47,7 @@ public sealed partial class MainWindow : Window
         }
         ResultsList.ItemsSource = results; ScoutButton.IsEnabled = false;
         FloorSlider.Value = 1; FloorSlider.Minimum = 1; FloorSlider.Maximum = 24;
-        LoadSettings(); RefreshQuery();
+        LoadSettings(); LoadPresets(); RefreshPresets(); RefreshQuery();
         Closed += (_, _) => { search?.Cancel(); search?.Dispose(); };
     }
 
@@ -56,6 +58,53 @@ public sealed partial class MainWindow : Window
         FloorSlider.Value = query.MaximumDepth; RequireBlacksmith.IsOn = query.RequireBlacksmith; ExcludeRewards.IsOn = query.ExcludeBlacksmithRewards; FastMode.IsOn = query.FastMode; restoring = false;
     }
     private void SaveSettings() { if (restoring) return; Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!); File.WriteAllText(SettingsPath, JsonSerializer.Serialize(query, new JsonSerializerOptions { WriteIndented = true })); }
+    private void LoadPresets()
+    {
+        try
+        {
+            if (File.Exists(PresetsPath))
+                userPresets = (JsonSerializer.Deserialize<List<QueryPreset>>(File.ReadAllText(PresetsPath)) ?? [])
+                    .Where(x => !string.IsNullOrWhiteSpace(x.Name) && x.Query is not null).ToList();
+        }
+        catch { userPresets = []; }
+    }
+    private void SavePresets()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(PresetsPath)!);
+        File.WriteAllText(PresetsPath, JsonSerializer.Serialize(userPresets, new JsonSerializerOptions { WriteIndented = true }));
+    }
+    private void RefreshPresets()
+    {
+        PresetPicker.ItemsSource = BuiltInPresets.All.Concat(userPresets).ToList();
+        PresetPicker.SelectedIndex = -1; DeletePresetButton.IsEnabled = false;
+    }
+    private void ApplyQuery(QuerySettings value)
+    {
+        restoring = true; query = value.Clone();
+        FloorSlider.Value = query.MaximumDepth; RequireBlacksmith.IsOn = query.RequireBlacksmith;
+        ExcludeRewards.IsOn = query.ExcludeBlacksmithRewards; FastMode.IsOn = query.FastMode;
+        restoring = false; RefreshQuery(); SaveSettings();
+    }
+    private void PresetPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (PresetPicker.SelectedItem is not QueryPreset preset) { DeletePresetButton.IsEnabled = false; return; }
+        ApplyQuery(preset.Query); DeletePresetButton.IsEnabled = !preset.IsBuiltIn;
+    }
+    private async void SavePreset_Click(object sender, RoutedEventArgs e)
+    {
+        var name = new TextBox { Header = "Preset name", PlaceholderText = "My preset", Width = 360 };
+        var dialog = new ContentDialog { XamlRoot = Content.XamlRoot, Title = "Save Preset", PrimaryButtonText = "Save", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Primary, Content = name };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary || string.IsNullOrWhiteSpace(name.Text)) return;
+        var cleanName = name.Text.Trim(); var existing = userPresets.FindIndex(x => string.Equals(x.Name, cleanName, StringComparison.OrdinalIgnoreCase));
+        var preset = new QueryPreset { Name = cleanName, Query = query.Clone() };
+        if (existing >= 0) { preset.Id = userPresets[existing].Id; userPresets[existing] = preset; } else userPresets.Add(preset);
+        SavePresets(); RefreshPresets();
+    }
+    private void DeletePreset_Click(object sender, RoutedEventArgs e)
+    {
+        if (PresetPicker.SelectedItem is not QueryPreset { IsBuiltIn: false } preset) return;
+        userPresets.RemoveAll(x => x.Id == preset.Id); SavePresets(); RefreshPresets();
+    }
     private void RefreshQuery()
     {
         RequirementList.ItemsSource = query.Requirements; NoRequirements.Visibility = query.Requirements.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -161,7 +210,15 @@ public sealed partial class MainWindow : Window
         try { search = await Task.Run(() => engine.Start(query)); await RunSearch(search); } catch (Exception ex) { SearchStatus.Text = $"Failed: {ex.Message}"; }
         finally { search?.Dispose(); search = null; SetStartButton(running: false); StartButton.IsEnabled = query.Requirements.Count != 0; }
     }
-    private void SetStartButton(bool running) { StartIcon.Glyph = running ? "" : ""; StartLabel.Text = running ? "Cancel Search" : "Start Search"; }
+    private void SetStartButton(bool running)
+    {
+        StartIcon.Glyph = running ? "" : "";
+        StartLabel.Text = running ? "Cancel Search" : "Start Search";
+        PresetPicker.IsEnabled = !running;
+        SavePresetButton.IsEnabled = !running;
+        DeletePresetButton.IsEnabled = !running
+            && PresetPicker.SelectedItem is QueryPreset { IsBuiltIn: false };
+    }
     private async Task RunSearch(NativeSearch active)
     {
         var timer = Stopwatch.StartNew(); long lastScanned = 0; var lastTime = 0d;

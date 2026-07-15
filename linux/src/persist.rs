@@ -29,6 +29,19 @@ struct SavedState {
 }
 
 #[derive(Deserialize, Serialize)]
+struct SavedPreset {
+    name: String,
+    query: SavedState,
+}
+
+/// One named query saved by the user.
+#[derive(Clone, Debug)]
+pub struct UserPreset {
+    pub name: String,
+    pub state: AppState,
+}
+
+#[derive(Deserialize, Serialize)]
 struct SavedRequirement {
     kind: String,
     item: Option<String>,
@@ -52,6 +65,12 @@ fn state_path() -> PathBuf {
     gtk::glib::user_config_dir().join(APP_ID).join("state.json")
 }
 
+fn presets_path() -> PathBuf {
+    gtk::glib::user_config_dir()
+        .join(APP_ID)
+        .join("presets.json")
+}
+
 /// Loads the previous session's query, falling back to defaults on any error.
 pub fn load() -> AppState {
     let Ok(contents) = fs::read_to_string(state_path()) else {
@@ -60,6 +79,64 @@ pub fn load() -> AppState {
     let Ok(saved) = serde_json::from_str::<SavedState>(&contents) else {
         return AppState::default();
     };
+    restore_state(saved)
+}
+
+/// Saves the current query, quietly giving up on filesystem errors.
+pub fn save(state: &AppState) {
+    write_json(state_path(), &save_state(state));
+}
+
+/// Loads user-created presets, dropping malformed entries.
+#[must_use]
+pub fn load_presets() -> Vec<UserPreset> {
+    let Ok(contents) = fs::read_to_string(presets_path()) else {
+        return Vec::new();
+    };
+    decode_presets(&contents)
+}
+
+fn decode_presets(contents: &str) -> Vec<UserPreset> {
+    let Ok(saved) = serde_json::from_str::<Vec<serde_json::Value>>(contents) else {
+        return Vec::new();
+    };
+    saved
+        .into_iter()
+        .filter_map(|value| serde_json::from_value::<SavedPreset>(value).ok())
+        .filter_map(|preset| {
+            let name = preset.name.trim();
+            (!name.is_empty()).then(|| UserPreset {
+                name: name.to_owned(),
+                state: restore_state(preset.query),
+            })
+        })
+        .collect()
+}
+
+/// Saves every user-created preset, quietly giving up on filesystem errors.
+pub fn save_presets(presets: &[UserPreset]) {
+    let saved: Vec<_> = presets
+        .iter()
+        .map(|preset| SavedPreset {
+            name: preset.name.clone(),
+            query: save_state(&preset.state),
+        })
+        .collect();
+    write_json(presets_path(), &saved);
+}
+
+fn save_state(state: &AppState) -> SavedState {
+    SavedState {
+        requirements: state.requirements.iter().map(save_requirement).collect(),
+        max_depth: Some(state.max_depth),
+        require_blacksmith: state.require_blacksmith,
+        exclude_blacksmith_rewards: state.exclude_blacksmith_rewards,
+        fast_mode: state.fast_mode,
+        challenges: state.challenges.bits(),
+    }
+}
+
+fn restore_state(saved: SavedState) -> AppState {
     let mut state = AppState::default();
     state.max_depth = saved.max_depth.unwrap_or(24).clamp(1, 24);
     state.require_blacksmith = saved.require_blacksmith;
@@ -77,20 +154,10 @@ pub fn load() -> AppState {
     state
 }
 
-/// Saves the current query, quietly giving up on filesystem errors.
-pub fn save(state: &AppState) {
-    let saved = SavedState {
-        requirements: state.requirements.iter().map(save_requirement).collect(),
-        max_depth: Some(state.max_depth),
-        require_blacksmith: state.require_blacksmith,
-        exclude_blacksmith_rewards: state.exclude_blacksmith_rewards,
-        fast_mode: state.fast_mode,
-        challenges: state.challenges.bits(),
-    };
-    let Ok(contents) = serde_json::to_string_pretty(&saved) else {
+fn write_json(path: PathBuf, value: &impl Serialize) {
+    let Ok(contents) = serde_json::to_string_pretty(value) else {
         return;
     };
-    let path = state_path();
     if let Some(parent) = path.parent()
         && fs::create_dir_all(parent).is_err()
     {
@@ -257,8 +324,8 @@ mod tests {
     use shpd_seedfinder_core::model::ItemSource;
     use shpd_seedfinder_core::query::{TierRequirement, UpgradeRequirement};
 
-    use super::{restore_requirement, save_requirement};
-    use crate::state::UiRequirement;
+    use super::{SavedPreset, decode_presets, restore_requirement, save_requirement, save_state};
+    use crate::state::{AppState, UiRequirement};
 
     #[test]
     fn requirements_round_trip() {
@@ -288,5 +355,40 @@ mod tests {
         let mut saved = save_requirement(&UiRequirement::new(1));
         saved.kind = "trinket".to_owned();
         assert!(restore_requirement(&saved, 1).is_none());
+    }
+
+    #[test]
+    fn user_presets_round_trip_and_drop_bad_entries() {
+        let mut state = AppState::default();
+        state.max_depth = 12;
+        state.fast_mode = true;
+        let key = state.claim_key();
+        state.requirements.push(UiRequirement {
+            key,
+            kind: ItemKind::Weapon,
+            item: Some(ItemId::Greatsword),
+            upgrade: UpgradeRequirement::AtLeast(2),
+            require_uncursed: true,
+            ..UiRequirement::new(key)
+        });
+        let value = serde_json::to_value(SavedPreset {
+            name: "My preset".to_owned(),
+            query: save_state(&state),
+        })
+        .unwrap();
+        let contents =
+            serde_json::to_string(&vec![value, serde_json::json!({ "bad": true })]).unwrap();
+
+        let presets = decode_presets(&contents);
+        assert_eq!(presets.len(), 1);
+        assert_eq!(presets[0].name, "My preset");
+        assert_eq!(presets[0].state.max_depth, 12);
+        assert!(presets[0].state.fast_mode);
+        assert_eq!(presets[0].state.requirements.len(), 1);
+        assert_eq!(
+            presets[0].state.requirements[0].item,
+            Some(ItemId::Greatsword)
+        );
+        assert!(presets[0].state.requirements[0].require_uncursed);
     }
 }

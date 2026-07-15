@@ -6,6 +6,8 @@ mod config;
 mod detail_pane;
 mod format;
 mod persist;
+mod presets;
+mod presets_dialog;
 mod query_pane;
 mod requirement_editor;
 mod results_pane;

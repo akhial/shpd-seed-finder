@@ -79,6 +79,59 @@ public sealed class QuerySettings
     public bool ExcludeBlacksmithRewards { get; set; }
     public bool FastMode { get; set; }
     public int Challenges { get; set; }
+
+    public QuerySettings Clone() => new()
+    {
+        Requirements = new ObservableCollection<ItemRequirement>(Requirements.Select(x => x.Clone())),
+        MaximumDepth = MaximumDepth,
+        RequireBlacksmith = RequireBlacksmith,
+        ExcludeBlacksmithRewards = ExcludeBlacksmithRewards,
+        FastMode = FastMode,
+        Challenges = Challenges,
+    };
+}
+
+public sealed class QueryPreset
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+    public string Name { get; set; } = "";
+    public QuerySettings Query { get; set; } = new();
+    [JsonIgnore] public bool IsBuiltIn { get; set; }
+}
+
+public static class BuiltInPresets
+{
+    public static IReadOnlyList<QueryPreset> All { get; } = [
+        new()
+        {
+            Id = "staff-21", Name = "+21 Staff", IsBuiltIn = true,
+            Query = new QuerySettings { Requirements = [
+                new() { Kind = ItemKind.Wand, Upgrade = 3, UpgradeMatch = UpgradeMatch.Exactly, IdentityGroup = 1 },
+                new() { Kind = ItemKind.Wand, UpgradeMatch = UpgradeMatch.Any, IdentityGroup = 1 },
+                new() { Kind = ItemKind.Wand, UpgradeMatch = UpgradeMatch.Any, IdentityGroup = 1 },
+                new() { Kind = ItemKind.Wand, Upgrade = 1, UpgradeMatch = UpgradeMatch.AtLeast },
+            ] },
+        },
+        new()
+        {
+            Id = "wand-bonanza", Name = "Wand Bonanza", IsBuiltIn = true,
+            Query = new QuerySettings { Requirements = [
+                new() { Kind = ItemKind.Wand, Upgrade = 3, UpgradeMatch = UpgradeMatch.Exactly },
+                new() { Kind = ItemKind.Wand, Upgrade = 2, UpgradeMatch = UpgradeMatch.Exactly, MaximumDepth = 4 },
+                new() { Kind = ItemKind.Wand, Upgrade = 2, UpgradeMatch = UpgradeMatch.Exactly, MaximumDepth = 4 },
+                new() { Kind = ItemKind.Wand, Upgrade = 2, UpgradeMatch = UpgradeMatch.Exactly },
+            ] },
+        },
+        new()
+        {
+            Id = "ring-of-wealth-21", Name = "+21 Ring of Wealth", IsBuiltIn = true,
+            Query = new QuerySettings { Requirements = [
+                new() { Kind = ItemKind.Ring, Item = ItemCatalog.Find("ring_wealth"), Upgrade = 4, UpgradeMatch = UpgradeMatch.Exactly, Source = ScoutItemSource.ImpReward },
+                new() { Kind = ItemKind.Ring, Item = ItemCatalog.Find("ring_wealth"), Upgrade = 2, UpgradeMatch = UpgradeMatch.Exactly },
+                new() { Kind = ItemKind.Ring, Item = ItemCatalog.Find("ring_wealth"), UpgradeMatch = UpgradeMatch.Any },
+            ] },
+        },
+    ];
 }
 
 public sealed record SeedResult(string Seed, int Number);

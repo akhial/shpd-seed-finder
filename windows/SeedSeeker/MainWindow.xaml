@@ -24,6 +24,23 @@
         <TextBlock Text="Query" Style="{StaticResource SubtitleTextBlockStyle}" Margin="20,2,20,10"/>
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
           <StackPanel Padding="20,0,20,20">
+            <TextBlock Text="Presets" Style="{StaticResource SectionHeader}" Margin="1,2,0,8"/>
+            <StackPanel Spacing="6">
+              <ComboBox x:Name="PresetPicker" PlaceholderText="Load a preset" DisplayMemberPath="Name"
+                        HorizontalAlignment="Stretch" SelectionChanged="PresetPicker_SelectionChanged"/>
+              <Grid ColumnSpacing="6">
+                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                <Button Grid.Column="0" x:Name="SavePresetButton" Click="SavePreset_Click" HorizontalAlignment="Stretch">
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xE74E;" FontSize="13"/><TextBlock Text="Save current query"/>
+                  </StackPanel>
+                </Button>
+                <Button Grid.Column="1" x:Name="DeletePresetButton" Click="DeletePreset_Click"
+                        ToolTipService.ToolTip="Delete selected saved preset" IsEnabled="False">
+                  <FontIcon Glyph="&#xE74D;" FontSize="13"/>
+                </Button>
+              </Grid>
+            </StackPanel>
             <TextBlock Text="Requirements" Style="{StaticResource SectionHeader}" Margin="1,2,0,8"/>
             <ItemsRepeater x:Name="RequirementList">
               <ItemsRepeater.Layout><StackLayout Spacing="4"/></ItemsRepeater.Layout>

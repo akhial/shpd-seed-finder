@@ -13,7 +13,8 @@ use gtk::gio;
 use crate::config::APP_NAME;
 use crate::state::UiRequirement;
 use crate::{
-    challenges_dialog, detail_pane, persist, query_pane, requirement_editor, results_pane,
+    challenges_dialog, detail_pane, persist, presets_dialog, query_pane, requirement_editor,
+    results_pane,
 };
 
 #[allow(clippy::too_many_lines)] // Linear assembly of panes, actions, and wiring.
@@ -24,6 +25,7 @@ pub fn present(app: &adw::Application) {
     }
 
     let state = Rc::new(RefCell::new(persist::load()));
+    let user_presets = Rc::new(RefCell::new(persist::load_presets()));
     let toasts = adw::ToastOverlay::new();
 
     let query = query_pane::QueryPane::new(build_menu().upcast_ref());
@@ -230,6 +232,24 @@ pub fn present(app: &adw::Application) {
     });
     window.add_action(&challenges_action);
 
+    let presets_action = gio::SimpleAction::new("presets", None);
+    presets_action.connect_activate({
+        let state = Rc::clone(&state);
+        let user_presets = Rc::clone(&user_presets);
+        let refresh_all = Rc::clone(&refresh_all);
+        let results = Rc::clone(&results);
+        let toasts = toasts.clone();
+        let window = window.clone();
+        move |_, _| {
+            if results.is_running() {
+                toasts.add_toast(adw::Toast::new("Stop the search before loading a preset"));
+                return;
+            }
+            presets_dialog::present(&window, &toasts, &state, &user_presets, &refresh_all);
+        }
+    });
+    window.add_action(&presets_action);
+
     let focus_seed_action = gio::SimpleAction::new("focus-seed", None);
     focus_seed_action.connect_activate({
         let detail = Rc::clone(&detail);
@@ -257,6 +277,7 @@ pub fn present(app: &adw::Application) {
 fn build_menu() -> gio::Menu {
     let menu = gio::Menu::new();
     let query_section = gio::Menu::new();
+    query_section.append(Some("_Presets…"), Some("win.presets"));
     query_section.append(Some("_Challenges…"), Some("win.challenges"));
     menu.append_section(None, &query_section);
     let app_section = gio::Menu::new();

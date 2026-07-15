@@ -15,8 +15,10 @@ push/pop navigation as the window narrows, down to a fully single-pane phone-siz
 - **Query** (sidebar) builds the search declaratively: item requirements as editable rows,
   plus floor limit, blacksmith, and fast-search scope controls. Requirements open in a dialog
   with category, item, tier, upgrade, enchantment/glyph, source, same-item group, and
-  per-item floor limit predicates. Challenges live in a preferences dialog behind the main
-  menu, and the whole query persists across sessions in the user configuration directory.
+  per-item floor limit predicates. Included and user-saved presets are available from the
+  sidebar and main menu; user presets can be updated or deleted. Challenges live in a
+  preferences dialog, and the whole query persists across sessions in the user configuration
+  directory.
 - **Results** streams matching seed codes from a full-seed-space production session running
   on all cores with a rotated start, with live match probability, seeds-per-second,
   time-to-match, and progress. Impossible queries, empty completions, and worker failures

@@ -31,6 +31,16 @@ pub struct QueryPane {
 impl QueryPane {
     #[allow(clippy::too_many_lines)] // Widget assembly is declarative and linear.
     pub fn new(menu: &gio::MenuModel) -> Rc<Self> {
+        let presets_group = adw::PreferencesGroup::builder().title("Presets").build();
+        let presets_row = adw::ActionRow::builder()
+            .title("Manage presets")
+            .subtitle("Load an included query or save the current one")
+            .action_name("win.presets")
+            .activatable(true)
+            .build();
+        presets_row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
+        presets_group.add(&presets_row);
+
         let add_button = gtk::Button::builder()
             .child(
                 &adw::ButtonContent::builder()
@@ -89,6 +99,7 @@ impl QueryPane {
         performance_group.add(&fast_row);
 
         let preferences_page = adw::PreferencesPage::new();
+        preferences_page.add(&presets_group);
         preferences_page.add(&requirements_group);
         preferences_page.add(&scope_group);
         preferences_page.add(&performance_group);

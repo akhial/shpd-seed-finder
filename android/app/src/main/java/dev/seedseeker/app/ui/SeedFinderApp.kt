@@ -37,6 +37,10 @@ import dev.seedseeker.app.engine.NativeSeedFinder
 import dev.seedseeker.app.engine.SeedCode
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.Challenge
+import dev.seedseeker.app.model.BuiltInPresets
+import dev.seedseeker.app.model.PresetQuery
+import dev.seedseeker.app.model.PresetStorage
+import dev.seedseeker.app.model.QueryPreset
 import dev.seedseeker.app.model.ScoutWorld
 import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.SearchState
@@ -78,6 +82,7 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
     val preferences = remember(context) {
         context.getSharedPreferences(SETTINGS_PREFERENCES, Context.MODE_PRIVATE)
     }
+    val presetStorage = remember(preferences) { PresetStorage(preferences) }
 
     var destination by remember { mutableStateOf(Destination.FINDER) }
     var aboutReturnDestination by remember { mutableStateOf(Destination.FINDER) }
@@ -91,6 +96,7 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
         )
     }
     var nextRequirementKey by remember { mutableLongStateOf(3L) }
+    var userPresets by remember { mutableStateOf(presetStorage.load()) }
     var maximumDepth by remember { mutableStateOf(24) }
     var requireBlacksmith by remember { mutableStateOf(false) }
     var excludeBlacksmithRewards by remember { mutableStateOf(false) }
@@ -239,6 +245,7 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
                 excludeBlacksmithRewards = excludeBlacksmithRewards,
                 fastMode = fastMode,
                 challenges = challenges,
+                presets = BuiltInPresets.all + userPresets,
                 results = results,
                 status = searchStatus,
                 seedsPerSecond = searchSeedsPerSecond,
@@ -252,6 +259,39 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
                 onChallenges = {
                     challengesReturnDestination = Destination.FINDER
                     destination = Destination.CHALLENGES
+                },
+                onApplyPreset = { preset ->
+                    requirements = preset.query.requirements.map { it.copy(key = nextRequirementKey++) }
+                    maximumDepth = preset.query.maximumDepth
+                    requireBlacksmith = preset.query.requireBlacksmith
+                    excludeBlacksmithRewards = preset.query.excludeBlacksmithRewards
+                    fastMode = preset.query.fastMode
+                    challenges = preset.query.challenges
+                    preferences.edit().putInt(CHALLENGES_KEY, challenges).apply()
+                },
+                onSavePreset = { name ->
+                    val cleanName = name.trim()
+                    if (cleanName.isNotEmpty()) {
+                        val query = PresetQuery(
+                            requirements = requirements,
+                            maximumDepth = maximumDepth,
+                            requireBlacksmith = requireBlacksmith,
+                            excludeBlacksmithRewards = excludeBlacksmithRewards,
+                            fastMode = fastMode,
+                            challenges = challenges,
+                        )
+                        val existing = userPresets.indexOfFirst { it.name.equals(cleanName, ignoreCase = true) }
+                        userPresets = if (existing >= 0) {
+                            userPresets.toMutableList().also { it[existing] = it[existing].copy(query = query) }
+                        } else {
+                            userPresets + QueryPreset(name = cleanName, query = query)
+                        }
+                        presetStorage.save(userPresets)
+                    }
+                },
+                onDeletePreset = { preset ->
+                    userPresets = userPresets.filterNot { it.id == preset.id }
+                    presetStorage.save(userPresets)
                 },
                 onAdd = {
                     editingRequirement = null
