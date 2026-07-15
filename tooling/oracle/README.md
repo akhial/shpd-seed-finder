@@ -47,9 +47,12 @@ canonical no-bones profile. Depth 20 is deliberately not neutral: its
 
 `--transmute-imp` uses the official `ScrollOfTransmutation.changeItem` path on
 the first generated `+4` Imp ring. It clones and restores the active Java RNG
-so the observation does not perturb the generated floor. `AAA-AAA-AAF` was the
-first result of the seed finder's any-`+4`-Imp-ring query; its pinned regression
-is available as `tests/imp-transmutation.sh`.
+so the observation does not perturb the generated floor. This is a diagnostic
+of the floor-generation RNG position, not a prediction for actual gameplay:
+the seeded floor generator is popped before the player can use a scroll. The
+later scroll draws from an unseeded gameplay generator and can change as actions
+consume random values. Its pinned regression is available as
+`tests/imp-transmutation.sh`.
 
 Set `ORACLE_OFFLINE=1` to make both scripts pass `--offline` to Gradle once the
 official dependencies are cached.

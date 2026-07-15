@@ -706,7 +706,6 @@ mod tests {
             let items = if seed.value() % 17 == 0 {
                 vec![WorldItem {
                     item: ItemId::WandFrost,
-                    transmuted_item: None,
                     upgrade: 2,
                     effect: None,
                     cursed: false,
@@ -788,7 +787,6 @@ mod tests {
                         items: (seed.value() % 17 == 0)
                             .then_some(WorldItem {
                                 item: ItemId::WandFrost,
-                                transmuted_item: None,
                                 upgrade: 2,
                                 effect: None,
                                 cursed: false,

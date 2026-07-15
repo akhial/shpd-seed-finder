@@ -439,7 +439,6 @@ mod tests {
     fn item(kind_item: ItemId, upgrade: u8, depth: u8, source: ItemSource) -> WorldItem {
         WorldItem {
             item: kind_item,
-            transmuted_item: None,
             upgrade,
             effect: None,
             cursed: false,

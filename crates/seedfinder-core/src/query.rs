@@ -76,9 +76,6 @@ impl Requirement {
         let identity = match self.item {
             None => candidate.item,
             Some(wanted) if wanted == candidate.item => candidate.item,
-            Some(wanted) if candidate.upgrade == 4 && candidate.transmuted_item == Some(wanted) => {
-                wanted
-            }
             Some(_) => return None,
         };
         let definition = item(identity);
@@ -393,7 +390,6 @@ mod tests {
     fn world_item(item: ItemId, accessibility: Accessibility) -> WorldItem {
         WorldItem {
             item,
-            transmuted_item: None,
             upgrade: 2,
             effect: None,
             cursed: false,
@@ -440,70 +436,6 @@ mod tests {
             ],
         };
         assert!(query.matches(&two));
-    }
-
-    #[test]
-    fn plus_four_ring_can_match_its_single_transmutation_roll() {
-        let mut ring = world_item(ItemId::RingAccuracy, Accessibility::Independent);
-        ring.upgrade = 4;
-        ring.transmuted_item = Some(ItemId::RingWealth);
-        let world = GeneratedWorld {
-            seed: DungeonSeed::new(0).unwrap(),
-            items: vec![ring],
-        };
-        let wealth = SearchQuery {
-            requirements: vec![Requirement {
-                kind: ItemKind::Ring,
-                item: Some(ItemId::RingWealth),
-                tier: TierRequirement::Any,
-                upgrade: UpgradeRequirement::Exact(4),
-                effect: None,
-                require_uncursed: false,
-                source: Some(ItemSource::GhostReward),
-                identity_group: None,
-                max_depth: None,
-            }],
-            max_depth: 24,
-            challenges: crate::challenges::Challenges::NONE,
-            require_blacksmith: false,
-            exclude_blacksmith_rewards: false,
-            fast_mode: false,
-        };
-        assert!(wealth.matches(&world));
-
-        let mut accuracy_and_wealth = wealth;
-        accuracy_and_wealth.requirements.push(Requirement {
-            kind: ItemKind::Ring,
-            item: Some(ItemId::RingAccuracy),
-            tier: TierRequirement::Any,
-            upgrade: UpgradeRequirement::Exact(4),
-            effect: None,
-            require_uncursed: false,
-            source: None,
-            identity_group: None,
-            max_depth: None,
-        });
-        assert!(!accuracy_and_wealth.matches(&world));
-    }
-
-    #[test]
-    fn lower_level_ring_does_not_use_a_transmutation_roll() {
-        let mut ring = world_item(ItemId::RingAccuracy, Accessibility::Independent);
-        ring.upgrade = 3;
-        ring.transmuted_item = Some(ItemId::RingWealth);
-        let requirement = Requirement {
-            kind: ItemKind::Ring,
-            item: Some(ItemId::RingWealth),
-            tier: TierRequirement::Any,
-            upgrade: UpgradeRequirement::Exact(3),
-            effect: None,
-            require_uncursed: false,
-            source: None,
-            identity_group: None,
-            max_depth: None,
-        };
-
-        assert!(!requirement.matches(&ring));
     }
 
     #[test]
@@ -822,7 +754,6 @@ mod tests {
         };
         let make = |item, upgrade, depth, source| WorldItem {
             item,
-            transmuted_item: None,
             upgrade,
             effect: None,
             cursed: false,
@@ -864,7 +795,6 @@ mod tests {
         };
         let make = |source| WorldItem {
             item: ItemId::Sword,
-            transmuted_item: None,
             upgrade: 2,
             effect: None,
             cursed: false,

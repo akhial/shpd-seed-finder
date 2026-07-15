@@ -292,10 +292,6 @@ impl DetailPane {
 
 fn item_row(world_item: &WorldItem, matched: bool) -> adw::ActionRow {
     let mut subtitle = source_label(world_item.source).to_owned();
-    if let Some(transmuted) = world_item.transmuted_item {
-        subtitle.push_str(" · transmutes into ");
-        subtitle.push_str(item(transmuted).name);
-    }
     match world_item.accessibility {
         Accessibility::Independent => {}
         Accessibility::Choice { group, option } => {

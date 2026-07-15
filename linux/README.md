@@ -24,8 +24,8 @@ push/pop navigation as the window narrows, down to a fully single-pane phone-siz
   1,024, like the other app frontends.
 - **Seed** scouts one seed — typed in, or selected from the results — and lists every
   searchable item through depth 24, grouped by floor with region names, upgrade and
-  enchantment tags, cursed state, source, choice constraints, and transmuted Imp-ring
-  identity. Items that jointly satisfy the current requirements are highlighted.
+  enchantment tags, cursed state, source, and choice constraints. Items that jointly
+  satisfy the current requirements are highlighted.
 
 The engine is linked in-process through `shpd-seedfinder-session`. The shell also provides
 the application lifecycle, app actions and shortcuts (with a shortcuts dialog), an About

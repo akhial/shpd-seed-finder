@@ -61,6 +61,12 @@ including the two deterministic reward upgrades. It is therefore searchable and
 reported with source `ImpReward`, even though collecting it requires completing
 the quest. This is the canonical source of searchable `+4` rings.
 
+Scroll-of-Transmutation outcomes are not searchable. Run setup resets the RNG
+stack to an unseeded gameplay generator; floor creation temporarily pushes a
+depth-seeded RNG, then pops it before gameplay. A scroll used on the collected
+ring draws from the live gameplay RNG instead, so the dungeon seed does not fix
+the result and intervening attacks or other RNG-consuming actions can change it.
+
 ## Why floors are simulated sequentially
 
 Each floor has an independent depth root, but the world is not floor-independent.

@@ -71,12 +71,6 @@ impl Accessibility {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WorldItem {
     pub item: ItemId,
-    /// Identity produced by one immediate Scroll of Transmutation use.
-    ///
-    /// Only deterministic +4 Imp rings expose this alternate identity. It is
-    /// still the same physical item, so the query matcher must not count both
-    /// identities toward separate requirements.
-    pub transmuted_item: Option<ItemId>,
     pub upgrade: u8,
     pub effect: Option<Effect>,
     pub cursed: bool,
@@ -97,7 +91,6 @@ impl WorldItem {
     ) -> Self {
         Self {
             item,
-            transmuted_item: None,
             upgrade: roll.upgrade,
             effect: roll.effect,
             cursed: roll.cursed,

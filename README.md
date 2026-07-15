@@ -162,12 +162,10 @@ or unrestricted upgrade predicate, constrain the loot source, set its own inclus
 and join a same-item group shared by other requirements. Exact upgrades run through `+3` for
 weapons, armor, and wands and through `+4` for rings; minimum predicates also support `+0`.
 Weapon enchantment/curse and armor glyph/curse constraints are supported, and any requirement can
-demand that its matching copy be uncursed. A concrete `+4` ring
-requirement also accepts an Imp ring when one immediate Scroll of Transmutation roll produces the
-requested ring. Queries can require an accessible blacksmith, prevent the Blacksmith's Smith
-rewards from satisfying item requirements, and limit every item and facility to the first X
-dungeon floors. Mutually exclusive rewards are represented explicitly so impossible reward
-combinations cannot satisfy a query.
+demand that its matching copy be uncursed. Queries can require an accessible blacksmith, prevent
+the Blacksmith's Smith rewards from satisfying item requirements, and limit every item and
+facility to the first X dungeon floors. Mutually exclusive rewards are represented explicitly so
+impossible reward combinations cannot satisfy a query.
 
 ```json
 {
@@ -240,8 +238,7 @@ Methodology:
   Concurrency 4, 6, 8, and 12 were measured and its best (6 processes, summed steady-state rate)
   is reported; at 12 processes its aggregate falls to 179 seeds/s.
 - **Cross-check:** every one of the 58 seeds the Java finder reported in the first 10,000 was
-  also reported by Seed Seeker. (Seed Seeker finds a documented superset: a concrete +4 ring
-  requirement also accepts a transmutable Imp ring.)
+  also reported by Seed Seeker.
 - **Same question, different engines:** Seed Seeker's always-on exact planning shortcuts (boss
   floors whose state transitions are precomputed, quest-window deadlines) are part of the
   measurement; the lossy `fast_mode` is off. The Java finder generates every floor of every seed.

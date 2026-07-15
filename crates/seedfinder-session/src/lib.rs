@@ -448,7 +448,6 @@ mod tests {
             seed,
             items: vec![WorldItem {
                 item: ItemId::WandFrost,
-                transmuted_item: None,
                 upgrade: 2,
                 effect: None,
                 cursed: false,
@@ -616,19 +615,7 @@ mod tests {
         let world = production_scout_world(seed, Challenges::NONE).unwrap();
         let packet = production_scout_packet(b"SSQ2\x00\x00AAA-AAA-AAF").unwrap();
 
-        // The typed path keeps the transmuted Imp-ring identity that the SSC1
-        // wire format intentionally drops.
-        assert!(
-            world
-                .items
-                .iter()
-                .any(|item| item.transmuted_item.is_some())
-        );
-        let mut wire_view = world.clone();
-        for item in &mut wire_view.items {
-            item.transmuted_item = None;
-        }
-        assert_eq!(wire_view, decode_scout_world(&packet).unwrap());
+        assert_eq!(world, decode_scout_world(&packet).unwrap());
 
         let challenged = production_scout_world(seed, Challenges::new(0x68).unwrap()).unwrap();
         assert_eq!(challenged.seed, world.seed);
