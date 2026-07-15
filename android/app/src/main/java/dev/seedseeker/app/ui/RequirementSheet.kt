@@ -82,7 +82,12 @@ fun RequirementSheet(
         )
     }
     var upgradeMatch by remember(identity) { mutableStateOf(editing?.upgradeMatch ?: UpgradeMatch.EXACT) }
-    var upgrade by remember(identity) { mutableStateOf(editing?.upgrade ?: 1) }
+    var upgrade by remember(identity) {
+        val initialMatch = editing?.upgradeMatch ?: UpgradeMatch.EXACT
+        val initialKind = editing?.kind ?: ItemKind.WEAPON
+        mutableStateOf(normalizedUpgrade(editing?.upgrade ?: 1, initialMatch, initialKind))
+    }
+    var upgradeMenuExpanded by remember(identity) { mutableStateOf(false) }
     var tierMatch by remember(identity) { mutableStateOf(editing?.tierMatch ?: TierMatch.ANY) }
     var tier by remember(identity) { mutableStateOf(editing?.tier?.takeIf { it >= 2 } ?: 2) }
     var tierMenuExpanded by remember(identity) { mutableStateOf(false) }
@@ -95,11 +100,7 @@ fun RequirementSheet(
     var requireUncursed by remember(identity) { mutableStateOf(editing?.requireUncursed ?: false) }
 
     fun clampUpgrade(match: UpgradeMatch, forKind: ItemKind) {
-        upgrade = when (match) {
-            UpgradeMatch.ANY -> 0
-            UpgradeMatch.EXACT -> upgrade.coerceIn(1, forKind.maximumSearchUpgrade)
-            UpgradeMatch.AT_LEAST -> upgrade.coerceIn(0, forKind.maximumSearchUpgrade)
-        }
+        upgrade = normalizedUpgrade(upgrade, match, forKind)
     }
 
     ModalBottomSheet(
@@ -310,6 +311,7 @@ fun RequirementSheet(
                                 if (checked) {
                                     upgradeMatch = match
                                     clampUpgrade(match, kind)
+                                    upgradeMenuExpanded = false
                                 }
                             },
                             modifier = Modifier.weight(1f),
@@ -322,20 +324,71 @@ fun RequirementSheet(
                         }
                     }
                 }
-                if (upgradeMatch != UpgradeMatch.ANY) {
+                if (upgradeMatch == UpgradeMatch.EXACT) {
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        val values = if (upgradeMatch == UpgradeMatch.EXACT) {
-                            1..kind.maximumSearchUpgrade
-                        } else {
-                            0..kind.maximumSearchUpgrade
-                        }
-                        values.forEach { value ->
+                        (1..kind.maximumSearchUpgrade).forEach { value ->
                             FilterChip(
                                 selected = upgrade == value,
                                 onClick = { upgrade = value },
                                 label = { Text("+$value") },
                             )
+                        }
+                    }
+                } else if (upgradeMatch == UpgradeMatch.AT_LEAST) {
+                    Spacer(Modifier.height(8.dp))
+                    if (kind == ItemKind.RING) {
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text("At least", style = MaterialTheme.typography.labelLarge)
+                                Text(
+                                    "+$upgrade or higher",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                            Slider(
+                                value = upgrade.toFloat(),
+                                onValueChange = { upgrade = it.roundToInt() },
+                                valueRange = 1f..(kind.maximumSearchUpgrade - 1).toFloat(),
+                                steps = kind.maximumSearchUpgrade - 3,
+                            )
+                        }
+                    } else {
+                        ExposedDropdownMenuBox(
+                            expanded = upgradeMenuExpanded,
+                            onExpandedChange = { upgradeMenuExpanded = it },
+                        ) {
+                            OutlinedTextField(
+                                value = "+$upgrade or higher",
+                                onValueChange = { },
+                                readOnly = true,
+                                singleLine = true,
+                                label = { Text("Minimum upgrade") },
+                                trailingIcon = {
+                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = upgradeMenuExpanded)
+                                },
+                                modifier = Modifier
+                                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true)
+                                    .fillMaxWidth(),
+                            )
+                            ExposedDropdownMenu(
+                                expanded = upgradeMenuExpanded,
+                                onDismissRequest = { upgradeMenuExpanded = false },
+                            ) {
+                                (1..<kind.maximumSearchUpgrade).forEach { option ->
+                                    DropdownMenuItem(
+                                        text = { Text("+$option or higher") },
+                                        onClick = {
+                                            upgrade = option
+                                            upgradeMenuExpanded = false
+                                        },
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -564,6 +617,12 @@ fun RequirementSheet(
             }
         }
     }
+}
+
+private fun normalizedUpgrade(value: Int, match: UpgradeMatch, kind: ItemKind): Int = when (match) {
+    UpgradeMatch.ANY -> 0
+    UpgradeMatch.EXACT -> value.coerceIn(1, kind.maximumSearchUpgrade)
+    UpgradeMatch.AT_LEAST -> value.coerceIn(1, kind.maximumSearchUpgrade - 1)
 }
 
 @Composable

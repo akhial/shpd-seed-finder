@@ -24,7 +24,9 @@ struct Editor {
     exact_tier: adw::SpinRow,
     bounded_tier: adw::ComboRow,
     upgrade_row: adw::ComboRow,
-    upgrade_value: adw::SpinRow,
+    exact_upgrade: adw::SpinRow,
+    minimum_upgrade: adw::ComboRow,
+    ring_minimum_upgrade: adw::SpinRow,
     effect_row: adw::ComboRow,
     effects: RefCell<Vec<Option<Effect>>>,
     uncursed: adw::SwitchRow,
@@ -112,7 +114,9 @@ fn build(requirement: &UiRequirement) -> Editor {
         exact_tier: spin_row("Exact tier", 2.0, 2.0, 5.0),
         bounded_tier: combo_row("Minimum tier", &["Tier 3", "Tier 4"]),
         upgrade_row: combo_row("Upgrade", &["Any", "Exactly", "At least"]),
-        upgrade_value: spin_row("Level", 1.0, 0.0, 4.0),
+        exact_upgrade: spin_row("Exactly", 1.0, 1.0, 4.0),
+        minimum_upgrade: combo_row("Minimum upgrade", &["+1 or higher", "+2 or higher"]),
+        ring_minimum_upgrade: spin_row("Minimum upgrade", 1.0, 1.0, 3.0),
         effect_row: searchable_combo_row("Enchantment"),
         effects: RefCell::new(vec![None]),
         uncursed: adw::SwitchRow::builder().title("Require uncursed").build(),
@@ -145,7 +149,9 @@ fn groups(editor: &Rc<Editor>) -> Vec<adw::PreferencesGroup> {
         .title("Upgrade Level")
         .build();
     upgrade_group.add(&editor.upgrade_row);
-    upgrade_group.add(&editor.upgrade_value);
+    upgrade_group.add(&editor.exact_upgrade);
+    upgrade_group.add(&editor.minimum_upgrade);
+    upgrade_group.add(&editor.ring_minimum_upgrade);
 
     let details_group = adw::PreferencesGroup::builder()
         .title("Details")
@@ -168,7 +174,7 @@ fn connect(editor: &Rc<Editor>) {
             populate_items(editor, None);
             populate_effects(editor, None);
             editor.tier_row.set_selected(0);
-            clamp_upgrade(editor);
+            normalize_upgrades(editor);
             refresh_visibility(editor);
         }));
     editor
@@ -201,7 +207,7 @@ fn connect(editor: &Rc<Editor>) {
     editor
         .upgrade_row
         .connect_selected_notify(hook(Rc::clone(editor), |editor| {
-            clamp_upgrade(editor);
+            normalize_upgrades(editor);
             refresh_visibility(editor);
         }));
     editor
@@ -243,6 +249,7 @@ fn restore(editor: &Rc<Editor>, requirement: &UiRequirement) {
     editor.uncursed.set_active(requirement.require_uncursed);
     populate_items(editor, requirement.item);
     populate_effects(editor, requirement.effect);
+    normalize_upgrades(editor);
     match requirement.tier {
         TierRequirement::Any => editor.tier_row.set_selected(0),
         TierRequirement::Exact(tier) => {
@@ -262,13 +269,14 @@ fn restore(editor: &Rc<Editor>, requirement: &UiRequirement) {
         UpgradeRequirement::Any => editor.upgrade_row.set_selected(0),
         UpgradeRequirement::Exact(upgrade) => {
             editor.upgrade_row.set_selected(1);
-            clamp_upgrade(editor);
-            editor.upgrade_value.set_value(f64::from(upgrade));
+            let maximum = selected_kind(editor).maximum_search_upgrade();
+            editor
+                .exact_upgrade
+                .set_value(f64::from(upgrade.clamp(1, maximum)));
         }
         UpgradeRequirement::AtLeast(upgrade) => {
             editor.upgrade_row.set_selected(2);
-            clamp_upgrade(editor);
-            editor.upgrade_value.set_value(f64::from(upgrade));
+            set_minimum_upgrade(editor, upgrade);
         }
     }
     let source_index = requirement
@@ -302,11 +310,22 @@ fn collect(editor: &Rc<Editor>) -> UiRequirement {
         3 if tier_eligible => TierRequirement::AtMost(bounded_tier),
         _ => TierRequirement::Any,
     };
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let upgrade_value = editor.upgrade_value.value().round() as u8;
     let upgrade = match editor.upgrade_row.selected() {
-        1 => UpgradeRequirement::Exact(upgrade_value),
-        2 => UpgradeRequirement::AtLeast(upgrade_value),
+        1 => {
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let value = editor.exact_upgrade.value().round() as u8;
+            UpgradeRequirement::Exact(value)
+        }
+        2 => {
+            let value = if kind == ItemKind::Ring {
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                let value = editor.ring_minimum_upgrade.value().round() as u8;
+                value
+            } else {
+                u8::try_from(editor.minimum_upgrade.selected() + 1).unwrap_or(1)
+            };
+            UpgradeRequirement::AtLeast(value)
+        }
         _ => UpgradeRequirement::Any,
     };
     let effect = if matches!(kind, ItemKind::Weapon | ItemKind::Armor) {
@@ -467,19 +486,48 @@ fn effect_label(name: &str, is_curse: bool) -> String {
     }
 }
 
-fn clamp_upgrade(editor: &Rc<Editor>) {
-    let maximum = f64::from(selected_kind(editor).maximum_search_upgrade());
-    let minimum = if editor.upgrade_row.selected() == 1 {
-        1.0
-    } else {
-        0.0
-    };
-    let adjustment = editor.upgrade_value.adjustment();
-    adjustment.set_lower(minimum);
+fn normalize_upgrades(editor: &Rc<Editor>) {
+    let maximum_upgrade = selected_kind(editor).maximum_search_upgrade();
+    let maximum = f64::from(maximum_upgrade);
+    let adjustment = editor.exact_upgrade.adjustment();
+    adjustment.set_lower(1.0);
     adjustment.set_upper(maximum);
     editor
-        .upgrade_value
-        .set_value(editor.upgrade_value.value().clamp(minimum, maximum));
+        .exact_upgrade
+        .set_value(editor.exact_upgrade.value().clamp(1.0, maximum));
+    let minimum = u8::try_from(editor.minimum_upgrade.selected() + 1).unwrap_or(1);
+    populate_minimum_upgrades(editor, minimum);
+    let ring_adjustment = editor.ring_minimum_upgrade.adjustment();
+    ring_adjustment.set_lower(1.0);
+    ring_adjustment.set_upper(f64::from(maximum_upgrade - 1));
+    editor.ring_minimum_upgrade.set_value(
+        editor
+            .ring_minimum_upgrade
+            .value()
+            .clamp(1.0, f64::from(maximum_upgrade - 1)),
+    );
+}
+
+fn populate_minimum_upgrades(editor: &Rc<Editor>, selection: u8) {
+    let maximum = selected_kind(editor).maximum_search_upgrade();
+    let labels: Vec<_> = (1..maximum)
+        .map(|upgrade| format!("+{upgrade} or higher"))
+        .collect();
+    let label_refs: Vec<_> = labels.iter().map(String::as_str).collect();
+    editor
+        .minimum_upgrade
+        .set_model(Some(&gtk::StringList::new(&label_refs)));
+    editor
+        .minimum_upgrade
+        .set_selected(u32::from(selection.clamp(1, maximum - 1) - 1));
+}
+
+fn set_minimum_upgrade(editor: &Rc<Editor>, upgrade: u8) {
+    populate_minimum_upgrades(editor, upgrade);
+    let maximum = selected_kind(editor).maximum_search_upgrade();
+    editor
+        .ring_minimum_upgrade
+        .set_value(f64::from(upgrade.clamp(1, maximum - 1)));
 }
 
 fn refresh_visibility(editor: &Rc<Editor>) {
@@ -500,15 +548,14 @@ fn refresh_visibility(editor: &Rc<Editor>) {
         "Maximum tier"
     });
     editor
-        .upgrade_value
-        .set_visible(editor.upgrade_row.selected() != 0);
+        .exact_upgrade
+        .set_visible(editor.upgrade_row.selected() == 1);
     editor
-        .upgrade_value
-        .set_title(if editor.upgrade_row.selected() == 1 {
-            "Exactly"
-        } else {
-            "At least"
-        });
+        .minimum_upgrade
+        .set_visible(editor.upgrade_row.selected() == 2 && kind != ItemKind::Ring);
+    editor
+        .ring_minimum_upgrade
+        .set_visible(editor.upgrade_row.selected() == 2 && kind == ItemKind::Ring);
     editor
         .effect_row
         .set_visible(matches!(kind, ItemKind::Weapon | ItemKind::Armor));

@@ -392,7 +392,14 @@ private struct RequirementEditor: View {
         _kind = State(initialValue: requirement.kind); _itemID = State(initialValue: requirement.item?.id ?? "")
         _tierMatch = State(initialValue: requirement.tierMatch)
         _tier = State(initialValue: requirement.tier < 2 ? 2 : requirement.tier)
-        _match = State(initialValue: requirement.upgradeMatch); _upgrade = State(initialValue: requirement.upgrade)
+        _match = State(initialValue: requirement.upgradeMatch)
+        let maximumUpgrade = requirement.kind.maximumSearchUpgrade
+        let initialUpgrade = switch requirement.upgradeMatch {
+        case .any: 0
+        case .exactly: max(1, min(requirement.upgrade, maximumUpgrade))
+        case .atLeast: max(1, min(requirement.upgrade, maximumUpgrade - 1))
+        }
+        _upgrade = State(initialValue: initialUpgrade)
         _modifier = State(initialValue: requirement.modifier ?? "")
         _sourceRaw = State(initialValue: requirement.source.map { $0.rawValue + 1 } ?? 0)
         _group = State(initialValue: requirement.identityGroup ?? 0)
@@ -465,13 +472,30 @@ private struct RequirementEditor: View {
                     }
                     .pickerStyle(.segmented)
                     .onChange(of: match) { normalizeUpgrade() }
-                    if match != .any {
+                    if match == .exactly {
                         VStack(alignment: .leading, spacing: 2) {
-                            LabeledContent(match == .exactly ? "Exactly" : "At least") {
+                            LabeledContent("Exactly") {
                                 Text("+\(upgrade)").monospacedDigit().foregroundStyle(.secondary)
                             }
                             Slider(value: intBinding($upgrade),
-                                   in: Double(minimumUpgrade)...Double(kind.maximumSearchUpgrade), step: 1)
+                                   in: 1...Double(kind.maximumSearchUpgrade), step: 1)
+                        }
+                    } else if match == .atLeast {
+                        if kind == .ring {
+                            VStack(alignment: .leading, spacing: 2) {
+                                LabeledContent("At least") {
+                                    Text("+\(upgrade)").monospacedDigit().foregroundStyle(.secondary)
+                                }
+                                Slider(value: intBinding($upgrade),
+                                       in: 1...Double(kind.maximumSearchUpgrade - 1), step: 1)
+                            }
+                        } else {
+                            Picker("Minimum upgrade", selection: $upgrade) {
+                                ForEach(1..<kind.maximumSearchUpgrade, id: \.self) { option in
+                                    Text("+\(option) or higher").tag(option)
+                                }
+                            }
+                            .pickerStyle(.menu)
                         }
                     }
                 }
@@ -525,9 +549,15 @@ private struct RequirementEditor: View {
         .frame(width: 460, height: kind.modifierLabel == nil ? 470 : 500)
     }
 
-    private var minimumUpgrade: Int { match == .exactly ? 1 : 0 }
     private func normalizeUpgrade() {
-        upgrade = match == .any ? 0 : max(minimumUpgrade, min(upgrade, kind.maximumSearchUpgrade))
+        switch match {
+        case .any:
+            upgrade = 0
+        case .exactly:
+            upgrade = max(1, min(upgrade, kind.maximumSearchUpgrade))
+        case .atLeast:
+            upgrade = max(1, min(upgrade, kind.maximumSearchUpgrade - 1))
+        }
     }
     private func save() {
         let item = itemID.isEmpty ? nil : ItemCatalog.findById(itemID)
