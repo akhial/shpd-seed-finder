@@ -1238,6 +1238,55 @@ mod tests {
         assert!(!world.items.is_empty());
     }
 
+    /// Seed `AAA-AAA-BUH`'s depth-6 golden mimic upgrades a `+0` cursed Ring
+    /// of Force, and `Ring.upgrade()` always consumes its curse-clearing
+    /// `Int(3)` even though the prize pass cleared the curse first. Skipping
+    /// that draw shifted every later draw of the run: depth 7 lost its extra
+    /// cursed-wand chest and the depth-9 Wandmaker offered the wrong wands.
+    /// Expected values come from the official v3.3.8 oracle
+    /// (`tooling/oracle/run.sh AAA-AAA-BUH 6-9`), cross-checked against the
+    /// reference Java seed finder.
+    #[test]
+    fn golden_mimic_ring_upgrade_consumes_the_curse_reroll_draw() {
+        let seed = DungeonSeed::from_code("AAA-AAA-BUH").unwrap();
+        let floors = generate_prison_prefix(seed, 9);
+
+        let golden: Vec<_> = floors[0]
+            .world_items
+            .iter()
+            .filter(|item| item.source == ItemSource::GoldenMimic)
+            .collect();
+        assert_eq!(golden.len(), 2);
+        assert_eq!(golden[0].item, ItemId::Sword);
+        assert_eq!(golden[0].upgrade, 0);
+        assert_eq!(golden[1].item, ItemId::RingForce);
+        assert_eq!(golden[1].upgrade, 1);
+        assert!(!golden[1].cursed);
+
+        // The draw consumed by Ring.upgrade() is what keeps the rest of the
+        // run aligned: depth 7 rolls a second chest holding a cursed wand.
+        assert!(floors[1].world_items.iter().any(|item| {
+            item.item == ItemId::WandFireblast
+                && item.upgrade == 0
+                && item.cursed
+                && item.source == ItemSource::Chest
+        }));
+        assert!(floors[1].world_items.iter().any(|item| {
+            item.item == ItemId::MailArmor && item.upgrade == 1 && item.source == ItemSource::Chest
+        }));
+
+        let rewards: Vec<_> = floors[3]
+            .world_items
+            .iter()
+            .filter(|item| item.source == ItemSource::WandmakerReward)
+            .collect();
+        assert_eq!(rewards.len(), 2);
+        assert_eq!(rewards[0].item, ItemId::WandCorrosion);
+        assert_eq!(rewards[0].upgrade, 3);
+        assert_eq!(rewards[1].item, ItemId::WandWarding);
+        assert_eq!(rewards[1].upgrade, 1);
+    }
+
     #[test]
     fn prison_four_lane_depth_roots_match_scalar_worlds() {
         let seeds = [

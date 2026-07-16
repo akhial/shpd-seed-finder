@@ -15,7 +15,7 @@
 
 use std::fmt;
 
-use crate::catalog::Effect;
+use crate::catalog::{Effect, ItemKind, item as catalog_item};
 use crate::challenges::Challenges;
 use crate::equipment::EquipmentRoll;
 use crate::generator::{
@@ -538,15 +538,16 @@ fn golden_mimic_item(random: &mut RandomStack, item: RegularItem) -> RegularItem
     };
     let generated = match generated {
         GeneratedItem::Equipment(mut equipment) => {
-            equipment.roll = golden_roll(random, equipment.roll);
+            let rerolls_curse = catalog_item(equipment.item).kind == ItemKind::Wand;
+            equipment.roll = golden_roll(random, equipment.roll, rerolls_curse);
             GeneratedItem::Equipment(equipment)
         }
         GeneratedItem::Missile(mut missile) => {
-            missile.roll = golden_roll(random, missile.roll);
+            missile.roll = golden_roll(random, missile.roll, false);
             GeneratedItem::Missile(missile)
         }
         GeneratedItem::Ring(mut ring) => {
-            ring.roll = golden_roll(random, ring.roll);
+            ring.roll = golden_roll(random, ring.roll, true);
             GeneratedItem::Ring(ring)
         }
         GeneratedItem::Artifact(artifact) => GeneratedItem::Artifact(GeneratedArtifact {
@@ -559,7 +560,11 @@ fn golden_mimic_item(random: &mut RandomStack, item: RegularItem) -> RegularItem
     RegularItem::Generated(generated)
 }
 
-fn golden_roll(random: &mut RandomStack, mut roll: EquipmentRoll) -> EquipmentRoll {
+fn golden_roll(
+    random: &mut RandomStack,
+    mut roll: EquipmentRoll,
+    upgrade_rerolls_curse: bool,
+) -> EquipmentRoll {
     roll.cursed = false;
     roll.effect = match roll.effect {
         Some(Effect::Weapon(effect)) if effect.is_curse() => None,
@@ -568,6 +573,13 @@ fn golden_roll(random: &mut RandomStack, mut roll: EquipmentRoll) -> EquipmentRo
     };
     if roll.upgrade == 0 && random.int_bound(2) == 0 {
         roll.upgrade = 1;
+        // Ring.upgrade() and Wand.upgrade() always perform their
+        // curse-clearing Int(3), even though the prize pass cleared the curse
+        // immediately before the call. Weapon/Armor upgrades draw nothing at
+        // level zero.
+        if upgrade_rerolls_curse {
+            random.int_bound(3);
+        }
     }
     roll
 }
