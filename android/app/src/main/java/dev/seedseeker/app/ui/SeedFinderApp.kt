@@ -8,9 +8,10 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Rect
 import androidx.activity.compose.PredictiveBackHandler
-import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -27,10 +28,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import dev.seedseeker.app.catalog.ItemCatalog
 import dev.seedseeker.app.engine.NativeSearchSession
 import dev.seedseeker.app.engine.NativeSeedFinder
@@ -90,12 +89,11 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
     var requirements by remember {
         mutableStateOf(
             listOf(
-                ItemRequirement(1, ItemCatalog.weapons.first { it.id == "sword" }, 2, "Lucky"),
-                ItemRequirement(2, ItemCatalog.armor.first { it.id == "plate_armor" }, 1, "Brimstone"),
+                ItemRequirement(1, ItemCatalog.wands.first { it.id == "wand_fireblast" }, 3),
             ),
         )
     }
-    var nextRequirementKey by remember { mutableLongStateOf(3L) }
+    var nextRequirementKey by remember { mutableLongStateOf(2L) }
     var userPresets by remember { mutableStateOf(presetStorage.load()) }
     var maximumDepth by remember { mutableStateOf(24) }
     var requireBlacksmith by remember { mutableStateOf(false) }
@@ -506,7 +504,12 @@ private fun SeedSeekerNavBar(
         NavigationBarItem(
             selected = current == Destination.SCOUT,
             onClick = { onSelect(Destination.SCOUT) },
-            icon = { CompassMark(Modifier.size(22.dp)) },
+            icon = {
+                Icon(
+                    if (current == Destination.SCOUT) Icons.Filled.Place else Icons.Outlined.Place,
+                    contentDescription = null,
+                )
+            },
             label = { Text("Scout") },
             colors = NavigationBarItemDefaults.colors(
                 indicatorColor = MaterialTheme.colorScheme.primaryContainer,

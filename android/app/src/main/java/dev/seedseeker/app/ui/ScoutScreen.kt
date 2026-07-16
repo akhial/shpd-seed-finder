@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -40,14 +41,21 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -137,7 +145,12 @@ fun ScoutScreen(
                                     .padding(24.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
-                                CompassMark(Modifier.size(44.dp))
+                                Icon(
+                                    Icons.Outlined.Place,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(44.dp),
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
                                 Spacer(Modifier.height(14.dp))
                                 Text(
                                     "Enter a seed or tap a search result to list its items through floor 24.",
@@ -204,6 +217,17 @@ private fun SeedInputCard(
     onSeedChange: (String) -> Unit,
     onScout: () -> Unit,
 ) {
+    var fieldValue by remember {
+        mutableStateOf(
+            TextFieldValue(seedInput, selection = TextRange(seedInput.length)),
+        )
+    }
+    LaunchedEffect(seedInput) {
+        if (seedInput != fieldValue.text) {
+            fieldValue = TextFieldValue(seedInput, selection = TextRange(seedInput.length))
+        }
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
@@ -211,19 +235,16 @@ private fun SeedInputCard(
     ) {
         Column(Modifier.padding(18.dp)) {
             OutlinedTextField(
-                value = seedInput,
-                onValueChange = onSeedChange,
+                value = fieldValue,
+                onValueChange = {
+                    val formattedValue = formatSeedFieldValue(it)
+                    fieldValue = formattedValue
+                    onSeedChange(formattedValue.text)
+                },
                 enabled = !isScouting,
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Seed") },
                 placeholder = { Text("ABC-DEF-GHI") },
-                supportingText = if (seedIsReady) {
-                    null
-                } else {
-                    {
-                        Text("Type or paste nine letters; hyphens are added automatically.")
-                    }
-                },
                 singleLine = true,
                 shape = MaterialTheme.shapes.medium,
                 textStyle = MaterialTheme.typography.titleLarge.copy(
@@ -266,6 +287,25 @@ private fun SeedInputCard(
             }
         }
     }
+}
+
+/** Keeps the logical cursor position when canonical grouping inserts or removes hyphens. */
+internal fun formatSeedFieldValue(input: TextFieldValue): TextFieldValue {
+    val formatted = SeedCode.formatInput(input.text)
+    if (formatted == input.text) return input
+
+    fun remapOffset(offset: Int): Int = SeedCode
+        .formatInput(input.text.take(offset))
+        .length
+        .coerceAtMost(formatted.length)
+
+    return TextFieldValue(
+        text = formatted,
+        selection = TextRange(
+            remapOffset(input.selection.start),
+            remapOffset(input.selection.end),
+        ),
+    )
 }
 
 @Composable
