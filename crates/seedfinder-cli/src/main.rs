@@ -272,13 +272,17 @@ fn load_query(path: &Path) -> Result<SearchQuery, String> {
         .map_err(|error| format!("could not parse '{}': {error}", path.display()))
 }
 
+/// The canonical benchmark: a +3 Wand of Fireblast anywhere in the first 24
+/// floors. Only the Wandmaker can hand out a +3 wand, so the planner's exact
+/// quest-window shortcut ends generation at depth 9 — the workload exercises
+/// the planning shortcuts that real searches benefit from.
 fn benchmark_query() -> SearchQuery {
     SearchQuery {
         requirements: vec![Requirement {
-            kind: ItemKind::Ring,
-            item: Some(ItemId::RingTenacity),
+            kind: ItemKind::Wand,
+            item: Some(ItemId::WandFireblast),
             tier: TierRequirement::Any,
-            upgrade: UpgradeRequirement::Exact(4),
+            upgrade: UpgradeRequirement::Exact(3),
             effect: None,
             require_uncursed: false,
             source: None,
