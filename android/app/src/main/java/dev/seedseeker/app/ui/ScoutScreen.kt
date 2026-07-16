@@ -54,7 +54,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.seedseeker.app.catalog.ItemCatalog
 import dev.seedseeker.app.engine.SeedCode
-import dev.seedseeker.app.model.ItemKind
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.ScoutAccessibility
 import dev.seedseeker.app.model.ScoutItem
@@ -218,14 +217,12 @@ private fun SeedInputCard(
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Seed") },
                 placeholder = { Text("ABC-DEF-GHI") },
-                supportingText = {
-                    Text(
-                        if (seedIsReady) {
-                            "Ready to scout this world"
-                        } else {
-                            "Type or paste nine letters; hyphens are added automatically."
-                        },
-                    )
+                supportingText = if (seedIsReady) {
+                    null
+                } else {
+                    {
+                        Text("Type or paste nine letters; hyphens are added automatically.")
+                    }
                 },
                 singleLine = true,
                 shape = MaterialTheme.shapes.medium,
@@ -354,11 +351,6 @@ private fun ScoutItemCard(
 ) {
     val effectIsCurse = scoutItem.effect != null &&
         ItemCatalog.cursesFor(scoutItem.item.kind).contains(scoutItem.effect)
-    val effectLabel = scoutItem.effect ?: when (scoutItem.item.kind) {
-        ItemKind.WEAPON -> "No enchantment"
-        ItemKind.ARMOR -> "No glyph"
-        ItemKind.WAND, ItemKind.RING -> "No modifier"
-    }
     val accessibilityLabel = when (scoutItem.accessibility) {
         ScoutAccessibility.Independent -> null
         is ScoutAccessibility.Choice ->
@@ -408,15 +400,17 @@ private fun ScoutItemCard(
                         }
                     }
                 }
-                Text(
-                    effectLabel,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = when {
-                        effectIsCurse -> MaterialTheme.colorScheme.error
-                        scoutItem.effect != null -> MaterialTheme.colorScheme.tertiary
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
+                scoutItem.effect?.let { effect ->
+                    Text(
+                        effect,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (effectIsCurse) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.tertiary
+                        },
+                    )
+                }
                 Text(
                     scoutItem.source.label,
                     style = MaterialTheme.typography.bodySmall,
@@ -433,11 +427,13 @@ private fun ScoutItemCard(
             }
             Spacer(Modifier.width(10.dp))
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                StatusPill(
-                    text = "+${scoutItem.upgrade}",
-                    container = MaterialTheme.colorScheme.secondaryContainer,
-                    content = MaterialTheme.colorScheme.onSecondaryContainer,
-                )
+                if (scoutItem.upgrade != 0) {
+                    StatusPill(
+                        text = "+${scoutItem.upgrade}",
+                        container = MaterialTheme.colorScheme.secondaryContainer,
+                        content = MaterialTheme.colorScheme.onSecondaryContainer,
+                    )
+                }
                 if (matches) {
                     Surface(
                         shape = MaterialTheme.shapes.large,
