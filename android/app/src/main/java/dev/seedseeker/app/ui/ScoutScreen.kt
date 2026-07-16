@@ -32,17 +32,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MediumFlexibleTopAppBar
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -78,20 +77,11 @@ fun ScoutScreen(
     bottomBar: @Composable () -> Unit,
 ) {
     val seedIsReady = SeedCode.isCanonical(seedInput)
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            MediumFlexibleTopAppBar(
-                scrollBehavior = scrollBehavior,
+            TopAppBar(
                 title = { Text("Scout") },
-                subtitle = {
-                    Text(
-                        "Inspect one generated world",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                },
                 actions = {
                     IconButton(onClick = onChallenges) {
                         Icon(Icons.Filled.Settings, contentDescription = "Challenges")
@@ -102,7 +92,6 @@ fun ScoutScreen(
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
-                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
                 ),
             )
         },
@@ -152,7 +141,7 @@ fun ScoutScreen(
                                 CompassMark(Modifier.size(44.dp))
                                 Spacer(Modifier.height(14.dp))
                                 Text(
-                                    "Enter a seed, or tap a search result, to list every searchable item generated through floor 24.",
+                                    "Enter a seed or tap a search result to list its items through floor 24.",
                                     textAlign = TextAlign.Center,
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -298,20 +287,13 @@ private fun ScoutSummaryCard(
     ) {
         Column(Modifier.padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        "CONTENTS OF",
-                        style = MaterialTheme.typography.labelSmall,
-                        letterSpacing = 1.4.sp,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                    Text(
-                        world.seed,
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.tertiary,
-                    )
-                }
+                Text(
+                    world.seed,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
                 TextButton(onClick = { clipboard.setText(AnnotatedString(world.seed)) }) {
                     Text("Copy")
                 }
@@ -336,12 +318,6 @@ private fun ScoutSummaryCard(
                     )
                 }
             }
-            Spacer(Modifier.height(10.dp))
-            Text(
-                "Reward alternatives are shown individually and marked when a choice or route affects access.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }
