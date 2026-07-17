@@ -292,20 +292,15 @@ java -cp /tmp RngOracle
 
 ## Acknowledgements<a id="acknowledgements"></a>
 
-Seed Seeker reimplements the generation path of
+Seed Seeker reimplements the generation of
 [Shattered Pixel Dungeon](https://github.com/00-Evan/shattered-pixel-dungeon) by Evan Debenham,
 itself based on [Pixel Dungeon](https://github.com/watabou/pixel-dungeon) by Oleg Dolya.
 
-[Elektrochecker's shpd-seed-finder](https://github.com/Elektrochecker/shpd-seed-finder) pioneered seed finding for this game and serves as an independent oracle for this project's parity tests.
+[Elektrochecker's shpd-seed-finder](https://github.com/Elektrochecker/shpd-seed-finder) serves as an oracle for this project's parity tests.
 
 ## License and identity<a id="license-and-identity"></a>
 
-This project is GPL-3.0-or-later. It contains a derived generation implementation and an
-unchanged item sprite atlas from Shattered Pixel Dungeon, which is also GPL-licensed. Copyright
-notices and the full license are included with the Android distribution.
-
-Seed Seeker is unofficial and is not endorsed by Shattered Pixel Dungeon or its developers. It
-uses a distinct package, name, icon, and UI; no game UI components are reused.
+This project is GPL-3.0-or-later. It contains a derived generation implementation and an unchanged item sprite atlas from Shattered Pixel Dungeon.
 
 - Pixel Dungeon © 2012–2015 Oleg Dolya / Watabou
 - Shattered Pixel Dungeon © 2014–2026 Evan Debenham
