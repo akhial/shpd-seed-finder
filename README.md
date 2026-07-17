@@ -3,7 +3,7 @@
 [![CI](https://github.com/akhial/shpd-seed-seeker/actions/workflows/ci.yml/badge.svg)](https://github.com/akhial/shpd-seed-seeker/actions/workflows/ci.yml)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](COPYING)
 
-An extremely fast, offline seed finder for [Shattered Pixel Dungeon](https://shatteredpixel.com/),
+An extremely fast seed finder for [Shattered Pixel Dungeon](https://shatteredpixel.com/),
 written in Rust — with native apps for Android, Linux, macOS, and Windows.
 
 <p align="center">
@@ -11,23 +11,17 @@ written in Rust — with native apps for Android, Linux, macOS, and Windows.
 </p>
 
 <p align="center">
-  <i>Scanning seeds for a +3 Wand of Fireblast in the first 24 floors, on an Apple M4 Pro (12 cores).
+  <i>Scanning seeds for a +3 Wand of Fireblast across 24 floors, on an Apple M4 Pro (12 cores).
   See <a href="#benchmarks">Benchmarks</a> for the full methodology.</i>
 </p>
 
 - ⚡️ **16–30× faster** than the established Java seed finder
-- 🎯 **Exact**: a Rust reimplementation of the game's deterministic generation path
-- 🔍 **Rich queries**: multiple AND requirements across melee and thrown weapons, armor, wands,
-  and all twelve rings — exact or minimum upgrades, enchantments/glyphs/curses, loot sources,
-  per-item floor limits, same-item groups, and blacksmith constraints
-- 🔮 **Seed scouting**: paste a seed code, get every searchable item through depth 24 with floor,
-  upgrade, enchantment, cursed state, source, and choice constraints
+- 🔍 **Rich queries**: multiple requirements across melee and thrown weapons, armor, wands, and rings
+- 🔮 **Seed scouting**: paste a seed code, get every item with floor, upgrade, enchantment, cursed state and source
 - 📱 **Android app** beautiful Material 3 interface
 - 🐧 **Native Linux app** GTK 4 and libadwaita
 - 🍎 **Native macOS app** SwiftUI, Apple Silicon
 - 🪟 **Native Windows app** WinUI 3, x64 and ARM64 using Fluent Design 2
-- 🧵 **Multicore scheduler** with per-search cancellation, atomic progress, and NEON-batched RNG
-  on ARM64
 
 Seeds use the `XXX-XXX-XXX` base-26 form.
 
@@ -36,9 +30,6 @@ Seeds use the `XXX-XXX-XXX` base-26 form.
 1. [Getting started](#getting-started)
 1. [Search queries](#search-queries)
 1. [Benchmarks](#benchmarks)
-1. [Compatibility](#compatibility)
-1. [Performance model](#performance-model)
-1. [Project layout](#project-layout)
 1. [Development](#development)
 1. [Acknowledgements](#acknowledgements)
 1. [License and identity](#license-and-identity)
@@ -47,8 +38,7 @@ Seeds use the `XXX-XXX-XXX` base-26 form.
 
 ### Download a release
 
-Prebuilt binaries for every tagged version are published on the
-[GitHub Releases page](https://github.com/akhial/shpd-seed-seeker/releases).
+Binaries are published on the [GitHub Releases page](https://github.com/akhial/shpd-seed-seeker/releases).
 
 | Asset | Platforms |
 | --- | --- |
@@ -58,19 +48,13 @@ Prebuilt binaries for every tagged version are published on the
 | `seed-seeker-<tag>-windows-<arch>.zip` | Native Windows app (x64, ARM64) |
 | `seed-seeker-<tag>-android.apk` | Android app (arm64-v8a and x86_64) |
 
-Platform notes:
-
-- The macOS app is signed with a Developer ID certificate and notarized by Apple
-- The Android APK is signed with the project's release key and installs directly once
-  installing from unknown sources is allowed.
 - The Windows app requires the
   [Windows App SDK 1.8 runtime](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/downloads)
   to be installed.
 
 ### CLI
 
-Build and run the canonical benchmark — a +3 Wand of Fireblast within the first 24 floors
-(10,000 seeds on all available CPUs by default):
+Build and run the benchmark:
 
 ```sh
 cargo run --release -p shpd-seedfinder-cli -- --benchmark
@@ -85,110 +69,98 @@ cargo run --release -p shpd-seedfinder-cli -- --items requirements.json
 cargo run --release -p shpd-seedfinder-cli -- -i requirements.json -b 1000 --workers 4
 ```
 
-### Android
-
-```sh
-cd android
-JAVA_HOME=/path/to/temurin-21 ./gradlew :app:assembleRelease --offline
-```
-
-`assembleRelease` automatically cross-compiles the Rust JNI library for `arm64-v8a` and `x86_64`
-with Android NDK 28.2. The resulting
-`android/app/build/outputs/apk/release/app-release-unsigned.apk` must be signed before
-installation. For local testing only, it can be signed with Android's standard debug key:
-
-```sh
-"$ANDROID_HOME/build-tools/36.1.0/apksigner" sign \
-  --ks "$HOME/.android/debug.keystore" \
-  --ks-pass pass:android --key-pass pass:android \
-  --out seed-seeker-release-debug-signed.apk \
-  android/app/build/outputs/apk/release/app-release-unsigned.apk
-```
-
-### macOS
-
-The native Apple Silicon app (macOS 14+) links the shared Rust engine as a static library. The
-app-bundle script runs the release builds, assembles `dist/Seed Seeker.app`, and ad-hoc signs it:
-
-```sh
-bash scripts/build-macos-native.sh
-bash scripts/build-macos-app.sh
-```
-
-Android, macOS, and Linux app searches rotate the full seed space: the first session start is
-randomized, and later sessions use distinct, widely separated starts. CLI searches and benchmarks
-remain deterministic for reproducibility.
-
-### Linux
-
-The native GTK 4 and libadwaita app links the Rust engine in-process through
-`shpd-seedfinder-session`. It requires GTK 4.22, libadwaita 1.9, and `glib-compile-resources`;
-[`linux/README.md`](linux/README.md) lists the development packages.
-
-```sh
-cargo run -p shpd-seedfinder-gtk
-```
-
-Tagged releases include x86_64 and arm64 AppImages. To build one locally on Fedora 44, install the
-packages from [`linux/README.md`](linux/README.md), plus `curl` and `file`, then run:
-
-```sh
-APPIMAGE_VERSION=dev bash scripts/build-linux-appimage.sh
-./dist/seed-seeker-dev-"$(uname -m)".AppImage
-```
-
 ## Search queries<a id="search-queries"></a>
 
-Each requirement can target a concrete item or any item in its category, use an exact, minimum,
-or unrestricted upgrade predicate, constrain the loot source, set its own inclusive floor limit,
-and join a same-item group shared by other requirements. Exact upgrades run through `+3` for
-weapons, armor, and wands and through `+4` for rings; minimum predicates also support `+0`.
-Weapon enchantment/curse and armor glyph/curse constraints are supported, and any requirement can
-demand that its matching copy be uncursed. Queries can require an accessible blacksmith, prevent
-the Blacksmith's Smith rewards from satisfying item requirements, and limit every item and
-facility to the first X dungeon floors. Mutually exclusive rewards are represented explicitly so
-impossible reward combinations cannot satisfy a query.
-
-```json
+```jsonc
+// ? optional · | alternatives · .. inclusive range · = default · ... repeat
 {
-  "max_depth": 24,
-  "require_blacksmith": false,
-  "exclude_blacksmith_rewards": false,
-  "challenges": ["barren_land", "into_darkness", "forbidden_runes"],
+  "max_depth"?: 1..24 = 24,
+  "require_blacksmith"?: true | false = false,
+  "exclude_blacksmith_rewards"?: true | false = false,
+  "fast_mode"?: true | false = false,
+
+  "challenges"?: [
+    (
+      "on_diet" | "faith_is_my_armor" | "pharmacophobia" | "barren_land" |
+      "swarm_intelligence" | "into_darkness" | "forbidden_runes" |
+      "hostile_champions" | "badder_bosses"
+    ),
+    ...
+  ] = [],
+
   "requirements": [
     {
-      "item": "ring_tenacity",
-      "upgrade": 4,
-      "source": "imp_reward",
-      "max_depth": 19
+      // Supply "item", "kind", or both; when both are present they must agree.
+      "kind"?: "weapon" | "armor" | "wand" | "ring",
+      "item"?:
+        // Weapons
+        "worn_shortsword" | "cudgel" | "gloves" | "rapier" | "dagger" |
+        "shortsword" | "hand_axe" | "spear" | "quarterstaff" | "dirk" | "sickle" |
+        "sword" | "mace" | "scimitar" | "round_shield" | "sai" | "whip" |
+        "longsword" | "battle_axe" | "flail" | "runic_blade" | "assassins_blade" |
+        "crossbow" | "katana" | "greatsword" | "war_hammer" | "glaive" | "greataxe" |
+        "greatshield" | "gauntlet" | "war_scythe" | "throwing_stone" |
+        "throwing_knife" | "throwing_spike" | "fishing_spear" | "throwing_club" |
+        "shuriken" | "throwing_spear" | "kunai" | "bolas" | "javelin" | "tomahawk" |
+        "heavy_boomerang" | "trident" | "throwing_hammer" | "force_cube" | "rot_dart" |
+        "incendiary_dart" | "adrenaline_dart" | "healing_dart" | "chilling_dart" |
+        "shocking_dart" | "poison_dart" | "cleansing_dart" | "paralytic_dart" |
+        "holy_dart" | "displacing_dart" | "blinding_dart" |
+        // Armor
+        "cloth_armor" | "leather_armor" | "mail_armor" | "scale_armor" | "plate_armor" |
+        // Wands
+        "wand_magic_missile" | "wand_fireblast" | "wand_frost" | "wand_lightning" |
+        "wand_disintegration" | "wand_prismatic_light" | "wand_corrosion" |
+        "wand_living_earth" | "wand_blast_wave" | "wand_corruption" | "wand_warding" |
+        "wand_regrowth" | "wand_transfusion" |
+        // Rings
+        "ring_accuracy" | "ring_arcana" | "ring_elements" | "ring_energy" |
+        "ring_evasion" | "ring_force" | "ring_furor" | "ring_haste" | "ring_might" |
+        "ring_sharpshooting" | "ring_tenacity" | "ring_wealth",
+
+      // +4 is valid only for rings; "any" and effect names are case-insensitive.
+      "upgrade"?:
+        "any" | 1..3 | 4 |
+        { "exact": 1..3 | 4 } |
+        { "at_least": 0..3 | 4 }
+        = "any",
+
+      // The effect must belong to the selected weapon or armor kind.
+      "effect"?:
+        // Weapon enchantments
+        "Blazing" | "Chilling" | "Kinetic" | "Shocking" | "Blocking" | "Blooming" |
+        "Elastic" | "Lucky" | "Projecting" | "Unstable" | "Corrupting" | "Grim" |
+        "Vampiric" |
+        // Weapon curses
+        "Annoying" | "Displacing" | "Dazzling" | "Explosive" | "Sacrificial" |
+        "Wayward" | "Polarized" | "Friendly" |
+        // Armor glyphs
+        "Obfuscation" | "Swiftness" | "Viscosity" | "Potential" | "Brimstone" | "Stone" |
+        "Entanglement" | "Repulsion" | "Camouflage" | "Flow" | "Affection" |
+        "Anti-Magic" | "Thorns" |
+        // Armor curses
+        "Anti-Entropy" | "Corrosion" | "Displacement" | "Metabolism" | "Multiplicity" |
+        "Stench" | "Overgrowth" | "Bulk",
+
+      // true cannot be combined with a curse effect.
+      "uncursed"?: true | false = false,
+      "source"?:
+        "heap" | "chest" | "locked_chest" | "crystal_chest" | "tomb" | "skeleton" |
+        "sacrificial_fire" | "mimic" | "golden_mimic" | "crystal_mimic" | "statue" |
+        "armored_statue" | "shop" | "ghost_reward" | "wandmaker_reward" |
+        "blacksmith_reward" | "imp_reward",
+      // Equal groups must resolve to the same kind and item ID.
+      "identity_group"?: 1..255,
+      "max_depth"?: 1..24 = query.max_depth
     },
-    {
-      "kind": "wand",
-      "upgrade": { "at_least": 2 },
-      "uncursed": true
-    }
+    ...
   ]
 }
 ```
 
-Omitting `upgrade` means any upgrade; an integer means an exact upgrade. Item effects, `uncursed`, loot
-`source`, `identity_group`, and per-item `max_depth` are optional. The `kind` field is only
-required for wildcard requirements; concrete items use the stable IDs from
-`crates/seedfinder-core/src/catalog.rs`. Set `exclude_blacksmith_rewards` when the Smith choice
-must remain unused so the Blacksmith's favor can instead be spent on reforging.
+### Fast Mode
 
-The optional `challenges` array accepts `on_diet`, `faith_is_my_armor`, `pharmacophobia`,
-`barren_land`, `swarm_intelligence`, `into_darkness`, `forbidden_runes`,
-`hostile_champions`, and `badder_bosses`. An omitted or empty array uses the normal game rules.
-
-Searches automatically exploit generation logic: queries that can only be satisfied by quest
-rewards stop generating floors past the quest's depth window (+3 wands end at floor 9, +3/+4
-rings at floor 19). Per-item floor limits reject a seed as soon as a missing item's deadline
-passes, and resolved quests can also rule a seed out early. The optional top-level
-`"fast_mode": true` adds one lossy shortcut: +3 weapon/armor requirements consider only
-Ghost and Blacksmith rewards, skipping the far rarer Crypt and Sacrificial-fire prizes, so
-those searches end at floor 14. Fast-mode matches are always genuine; some exotic seeds are
-simply not reported.
+This mode adds one lossy shortcut: +3 weapon/armor requirements consider only Ghost and Blacksmith rewards, skipping the rare Crypt and Sacrificial-fire prizes, so those searches end at floor 14.
 
 ## Benchmarks<a id="benchmarks"></a>
 
@@ -229,74 +201,76 @@ Methodology:
 
 Reproduce the Seed Seeker side with `cargo run --release -p shpd-seedfinder-cli -- --benchmark`.
 
-## Compatibility<a id="compatibility"></a>
-
-The compatibility target is intentionally pinned:
-
-- Shattered Pixel Dungeon **v3.3.8**
-- upstream commit `7b8b845a76fe76c6b7c031ae9e570852411f56db`
-- new custom-seed dungeon, main branch, Warrior, no challenges, no equipped trinket, no bones or
-  profile-dependent bonus items
-- tutorial/journal progression treated as complete (`intro = false`), matching established
-  seed-finder behavior and excluding unseeded Guidebook placement
-
-Scouting lists the equipment and quest rewards generated through depth 24.
-See the [compatibility notes](docs/COMPATIBILITY.md) for the exact parity boundary, boss-floor handling,
-and known upstream nondeterminism.
-
-## Performance model<a id="performance-model"></a>
-
-Candidate worlds are independent. The scheduler assigns chunks to all available cores with
-per-search cancellation and atomic progress. ARM64 builds batch MX3 and Java-LCG depth-root work
-in NEON lanes. The spatial generator remains scalar inside each candidate because its rejection
-loops and room graph are highly divergent; thread-level parallelism is the effective acceleration
-there. Android streams matches as they are found and stops after 1,024 results so an unattended
-search cannot grow memory without bound.
-
-Android builds retain fat LTO but use optimization level O2; this is a pinned correctness
-requirement for the audited Rust/LLVM Android AArch64 toolchain. The host release profile remains
-O3. See the compatibility notes for the on-device parity gate.
-
-## Project layout<a id="project-layout"></a>
-
-- `crates/seedfinder-core`: deterministic Rust engine, query model, matcher, multicore scheduler,
-  and Java-parity tests.
-- `crates/seedfinder-cli`: command-line entry point and canonical engine benchmark.
-- `crates/seedfinder-session`: frontend-neutral native session lifecycle, registry, status
-  packets, and panic-contained scouting.
-- `crates/seedfinder-ffi`: thread-safe C ABI and public header used by Apple frontends.
-- `linux`: native GTK 4 and libadwaita app (gtk-rs), linked to the shared Rust engine in-process
-  through `seedfinder-session`.
-- `android`: Jetpack Compose UI, coarse-grained search sessions, and the one-shot JNI seed-scout
-  contract.
-- `macos/SeedSeeker`: native arm64 macOS 14+ SwiftUI app and SwiftPM package, linked to the
-  shared Rust engine through its C ABI.
-- `windows/SeedSeeker`: native WinUI 3 desktop app (x64 and ARM64) using Fluent Design 2 and the
-  shared Rust engine through its C ABI.
-- `tooling/oracle`: reproducible, machine-readable whole-floor snapshots from an isolated export
-  of the exact pinned game revision.
-- `tooling/parity`: focused Java fixture generators for individual RNG and reward paths.
-- `upstream` (ignored): local read-only clones of the official game and the established Java
-  seed finder used as an independent oracle.
-
 ## Development<a id="development"></a>
+
+### Android
+
+#### Building
+
+```sh
+cd android
+JAVA_HOME=/path/to/java-21 ./gradlew :app:assembleRelease --offline
+```
+
+#### Signing
+
+```sh
+"$ANDROID_HOME/build-tools/36.1.0/apksigner" sign \
+  --ks "$HOME/.android/debug.keystore" \
+  --ks-pass pass:android --key-pass pass:android \
+  --out seed-seeker-release-debug-signed.apk \
+  android/app/build/outputs/apk/release/app-release-unsigned.apk
+```
+
+### macOS
+
+#### Building
+
+```sh
+bash scripts/build-macos-native.sh
+bash scripts/build-macos-app.sh
+```
+
+### Linux
+
+The Linux app requires GTK 4.22, libadwaita 1.9, and `glib-compile-resources`;
+[`linux/README.md`](linux/README.md) lists the development packages.
+
+```sh
+cargo run -p shpd-seedfinder-gtk
+```
+
+To build the AppImage on Fedora 44, install the packages from [`linux/README.md`](linux/README.md), plus `curl` and `file`, then run:
+
+```sh
+APPIMAGE_VERSION=dev bash scripts/build-linux-appimage.sh
+./dist/seed-seeker-dev-"$(uname -m)".AppImage
+```
+
+### Testing
+
+#### Rust
 
 ```sh
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-The workspace includes the GTK app, so the commands above need its system libraries (GTK 4.22
-and libadwaita 1.9). On hosts without them — macOS, Windows, and older Linux distributions —
-add `--exclude shpd-seedfinder-gtk`, exactly as the non-Linux CI jobs do.
+The workspace includes the GTK app, so the commands above need its system libraries (GTK 4.22 and libadwaita 1.9). Add `--exclude shpd-seedfinder-gtk` on macOS and Windows to exclude the GTK app from the test run.
+
+#### Android
 
 ```sh
 cd android
-JAVA_HOME=/path/to/temurin-21 ./gradlew \
-  :app:testDebugUnitTest :app:lintDebug :app:assembleRelease --offline
+JAVA_HOME=/path/to/java-21 ./gradlew \
+  :app:testDebugUnitTest \
+  :app:lintDebug \
+  :app:assembleRelease --offline
 ```
 
-For the native macOS app, build the Rust static library before running the Swift tests:
+#### macOS
+
+For the macOS app, build the Rust static library before running the Swift tests:
 
 ```sh
 bash scripts/build-macos-native.sh
@@ -304,28 +278,23 @@ cd macos/SeedSeeker
 swift test
 ```
 
-The Swift package supports macOS 14 and newer and is arm64-only. Its manifest links
-`target/aarch64-apple-darwin/release/libshpd_seedfinder_ffi.a`; there is no demo engine on macOS.
+#### Java Oracle
 
-The Java RNG fixture is JDK-only:
 
 ```sh
 javac -d /tmp tooling/parity/RngOracle.java
 java -cp /tmp RngOracle
 ```
 
-`EquipmentOracle.java` is compiled against the isolated v3.3.8 oracle JAR and calls the real game
-equipment classes.
+`EquipmentOracle.java` is compiled against the isolated v3.3.8 JAR
 
 ## Acknowledgements<a id="acknowledgements"></a>
 
-Seed Seeker reimplements the deterministic generation path of
+Seed Seeker reimplements the generation path of
 [Shattered Pixel Dungeon](https://github.com/00-Evan/shattered-pixel-dungeon) by Evan Debenham,
 itself based on [Pixel Dungeon](https://github.com/watabou/pixel-dungeon) by Oleg Dolya.
 
-[Elektrochecker's shpd-seed-finder](https://github.com/Elektrochecker/shpd-seed-finder) pioneered
-seed finding for this game and serves as an independent oracle for this project's parity tests.
-The benchmark above exists because that tool set the standard to beat.
+[Elektrochecker's shpd-seed-finder](https://github.com/Elektrochecker/shpd-seed-finder) pioneered seed finding for this game and serves as an independent oracle for this project's parity tests.
 
 ## License and identity<a id="license-and-identity"></a>
 
