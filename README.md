@@ -12,6 +12,8 @@ written in Rust — with native apps for Android, Linux, macOS, and Windows.
 
 <p align="center">
   <i>Scanning seeds for a +3 Wand of Fireblast across 24 floors, on an Apple M4 Pro (12 cores).
+<p/>
+<p align="center">
   See <a href="#benchmarks">Benchmarks</a> for the full methodology.</i>
 </p>
 
