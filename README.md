@@ -166,9 +166,7 @@ This mode adds one lossy shortcut: +3 weapon/armor requirements consider only Gh
 
 ## Benchmarks<a id="benchmarks"></a>
 
-The chart above compares Seed Seeker with the established Java seed finder,
-[Elektrochecker's shpd-seed-finder](https://github.com/Elektrochecker/shpd-seed-finder), which
-patches the real game source and replays generation on the JVM.
+Compared with [Elektrochecker's Java finder](https://github.com/Elektrochecker/shpd-seed-finder):
 
 | Configuration | Throughput | Relative |
 | --- | ---: | ---: |
@@ -177,31 +175,16 @@ patches the real game source and replays generation on the JVM.
 | shpd-seed-finder, 6 processes (its best) | 453 seeds/s | 1× |
 | shpd-seed-finder, 1 process | 94 seeds/s | — |
 
-Methodology:
+- **Machine:** Apple M4 Pro (12 cores), 48 GB, macOS 26.5
+- **Query:** +3 Wand of Fireblast, 24 floors, seeds from `AAA-AAA-AAA`
+- **Builds:** Shattered Pixel Dungeon v3.3.8; Rust release; Java OpenJDK 21
+- **Samples:** Java 3,000–10,000; Rust 150,000 (1 thread), 1,000,000 (12 threads)
+- **Java turbo:** 4/6/8 processes: 330/453/373 seeds/s
+- **Cross-check:** identical 92 matches in the first 10,000 seeds
+- **Planning:** exact shortcuts on; lossy `fast_mode` off
+- **Depth 9 Java comparison:** 283 seeds/s; Seed Seeker is still 5.5× faster per core
 
-- **Machine:** Apple M4 Pro (12 cores), 48 GB, macOS 26.5.
-- **Workload:** scan seeds sequentially from `AAA-AAA-AAA`, testing the 24 floors of each
-  seed for a +3 Wand of Fireblastd
-- **Incumbent build:** the reference finder was built from the *same pinned v3.3.8 game source*
-  using its own `changes.patch` and run on OpenJDK 21 (Temurin) with its default configuration
-  in sequential mode. Timing instrumentation was added only to its driver loop (a counter and a
-  `System.nanoTime()` pair); the per-seed search code is unmodified, and JVM startup is excluded.
-- **Single process:** 3,000–10,000 seeds per run for the Java finder; 150,000 (1 thread) and
-  1,000,000 (12 threads) seeds for Seed Seeker.
-- **Multi-process:** the Java finder's "turbo mode" runs independent JVM processes.
-  Concurrency 4, 6, and 8 were measured at 330, 453, and 373 seeds/s aggregate (summed
-  steady-state rates); its best (6 processes) is reported.
-- **Cross-check:** over the first 10,000 seeds the two finders' match lists are *identical* —
-  the same 92 seeds each.
-- **Same question, different engines:** Seed Seeker's always-on exact planning shortcuts are
-  part of the measurement; the lossy `fast_mode` is off. A +3 wand can only be the Wandmaker's
-  reward, so Seed Seeker derives a depth-9 generation horizon for this query and abandons a
-  seed as soon as the quest resolves without the wand, while the Java finder generates every
-  floor of every seed. Even when the Java finder is manually told to search only 9 floors —
-  the best configuration a domain-savvy user could pick, giving up the tool-enforced 24-floor
-  equivalence — it reaches 283 seeds/s in one process, still 5.5× slower per core.
-
-Reproduce the Seed Seeker side with `cargo run --release -p shpd-seedfinder-cli -- --benchmark`.
+Reproduce: `cargo run --release -p shpd-seedfinder-cli -- --benchmark`
 
 ## Development<a id="development"></a>
 
