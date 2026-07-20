@@ -455,6 +455,8 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
+          # Exclude the web build; it deploys to Firebase and is not a release asset.
+          pattern: '!seed-seeker-web-dist'
           path: dist
           merge-multiple: true
 

@@ -6,6 +6,8 @@
 An extremely fast seed finder for [Shattered Pixel Dungeon](https://shatteredpixel.com/),
 written in Rust — with native apps for Android, Linux, macOS, and Windows.
 
+**[Try it in your browser →](https://shpd-seed-seeker.web.app/)**
+
 <p align="center">
   <img alt="Bar chart of seed-search throughput. Seed Seeker tests 13,716 seeds per second on 12 cores and 1,567 on one core; the incumbent Java shpd-seed-finder tests 453 seeds per second across 6 processes and 94 in one process." src="assets/benchmark.svg">
 </p>
@@ -35,6 +37,11 @@ written in Rust — with native apps for Android, Linux, macOS, and Windows.
 1. [License and identity](#license-and-identity)
 
 ## Getting started<a id="getting-started"></a>
+
+### Web app
+
+Run searches directly at
+[shpd-seed-seeker.web.app](https://shpd-seed-seeker.web.app/).
 
 ### Download a release
 
