@@ -125,9 +125,31 @@ body {
 
 
 .d1-topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   font-size: 12px;
   color: var(--d1-text-3);
   letter-spacing: 0.02em;
+}
+
+.d1-gh-link {
+  display: inline-flex;
+  align-items: center;
+  color: var(--d1-text-3);
+  transition: color 0.12s ease;
+}
+
+.d1-gh-link:hover {
+  color: var(--d1-amber-bright);
+}
+
+.d1-gh-icon {
+  width: 18px;
+  height: 18px;
+  background-color: currentColor;
+  -webkit-mask: url(/github-mark.svg) center / contain no-repeat;
+  mask: url(/github-mark.svg) center / contain no-repeat;
 }
 
 /* ---------- Layout ---------- */

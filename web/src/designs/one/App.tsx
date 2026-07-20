@@ -156,8 +156,20 @@ export default function App() {
           <Sprite index={112} size={20} />
           <DownloadMenu />
         </div>
-        <div className="d1-topbar-right d1-mono">
-          {engine ? `Shattered Pixel Dungeon v${engine.shpdVersion}` : 'loading engine…'}
+        <div className="d1-topbar-right">
+          <span className="d1-mono">
+            {engine ? `Shattered Pixel Dungeon v${engine.shpdVersion}` : 'loading engine…'}
+          </span>
+          <a
+            className="d1-gh-link"
+            href="https://github.com/akhial/shpd-seed-seeker"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="View source on GitHub"
+            title="View source on GitHub"
+          >
+            <span className="d1-gh-icon" aria-hidden="true" />
+          </a>
         </div>
       </header>
 
@@ -214,7 +226,7 @@ export default function App() {
       </main>
 
       <footer className="d1-footer">
-        <span>SHPD Seed Seeker v0.5.0</span>
+        <span>SHPD Seed Seeker v0.5.1</span>
         <span className="d1-footer-sep" aria-hidden="true">·</span>
         <span>GPL-3.0-or-later</span>
         <span className="d1-footer-sep" aria-hidden="true">·</span>

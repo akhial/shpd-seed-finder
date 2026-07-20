@@ -104,7 +104,7 @@ export function ScoutPanel({
               <Sprite index={224} size={32} />
             </div>
             <h4>No seed scouted</h4>
-            <p>Enter a canonical seed, or select a search result, to inspect its item manifest.</p>
+            <p>Enter a seed, or select a search result, to scout its contents.</p>
           </div>
         )}
 
