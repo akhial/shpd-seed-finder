@@ -6,7 +6,7 @@ import { effectGlow } from '../../lib/glow'
 import { CommandIcon, PlusIcon, ReturnIcon, XIcon } from '../../lib/icons'
 import { emptyRequirement, fromQueryJson, toQueryJson, validateRequirement } from '../../lib/query'
 import type { ValidationResult } from '../../lib/query'
-import { builtInPresets, loadPresets, queryStore, savePresets } from '../../lib/store'
+import { builtInPresets, loadPresets, maxWorkers, queryStore, savePresets, setWorkerCount, workerCountStore } from '../../lib/store'
 import type { Preset } from '../../lib/store'
 import type { AnalysisResult, ChallengeName, ItemCategory, QueryState, RequirementState } from '../../lib/wasm/types'
 import { RequirementEditor } from './RequirementEditor'
@@ -37,6 +37,8 @@ export function QueryPanel({
   isMac: boolean
 }) {
   const query = useStore(queryStore)
+  const workerCount = useStore(workerCountStore)
+  const workerCeiling = maxWorkers()
   const [userPresets, setUserPresets] = useState<Preset[]>(() => loadPresets())
   const [namingPreset, setNamingPreset] = useState(false)
   const [presetName, setPresetName] = useState('')
@@ -287,6 +289,22 @@ export function QueryPanel({
 
         <section className="d1-section">
           <div className="d1-section-head"><h3>Performance</h3></div>
+          {workerCeiling > 1 && (
+            <>
+              <SliderRow
+                label="Workers"
+                valueLabel={`${workerCount} of ${workerCeiling} core${workerCeiling === 1 ? '' : 's'}`}
+                min={1}
+                max={workerCeiling}
+                value={Math.min(workerCount, workerCeiling)}
+                fill
+                onChange={setWorkerCount}
+              />
+              <p className="d1-caption d1-caption-spaced">
+                Number of search threads to spawn.
+              </p>
+            </>
+          )}
           <label className="d1-check">
             <input
               type="checkbox"
@@ -327,11 +345,29 @@ export function QueryPanel({
       </div>
 
       <div className="d1-query-foot">
-        {hasRequirements && analysis?.valid && !analysis.impossible && (
-          <p className="d1-analysis-line">{probabilityLabel(analysis.probability)}</p>
-        )}
-        {hasRequirements && !validation.valid && (
-          <p className="d1-inline-error">{validation.errors[0]}</p>
+        {hasRequirements && (
+          // The status line always reserves one line so the foot height (and the scroll body) never changes
+          // as the query toggles between possible and impossible. The warning is anchored to this line's
+          // bottom and grows upward over the form, so its bottom edge sits one gap above the button — matching
+          // the button's bottom spacing — instead of pushing the button down.
+          <div className="d1-query-status">
+            {impossible && (
+              <div className="d1-impossible">
+                <strong className="d1-impossible-title">Impossible query</strong>
+                <p>
+                  No seed can satisfy these requirements within the current floor limit. Quest-reward-only items
+                  need their quest floors in range: +3 wands floors 7–9, +3/+4 rings floors 17–19.
+                </p>
+              </div>
+            )}
+            {!validation.valid ? (
+              <span className="d1-inline-error">{validation.errors[0]}</span>
+            ) : (
+              <span className="d1-analysis-line">
+                {analysis?.valid && !analysis.impossible ? probabilityLabel(analysis.probability) : ''}
+              </span>
+            )}
+          </div>
         )}
         <button
           type="button"

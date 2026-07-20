@@ -3,7 +3,7 @@ import { useStore } from '@tanstack/react-store'
 import { formatSeedInput } from '../../lib/format'
 import { toQueryDocument, toQueryJson, validateQuery } from '../../lib/query'
 import { SearchCoordinator, scoutSeed, searchStore } from '../../lib/search/coordinator'
-import { queryStore } from '../../lib/store'
+import { queryStore, workerCountStore } from '../../lib/store'
 import { analyzeQuery, getEngineInfo, parseSeedCode } from '../../lib/wasm'
 import type { AnalysisResult, EngineInfo, ScoutResult } from '../../lib/wasm/types'
 import { DownloadMenu } from './DownloadMenu'
@@ -81,7 +81,7 @@ export default function App() {
     }
     const state = queryStore.state
     if (!validateQuery(state).valid) return
-    controller.start(toQueryDocument(state))
+    controller.start(toQueryDocument(state), workerCountStore.state)
     setActiveTab('results')
   }, [])
 
@@ -157,17 +157,15 @@ export default function App() {
           <DownloadMenu />
         </div>
         <div className="d1-topbar-right">
-          <span className="d1-mono">
-            {engine ? `Shattered Pixel Dungeon v${engine.shpdVersion}` : 'loading engine…'}
-          </span>
           <a
             className="d1-gh-link"
             href="https://github.com/akhial/shpd-seed-seeker"
             target="_blank"
             rel="noreferrer"
-            aria-label="View source on GitHub"
+            aria-label="SHPD Seed Seeker on GitHub"
             title="View source on GitHub"
           >
+            <span className="d1-mono">SHPD Seed Seeker v0.5.2</span>
             <span className="d1-gh-icon" aria-hidden="true" />
           </a>
         </div>
@@ -226,7 +224,7 @@ export default function App() {
       </main>
 
       <footer className="d1-footer">
-        <span>SHPD Seed Seeker v0.5.1</span>
+        <span>{engine ? `Shattered Pixel Dungeon v${engine.shpdVersion}` : 'loading engine…'}</span>
         <span className="d1-footer-sep" aria-hidden="true">·</span>
         <span>GPL-3.0-or-later</span>
         <span className="d1-footer-sep" aria-hidden="true">·</span>

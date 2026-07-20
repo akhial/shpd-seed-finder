@@ -4,6 +4,25 @@ import type { QueryState } from './wasm/types'
 
 const QUERY_KEY = 'seedseeker.query.v1'
 const PRESETS_KEY = 'seedseeker.presets.v1'
+const WORKERS_KEY = 'seedseeker.workers.v1'
+
+/** Logical processors available for search workers, always at least 1. */
+export const maxWorkers = (): number => Math.max(1, (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4)
+
+function hydrateWorkerCount(): number {
+  const ceiling = maxWorkers()
+  if (typeof localStorage === 'undefined') return ceiling
+  const saved = Number(localStorage.getItem(WORKERS_KEY))
+  if (!Number.isFinite(saved) || saved < 1) return ceiling
+  return Math.min(Math.floor(saved), ceiling)
+}
+
+export const workerCountStore = new Store<number>(hydrateWorkerCount())
+export function setWorkerCount(count: number): void {
+  const clamped = Math.min(Math.max(1, Math.floor(count)), maxWorkers())
+  workerCountStore.setState(() => clamped)
+  if (typeof localStorage !== 'undefined') localStorage.setItem(WORKERS_KEY, String(clamped))
+}
 
 function hydrateQuery(): QueryState {
   if (typeof localStorage === 'undefined') return defaultQueryState()

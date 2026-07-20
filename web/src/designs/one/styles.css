@@ -136,6 +136,7 @@ body {
 .d1-gh-link {
   display: inline-flex;
   align-items: center;
+  gap: 8px;
   color: var(--d1-text-3);
   transition: color 0.12s ease;
 }
@@ -327,6 +328,8 @@ body {
   line-height: 1.45;
   color: var(--d1-text-3);
 }
+
+.d1-caption-spaced { margin-bottom: 14px; }
 
 .d1-center { text-align: center; }
 
@@ -843,18 +846,26 @@ input[type='range']::-moz-range-thumb {
 
 .d1-query-foot {
   flex: 0 0 auto;
-  padding: 10px 14px 12px;
+  padding: 12px 14px;
   border-top: 1px solid var(--d1-border);
   background: var(--d1-panel-2);
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 12px;
 }
 
 .d1-analysis-line {
   margin: 0;
   font-size: 12.5px;
   color: var(--d1-text-2);
+}
+
+/* One reserved line so the foot height stays constant as query status changes. It anchors the
+   impossible warning, which grows upward over the form so the button never moves. */
+.d1-query-status {
+  position: relative;
+  min-height: 18px;
+  line-height: 18px;
 }
 
 /* ---------- Results pane ---------- */
@@ -937,6 +948,18 @@ input[type='range']::-moz-range-thumb {
   color: #000;
   margin: -12px -14px;
   padding: 12px 14px;
+}
+
+/* Anchor the banner to the bottom of the reserved status line and let it grow upward over the form.
+   It never resizes the scroll body, so toggling it can't shift the query pane's scroll position, and
+   its bottom edge lands one gap above the button — matching the button's bottom spacing. */
+.d1-query-status .d1-impossible {
+  position: absolute;
+  left: -14px;
+  right: -14px;
+  bottom: 0;
+  margin: 0;
+  box-shadow: 0 -10px 20px rgba(0, 0, 0, 0.32);
 }
 
 .d1-impossible-title {

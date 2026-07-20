@@ -15,19 +15,19 @@ export class SearchCoordinator {
     searchStore.setState(() => initialCoordinatorState(totalSeeds))
   }
 
-  private ensureWorkers(): Worker[] {
-    const count = Math.max(1, navigator.hardwareConcurrency ?? 4)
-    while (this.workers.length < count) {
+  private ensureWorkers(count: number): Worker[] {
+    const target = Math.max(1, Math.floor(count) || 1)
+    while (this.workers.length < target) {
       const workerId = this.workers.length
       const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
       worker.addEventListener('message', (event: MessageEvent<SearchWorkerResponse>) => this.onMessage(workerId, event.data))
       this.workers.push(worker)
     }
-    return this.workers
+    return this.workers.slice(0, target)
   }
 
-  start(query: QueryDocument): void {
-    const workers = this.ensureWorkers()
+  start(query: QueryDocument, workerCount = Math.max(1, navigator.hardwareConcurrency ?? 4)): void {
+    const workers = this.ensureWorkers(workerCount)
     const sessionId = ++this.sessionId
     const startedAt = performance.now()
     searchStore.setState(() => ({
