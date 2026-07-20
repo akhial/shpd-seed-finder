@@ -60,6 +60,8 @@ struct FileRequirement {
     #[serde(default)]
     item: Option<String>,
     #[serde(default)]
+    tier: FileTier,
+    #[serde(default)]
     upgrade: FileUpgrade,
     #[serde(default)]
     effect: Option<String>,
@@ -71,6 +73,39 @@ struct FileRequirement {
     identity_group: Option<u8>,
     #[serde(default)]
     max_depth: Option<u8>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum FileTier {
+    Name(String),
+    ExactObject(ExactTier),
+    AtLeastObject(AtLeastTier),
+    AtMostObject(AtMostTier),
+}
+
+impl Default for FileTier {
+    fn default() -> Self {
+        Self::Name("any".to_owned())
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ExactTier {
+    exact: u8,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AtLeastTier {
+    at_least: u8,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AtMostTier {
+    at_most: u8,
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -235,10 +270,17 @@ fn convert_requirement(requirement: FileRequirement) -> Result<Requirement, Stri
         FileUpgrade::Name(name) if name.eq_ignore_ascii_case("any") => UpgradeRequirement::Any,
         FileUpgrade::Name(name) => return Err(format!("unknown upgrade mode '{name}'")),
     };
+    let tier = match requirement.tier {
+        FileTier::ExactObject(ExactTier { exact }) => TierRequirement::Exact(exact),
+        FileTier::AtLeastObject(AtLeastTier { at_least }) => TierRequirement::AtLeast(at_least),
+        FileTier::AtMostObject(AtMostTier { at_most }) => TierRequirement::AtMost(at_most),
+        FileTier::Name(name) if name.eq_ignore_ascii_case("any") => TierRequirement::Any,
+        FileTier::Name(name) => return Err(format!("unknown tier mode '{name}'")),
+    };
     Ok(Requirement {
         kind,
         item: definition.map(|value| value.id),
-        tier: TierRequirement::Any,
+        tier,
         upgrade,
         effect,
         require_uncursed: requirement.uncursed,
@@ -253,7 +295,7 @@ mod tests {
     use crate::catalog::{ItemId, ItemKind};
     use crate::challenges::Challenges;
     use crate::model::ItemSource;
-    use crate::query::UpgradeRequirement;
+    use crate::query::{TierRequirement, UpgradeRequirement};
 
     use super::decode;
 
@@ -310,6 +352,41 @@ mod tests {
         assert!(!query.require_blacksmith);
         assert!(!query.exclude_blacksmith_rewards);
         assert_eq!(query.requirements[0].upgrade, UpgradeRequirement::Any);
+        assert_eq!(query.requirements[0].tier, TierRequirement::Any);
+    }
+
+    #[test]
+    fn decodes_all_tier_forms() {
+        let query = decode(
+            r#"{"requirements":[
+                {"kind":"weapon","tier":"any"},
+                {"kind":"weapon","tier":{"exact":2}},
+                {"kind":"armor","tier":{"at_least":3}},
+                {"kind":"armor","tier":{"at_most":4}}
+            ]}"#,
+        )
+        .unwrap();
+        assert_eq!(query.requirements[0].tier, TierRequirement::Any);
+        assert_eq!(query.requirements[1].tier, TierRequirement::Exact(2));
+        assert_eq!(query.requirements[2].tier, TierRequirement::AtLeast(3));
+        assert_eq!(query.requirements[3].tier, TierRequirement::AtMost(4));
+    }
+
+    #[test]
+    fn rejects_tier_filters_outside_typed_validation_rules() {
+        for contents in [
+            r#"{"requirements":[{"item":"sword","tier":{"exact":3}}]}"#,
+            r#"{"requirements":[{"kind":"wand","tier":{"exact":3}}]}"#,
+            r#"{"requirements":[{"kind":"ring","tier":{"exact":3}}]}"#,
+            r#"{"requirements":[{"kind":"weapon","tier":{"exact":1}}]}"#,
+            r#"{"requirements":[{"kind":"armor","tier":{"exact":6}}]}"#,
+            r#"{"requirements":[{"kind":"weapon","tier":{"at_least":2}}]}"#,
+            r#"{"requirements":[{"kind":"armor","tier":{"at_most":5}}]}"#,
+        ] {
+            let error = decode(contents).unwrap_err();
+            assert!(error.contains("invalid query"), "{error}");
+            assert!(error.contains("tier"), "{error}");
+        }
     }
 
     #[test]

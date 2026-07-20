@@ -17,6 +17,47 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: web
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build browser engine
+        run: ./scripts/build-web-wasm.sh
+
+      - name: Test and build web app
+        working-directory: web
+        run: |
+          npm ci
+          npm run typecheck
+          npm test -- --run
+          npm run build
+
   rust:
     name: Rust
     runs-on: ubuntu-latest
