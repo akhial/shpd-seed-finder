@@ -14,10 +14,15 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // Debug-only test hook for the update dialog:
+        //   adb shell am start -n dev.seedseeker.unofficial.debug/dev.seedseeker.app.MainActivity \
+        //       --es fake_latest_version 9.9.9
+        val fakeLatestVersion =
+            if (BuildConfig.DEBUG) intent.getStringExtra("fake_latest_version") else null
         setContent {
             SeedSeekerTheme {
                 val engine = remember { NativeSeedFinderFactory.create() }
-                SeedFinderApp(engine)
+                SeedFinderApp(engine, fakeLatestVersion)
             }
         }
     }

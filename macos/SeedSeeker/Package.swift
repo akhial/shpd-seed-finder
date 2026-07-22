@@ -14,6 +14,9 @@ let package = Package(
         .library(name: "SeedSeekerKit", targets: ["SeedSeekerKit"]),
         .executable(name: "SeedSeeker", targets: ["SeedSeeker"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.4"),
+    ],
     targets: [
         .target(
             name: "CSeedFinder",
@@ -24,7 +27,17 @@ let package = Package(
             linkerSettings: [.unsafeFlags([rustLibrary + "/libshpd_seedfinder_ffi.a"])]
         ),
         .target(name: "SeedSeekerKit", dependencies: ["CSeedFinder"]),
-        .executableTarget(name: "SeedSeeker", dependencies: ["SeedSeekerKit"]),
+        .executableTarget(
+            name: "SeedSeeker",
+            dependencies: [
+                "SeedSeekerKit",
+                .product(name: "Sparkle", package: "Sparkle"),
+            ],
+            // Sparkle.framework is embedded in Contents/Frameworks by
+            // scripts/build-macos-app.sh; the executable finds it via rpath.
+            linkerSettings: [.unsafeFlags(
+                ["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]
+        ),
         .testTarget(name: "SeedSeekerKitTests", dependencies: ["SeedSeekerKit"]),
     ]
 )

@@ -12,11 +12,23 @@
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
     <string>0.5.2</string>
+    <!-- Sparkle decides whether an update applies by comparing
+         CFBundleVersion, so every release must bump it along with the
+         marketing version. -->
     <key>CFBundleVersion</key>
     <string>7</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <!-- The appcast is generated and attached to each release by the
+         macos-app job in .github/workflows/release.yml; "latest" makes the
+         newest release's copy the live feed. Signed with the EdDSA key pair
+         generated 2026-07-22 (private half: Adel's keychain and the
+         SPARKLE_ED_PRIVATE_KEY repository secret). -->
+    <key>SUFeedURL</key>
+    <string>https://github.com/akhial/shpd-seed-seeker/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>toZ/dnKbX0/e2uViaSscRNqqMWb5u86F8lAZPUoKMhI=</string>
 </dict>
 </plist>

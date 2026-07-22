@@ -13,12 +13,14 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Place
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -30,6 +32,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
+import dev.seedseeker.app.BuildConfig
 import dev.seedseeker.app.catalog.ItemCatalog
 import dev.seedseeker.app.engine.NativeSearchSession
 import dev.seedseeker.app.engine.NativeSeedFinder
@@ -45,6 +49,8 @@ import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.SearchState
 import dev.seedseeker.app.model.SearchStatus
 import dev.seedseeker.app.model.SeedResult
+import dev.seedseeker.app.update.UpdateChecker
+import dev.seedseeker.app.update.UpdateInfo
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -57,13 +63,16 @@ private const val ATLAS_PATH = "third_party/shattered-pixel-dungeon/items.png"
 private const val ITEM_ICONS_PATH = "third_party/shattered-pixel-dungeon/item_icons.png"
 private const val SETTINGS_PREFERENCES = "seed_seeker_settings"
 private const val CHALLENGES_KEY = "challenges_mask"
+private const val UPDATE_LAST_CHECK_KEY = "update_last_check"
+private const val UPDATE_SKIPPED_KEY = "update_skipped_version"
+private const val UPDATE_CHECK_INTERVAL_MILLIS = 24L * 60 * 60 * 1000
 
 private enum class Destination { FINDER, SCOUT, CHALLENGES, ABOUT }
 private data class SearchRun(val id: Long, val request: SearchRequest)
 private data class ScoutRun(val id: Long, val seed: String, val challenges: Int)
 
 @Composable
-fun SeedFinderApp(engine: NativeSeedFinder) {
+fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
     val context = LocalContext.current
     val atlas = remember(context) {
         runCatching {
@@ -121,6 +130,22 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
     var nextScoutRunId by remember { mutableLongStateOf(1L) }
     var isScouting by remember { mutableStateOf(false) }
     var scoutError by remember { mutableStateOf<String?>(null) }
+    var availableUpdate by remember { mutableStateOf<UpdateInfo?>(null) }
+
+    LaunchedEffect(Unit) {
+        val now = System.currentTimeMillis()
+        val lastCheck = preferences.getLong(UPDATE_LAST_CHECK_KEY, 0L)
+        if (fakeLatestVersion == null && now - lastCheck < UPDATE_CHECK_INTERVAL_MILLIS) {
+            return@LaunchedEffect
+        }
+        preferences.edit().putLong(UPDATE_LAST_CHECK_KEY, now).apply()
+        val update = withContext(Dispatchers.IO) {
+            UpdateChecker.check(BuildConfig.VERSION_NAME, fakeLatestVersion)
+        }
+        if (update != null && update.version != preferences.getString(UPDATE_SKIPPED_KEY, null)) {
+            availableUpdate = update
+        }
+    }
 
     PredictiveBackHandler(enabled = destination != Destination.FINDER) { progress ->
         progress.collect { }
@@ -423,6 +448,37 @@ fun SeedFinderApp(engine: NativeSeedFinder) {
                         }
                     }
                     showRequirementSheet = false
+                },
+            )
+        }
+
+        availableUpdate?.let { update ->
+            val uriHandler = LocalUriHandler.current
+            AlertDialog(
+                onDismissRequest = { availableUpdate = null },
+                title = { Text("Update available") },
+                text = {
+                    Text(
+                        "Seed Seeker ${update.version} is available on GitHub. " +
+                            "You have ${BuildConfig.VERSION_NAME}.",
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            availableUpdate = null
+                            runCatching { uriHandler.openUri(update.url) }
+                        },
+                    ) { Text("Download") }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            preferences.edit().putString(UPDATE_SKIPPED_KEY, update.version).apply()
+                            availableUpdate = null
+                        },
+                    ) { Text("Skip") }
+                    TextButton(onClick = { availableUpdate = null }) { Text("Not now") }
                 },
             )
         }

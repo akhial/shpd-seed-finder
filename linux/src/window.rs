@@ -14,7 +14,7 @@ use crate::config::APP_NAME;
 use crate::state::UiRequirement;
 use crate::{
     challenges_dialog, detail_pane, persist, presets_dialog, query_pane, requirement_editor,
-    results_pane,
+    results_pane, update,
 };
 
 #[allow(clippy::too_many_lines)] // Linear assembly of panes, actions, and wiring.
@@ -272,6 +272,7 @@ pub fn present(app: &adw::Application) {
 
     refresh_all();
     window.present();
+    update::check_on_startup(&window);
 }
 
 fn build_menu() -> gio::Menu {

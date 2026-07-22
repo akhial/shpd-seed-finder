@@ -28,6 +28,8 @@ public sealed partial class MainWindow : Window
     private const int ResultCap = 1024;
     private static readonly string SettingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Seed Seeker", "query.json");
     private static readonly string PresetsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Seed Seeker", "presets.json");
+    private static readonly string UpdateStatePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Seed Seeker", "update.json");
+    private bool updateCheckStarted;
 
     [DllImport("user32.dll")] private static extern uint GetDpiForWindow(nint hwnd);
 
@@ -49,6 +51,53 @@ public sealed partial class MainWindow : Window
         FloorSlider.Value = 1; FloorSlider.Minimum = 1; FloorSlider.Maximum = 24;
         LoadSettings(); LoadPresets(); RefreshPresets(); RefreshQuery();
         Closed += (_, _) => { search?.Cancel(); search?.Dispose(); };
+        // ContentDialog needs a live XamlRoot, which only exists once the root
+        // element has loaded; Activated can fire before that.
+        ((FrameworkElement)Content).Loaded += (_, _) => { if (!updateCheckStarted) { updateCheckStarted = true; _ = CheckForUpdatesAsync(); } };
+    }
+
+    private sealed class UpdateState { public string? SkippedVersion { get; set; } public DateTimeOffset LastChecked { get; set; } }
+
+    private async Task CheckForUpdatesAsync()
+    {
+        UpdateState state = new();
+        try { if (File.Exists(UpdateStatePath)) state = JsonSerializer.Deserialize<UpdateState>(File.ReadAllText(UpdateStatePath)) ?? new(); } catch { }
+        var forced = !string.IsNullOrEmpty(UpdateChecker.FakeLatest);
+        if (!forced && DateTimeOffset.UtcNow - state.LastChecked < TimeSpan.FromDays(1)) return;
+        state.LastChecked = DateTimeOffset.UtcNow;
+        SaveUpdateState(state);
+        var version = typeof(MainWindow).Assembly.GetName().Version;
+        var current = version is null ? "0.0.0" : $"{version.Major}.{version.Minor}.{version.Build}";
+        var update = await UpdateChecker.CheckAsync(current);
+        if (update is null || update.Version == state.SkippedVersion) return;
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Content.XamlRoot,
+            Title = "Update available",
+            Content = $"Seed Seeker {update.Version} is available on GitHub. You have {current}.",
+            PrimaryButtonText = "Download",
+            SecondaryButtonText = "Skip this version",
+            CloseButtonText = "Not now",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+        var result = await dialog.ShowAsync();
+        if (result == ContentDialogResult.Primary)
+            Process.Start(new ProcessStartInfo(update.Url) { UseShellExecute = true });
+        else if (result == ContentDialogResult.Secondary)
+        {
+            state.SkippedVersion = update.Version;
+            SaveUpdateState(state);
+        }
+    }
+
+    private static void SaveUpdateState(UpdateState state)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(UpdateStatePath)!);
+            File.WriteAllText(UpdateStatePath, JsonSerializer.Serialize(state));
+        }
+        catch { }
     }
 
     private void LoadSettings()

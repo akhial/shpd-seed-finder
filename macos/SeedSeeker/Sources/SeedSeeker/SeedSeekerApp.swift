@@ -1,13 +1,55 @@
 import AppKit
+import Combine
 import SeedSeekerKit
+import Sparkle
 import SwiftUI
 
 @main
 struct SeedSeekerApp: App {
+    // Updates are handled by Sparkle: it schedules background checks (asking
+    // the user for permission first) and drives the whole download/install
+    // flow. Dev runs via `swift run` execute outside a bundle and see no
+    // Info.plist, hence no feed — the updater then stays stopped and the
+    // menu item below stays disabled.
+    private let updaterController = SPUStandardUpdaterController(
+        startingUpdater: Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") != nil,
+        updaterDelegate: nil, userDriverDelegate: nil)
+
     var body: some Scene {
         WindowGroup("Seed Seeker") { ContentView() }
             .defaultSize(width: 1_180, height: 720)
+            .commands {
+                CommandGroup(after: .appInfo) {
+                    CheckForUpdatesView(updater: updaterController.updater)
+                }
+            }
         Settings { ChallengesSettingsView() }
+    }
+}
+
+/// The "Check for Updates…" menu item, enabled whenever Sparkle can check
+/// (updater started and no check already in flight).
+private struct CheckForUpdatesView: View {
+    @ObservedObject private var model: CheckForUpdatesViewModel
+    private let updater: SPUUpdater
+
+    init(updater: SPUUpdater) {
+        self.updater = updater
+        model = CheckForUpdatesViewModel(updater: updater)
+    }
+
+    var body: some View {
+        Button("Check for Updates…") { updater.checkForUpdates() }
+            .disabled(!model.canCheckForUpdates)
+    }
+}
+
+@MainActor
+private final class CheckForUpdatesViewModel: ObservableObject {
+    @Published var canCheckForUpdates = false
+
+    init(updater: SPUUpdater) {
+        updater.publisher(for: \.canCheckForUpdates).assign(to: &$canCheckForUpdates)
     }
 }
 

@@ -13,6 +13,7 @@ mod requirement_editor;
 mod results_pane;
 mod scout_match;
 mod state;
+mod update;
 mod window;
 
 use adw::prelude::*;

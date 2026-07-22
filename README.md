@@ -51,7 +51,7 @@ Binaries are published on the [GitHub Releases page](https://github.com/akhial/s
 | --- | --- |
 | `seed-seeker-cli-<tag>-<target>.tar.gz` / `.zip` | CLI for Linux (x86_64, arm64), macOS (Apple Silicon, Intel), and Windows (x86_64, arm64) |
 | `seed-seeker-<tag>-<arch>.AppImage` | Native Linux app (x86_64, arm64) |
-| `seed-seeker-<tag>-macos-arm64.app.zip` | Native macOS app (Apple Silicon, macOS 14+) |
+| `seed-seeker-<tag>-macos-arm64.dmg` | Native macOS app (Apple Silicon, macOS 14+) |
 | `seed-seeker-<tag>-windows-<arch>.zip` | Native Windows app (x64, ARM64) |
 | `seed-seeker-<tag>-android.apk` | Android app (arm64-v8a and x86_64) |
 

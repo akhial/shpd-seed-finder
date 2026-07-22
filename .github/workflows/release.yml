@@ -237,10 +237,16 @@ jobs:
     timeout-minutes: 30
 
     # Signing/notarization activates once the repository secrets exist;
-    # without them the build falls back to the ad-hoc signature.
+    # without them the build falls back to the ad-hoc signature. The Sparkle
+    # appcast likewise needs SPARKLE_ED_PRIVATE_KEY: the EdDSA private key
+    # matching the SUPublicEDKey baked into Info.plist (exported with
+    # Sparkle's `generate_keys -x`; the tool ships in the SwiftPM artifact
+    # under macos/SeedSeeker/.build/artifacts/sparkle/Sparkle/bin). Without
+    # it no appcast is published and installed apps see no updates.
     env:
       HAVE_CERT: ${{ secrets.MACOS_CERT_P12 != '' }}
       HAVE_NOTARY: ${{ secrets.NOTARY_KEY != '' }}
+      HAVE_SPARKLE: ${{ secrets.SPARKLE_ED_PRIVATE_KEY != '' }}
 
     steps:
       - uses: actions/checkout@v6
@@ -283,6 +289,13 @@ jobs:
       - name: Build app bundle
         run: bash scripts/build-macos-app.sh
 
+      - name: Package dmg
+        run: |
+          bash scripts/package-macos-dmg.sh \
+            "seed-seeker-${{ github.ref_name }}-macos-arm64.dmg"
+
+      # Submitting the dmg notarizes every nested binary in one pass; the
+      # stapled ticket on the dmg then covers the app it contains.
       - name: Notarize and staple
         if: env.HAVE_CERT == 'true' && env.HAVE_NOTARY == 'true'
         env:
@@ -292,25 +305,41 @@ jobs:
         run: |
           KEY="$RUNNER_TEMP/notary-key.p8"
           echo "$NOTARY_KEY" > "$KEY"
-          ditto -c -k --keepParent "dist/Seed Seeker.app" "$RUNNER_TEMP/notarize.zip"
-          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
+          xcrun notarytool submit "seed-seeker-${{ github.ref_name }}-macos-arm64.dmg" \
             --key "$KEY" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" \
             --wait --timeout 30m
-          xcrun stapler staple "dist/Seed Seeker.app"
+          xcrun stapler staple "seed-seeker-${{ github.ref_name }}-macos-arm64.dmg"
           rm "$KEY"
 
-      # ditto preserves the code signature, notarization ticket, and bundle
-      # metadata that a plain zip would strip.
-      - name: Package app
+      # The appcast is generated from the final (stapled) dmg bytes because
+      # its EdDSA signature covers the archive exactly as users download it.
+      # It is published as a release asset, and the app's SUFeedURL always
+      # points at the copy attached to the latest release. generate_appcast
+      # comes from the SwiftPM artifact the build step resolved, so its
+      # version tracks Package.resolved.
+      - name: Generate Sparkle appcast
+        if: env.HAVE_SPARKLE == 'true'
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         run: |
-          ditto -c -k --keepParent "dist/Seed Seeker.app" \
-            "seed-seeker-${{ github.ref_name }}-macos-arm64.app.zip"
+          KEY_FILE="$RUNNER_TEMP/sparkle-ed-key"
+          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" > "$KEY_FILE"
+          mkdir "$RUNNER_TEMP/appcast"
+          cp "seed-seeker-${{ github.ref_name }}-macos-arm64.dmg" "$RUNNER_TEMP/appcast/"
+          macos/SeedSeeker/.build/artifacts/sparkle/Sparkle/bin/generate_appcast \
+            --ed-key-file "$KEY_FILE" \
+            --download-url-prefix "https://github.com/akhial/shpd-seed-seeker/releases/download/${{ github.ref_name }}/" \
+            --link "https://github.com/akhial/shpd-seed-seeker/releases" \
+            -o appcast.xml "$RUNNER_TEMP/appcast"
+          rm "$KEY_FILE"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-app
-          path: seed-seeker-*-macos-arm64.app.zip
+          path: |
+            seed-seeker-*-macos-arm64.dmg
+            appcast.xml
           if-no-files-found: error
 
   linux-appimage:
