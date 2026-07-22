@@ -145,6 +145,12 @@ body {
   color: var(--d1-amber-bright);
 }
 
+/* On narrow viewports drop the app name so only the version shows, avoiding
+   the wordmark overlap and text wrapping in the fixed-height topbar. */
+@media (max-width: 720px) {
+  .d1-gh-name { display: none; }
+}
+
 .d1-gh-icon {
   width: 18px;
   height: 18px;

@@ -165,7 +165,9 @@ export default function App() {
             aria-label="SHPD Seed Seeker on GitHub"
             title="View source on GitHub"
           >
-            <span className="d1-mono">SHPD Seed Seeker v0.5.2</span>
+            <span className="d1-mono">
+              <span className="d1-gh-name">SHPD Seed Seeker </span>v0.5.2
+            </span>
             <span className="d1-gh-icon" aria-hidden="true" />
           </a>
         </div>
