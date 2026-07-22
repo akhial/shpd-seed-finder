@@ -2,6 +2,7 @@ import { Store } from '@tanstack/store'
 import type { QueryDocument, ScoutRequest, ScoutResult } from '../wasm/types'
 import { applyProgress, initialCoordinatorState, markWorkerDone, type CoordinatorState } from './coordinator-state'
 import type { SearchWorkerRequest, SearchWorkerResponse } from './protocol'
+import { advanceTraversalStart, partitionRotated, randomTraversalStart } from './traversal'
 
 export const searchStore = new Store<CoordinatorState>(initialCoordinatorState())
 
@@ -9,6 +10,7 @@ export class SearchCoordinator {
   private workers: Worker[] = []
   private sessionId = 0
   private totalSeeds = 0
+  private nextTraversalStart: number | undefined
 
   constructor(totalSeeds: number) {
     this.totalSeeds = totalSeeds
@@ -38,11 +40,18 @@ export class SearchCoordinator {
       startedAt,
     }))
     const queryJson = JSON.stringify(query)
+    const segments = partitionRotated(this.totalSeeds, workers.length, this.claimTraversalStart())
     workers.forEach((worker, index) => {
-      const startSeed = Math.floor((this.totalSeeds * index) / workers.length)
-      const endSeedExclusive = Math.floor((this.totalSeeds * (index + 1)) / workers.length)
-      worker.postMessage({ type: 'search:start', queryJson, startSeed, endSeedExclusive, sessionId } satisfies SearchWorkerRequest)
+      worker.postMessage({ type: 'search:start', queryJson, segments: segments[index], sessionId } satisfies SearchWorkerRequest)
     })
+  }
+
+  // Like the native session layer, each search starts one golden-ratio turn
+  // beyond the previous one so identical queries surface different seeds.
+  private claimTraversalStart(): number {
+    const current = this.nextTraversalStart ?? randomTraversalStart(this.totalSeeds)
+    this.nextTraversalStart = advanceTraversalStart(current, this.totalSeeds)
+    return current
   }
 
   cancel(): void {

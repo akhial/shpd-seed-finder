@@ -1,7 +1,8 @@
 import type { ParsedSeed } from '../wasm/types'
+import type { SeedRange } from './traversal'
 
 export type SearchWorkerRequest =
-  | { type: 'search:start'; queryJson: string; startSeed: number; endSeedExclusive: number; sessionId: number }
+  | { type: 'search:start'; queryJson: string; segments: SeedRange[]; sessionId: number }
   | { type: 'search:stop'; sessionId: number }
   | { type: 'scout'; requestJson: string; requestId: number }
 

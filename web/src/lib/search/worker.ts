@@ -18,33 +18,48 @@ async function runSearch(message: Extract<SearchWorkerRequest, { type: 'search:s
   await ready
   activeSession = message.sessionId
   stopRequested = false
-  const search = new SearchSession(message.queryJson, message.startSeed, message.endSeedExclusive)
   let lastPosted = performance.now()
+  let testedBefore = 0
   let latestTested = 0
   let pendingMatches: SearchAdvance['matches'] = []
   try {
-    while (!stopRequested && activeSession === message.sessionId) {
-      const advance = JSON.parse(search.advance(CHUNK)) as SearchAdvance
-      latestTested = advance.tested
-      pendingMatches.push(...advance.matches)
-      const now = performance.now()
-      if (now - lastPosted >= 100 || advance.state === 'completed') {
-        post({ type: 'search:progress', sessionId: message.sessionId, tested: latestTested, matches: pendingMatches })
-        pendingMatches = []
-        lastPosted = now
+    for (const [segmentIndex, segment] of message.segments.entries()) {
+      const lastSegment = segmentIndex === message.segments.length - 1
+      const search = new SearchSession(message.queryJson, segment.startSeed, segment.endSeedExclusive)
+      try {
+        while (!stopRequested && activeSession === message.sessionId) {
+          const advance = JSON.parse(search.advance(CHUNK)) as SearchAdvance
+          latestTested = testedBefore + advance.tested
+          pendingMatches.push(...advance.matches)
+          const now = performance.now()
+          if (now - lastPosted >= 100 || (advance.state === 'completed' && lastSegment)) {
+            post({ type: 'search:progress', sessionId: message.sessionId, tested: latestTested, matches: pendingMatches })
+            pendingMatches = []
+            lastPosted = now
+          }
+          if (advance.state === 'completed') {
+            if (lastSegment) {
+              post({ type: 'search:done', sessionId: message.sessionId, tested: latestTested })
+              return
+            }
+            testedBefore = latestTested
+            break
+          }
+          await yieldToMessages()
+        }
+      } finally {
+        search.free()
       }
-      if (advance.state === 'completed') {
-        post({ type: 'search:done', sessionId: message.sessionId, tested: latestTested })
-        return
-      }
-      await yieldToMessages()
+      if (stopRequested || activeSession !== message.sessionId) break
+    }
+    if (!message.segments.length) {
+      post({ type: 'search:done', sessionId: message.sessionId, tested: 0 })
+      return
     }
     if (pendingMatches.length) post({ type: 'search:progress', sessionId: message.sessionId, tested: latestTested, matches: pendingMatches })
     post({ type: 'search:stopped', sessionId: message.sessionId, tested: latestTested })
   } catch (error) {
     post({ type: 'search:error', sessionId: message.sessionId, error: error instanceof Error ? error.message : String(error) })
-  } finally {
-    search.free()
   }
 }
 
