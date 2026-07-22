@@ -1,8 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Symbolic form of the Seed Seeker mark: outer arc converging on the seed. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-  <g fill="none" stroke="#2e3436" stroke-linecap="round" stroke-linejoin="round">
-    <circle cx="8" cy="8" r="6.25" stroke-width="1.5"/>
-    <path d="M10.75 5.25 9 9 5.25 10.75 7 7Z" fill="#2e3436" stroke-width=".75"/>
+  <g stroke="#2e3436" fill="none" stroke-linecap="round">
+    <circle cx="8" cy="8" r="6.25" stroke-width="1.5"
+            stroke-dasharray="31.09 8.18" transform="rotate(-30 8 8)"/>
+    <circle cx="8" cy="8" r="3.4" stroke-width="1.3"
+            stroke-dasharray="13.71 7.65" transform="rotate(140 8 8)"/>
   </g>
+  <circle cx="8" cy="8" r="1.6" fill="#2e3436"/>
 </svg>

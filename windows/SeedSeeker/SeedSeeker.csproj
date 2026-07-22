@@ -8,6 +8,7 @@
     <AssemblyVersion>0.5.3.0</AssemblyVersion>
     <FileVersion>0.5.3.0</FileVersion>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\SeedSeeker.ico</ApplicationIcon>
     <Platforms>ARM64;x64</Platforms>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>false</WindowsAppSDKSelfContained>
@@ -29,6 +30,9 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
+    <!-- The exe icon covers Explorer; AppWindow.SetIcon needs the .ico on
+         disk next to the binary for the title bar and taskbar. -->
+    <Content Include="Assets\SeedSeeker.ico" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\android\app\src\main\assets\third_party\shattered-pixel-dungeon\catalog-v3.3.8.json" Link="Assets\catalog-v3.3.8.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="BuildRustEngine" BeforeTargets="Build">

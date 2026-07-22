@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Seed Seeker abstract mark, macOS master: the mark on Apple's Big Sur
+     icon grid (824pt squircle on a 1024pt canvas, soft drop shadow).
+     Rasterized into AppIcon.icns by scripts/generate-icons.sh. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1e2c29"/>
+      <stop offset="1" stop-color="#0b1110"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffc96b" stop-opacity="0.55"/>
+      <stop offset="0.55" stop-color="#ffc96b" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#ffc96b" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="dot" cx="0.42" cy="0.36" r="0.75">
+      <stop offset="0" stop-color="#ffe3a8"/>
+      <stop offset="1" stop-color="#ffc96b"/>
+    </radialGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14"/>
+      <feOffset dy="12"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.35"/></feComponentTransfer>
+    </filter>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" filter="url(#shadow)"/>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#bg)"/>
+  <g transform="translate(512 512) scale(0.82)" fill="none" stroke-linecap="round">
+    <circle r="300" stroke="#35906f" stroke-width="58"
+            stroke-dasharray="1492.3 392.7" transform="rotate(-30)"/>
+    <circle r="206" stroke="#4fb88c" stroke-width="58"
+            stroke-dasharray="844.9 449.4" transform="rotate(90)"/>
+    <circle r="118" stroke="#7de2b8" stroke-width="56"
+            stroke-dasharray="381.0 360.4" transform="rotate(210)"/>
+    <circle r="150" fill="url(#glow)" stroke="none"/>
+    <circle r="54" fill="url(#dot)" stroke="none"/>
+  </g>
+</svg>

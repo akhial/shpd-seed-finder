@@ -24,6 +24,8 @@ install -d "$APP/Contents/MacOS"
 install -m 755 "$PACKAGE/.build/release/SeedSeeker" "$APP/Contents/MacOS/SeedSeeker"
 install -m 644 "$PACKAGE/Info.plist" "$APP/Contents/Info.plist"
 install -m 644 "$PACKAGE/PkgInfo" "$APP/Contents/PkgInfo"
+install -d "$APP/Contents/Resources"
+install -m 644 "$PACKAGE/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 # Embed Sparkle. SwiftPM links the framework from the resolved binary
 # artifact but does not assemble bundles, so it is copied in by hand; the

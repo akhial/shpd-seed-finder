@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Background for the drag-to-install dmg window (660x420pt). Light so
+     Finder's dark file labels stay readable in both appearances.
+     Rendered at 1x and 2x into macos/dmg/background.tiff by
+     scripts/generate-icons.sh; icon positions must match
+     macos/dmg/settings.py. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="660" height="420" viewBox="0 0 660 420">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f7faf9"/>
+      <stop offset="1" stop-color="#edf3f0"/>
+    </linearGradient>
+  </defs>
+  <rect width="660" height="420" fill="url(#bg)"/>
+  <!-- faint brand mark bleeding off the top-left corner -->
+  <g transform="translate(30 -20) scale(0.38)" fill="none" stroke-linecap="round" opacity="0.16">
+    <circle r="300" stroke="#35906f" stroke-width="58"
+            stroke-dasharray="1492.3 392.7" transform="rotate(-30)"/>
+    <circle r="206" stroke="#4fb88c" stroke-width="58"
+            stroke-dasharray="844.9 449.4" transform="rotate(90)"/>
+    <circle r="118" stroke="#7de2b8" stroke-width="56"
+            stroke-dasharray="381.0 360.4" transform="rotate(210)"/>
+    <circle r="54" fill="#ffc96b" stroke="none"/>
+  </g>
+  <!-- and a smaller echo off the bottom-right corner -->
+  <g transform="translate(660 440) scale(0.26)" fill="none" stroke-linecap="round" opacity="0.12">
+    <circle r="300" stroke="#35906f" stroke-width="58"
+            stroke-dasharray="1492.3 392.7" transform="rotate(140)"/>
+    <circle r="206" stroke="#4fb88c" stroke-width="58"
+            stroke-dasharray="844.9 449.4" transform="rotate(-100)"/>
+  </g>
+  <text x="330" y="66" text-anchor="middle" fill="#22302b"
+        font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="26" font-weight="600" letter-spacing="0.5">Seed Seeker</text>
+  <text x="330" y="152" text-anchor="middle" fill="#8b9a94"
+        font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="12" font-weight="500" letter-spacing="3">DRAG TO INSTALL</text>
+  <g fill="none" stroke="#3f5049" stroke-width="5" stroke-linecap="round"
+     stroke-linejoin="round">
+    <path d="M 258 200 Q 330 170 402 200"/>
+    <path d="M 384.2 202.3 L 402 200 L 391.1 185.7"/>
+  </g>
+</svg>
