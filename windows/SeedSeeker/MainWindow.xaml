@@ -22,7 +22,8 @@
       <Grid>
         <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
         <TextBlock Text="Query" Style="{StaticResource SubtitleTextBlockStyle}" Margin="20,2,20,10"/>
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+        <ScrollView Grid.Row="1" HorizontalScrollMode="Disabled"
+                    HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Auto">
           <StackPanel Padding="20,0,20,20">
             <TextBlock Text="Presets" Style="{StaticResource SectionHeader}" Margin="1,2,0,8"/>
             <StackPanel Spacing="6">
@@ -124,7 +125,7 @@
               </Grid>
             </Button>
           </StackPanel>
-        </ScrollViewer>
+        </ScrollView>
         <StackPanel Grid.Row="2" Padding="20,14,20,10" Spacing="10" BorderThickness="0,1,0,0" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
           <Button x:Name="StartButton" Style="{StaticResource AccentButtonStyle}" HorizontalAlignment="Stretch" Padding="0,9" Click="Start_Click">
             <StackPanel Orientation="Horizontal" Spacing="8">
@@ -158,6 +159,7 @@
             <TextBlock Grid.Column="1" Text="Seed" Style="{StaticResource Caption}"/>
           </Grid>
           <ListView x:Name="ResultsList" Grid.Row="3" Margin="-12,4,-12,0" Padding="12,0,12,16"
+                    ScrollViewer.HorizontalScrollMode="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Hidden"
                     SelectionChanged="ResultsList_SelectionChanged" DoubleTapped="ResultsList_DoubleTapped">
             <ListView.ItemContainerStyle>
               <Style TargetType="ListViewItem">
@@ -211,7 +213,8 @@
               <TextBlock Text="No seed scouted" Style="{StaticResource BodyStrongTextBlockStyle}" HorizontalAlignment="Center"/>
               <TextBlock Text="Enter a canonical seed, or select a search result, to inspect its item manifest." Style="{StaticResource Caption}" TextAlignment="Center"/>
             </StackPanel>
-            <ListView x:Name="ScoutList" Visibility="Collapsed" SelectionMode="None" Padding="12,4,12,16">
+            <ListView x:Name="ScoutList" Visibility="Collapsed" SelectionMode="None" Padding="12,4,12,16"
+                      ScrollViewer.HorizontalScrollMode="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Hidden">
               <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem">
                   <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
