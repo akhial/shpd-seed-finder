@@ -842,6 +842,8 @@ input[type='range']::-moz-range-thumb {
 
 .d1-details[open] summary::after { transform: rotate(225deg) translateY(-1px); }
 
+.d1-details-body { margin-top: 6px; }
+
 .d1-challenge-list {
   margin-top: 6px;
   display: flex;

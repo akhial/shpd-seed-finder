@@ -105,6 +105,8 @@ export function QueryPanel({
   })).filter((group) => group.entries.length > 0)
   const ungrouped = indexed.filter(({ requirement }) => requirementKind(requirement) === undefined)
   const challengeCount = query.challenges.length
+  const blacksmithCount = Number(query.requireBlacksmith) + Number(query.excludeBlacksmithRewards)
+  const performanceCount = Number(query.fastMode)
   const hasRequirements = query.requirements.length > 0
   const impossible = Boolean(analysis?.valid && analysis.impossible)
   const startDisabled = !running && (!engineReady || !validation.valid || impossible)
@@ -264,58 +266,72 @@ export function QueryPanel({
         </section>
 
         <section className="d1-section">
-          <div className="d1-section-head"><h3>Blacksmith</h3></div>
-          <label className={`d1-check${query.maxDepth >= 14 ? ' d1-check-disabled' : ''}`}>
-            <input
-              type="checkbox"
-              checked={query.requireBlacksmith}
-              disabled={query.maxDepth >= 14}
-              onChange={(event) => patchQuery({ requireBlacksmith: event.currentTarget.checked })}
-            />
-            <span>Require accessible blacksmith</span>
-          </label>
-          <label className="d1-check">
-            <input
-              type="checkbox"
-              checked={query.excludeBlacksmithRewards}
-              onChange={(event) => patchQuery({ excludeBlacksmithRewards: event.currentTarget.checked })}
-            />
-            <span>Exclude Smith rewards</span>
-          </label>
-          <p className="d1-caption">
-            Required items cannot come from the 2,000-favor Smith choice, leaving favor available for reforging.
-          </p>
+          <details className="d1-details">
+            <summary>
+              <span>Blacksmith</span>
+              {blacksmithCount > 0 && <span className="d1-count">{blacksmithCount}</span>}
+            </summary>
+            <div className="d1-details-body">
+              <label className={`d1-check${query.maxDepth >= 14 ? ' d1-check-disabled' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={query.requireBlacksmith}
+                  disabled={query.maxDepth >= 14}
+                  onChange={(event) => patchQuery({ requireBlacksmith: event.currentTarget.checked })}
+                />
+                <span>Require accessible blacksmith</span>
+              </label>
+              <label className="d1-check">
+                <input
+                  type="checkbox"
+                  checked={query.excludeBlacksmithRewards}
+                  onChange={(event) => patchQuery({ excludeBlacksmithRewards: event.currentTarget.checked })}
+                />
+                <span>Exclude Smith rewards</span>
+              </label>
+              <p className="d1-caption">
+                Required items cannot come from the 2,000-favor Smith choice, leaving favor available for reforging.
+              </p>
+            </div>
+          </details>
         </section>
 
         <section className="d1-section">
-          <div className="d1-section-head"><h3>Performance</h3></div>
-          {workerCeiling > 1 && (
-            <>
-              <SliderRow
-                label="Workers"
-                valueLabel={`${workerCount} of ${workerCeiling} core${workerCeiling === 1 ? '' : 's'}`}
-                min={1}
-                max={workerCeiling}
-                value={Math.min(workerCount, workerCeiling)}
-                fill
-                onChange={setWorkerCount}
-              />
-              <p className="d1-caption d1-caption-spaced">
-                Number of search threads to spawn.
+          <details className="d1-details">
+            <summary>
+              <span>Performance</span>
+              {performanceCount > 0 && <span className="d1-count">{performanceCount}</span>}
+            </summary>
+            <div className="d1-details-body">
+              {workerCeiling > 1 && (
+                <>
+                  <SliderRow
+                    label="Workers"
+                    valueLabel={`${workerCount} of ${workerCeiling} core${workerCeiling === 1 ? '' : 's'}`}
+                    min={1}
+                    max={workerCeiling}
+                    value={Math.min(workerCount, workerCeiling)}
+                    fill
+                    onChange={setWorkerCount}
+                  />
+                  <p className="d1-caption d1-caption-spaced">
+                    Number of search threads to spawn.
+                  </p>
+                </>
+              )}
+              <label className="d1-check">
+                <input
+                  type="checkbox"
+                  checked={query.fastMode}
+                  onChange={(event) => patchQuery({ fastMode: event.currentTarget.checked })}
+                />
+                <span>Fast search</span>
+              </label>
+              <p className="d1-caption">
+                Treats +3 weapons and armor as quest rewards only, skipping the rare Crypt and Sacrificial-fire prizes.
               </p>
-            </>
-          )}
-          <label className="d1-check">
-            <input
-              type="checkbox"
-              checked={query.fastMode}
-              onChange={(event) => patchQuery({ fastMode: event.currentTarget.checked })}
-            />
-            <span>Fast search</span>
-          </label>
-          <p className="d1-caption">
-            Treats +3 weapons and armor as quest rewards only, skipping the rare Crypt and Sacrificial-fire prizes.
-          </p>
+            </div>
+          </details>
         </section>
 
         <section className="d1-section">
