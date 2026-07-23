@@ -485,6 +485,9 @@ input[type='range']:focus-visible,
 
 .d1-seg button:hover { color: var(--d1-text); }
 
+.d1-seg-fill { width: 100%; }
+.d1-seg-fill button { flex: 1; }
+
 .d1-seg button.d1-seg-on {
   color: #000;
   background: var(--d1-amber);

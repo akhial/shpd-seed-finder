@@ -129,7 +129,7 @@ export function RequirementEditor({
         <div className="d1-modal-body">
           <section className="d1-modal-section">
             <h3>Item</h3>
-            <Segmented value={kind} options={CATEGORY_OPTIONS} onChange={setKind} ariaLabel="Category" />
+            <Segmented value={kind} options={CATEGORY_OPTIONS} onChange={setKind} ariaLabel="Category" fill />
             <Field label="Item">
               <select
                 className="d1-select"
@@ -200,7 +200,7 @@ export function RequirementEditor({
 
           <section className="d1-modal-section">
             <h3>Upgrade level</h3>
-            <Segmented value={draft.upgrade.mode} options={[...UPGRADE_OPTIONS]} onChange={setUpgradeMode} ariaLabel="Upgrade predicate" />
+            <Segmented value={draft.upgrade.mode} options={[...UPGRADE_OPTIONS]} onChange={setUpgradeMode} ariaLabel="Upgrade predicate" fill />
             {draft.upgrade.mode === 'exact' && (
               <SliderRow
                 label="Exactly"

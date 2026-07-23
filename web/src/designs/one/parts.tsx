@@ -39,14 +39,16 @@ export function Segmented<T extends string | number>({
   options,
   onChange,
   ariaLabel,
+  fill,
 }: {
   value: T
   options: SegmentedOption<T>[]
   onChange: (value: T) => void
   ariaLabel?: string
+  fill?: boolean
 }) {
   return (
-    <div className="d1-seg" role="group" aria-label={ariaLabel}>
+    <div className={fill ? 'd1-seg d1-seg-fill' : 'd1-seg'} role="group" aria-label={ariaLabel}>
       {options.map((option) => (
         <button
           type="button"
