@@ -166,7 +166,7 @@ export default function App() {
             title="View source on GitHub"
           >
             <span className="d1-mono">
-              <span className="d1-gh-name">SHPD Seed Seeker </span>v0.5.3
+              <span className="d1-gh-name">SHPD Seed Seeker </span>v0.5.4
             </span>
             <span className="d1-gh-icon" aria-hidden="true" />
           </a>
