@@ -15,9 +15,6 @@ written in Rust — with native apps for Android, Linux, macOS, and Windows.
 <p align="center">
   <i>Scanning seeds for a +3 Wand of Fireblast across 24 floors, on an Apple M4 Pro (12 cores).
 <p/>
-<p align="center">
-  See <a href="#benchmarks">Benchmarks</a> for the full methodology.</i>
-</p>
 
 - ⚡️ **16–30× faster** than the established Java seed finder
 - 🔍 **Rich queries**: multiple requirements across melee and thrown weapons, armor, wands, and rings
