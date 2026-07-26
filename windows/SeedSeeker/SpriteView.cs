@@ -128,7 +128,7 @@ public sealed class SpriteView : Grid
         var color = GlowColor;
         // The high bit distinguishes "no glow" from "glow that happens to be black".
         var tint = period > 0 ? 0x1000000u | (uint)((color.R << 16) | (color.G << 8) | color.B) : 0u;
-        var pixels = (int)Math.Max(1, Math.Round(size * RasterizationScale()));
+        var pixels = (int)Math.Max(1, Math.Round(size * EffectiveScale()));
         var key = (SpriteIndex, pixels, tint);
         if (!force && key == rendered) return;
         rendered = key;
@@ -142,9 +142,15 @@ public sealed class SpriteView : Grid
         _ = ApplyAsync(++generation, pixels, period);
     }
 
-    private double RasterizationScale()
+    /// <summary>
+    /// The raster scale to size the bitmap from, so it stays crisp at 150%/200%.
+    /// Prefers the XamlRoot's scale and falls back to the element's own suggestion
+    /// before the control is in a tree.
+    /// </summary>
+    private double EffectiveScale()
     {
         var scale = XamlRoot?.RasterizationScale ?? 0;
+        if (scale <= 0) scale = RasterizationScale;
         return scale > 0 ? scale : 1.0;
     }
 
