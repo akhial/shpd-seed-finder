@@ -28,6 +28,19 @@ android {
         vectorDrawables.useSupportLibrary = true
     }
 
+    // Preview APKs are built for every pull request and are meant to be installed
+    // by hand, so they need a signature. This key is deliberately NOT a secret:
+    // it signs nothing that ships, and previews carry their own application ID,
+    // so a preview can never masquerade as or upgrade an installed release.
+    signingConfigs {
+        create("preview") {
+            storeFile = rootProject.file("preview.keystore")
+            storePassword = "preview"
+            keyAlias = "preview"
+            keyPassword = "preview"
+        }
+    }
+
     buildTypes {
         debug {
             buildConfigField("boolean", "USE_DEMO_ENGINE", "true")
@@ -42,6 +55,16 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+        }
+        // Exercises the shipping configuration — real engine, R8, resource
+        // shrinking — so a preview reproduces release-only behaviour. The
+        // separate application ID lets it sit alongside an installed release
+        // instead of forcing an uninstall to swap signatures.
+        create("preview") {
+            initWith(getByName("release"))
+            applicationIdSuffix = ".preview"
+            versionNameSuffix = "-preview"
+            signingConfig = signingConfigs.getByName("preview")
         }
     }
 
@@ -72,7 +95,10 @@ android {
     }
 
     // Debug builds use DemoNativeSeedFinder and must not pick up stale release JNI outputs.
-    sourceSets.getByName("release").jniLibs.directories.add("build/generated/jniLibs")
+    // Preview builds run the real engine, so they need the same Rust output as release.
+    for (variant in listOf("release", "preview")) {
+        sourceSets.getByName(variant).jniLibs.directories.add("build/generated/jniLibs")
+    }
 }
 
 val rustJniOutput = layout.buildDirectory.dir("generated/jniLibs")
@@ -96,7 +122,9 @@ val buildRustJni by tasks.registering(Exec::class) {
     outputs.dir(rustJniOutput)
 }
 
-tasks.matching { it.name == "mergeReleaseJniLibFolders" }.configureEach {
+tasks.matching {
+    it.name == "mergeReleaseJniLibFolders" || it.name == "mergePreviewJniLibFolders"
+}.configureEach {
     dependsOn(buildRustJni)
 }
 

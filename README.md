@@ -227,6 +227,27 @@ JAVA_HOME=/path/to/java-21 ./gradlew :app:assembleRelease --offline
   android/app/build/outputs/apk/release/app-release-unsigned.apk
 ```
 
+#### Preview builds
+
+Every pull request builds an installable `preview` APK and comments the download
+link on the pull request. To build one locally:
+
+```sh
+cd android
+JAVA_HOME=/path/to/java-21 ./gradlew :app:assemblePreview --offline
+```
+
+The `preview` build type mirrors `release` — real engine, R8, resource shrinking —
+but applies the `.preview` application ID suffix and signs with
+`android/preview.keystore`, so a preview installs alongside a release build
+instead of demanding an uninstall to swap signatures.
+
+That keystore is checked in and **is not a secret**: it signs nothing that ships,
+and the distinct application ID means a preview can never masquerade as or
+upgrade an installed release. Release signing continues to use the
+`ANDROID_KEYSTORE` repository secret, which is never exposed to pull request
+builds.
+
 ### macOS
 
 #### Building

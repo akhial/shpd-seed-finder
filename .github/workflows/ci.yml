@@ -127,6 +127,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
+    # The preview build posts its download link back to the pull request.
+    permissions:
+      contents: read
+      pull-requests: write
+
     steps:
       - uses: actions/checkout@v6
 
@@ -161,6 +166,53 @@ jobs:
       - name: Test, lint, and assemble release
         working-directory: android
         run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleRelease --stacktrace
+
+      # An installable build of the pull request, for hand-testing on a device.
+      # It carries its own application ID, so it sits alongside an installed
+      # release rather than colliding with it.
+      - name: Assemble preview APK
+        if: github.event_name == 'pull_request'
+        working-directory: android
+        run: ./gradlew :app:assemblePreview --stacktrace
+
+      - name: Name the preview APK after the pull request
+        if: github.event_name == 'pull_request'
+        run: |
+          cp android/app/build/outputs/apk/preview/app-preview.apk \
+            "seed-seeker-pr${{ github.event.number }}-android.apk"
+
+      - name: Upload preview APK
+        id: preview_apk
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-apk
+          path: seed-seeker-pr*-android.apk
+          if-no-files-found: error
+
+      # One comment per pull request, rewritten in place on every push, so the
+      # link always points at the newest build instead of piling up.
+      - name: Comment the preview APK link
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.number }}
+          ARTIFACT_URL: ${{ steps.preview_apk.outputs.artifact-url }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          marker='<!-- preview-apk -->'
+          body=$(printf '%s\n**Preview APK** for `%s` — [download](%s)\n\nGitHub serves artifacts as a `.zip`; extract it and install the `.apk` inside. Signed with the repository preview key and installed as `dev.seedseeker.unofficial.preview`, so it runs alongside a release build instead of replacing it.\n' \
+            "$marker" "${SHA:0:7}" "$ARTIFACT_URL")
+          # --paginate emits one array per page, so collapse to a single id.
+          id=$(gh api "repos/$REPO/issues/$NUMBER/comments" --paginate \
+            --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n 1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -f body="$body" >/dev/null
+          else
+            gh api -X POST "repos/$REPO/issues/$NUMBER/comments" -f body="$body" >/dev/null
+          fi
 
   macos:
     name: macOS
