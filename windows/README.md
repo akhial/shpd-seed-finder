@@ -11,3 +11,9 @@ The Windows client is a native WinUI 3 desktop app using Fluent Design 2 and the
 Open `SeedSeeker.slnx` in Visual Studio and select ARM64, or run `.\scripts\build-windows-app.ps1` from the repository root.
 
 The app is unpackaged and framework-dependent. The Windows App SDK 1.8 runtime must be installed; Visual Studio installs it on development machines.
+
+## Item artwork
+
+Scouted items and requirements render the real Shattered Pixel Dungeon sprites, pulsing with the game's enchantment and curse glow colours. The atlas geometry and the glow table mirror `web/src/lib/sprites.ts` and `web/src/lib/glow.ts`; the Fluent palette itself is unchanged, and the only new colours are the per-enchantment glows, which are item data from the game rather than app chrome.
+
+`items.png`, `item_icons.png`, `LICENSE.txt` and `ATTRIBUTION.md` are linked into `Assets\` from `android/app/src/main/assets/third_party/shattered-pixel-dungeon/` rather than duplicated. The artwork is GPL-3.0-or-later, so the app ships those notices and surfaces them: the "Shattered Pixel Dungeon v3.3.8" link in the sidebar footer opens an About dialog with the attribution and the full license text.

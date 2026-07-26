@@ -48,6 +48,8 @@ public sealed partial class MainWindow : Window
             presenter.PreferredMinimumWidth = (int)(1020 * scale);
             presenter.PreferredMinimumHeight = (int)(620 * scale);
         }
+        // Decode the item atlases up front so the first sprite render is warm.
+        _ = ItemAtlas.GetAsync();
         ResultsList.ItemsSource = results; ScoutButton.IsEnabled = false;
         FloorSlider.Value = 1; FloorSlider.Minimum = 1; FloorSlider.Maximum = 24;
         LoadSettings(); LoadPresets(); RefreshPresets(); RefreshQuery();
@@ -266,6 +268,109 @@ public sealed partial class MainWindow : Window
         await dialog.ShowAsync(); query.Challenges = toggles.Where(x => x.Item2.IsOn).Aggregate(0, (mask, x) => mask | x.Item1); RefreshQuery(); SaveSettings();
     }
 
+    /// <summary>
+    /// Attribution facts for the bundled Shattered Pixel Dungeon artwork, matching
+    /// the Android About screen so both platforms state the same thing.
+    /// </summary>
+    private static readonly (string Label, string Value)[] ArtworkAttribution =
+    [
+        ("Upstream", "Shattered Pixel Dungeon v3.3.8"),
+        ("Commit", "7b8b845a76fe76c6b7c031ae9e570852411f56db"),
+        ("Pixel Dungeon", "© 2012–2015 Oleg Dolya"),
+        ("Shattered Pixel Dungeon", "© 2014–2026 Evan Debenham"),
+        ("Atlas SHA-256", "ce2496368660e9b2…a294caacaf"),
+        ("Icon SHA-256", "38df728d32842d9f…24d7eb9b72"),
+    ];
+
+    private static Brush ThemeBrush(string key, Color fallback)
+    {
+        try { return (Brush)Application.Current.Resources[key]; }
+        catch { return new SolidColorBrush(fallback); }
+    }
+
+    /// <summary>
+    /// The app ships GPL-3.0-or-later artwork from Shattered Pixel Dungeon, so it
+    /// has to surface the attribution and a way to read the full license text. The
+    /// bundled ATTRIBUTION.md and LICENSE.txt are both readable from here.
+    /// </summary>
+    private async void About_Click(object sender, RoutedEventArgs e)
+    {
+        var secondary = ThemeBrush("TextFillColorSecondaryBrush", Microsoft.UI.Colors.Gray);
+        var accent = ThemeBrush("AccentTextFillColorPrimaryBrush", Microsoft.UI.Colors.SteelBlue);
+        var version = typeof(MainWindow).Assembly.GetName().Version;
+        var current = version is null ? "0.0.0" : $"{version.Major}.{version.Minor}.{version.Build}";
+        var panel = new StackPanel { Spacing = 6, Width = 460 };
+
+        void Header(string text) => panel.Children.Add(new TextBlock { Text = text, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 14, 0, 2) });
+        void Paragraph(string text) => panel.Children.Add(new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = secondary });
+
+        panel.Children.Add(new TextBlock { Text = $"Seed Seeker {current}", FontSize = 20, FontWeight = FontWeights.SemiBold });
+        panel.Children.Add(new TextBlock { Text = "Independent · unofficial · open source", FontSize = 12, Foreground = secondary });
+
+        Header("Not the game");
+        Paragraph("Seed Seeker is an independent utility and is not affiliated with or endorsed by Shattered Pixel Dungeon or its authors. Its Fluent interface is original; no game UI components are used.");
+
+        Header("Artwork attribution");
+        Paragraph("The item sprites and ring type icons are unchanged copies of Shattered Pixel Dungeon's item atlases.");
+        foreach (var (label, value) in ArtworkAttribution)
+        {
+            var line = new StackPanel { Spacing = 1, Margin = new Thickness(0, 6, 0, 0) };
+            line.Children.Add(new TextBlock { Text = label, FontSize = 11, Foreground = accent });
+            line.Children.Add(new TextBlock { Text = value, FontSize = 12, Foreground = secondary, TextWrapping = TextWrapping.Wrap });
+            panel.Children.Add(line);
+        }
+        panel.Children.Add(new HyperlinkButton
+        {
+            Content = "github.com/00-Evan/shattered-pixel-dungeon",
+            NavigateUri = new Uri("https://github.com/00-Evan/shattered-pixel-dungeon"),
+            FontSize = 12, Margin = new Thickness(-4, 2, 0, 0),
+        });
+        panel.Children.Add(FileReader("ATTRIBUTION.md", "Read the bundled attribution notice"));
+
+        Header("GNU GPL v3 or later");
+        Paragraph("This program is free software. You may redistribute and modify it under GPL-3.0-or-later. It comes with no warranty. Source distributions must retain the license and copyright notices. ATTRIBUTION.md and LICENSE.txt ship in the app's Assets folder.");
+        panel.Children.Add(FileReader("LICENSE.txt", "Read the full license"));
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Content.XamlRoot,
+            Title = "About & licenses",
+            CloseButtonText = "Close",
+            DefaultButton = ContentDialogButton.Close,
+            Content = VerticalScrollView(panel, 520, 500),
+        };
+        await dialog.ShowAsync();
+    }
+
+    /// <summary>An expander that reads a bundled text file the first time it opens.</summary>
+    private static Expander FileReader(string name, string header)
+    {
+        var expander = new Expander
+        {
+            Header = header,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            Margin = new Thickness(0, 8, 0, 0),
+        };
+        expander.Expanding += (_, _) => expander.Content ??= BundledText(name);
+        return expander;
+    }
+
+    private static TextBlock BundledText(string name)
+    {
+        string text;
+        try { text = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Assets", name)); }
+        catch (Exception ex) { text = $"{name} could not be read: {ex.Message}"; }
+        return new TextBlock
+        {
+            Text = text,
+            FontFamily = new FontFamily("Cascadia Mono, Consolas"),
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            IsTextSelectionEnabled = true,
+        };
+    }
+
     private static ScrollView VerticalScrollView(UIElement content, double maxHeight, double? width = null)
     {
         var scrollView = new ScrollView
@@ -359,14 +464,19 @@ public sealed class ScoutRow
     public string Accessibility { get; init; } = "";
     public Visibility AccessibilityVisibility { get; init; } = Visibility.Collapsed;
     public Visibility MatchVisibility { get; init; } = Visibility.Collapsed;
-    public string Glyph { get; init; } = "";
-    public Brush Tint { get; init; } = new SolidColorBrush(Microsoft.UI.Colors.Gray);
+    /// <summary>Row-major index into the upstream item atlas.</summary>
+    public int SpriteIndex { get; init; } = -1;
+    /// <summary>Enchantment/curse glow colour; only meaningful when <see cref="GlowPeriod"/> is positive.</summary>
+    public Color GlowColor { get; init; }
+    /// <summary>Seconds to peak glow, or zero when the item neither is enchanted nor cursed.</summary>
+    public double GlowPeriod { get; init; }
     public Windows.UI.Text.FontWeight Weight { get; init; } = FontWeights.Normal;
 
     public static ScoutRow From(ScoutItem x, bool match)
     {
         var access = x.AccessibilityTag switch { 1 => $"One reward of choice group {x.AccessibilityGroup} (option {x.AccessibilityValue + 1})", 2 => $"Only in some outcomes of scenario group {x.AccessibilityGroup}", _ => "" };
         var isCurse = x.Effect is not null && ItemCatalog.IsCurse(x.Item.Kind, x.Effect);
+        var glow = ItemGlow.ForItem(x);
         return new()
         {
             ItemName = x.Item.Name,
@@ -378,7 +488,8 @@ public sealed class ScoutRow
             Accessibility = access, AccessibilityVisibility = access.Length == 0 ? Visibility.Collapsed : Visibility.Visible,
             MatchVisibility = match ? Visibility.Visible : Visibility.Collapsed,
             Weight = match ? FontWeights.SemiBold : FontWeights.Normal,
-            Glyph = KindStyle.Glyph(x.Item.Kind), Tint = KindStyle.Tint(x.Item.Kind),
+            SpriteIndex = x.Item.SpriteIndex,
+            GlowColor = glow?.Color ?? default, GlowPeriod = glow?.Period ?? 0,
         };
     }
 }

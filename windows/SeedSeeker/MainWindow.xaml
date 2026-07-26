@@ -50,7 +50,15 @@
                   <Button Style="{StaticResource CardButton}" Click="Requirement_Click">
                     <Grid ColumnSpacing="12">
                       <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                      <FontIcon Glyph="{Binding Glyph}" Foreground="{Binding Tint}" FontSize="16" VerticalAlignment="Center"/>
+                      <!-- The real item sprite when one is pinned; the generic
+                           Fluent glyph only for wildcard requirements. -->
+                      <Grid Width="24" Height="24" VerticalAlignment="Center">
+                        <FontIcon Glyph="{Binding Glyph}" Foreground="{Binding Tint}" FontSize="16"
+                                  Visibility="{Binding FallbackVisibility}"/>
+                        <local:SpriteView SpriteIndex="{Binding SpriteIndex}" SpriteSize="24"
+                                          GlowColor="{Binding GlowColor}" GlowPeriod="{Binding GlowPeriod}"
+                                          Visibility="{Binding SpriteVisibility}"/>
+                      </Grid>
                       <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
                         <TextBlock Text="{Binding Title}" TextWrapping="Wrap"/>
                         <TextBlock Text="{Binding Description}" Style="{StaticResource Caption}"/>
@@ -134,7 +142,9 @@
             </StackPanel>
             <Button.KeyboardAccelerators><KeyboardAccelerator Modifiers="Control" Key="Enter"/></Button.KeyboardAccelerators>
           </Button>
-          <TextBlock Text="Shattered Pixel Dungeon v3.3.8" Style="{StaticResource Caption}" HorizontalAlignment="Center"/>
+          <HyperlinkButton Content="Shattered Pixel Dungeon v3.3.8" Click="About_Click" FontSize="12"
+                           HorizontalAlignment="Center" Padding="6,2"
+                           ToolTipService.ToolTip="Artwork attribution and licenses"/>
         </StackPanel>
       </Grid>
 
@@ -237,7 +247,9 @@
                 <DataTemplate>
                   <Grid ColumnSpacing="10" Padding="0,6">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <FontIcon Glyph="{Binding Glyph}" Foreground="{Binding Tint}" FontSize="15" Width="20" VerticalAlignment="Top" Margin="0,3,0,0"/>
+                    <local:SpriteView SpriteIndex="{Binding SpriteIndex}" SpriteSize="22"
+                                      GlowColor="{Binding GlowColor}" GlowPeriod="{Binding GlowPeriod}"
+                                      VerticalAlignment="Top" Margin="0,2,0,0"/>
                     <StackPanel Grid.Column="1" Spacing="2">
                       <StackPanel Orientation="Horizontal" Spacing="6">
                         <TextBlock Text="{Binding ItemName}" FontWeight="{Binding Weight}" TextWrapping="Wrap"/>
