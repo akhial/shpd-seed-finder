@@ -229,8 +229,12 @@ JAVA_HOME=/path/to/java-21 ./gradlew :app:assembleRelease --offline
 
 #### Preview builds
 
-Every pull request builds an installable `preview` APK and comments the download
-link on the pull request. To build one locally:
+Every pull request builds an installable `preview` APK, distributes it through
+[Firebase App Distribution](https://firebase.google.com/docs/app-distribution),
+and comments the install link on the pull request. Testers in the
+`preview-testers` group open that link on the device and tap Download; the same
+APK is also attached to the workflow run as a `.zip` artifact. To build one
+locally:
 
 ```sh
 cd android
@@ -247,6 +251,32 @@ and the distinct application ID means a preview can never masquerade as or
 upgrade an installed release. Release signing continues to use the
 `ANDROID_KEYSTORE` repository secret, which is never exposed to pull request
 builds.
+
+##### Distribution setup
+
+Distribution is keyed on a single repository secret. Without it the preview is
+still built and uploaded as an artifact, so forks and unconfigured clones keep
+working — App Distribution simply stays dormant.
+
+| Setting | Value |
+| --- | --- |
+| Firebase project | `shpd-seed-seeker` |
+| App ID | `1:994180159459:android:c16e6de2b2fb6b3d70b2d6` |
+| Package | `dev.seedseeker.unofficial.preview` |
+| Tester group | `preview-testers` |
+| Repository secret | `FIREBASE_SERVICE_ACCOUNT` |
+
+The project, app ID and group are configuration, not credentials, so they live
+in `.github/workflows/ci.yml`. Only the service account JSON is secret. To
+(re)create it: in the Google Cloud console for the `shpd-seed-seeker` project,
+create a service account, grant it **Firebase App Distribution Admin**, add a
+JSON key, and paste the file's contents into the `FIREBASE_SERVICE_ACCOUNT`
+repository secret. Add testers with:
+
+```sh
+firebase appdistribution:testers:add you@example.com \
+  --group-alias preview-testers --project shpd-seed-seeker
+```
 
 ### macOS
 

@@ -132,6 +132,16 @@ jobs:
       contents: read
       pull-requests: write
 
+    # Distribution activates once the service account secret exists; without it
+    # the preview is still built and uploaded as a workflow artifact. Fork pull
+    # requests never receive secrets, so they always take the artifact path.
+    # The app ID and project are not secrets — they identify, they do not grant.
+    env:
+      HAVE_FIREBASE: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
+      FIREBASE_PROJECT: shpd-seed-seeker
+      FIREBASE_APP_ID: "1:994180159459:android:c16e6de2b2fb6b3d70b2d6"
+      FIREBASE_TESTER_GROUP: preview-testers
+
     steps:
       - uses: actions/checkout@v6
 
@@ -190,6 +200,38 @@ jobs:
           path: seed-seeker-pr*-android.apk
           if-no-files-found: error
 
+      # App Distribution gives testers a tap-to-install link, which a workflow
+      # artifact cannot: GitHub serves those as a zip, to signed-in users only.
+      # firebase-tools is pinned because an unpinned npx pulls a new major
+      # without warning, and this step holds a credential.
+      - name: Distribute preview APK to testers
+        id: distribute
+        if: github.event_name == 'pull_request' && env.HAVE_FIREBASE == 'true'
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          NUMBER: ${{ github.event.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/firebase-service-account.json"
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$key"
+          trap 'rm -f "$key"' EXIT
+          export GOOGLE_APPLICATION_CREDENTIALS="$key"
+          npx --yes firebase-tools@15.23.0 appdistribution:distribute \
+            "seed-seeker-pr$NUMBER-android.apk" \
+            --project "$FIREBASE_PROJECT" \
+            --app "$FIREBASE_APP_ID" \
+            --groups "$FIREBASE_TESTER_GROUP" \
+            --release-notes "PR #$NUMBER · $TITLE · ${SHA:0:7}" \
+            | tee distribute.log
+          # Prefer the per-release tester page; fall back to the app's release
+          # list if the CLI ever stops printing that line.
+          # `|| true` matters: under pipefail a non-matching grep would abort
+          # the step rather than fall through to the app-level link.
+          url=$(grep -o 'https://appdistribution\.firebase\.google\.com/testerapps/[^ ?]*' distribute.log | head -n 1 || true)
+          echo "tester-url=${url:-https://appdistribution.firebase.google.com/testerapps/$FIREBASE_APP_ID}" >> "$GITHUB_OUTPUT"
+
       # One comment per pull request, rewritten in place on every push, so the
       # link always points at the newest build instead of piling up.
       - name: Comment the preview APK link
@@ -199,12 +241,19 @@ jobs:
           REPO: ${{ github.repository }}
           NUMBER: ${{ github.event.number }}
           ARTIFACT_URL: ${{ steps.preview_apk.outputs.artifact-url }}
+          TESTER_URL: ${{ steps.distribute.outputs.tester-url }}
           SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           marker='<!-- preview-apk -->'
-          body=$(printf '%s\n**Preview APK** for `%s` — [download](%s)\n\nGitHub serves artifacts as a `.zip`; extract it and install the `.apk` inside. Signed with the repository preview key and installed as `dev.seedseeker.unofficial.preview`, so it runs alongside a release build instead of replacing it.\n' \
-            "$marker" "${SHA:0:7}" "$ARTIFACT_URL")
+          footer='Installed as `dev.seedseeker.unofficial.preview` and signed with the repository preview key, so it runs alongside a release build instead of replacing it.'
+          if [ -n "$TESTER_URL" ]; then
+            body=$(printf '%s\n**Preview APK** for `%s` — [install on a device](%s)\n\nOpen it on the phone and tap Download; you need to be in the `%s` group. Also on this run as a [`.zip` artifact](%s).\n\n%s\n' \
+              "$marker" "${SHA:0:7}" "$TESTER_URL" "$FIREBASE_TESTER_GROUP" "$ARTIFACT_URL" "$footer")
+          else
+            body=$(printf '%s\n**Preview APK** for `%s` — [download](%s)\n\nGitHub serves artifacts as a `.zip`; extract it and install the `.apk` inside.\n\n%s\n' \
+              "$marker" "${SHA:0:7}" "$ARTIFACT_URL" "$footer")
+          fi
           # --paginate emits one array per page, so collapse to a single id.
           id=$(gh api "repos/$REPO/issues/$NUMBER/comments" --paginate \
             --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n 1)
