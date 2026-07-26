@@ -207,6 +207,10 @@ jobs:
       - name: Distribute preview APK to testers
         id: distribute
         if: github.event_name == 'pull_request' && env.HAVE_FIREBASE == 'true'
+        # A distribution hiccup must not fail the job that gates merge, nor
+        # cost the pull request its artifact link. The step still shows up
+        # annotated in the run, and the comment falls back on its own.
+        continue-on-error: true
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           NUMBER: ${{ github.event.number }}
@@ -235,7 +239,7 @@ jobs:
       # One comment per pull request, rewritten in place on every push, so the
       # link always points at the newest build instead of piling up.
       - name: Comment the preview APK link
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && !cancelled()
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
