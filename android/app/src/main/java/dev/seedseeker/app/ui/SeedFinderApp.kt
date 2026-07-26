@@ -259,6 +259,8 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
     CompositionLocalProvider(
         LocalItemAtlas provides atlas,
         LocalItemIconAtlas provides itemIcons,
+        // One clock drives every enchantment/curse pulse in the app.
+        LocalGlowPulse provides rememberGlowPulse(),
     ) {
         when (destination) {
             Destination.FINDER -> FinderScreen(
@@ -554,6 +556,8 @@ private fun SeedSeekerNavBar(
             },
             label = { Text("Finder") },
             colors = NavigationBarItemDefaults.colors(
+                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                selectedTextColor = MaterialTheme.colorScheme.onSurface,
                 indicatorColor = MaterialTheme.colorScheme.primaryContainer,
             ),
         )
@@ -568,6 +572,8 @@ private fun SeedSeekerNavBar(
             },
             label = { Text("Scout") },
             colors = NavigationBarItemDefaults.colors(
+                selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                selectedTextColor = MaterialTheme.colorScheme.onSurface,
                 indicatorColor = MaterialTheme.colorScheme.primaryContainer,
             ),
         )
