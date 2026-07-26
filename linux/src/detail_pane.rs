@@ -14,7 +14,8 @@ use shpd_seedfinder_core::seed::DungeonSeed;
 use shpd_seedfinder_session::production_scout_world;
 
 use crate::scout_match::scout_match_indices;
-use crate::state::{AppState, kind_icon, region, source_label};
+use crate::state::{AppState, region, source_label};
+use crate::{glow, sprites};
 
 pub struct DetailPane {
     pub page: adw::NavigationPage,
@@ -314,7 +315,10 @@ fn item_row(world_item: &WorldItem, matched: bool) -> adw::ActionRow {
         .title(gtk::glib::markup_escape_text(definition.name))
         .subtitle(gtk::glib::markup_escape_text(&subtitle))
         .build();
-    row.add_prefix(&gtk::Image::from_icon_name(kind_icon(definition.kind)));
+    row.add_prefix(&sprites::item_image(
+        definition,
+        glow::item(world_item.cursed, world_item.effect),
+    ));
 
     if world_item.upgrade > 0 {
         let upgrade = gtk::Label::builder()
