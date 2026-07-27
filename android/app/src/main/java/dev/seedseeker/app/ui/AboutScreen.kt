@@ -27,7 +27,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -90,14 +89,7 @@ fun AboutScreen(onBack: () -> Unit) {
             ) {
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Surface(
-                            shape = MaterialTheme.shapes.extraLarge,
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                        ) {
-                            Box(Modifier.size(68.dp), contentAlignment = Alignment.Center) {
-                                CompassMark(Modifier.size(40.dp))
-                            }
-                        }
+                        BrandMark(Modifier.size(68.dp))
                         Spacer(Modifier.width(16.dp))
                         Column {
                             Text("Seed Seeker", style = MaterialTheme.typography.headlineSmall)
@@ -120,21 +112,21 @@ fun AboutScreen(onBack: () -> Unit) {
                 item {
                     AboutSection("Not the game") {
                         Text(
-                            "Seed Seeker is an independent utility and is not affiliated with or endorsed by Shattered Pixel Dungeon or its authors. Its interface and compass icon are original; no game UI components are used.",
+                            "Seed Seeker is an independent utility and is not affiliated with or endorsed by Shattered Pixel Dungeon or its authors. Its interface is original and no game UI components are used, but the app icon is based on the game's own icon — see the attribution below.",
                         )
                     }
                 }
 
                 item {
                     AboutSection("Artwork attribution") {
-                        Text("The item sprites and type icons are unchanged copies of Shattered Pixel Dungeon's item atlases.")
+                        Text("The item sprites and type icons are unchanged copies of Shattered Pixel Dungeon's item atlases. The app icon is a recoloured derivative of the game's launcher icon — the palette is changed, the pixel geometry is not.")
                         Spacer(Modifier.height(10.dp))
                         AttributionLine("Upstream", "Shattered Pixel Dungeon v3.3.8")
                         AttributionLine("Commit", "7b8b845a76fe76c6b7c031ae9e570852411f56db")
                         AttributionLine("Pixel Dungeon", "© 2012–2015 Oleg Dolya")
                         AttributionLine("Shattered Pixel Dungeon", "© 2014–2026 Evan Debenham")
-                        AttributionLine("Atlas SHA-256", "ce2496368660e9b2…a294caacaf")
-                        AttributionLine("Icon SHA-256", "38df728d32842d9f…24d7eb9b72")
+                        AttributionLine("Items atlas SHA-256", "ce2496368660e9b2…a294caacaf")
+                        AttributionLine("Type icons SHA-256", "38df728d32842d9f…24d7eb9b72")
                     }
                 }
 

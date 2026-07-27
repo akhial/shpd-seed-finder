@@ -2,6 +2,7 @@
 package dev.seedseeker.app.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -12,19 +13,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import dev.seedseeker.app.R
 import dev.seedseeker.app.model.CatalogItem
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.ScoutAccessibility
@@ -38,8 +40,6 @@ import dev.seedseeker.app.ui.theme.RegionCity
 import dev.seedseeker.app.ui.theme.RegionHalls
 import dev.seedseeker.app.ui.theme.RegionPrison
 import dev.seedseeker.app.ui.theme.RegionSewers
-import dev.seedseeker.app.ui.theme.SpdTeal
-import dev.seedseeker.app.ui.theme.SpdYellow
 import java.util.Locale
 import kotlin.math.floor
 import kotlin.math.log10
@@ -68,22 +68,33 @@ private val RingTypeIconSizes = listOf(
     IntSize(7, 6), // Wealth
 )
 
-/** Original compass mark used as the app's brand glyph. */
+/**
+ * The app's brand glyph: the launcher icon itself, so the About screen and the
+ * home screen cannot drift apart.
+ *
+ * Built from the adaptive icon's own two layers rather than @mipmap/ic_launcher,
+ * which resolves to an AdaptiveIconDrawable that Compose's painterResource
+ * cannot load. Those layers are authored on a 108dp viewport of which launchers
+ * only ever show the middle 72dp, so the content is scaled by 108/72 and
+ * clipped to reproduce the crop a user sees on their home screen.
+ */
 @Composable
-fun CompassMark(modifier: Modifier = Modifier) {
-    Canvas(modifier) {
-        val stroke = size.minDimension * 0.07f
-        drawCircle(SpdTeal, style = Stroke(stroke))
-        drawLine(
-            color = SpdYellow,
-            start = Offset(size.width * 0.32f, size.height * 0.72f),
-            end = Offset(size.width * 0.67f, size.height * 0.28f),
-            strokeWidth = stroke * 1.25f,
-            cap = StrokeCap.Round,
-        )
-        drawCircle(Color.White, radius = stroke * 0.8f, center = center)
+fun BrandMark(modifier: Modifier = Modifier) {
+    Box(modifier.clip(MaterialTheme.shapes.extraLarge)) {
+        for (layer in intArrayOf(R.drawable.ic_launcher_background, R.drawable.ic_launcher_foreground)) {
+            Image(
+                painter = painterResource(layer),
+                contentDescription = null,
+                modifier = Modifier
+                    .matchParentSize()
+                    .scale(ADAPTIVE_ICON_VIEWPORT / ADAPTIVE_ICON_VISIBLE),
+            )
+        }
     }
 }
+
+private const val ADAPTIVE_ICON_VIEWPORT = 108f
+private const val ADAPTIVE_ICON_VISIBLE = 72f
 
 /**
  * 16×16 sprite from the upstream atlas, drawn with nearest-neighbour scaling.
