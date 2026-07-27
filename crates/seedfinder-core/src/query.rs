@@ -28,7 +28,9 @@ pub enum TierRequirement {
 }
 
 impl TierRequirement {
-    fn matches(self, tier: Option<u8>) -> bool {
+    /// Whether a tiered item satisfies this predicate. Untiered items never do.
+    #[must_use]
+    pub fn matches(self, tier: Option<u8>) -> bool {
         match self {
             Self::Any => true,
             Self::Exact(wanted) => tier == Some(wanted),
