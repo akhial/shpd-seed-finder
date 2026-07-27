@@ -4,6 +4,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PACKAGE="$ROOT/macos/SeedSeeker"
 APP="$ROOT/dist/Seed Seeker.app"
+# Canonical home of the upstream item artwork; every front-end installs it from
+# here rather than keeping its own copy of the binaries.
+ASSETS="$ROOT/android/app/src/main/assets/third_party/shattered-pixel-dungeon"
 
 bash "$ROOT/scripts/build-macos-native.sh"
 
@@ -26,6 +29,15 @@ install -m 644 "$PACKAGE/Info.plist" "$APP/Contents/Info.plist"
 install -m 644 "$PACKAGE/PkgInfo" "$APP/Contents/PkgInfo"
 install -d "$APP/Contents/Resources"
 install -m 644 "$PACKAGE/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+
+# Shattered Pixel Dungeon's item atlases, loaded from Bundle.main at runtime.
+# They are GPL-3.0-or-later artwork, so the attribution and the full license
+# text ship beside them and are surfaced in the app's Artwork & Licenses sheet.
+# SeedSeekerKit degrades to SF Symbols when they are missing, which keeps a bare
+# `swift run` outside the bundle working.
+for asset in items.png item_icons.png LICENSE.txt ATTRIBUTION.md; do
+    install -m 644 "$ASSETS/$asset" "$APP/Contents/Resources/$asset"
+done
 
 # Embed Sparkle. SwiftPM links the framework from the resolved binary
 # artifact but does not assemble bundles, so it is copied in by hand; the

@@ -66,6 +66,7 @@ private struct ContentView: View {
     @State private var userPresets: [QueryPreset] = []
     @State private var controller = SearchController()
     @State private var scout = ScoutViewModel()
+    @State private var showingAbout = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -89,9 +90,18 @@ private struct ContentView: View {
                     .navigationSplitViewColumnWidth(min: 360, ideal: 450)
             }
             Divider()
-            Text("Shattered Pixel Dungeon v3.3.8")
-                .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(5)
+            // The bundled item artwork is GPL-3.0-or-later, so its attribution
+            // and the full license text have to be reachable from the app.
+            Button { showingAbout = true } label: {
+                Text("Shattered Pixel Dungeon v3.3.8 · Artwork & licenses")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity).padding(5)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Item artwork attribution and license")
         }
+        .sheet(isPresented: $showingAbout) { AboutView() }
         .frame(minWidth: 1_020, minHeight: 640)
         .onAppear {
             guard !restored else { return }; restored = true
@@ -394,10 +404,19 @@ private struct RequirementRow: View {
     var body: some View {
         HStack(spacing: 6) {
             Button(action: onEdit) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(requirement.title).foregroundStyle(.primary)
-                    Text(requirement.description).font(.caption).foregroundStyle(.secondary)
-                }.frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 8) {
+                    // A pinned item shows its own sprite; a wildcard keeps the
+                    // category symbol. Either way an enchantment or curse
+                    // requirement pulses in the game's glow colour.
+                    ItemSpriteView(spriteIndex: requirement.item?.spriteIndex,
+                                   kind: requirement.kind,
+                                   glow: effectGlow(requirement.modifier),
+                                   pointSize: 24, label: requirement.title)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(requirement.title).foregroundStyle(.primary)
+                        Text(requirement.description).font(.caption).foregroundStyle(.secondary)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                }
                 .contentShape(Rectangle())
             }.buttonStyle(.plain)
             Button(action: onRemove) {
@@ -468,12 +487,18 @@ private struct RequirementEditor: View {
                             // Tier-1 melee weapons are starting gear and never spawn in the dungeon.
                             ForEach(2...5, id: \.self) { tier in
                                 Section("Tier \(tier)") {
-                                    ForEach(ItemCatalog.weapons.filter { $0.tier == tier }) { Text($0.name).tag($0.id) }
+                                    ForEach(ItemCatalog.weapons.filter { $0.tier == tier }) { item in
+                                        Label { Text(item.name) } icon: {
+                                            ItemSpriteIcon(spriteIndex: item.spriteIndex)
+                                        }.tag(item.id)
+                                    }
                                 }
                             }
                         } else {
-                            ForEach(ItemCatalog.forKind(kind).filter { $0.tier != 1 }) {
-                                Text($0.name).tag($0.id)
+                            ForEach(ItemCatalog.forKind(kind).filter { $0.tier != 1 }) { item in
+                                Label { Text(item.name) } icon: {
+                                    ItemSpriteIcon(spriteIndex: item.spriteIndex)
+                                }.tag(item.id)
                             }
                         }
                     }
@@ -767,10 +792,9 @@ private struct ScoutItemRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: item.item.kind.icon)
-                .foregroundStyle(item.item.kind.tint)
-                .frame(width: 20, alignment: .center)
-                .padding(.top, 2)
+            ItemSpriteView(spriteIndex: item.item.spriteIndex, kind: item.item.kind,
+                           glow: itemGlow(item), pointSize: 32, label: item.item.name)
+                .padding(.top, 1)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(item.item.name).fontWeight(matches ? .semibold : .regular)
