@@ -37,17 +37,20 @@ struct ItemSpriteView: View {
                     // since list rows are reused as the manifest re-renders.
                     .id(glow)
             }
+            // Stacked above the glow: the glyph is the only thing distinguishing
+            // one ring from another, so it must stay solid rather than pulse
+            // with a curse. The web draws it as a sibling after the glow too.
+            typeIcon
         }
         .frame(width: CGFloat(pointSize), height: CGFloat(pointSize))
         .accessibilityHidden(label == nil)
         .accessibilityLabel(label ?? "")
     }
 
+    /// The item art alone — also the glow's mask, hence excluding the glyph.
     @ViewBuilder private var artwork: some View {
-        if let image = sprite {
-            Image(decorative: image, scale: CGFloat(SpriteAtlas.pixelScale))
-                .interpolation(.none)
-                .antialiased(false)
+        if let image = sprite(.art) {
+            pixels(image)
         } else {
             Image(systemName: kind.icon)
                 .font(.system(size: CGFloat(pointSize) * 0.6))
@@ -55,9 +58,22 @@ struct ItemSpriteView: View {
         }
     }
 
-    private var sprite: CGImage? {
+    /// A ring's type glyph, in the same box so it lands where it does in
+    /// ``SpriteLayer/whole``. Empty for every other item.
+    @ViewBuilder private var typeIcon: some View {
+        if let image = sprite(.typeIcon) { pixels(image) }
+    }
+
+    private func pixels(_ image: CGImage) -> some View {
+        Image(decorative: image, scale: CGFloat(SpriteAtlas.pixelScale))
+            .interpolation(.none)
+            .antialiased(false)
+    }
+
+    private func sprite(_ layer: SpriteLayer) -> CGImage? {
         guard let spriteIndex else { return nil }
-        return SpriteAtlas.bundled?.composedSprite(spriteIndex: spriteIndex, pointSize: pointSize)
+        return SpriteAtlas.bundled?.composedSprite(spriteIndex: spriteIndex,
+                                                   pointSize: pointSize, layer: layer)
     }
 }
 
@@ -89,14 +105,25 @@ private struct SpriteGlowLayer<Mask: View>: View {
 }
 
 /// A bare, non-glowing sprite image for places that only accept an `Image`, such
-/// as the menu rows of the item picker. Renders nothing when the atlas is absent.
+/// as the item picker. Renders nothing when the atlas is absent.
+///
+/// The picker sets its label hard against the icon, and a ring's type glyph runs
+/// to the very edge of its box, so ring sprites are drawn with a trailing margin
+/// baked in. It has to be in the bitmap rather than applied as padding: the
+/// popup button honours the icon's own width but drops its outer padding when it
+/// draws the selected row, so padding moves the open menu's rows and leaves the
+/// collapsed control untouched. Everything else keeps its square box, and the
+/// scout list — which asks for no margin — is unaffected either way.
 struct ItemSpriteIcon: View {
     var spriteIndex: Int
     var pointSize: Int = 16
+    /// Points of transparency added to the right of a ring's glyph.
+    var typeIconMargin: Int = 2
 
     var body: some View {
         if let image = SpriteAtlas.bundled?.composedSprite(spriteIndex: spriteIndex,
-                                                          pointSize: pointSize) {
+                                                           pointSize: pointSize,
+                                                           typeIconMargin: typeIconMargin) {
             Image(decorative: image, scale: CGFloat(SpriteAtlas.pixelScale))
                 .interpolation(.none)
                 .antialiased(false)

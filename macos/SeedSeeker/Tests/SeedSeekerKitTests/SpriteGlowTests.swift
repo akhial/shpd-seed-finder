@@ -165,6 +165,77 @@ final class SpriteGeometryTests: XCTestCase {
         XCTAssertEqual(atlas.bounds(forSprite: 100_000), fullCell)
     }
 
+    /// The glow masks the art layer, so a cursed ring's type glyph must not be
+    /// in it — otherwise the glyph telling Wealth from Energy pulses black too.
+    func testRingLayersSplitTheGlyphOutOfTheArt() throws {
+        let atlas = try loadAtlas()
+        let wealth = 235
+        let whole = try XCTUnwrap(atlas.composedSprite(spriteIndex: wealth, pointSize: 32))
+        let art = try XCTUnwrap(atlas.composedSprite(spriteIndex: wealth, pointSize: 32, layer: .art))
+        let glyph = try XCTUnwrap(atlas.composedSprite(spriteIndex: wealth, pointSize: 32,
+                                                       layer: .typeIcon))
+        // Ring of Wealth's art is 8×10 of a 16×16 cell, centred; its glyph is
+        // 7×6 anchored top-right. At 32 pt (64 px, scale 4) that is x 16…47 for
+        // the art and x 36…63, y 0…23 for the glyph.
+        XCTAssertEqual(opaqueBounds(art), SpriteBounds(x: 16, y: 12, width: 32, height: 40))
+        XCTAssertEqual(opaqueBounds(glyph), SpriteBounds(x: 36, y: 0, width: 28, height: 24))
+        XCTAssertEqual(opaqueBounds(whole), SpriteBounds(x: 16, y: 0, width: 48, height: 52))
+
+        // Non-rings have no glyph layer at all, and their art is the whole icon.
+        let sword = 112
+        XCTAssertNil(atlas.composedSprite(spriteIndex: sword, pointSize: 32, layer: .typeIcon))
+        XCTAssertEqual(opaqueBounds(try XCTUnwrap(atlas.composedSprite(spriteIndex: sword,
+                                                                      pointSize: 32, layer: .art))),
+                       opaqueBounds(try XCTUnwrap(atlas.composedSprite(spriteIndex: sword,
+                                                                      pointSize: 32))))
+    }
+
+    /// The picker needs clearance to the right of a ring's glyph, but the scout
+    /// list must keep the geometry it has: the margin may only add transparent
+    /// width, never move the art or the glyph.
+    func testTypeIconMarginOnlyAddsTrailingTransparency() throws {
+        let atlas = try loadAtlas()
+        let wealth = 235
+        let bare = try XCTUnwrap(atlas.composedSprite(spriteIndex: wealth, pointSize: 16))
+        let margined = try XCTUnwrap(atlas.composedSprite(spriteIndex: wealth, pointSize: 16,
+                                                          typeIconMargin: 2))
+        XCTAssertEqual(bare.width, 16 * SpriteAtlas.pixelScale)
+        XCTAssertEqual(margined.width, (16 + 2) * SpriteAtlas.pixelScale)
+        XCTAssertEqual(margined.height, bare.height)
+        // Identical ink: the extra width is empty, so nothing shifted.
+        XCTAssertEqual(opaqueBounds(margined), opaqueBounds(bare))
+
+        // A margin asked for on a non-ring is ignored — no glyph, no crowding —
+        // so those sprites stay square and share one cache entry.
+        let sword = 112
+        let square = try XCTUnwrap(atlas.composedSprite(spriteIndex: sword, pointSize: 16,
+                                                        typeIconMargin: 2))
+        XCTAssertEqual(square.width, 16 * SpriteAtlas.pixelScale)
+        XCTAssertTrue(square === atlas.composedSprite(spriteIndex: sword, pointSize: 16))
+    }
+
+    /// The bounding box of an image's non-transparent pixels, origin top-left.
+    private func opaqueBounds(_ image: CGImage) -> SpriteBounds {
+        let width = image.width, height = image.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        pixels.withUnsafeMutableBytes { buffer in
+            let context = CGContext(data: buffer.baseAddress, width: width, height: height,
+                                    bitsPerComponent: 8, bytesPerRow: width * 4,
+                                    space: CGColorSpaceCreateDeviceRGB(),
+                                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+            context?.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        var minX = width, minY = height, maxX = -1, maxY = -1
+        for y in 0..<height {
+            for x in 0..<width where pixels[(y * width + x) * 4 + 3] > 8 {
+                minX = min(minX, x); minY = min(minY, y)
+                maxX = max(maxX, x); maxY = max(maxY, y)
+            }
+        }
+        guard maxX >= 0 else { return SpriteBounds(x: 0, y: 0, width: 0, height: 0) }
+        return SpriteBounds(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
+    }
+
     func testComposedSpriteIsRasterisedAtTheRetinaPixelScale() throws {
         let atlas = try loadAtlas()
         let image = try XCTUnwrap(atlas.composedSprite(spriteIndex: 235, pointSize: 32))
