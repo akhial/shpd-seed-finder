@@ -16,45 +16,65 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// Brand palette: deep mossy greens with a mint primary and amber tertiary,
-// mirroring the macOS app's dungeon-lantern look.
-val Mint = Color(0xFF7FE2B8)
-val Amber = Color(0xFFFFC96B)
+// Brand palette mirrored from the web front-end's design tokens (see
+// `web/src/designs/one/styles.css` `:root`), which use Shattered Pixel Dungeon's
+// official colours: dark slate-blue surfaces, the game's yellow for seeds and
+// headings, its accent green for primary actions, teal for enchantments and a
+// muted red for curses.
+val SpdYellow = Color(0xFFFFFF55)
+val SpdAccent = Color(0xFF56BD52)
+val SpdTeal = Color(0xFF58C2B4)
+val SpdGreen = Color(0xFF6EC98F)
+val SpdWarn = Color(0xFFE0A83C)
+val SpdDanger = Color(0xFFD96C5F)
+
+/** The game's upgrade green, used for `+N` badges. */
+val SpdUpgrade = Color(0xFF83FC64)
+
+/** Curse text/badge tint, lighter than [SpdDanger] so it reads on a dark fill. */
+val SpdCurse = Color(0xFFF2958A)
+
+// Region accents, mirrored from `web/src/lib/region.ts`.
+val RegionSewers = Color(0xFF7FE2B8)
+val RegionPrison = Color(0xFF8FB7E8)
+val RegionCaves = Color(0xFFD8A26B)
+val RegionCity = Color(0xFFC9A6E8)
+val RegionHalls = Color(0xFFE88F8F)
 
 private val SeedSeekerColors = darkColorScheme(
-    primary = Mint,
-    onPrimary = Color(0xFF00382A),
-    primaryContainer = Color(0xFF1C5140),
-    onPrimaryContainer = Color(0xFFA9F2D3),
-    inversePrimary = Color(0xFF1F6B52),
-    secondary = Color(0xFFB2CCBE),
-    onSecondary = Color(0xFF1E352B),
-    secondaryContainer = Color(0xFF354C41),
-    onSecondaryContainer = Color(0xFFCEE9DA),
-    tertiary = Amber,
-    onTertiary = Color(0xFF422C00),
-    tertiaryContainer = Color(0xFF5F4100),
-    onTertiaryContainer = Color(0xFFFFDEA8),
-    background = Color(0xFF0B1110),
-    onBackground = Color(0xFFE2E9E4),
-    surface = Color(0xFF0B1110),
-    onSurface = Color(0xFFE2E9E4),
-    surfaceVariant = Color(0xFF243230),
-    onSurfaceVariant = Color(0xFFA9B8B0),
-    surfaceContainerLowest = Color(0xFF060B0A),
-    surfaceContainerLow = Color(0xFF101817),
-    surfaceContainer = Color(0xFF141D1B),
-    surfaceContainerHigh = Color(0xFF1B2624),
-    surfaceContainerHighest = Color(0xFF25312E),
-    surfaceTint = Mint,
-    inverseSurface = Color(0xFFE2E9E4),
-    inverseOnSurface = Color(0xFF1B2624),
-    outline = Color(0xFF55655F),
-    outlineVariant = Color(0xFF2E3B37),
-    error = Color(0xFFFFB4A9),
-    onError = Color(0xFF690005),
-    errorContainer = Color(0xFF93000A),
-    onErrorContainer = Color(0xFFFFDAD5),
+    primary = SpdAccent,
+    onPrimary = Color(0xFF08210A),
+    primaryContainer = Color(0xFF1F4423),
+    onPrimaryContainer = Color(0xFFBCEDB8),
+    inversePrimary = Color(0xFF2F7A2C),
+    secondary = SpdTeal,
+    onSecondary = Color(0xFF002F2B),
+    secondaryContainer = Color(0xFF16403C),
+    onSecondaryContainer = Color(0xFFA8E7DF),
+    tertiary = SpdYellow,
+    onTertiary = Color(0xFF2C2C00),
+    tertiaryContainer = Color(0xFF474710),
+    onTertiaryContainer = Color(0xFFFFFFBA),
+    background = Color(0xFF1B1D23),
+    onBackground = Color(0xFFEAEAEA),
+    surface = Color(0xFF1B1D23),
+    onSurface = Color(0xFFEAEAEA),
+    surfaceVariant = Color(0xFF333846),
+    onSurfaceVariant = Color(0xFFA2A6B0),
+    surfaceContainerLowest = Color(0xFF14161B),
+    surfaceContainerLow = Color(0xFF1F2229),
+    surfaceContainer = Color(0xFF23262F),
+    surfaceContainerHigh = Color(0xFF262A33),
+    surfaceContainerHighest = Color(0xFF2E323D),
+    surfaceTint = SpdAccent,
+    inverseSurface = Color(0xFFEAEAEA),
+    inverseOnSurface = Color(0xFF262A33),
+    outline = Color(0xFF6F7480),
+    outlineVariant = Color(0xFF3F4553),
+    error = SpdDanger,
+    onError = Color(0xFF3A0C07),
+    errorContainer = Color(0xFF4A1C17),
+    onErrorContainer = SpdCurse,
     scrim = Color(0xFF000000),
 )
 

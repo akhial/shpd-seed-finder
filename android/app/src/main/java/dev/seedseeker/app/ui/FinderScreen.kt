@@ -335,7 +335,11 @@ private fun RequirementRow(
             modifier = Modifier.padding(start = 10.dp, top = 6.dp, end = 2.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            SpriteTile(item = requirement.item, modifierName = requirement.modifier, tileSize = 40)
+            SpriteTile(
+                item = requirement.item,
+                glow = ItemGlows.forEffect(requirement.modifier),
+                tileSize = 40,
+            )
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package dev.seedseeker.app.ui
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -66,6 +69,11 @@ import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.ScoutAccessibility
 import dev.seedseeker.app.model.ScoutItem
 import dev.seedseeker.app.model.ScoutWorld
+import dev.seedseeker.app.ui.theme.SpdCurse
+import dev.seedseeker.app.ui.theme.SpdDanger
+import dev.seedseeker.app.ui.theme.SpdGreen
+import dev.seedseeker.app.ui.theme.SpdTeal
+import dev.seedseeker.app.ui.theme.SpdUpgrade
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -361,19 +369,27 @@ private fun ScoutSummaryCard(
 
 @Composable
 private fun FloorHeading(depth: Int, itemCount: Int, modifier: Modifier = Modifier) {
+    val region = floorRegionColor(depth)
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        // Region-coloured bar, as on the web's floor headers.
+        Box(
+            Modifier
+                .size(width = 3.dp, height = 14.dp)
+                .background(region, RoundedCornerShape(2.dp)),
+        )
+        Spacer(Modifier.width(8.dp))
         Text(
             "FLOOR $depth",
             style = MaterialTheme.typography.labelLarge,
             letterSpacing = 1.1.sp,
-            color = MaterialTheme.colorScheme.primary,
+            color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(Modifier.width(8.dp))
         Text(
             floorRegion(depth),
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = region,
         )
         Text(
             if (itemCount == 1) "1 item" else "$itemCount items",
@@ -414,7 +430,13 @@ private fun ScoutItemCard(
             modifier = Modifier.padding(14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            SpriteTile(item = scoutItem.item, modifierName = scoutItem.effect, tileSize = 56)
+            // Bare sprite on the row background, like the web's scout rows: the
+            // pulsing masked tint is the only modifier cue, no tile, no halo.
+            ItemSprite(
+                item = scoutItem.item,
+                glow = ItemGlows.forItem(effect = scoutItem.effect, cursed = scoutItem.cursed),
+                modifier = Modifier.size(40.dp),
+            )
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -428,14 +450,14 @@ private fun ScoutItemCard(
                     if (scoutItem.cursed) {
                         Spacer(Modifier.width(8.dp))
                         Surface(
-                            shape = MaterialTheme.shapes.small,
-                            color = MaterialTheme.colorScheme.errorContainer,
+                            shape = MaterialTheme.shapes.extraSmall,
+                            color = SpdDanger.copy(alpha = 0.14f),
                         ) {
                             Text(
-                                "Cursed",
-                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                                "cursed",
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                color = SpdCurse,
                             )
                         }
                     }
@@ -444,11 +466,7 @@ private fun ScoutItemCard(
                     Text(
                         effect,
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (effectIsCurse) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.tertiary
-                        },
+                        color = if (effectIsCurse) SpdDanger else SpdTeal,
                     )
                 }
                 Text(
@@ -461,23 +479,31 @@ private fun ScoutItemCard(
                     Text(
                         it,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.tertiary,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
             Spacer(Modifier.width(10.dp))
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (scoutItem.upgrade != 0) {
-                    StatusPill(
-                        text = "+${scoutItem.upgrade}",
-                        container = MaterialTheme.colorScheme.secondaryContainer,
-                        content = MaterialTheme.colorScheme.onSecondaryContainer,
-                    )
+                    Surface(
+                        shape = MaterialTheme.shapes.extraSmall,
+                        color = SpdUpgrade.copy(alpha = 0.12f),
+                    ) {
+                        Text(
+                            "+${scoutItem.upgrade}",
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontFamily = FontFamily.Monospace,
+                            color = SpdUpgrade,
+                        )
+                    }
                 }
                 if (matches) {
                     Surface(
                         shape = MaterialTheme.shapes.large,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = SpdGreen.copy(alpha = 0.1f),
+                        border = BorderStroke(1.dp, SpdGreen.copy(alpha = 0.35f)),
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
@@ -487,13 +513,13 @@ private fun ScoutItemCard(
                                 Icons.Filled.Check,
                                 contentDescription = null,
                                 modifier = Modifier.size(13.dp),
-                                tint = MaterialTheme.colorScheme.onPrimary,
+                                tint = SpdGreen,
                             )
                             Spacer(Modifier.width(4.dp))
                             Text(
-                                "Match",
+                                "match",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimary,
+                                color = SpdGreen,
                             )
                         }
                     }
