@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-<!-- Adaptive-icon background layer: the dark teal gradient shared with the
-     other platforms' icons (assets/icon/seed-seeker-square.svg). -->
+<!-- Adaptive-icon background: blueprint paper and its drafting grid, ruled
+     on the chest's own cell pitch. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
@@ -10,15 +10,16 @@
     android:viewportHeight="108">
     <path android:pathData="M0,0h108v108h-108z">
         <aapt:attr name="android:fillColor">
-            <gradient
-                android:type="linear"
-                android:startX="54"
-                android:startY="0"
-                android:endX="54"
-                android:endY="108">
-                <item android:offset="0" android:color="#FF1E2C29" />
-                <item android:offset="1" android:color="#FF0B1110" />
+            <gradient android:type="linear"
+                android:startX="54" android:startY="0"
+                android:endX="54" android:endY="108">
+                <item android:offset="0" android:color="#FF0F3272" />
+                <item android:offset="1" android:color="#FF071D48" />
             </gradient>
         </aapt:attr>
     </path>
+    <path android:pathData="M0,0v108M2,0v108M4,0v108M6,0v108M8,0v108M10,0v108M12,0v108M14,0v108M16,0v108M18,0v108M20,0v108M22,0v108M24,0v108M26,0v108M28,0v108M30,0v108M32,0v108M34,0v108M36,0v108M38,0v108M40,0v108M42,0v108M44,0v108M46,0v108M48,0v108M50,0v108M52,0v108M54,0v108M56,0v108M58,0v108M60,0v108M62,0v108M64,0v108M66,0v108M68,0v108M70,0v108M72,0v108M74,0v108M76,0v108M78,0v108M80,0v108M82,0v108M84,0v108M86,0v108M88,0v108M90,0v108M92,0v108M94,0v108M96,0v108M98,0v108M100,0v108M102,0v108M104,0v108M106,0v108M108,0v108M0,0h108M0,2h108M0,4h108M0,6h108M0,8h108M0,10h108M0,12h108M0,14h108M0,16h108M0,18h108M0,20h108M0,22h108M0,24h108M0,26h108M0,28h108M0,30h108M0,32h108M0,34h108M0,36h108M0,38h108M0,40h108M0,42h108M0,44h108M0,46h108M0,48h108M0,50h108M0,52h108M0,54h108M0,56h108M0,58h108M0,60h108M0,62h108M0,64h108M0,66h108M0,68h108M0,70h108M0,72h108M0,74h108M0,76h108M0,78h108M0,80h108M0,82h108M0,84h108M0,86h108M0,88h108M0,90h108M0,92h108M0,94h108M0,96h108M0,98h108M0,100h108M0,102h108M0,104h108M0,106h108M0,108h108"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="0.2"
+        android:strokeAlpha="0.16" />
 </vector>

@@ -1,37 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-<!-- Monochrome (Android 13+ themed icon) layer: the mark's arcs and seed
-     in a single tintable color. -->
+<!-- Monochrome (Android 13+ themed icon) layer: the chest's ironwork in one
+     tintable colour. The panels are dropped - a single tint cannot separate
+     them from the frame. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <group android:rotation="-30" android:pivotX="54" android:pivotY="54">
-        <path
-            android:pathData="M 81.4,54 A 27.4,27.4 0 1 1 26.6,54 A 27.4,27.4 0 1 1 81.4,54"
-            android:strokeColor="#FFFFFFFF"
-            android:strokeWidth="5.3"
-            android:strokeLineCap="round"
-            android:trimPathEnd="0.792" />
-    </group>
-    <group android:rotation="90" android:pivotX="54" android:pivotY="54">
-        <path
-            android:pathData="M 72.8,54 A 18.8,18.8 0 1 1 35.2,54 A 18.8,18.8 0 1 1 72.8,54"
-            android:strokeColor="#FFFFFFFF"
-            android:strokeWidth="5.3"
-            android:strokeLineCap="round"
-            android:trimPathEnd="0.653" />
-    </group>
-    <group android:rotation="210" android:pivotX="54" android:pivotY="54">
-        <path
-            android:pathData="M 64.8,54 A 10.8,10.8 0 1 1 43.2,54 A 10.8,10.8 0 1 1 64.8,54"
-            android:strokeColor="#FFFFFFFF"
-            android:strokeWidth="5.1"
-            android:strokeLineCap="round"
-            android:trimPathEnd="0.514" />
-    </group>
-    <path
-        android:pathData="M 58.9,54 A 4.9,4.9 0 1 1 49.1,54 A 4.9,4.9 0 1 1 58.9,54 Z"
+    <path android:pathData="M26,26h6v6h-6zM50,26h8v6h-8zM76,26h6v6h-6zM26,32h6v4h-6zM50,32h8v4h-8zM76,32h6v4h-6zM26,36h6v8h-6zM50,36h8v8h-8zM76,36h6v8h-6zM26,44h6v4h-6zM50,44h8v4h-8zM76,44h6v4h-6zM26,48h6v8h-6zM42,48h24v4h-24zM76,48h6v8h-6zM42,52h4v4h-4zM46,52h16v4h-16zM62,52h4v4h-4zM26,56h16v4h-16zM42,56h4v10h-4zM46,56h4v10h-4zM58,56h4v10h-4zM62,56h4v10h-4zM66,56h16v4h-16zM26,60h2v2h-2zM28,60h12v2h-12zM40,60h2v2h-2zM66,60h2v2h-2zM68,60h12v2h-12zM80,60h2v2h-2zM26,62h16v2h-16zM50,62h2v6h-2zM56,62h2v6h-2zM66,62h16v2h-16zM28,64h4v12h-4zM76,64h4v12h-4zM42,66h2v2h-2zM44,66h6v2h-6zM58,66h6v2h-6zM64,66h2v2h-2zM42,68h24v4h-24zM28,76h52v4h-52z"
         android:fillColor="#FFFFFFFF" />
 </vector>

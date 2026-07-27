@@ -1,43 +1,26 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-<!-- Background for the drag-to-install dmg window (660x420pt). Light so
-     Finder's dark file labels stay readable in both appearances.
-     Rendered at 1x and 2x into macos/dmg/background.tiff by
-     scripts/generate-icons.sh; icon positions must match
-     macos/dmg/settings.py. -->
+<!-- Background for the drag-to-install dmg window (660x420pt). Rendered at
+     1x and 2x into macos/dmg/background.tiff by scripts/generate-icons.sh;
+     icon positions must match macos/dmg/settings.py. -->
 <svg xmlns="http://www.w3.org/2000/svg" width="660" height="420" viewBox="0 0 660 420">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#f7faf9"/>
-      <stop offset="1" stop-color="#edf3f0"/>
+      <stop offset="0" stop-color="#f6f9ff"/>
+      <stop offset="1" stop-color="#e8eefb"/>
     </linearGradient>
   </defs>
   <rect width="660" height="420" fill="url(#bg)"/>
-  <!-- faint brand mark bleeding off the top-left corner -->
-  <g transform="translate(30 -20) scale(0.38)" fill="none" stroke-linecap="round" opacity="0.16">
-    <circle r="300" stroke="#35906f" stroke-width="58"
-            stroke-dasharray="1492.3 392.7" transform="rotate(-30)"/>
-    <circle r="206" stroke="#4fb88c" stroke-width="58"
-            stroke-dasharray="844.9 449.4" transform="rotate(90)"/>
-    <circle r="118" stroke="#7de2b8" stroke-width="56"
-            stroke-dasharray="381.0 360.4" transform="rotate(210)"/>
-    <circle r="54" fill="#ffc96b" stroke="none"/>
-  </g>
-  <!-- and a smaller echo off the bottom-right corner -->
-  <g transform="translate(660 440) scale(0.26)" fill="none" stroke-linecap="round" opacity="0.12">
-    <circle r="300" stroke="#35906f" stroke-width="58"
-            stroke-dasharray="1492.3 392.7" transform="rotate(140)"/>
-    <circle r="206" stroke="#4fb88c" stroke-width="58"
-            stroke-dasharray="844.9 449.4" transform="rotate(-100)"/>
-  </g>
-  <text x="330" y="66" text-anchor="middle" fill="#22302b"
+  <path d="M20 0V420M40 0V420M60 0V420M80 0V420M100 0V420M120 0V420M140 0V420M160 0V420M180 0V420M200 0V420M220 0V420M240 0V420M260 0V420M280 0V420M300 0V420M320 0V420M340 0V420M360 0V420M380 0V420M400 0V420M420 0V420M440 0V420M460 0V420M480 0V420M500 0V420M520 0V420M540 0V420M560 0V420M580 0V420M600 0V420M620 0V420M640 0V420M0 20H660M0 40H660M0 60H660M0 80H660M0 100H660M0 120H660M0 140H660M0 160H660M0 180H660M0 200H660M0 220H660M0 240H660M0 260H660M0 280H660M0 300H660M0 320H660M0 340H660M0 360H660M0 380H660M0 400H660" fill="none" stroke="#1b4ba6" stroke-width="1" opacity="0.06"/>
+  <path d="M100 0V420M200 0V420M300 0V420M400 0V420M500 0V420M600 0V420M0 100H660M0 200H660M0 300H660M0 400H660" fill="none" stroke="#1b4ba6" stroke-width="1" opacity="0.1"/>
+  <text x="330" y="66" text-anchor="middle" fill="#12244d"
         font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
         font-size="26" font-weight="600" letter-spacing="0.5">Seed Seeker</text>
-  <text x="330" y="152" text-anchor="middle" fill="#8b9a94"
+  <text x="330" y="152" text-anchor="middle" fill="#71829f"
         font-family="Helvetica Neue, Helvetica, Arial, sans-serif"
         font-size="12" font-weight="500" letter-spacing="3">DRAG TO INSTALL</text>
-  <g fill="none" stroke="#3f5049" stroke-width="5" stroke-linecap="round"
-     stroke-linejoin="round">
+  <g fill="none" stroke="#2c3f66" stroke-width="5"
+     stroke-linecap="round" stroke-linejoin="round">
     <path d="M 258 200 Q 330 170 402 200"/>
     <path d="M 384.2 202.3 L 402 200 L 391.1 185.7"/>
   </g>
