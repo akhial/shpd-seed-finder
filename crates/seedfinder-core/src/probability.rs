@@ -43,14 +43,11 @@ use crate::generator::{
 use crate::model::ItemSource;
 use crate::probability_tables::{
     DEEPEST_FLOOR, DEPTHS, FLOOR_SETS, HIGHEST_TABLED_UPGRADE, HIGHEST_TIER, IDENTITY_REPEAT_LIMIT,
-    IDENTITY_REPEATS, LINES, Line, SLOT_SPREAD, Supply, TIERS, TIPPED_DARTS, TIPPED_SHARES,
+    IDENTITY_REPEATS, LINES_ORDER, Line, SLOT_SPREAD, Supply, TIERS, TIPPED_DARTS, TIPPED_SHARES,
     appears_once, kind_index, line_of, missile_tier, missile_tier_items, source_index,
     spread_index, supply_for, tipped_index,
 };
 use crate::query::{Requirement, SearchQuery, UpgradeRequirement};
-
-/// Every generator line, in table order.
-const LINES_ORDER: [Line; LINES] = [Line::Plain, Line::Thrown, Line::Tipped];
 
 /// Estimates the fraction of seeds satisfying a query.
 ///

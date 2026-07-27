@@ -112,12 +112,12 @@ fn estimates_stay_fast() {
 #[test]
 #[ignore = "generates tens of thousands of worlds; run with --release"]
 fn fuzzed_queries_track_sampled_seeds() {
-    let count = from_environment("FUZZ_WORLDS").unwrap_or(FUZZED_WORLDS);
+    let sample = from_environment("FUZZ_WORLDS").unwrap_or(FUZZED_WORLDS);
     let queries = from_environment("FUZZ_QUERIES")
         .and_then(|value| usize::try_from(value).ok())
         .unwrap_or(FUZZED_QUERIES);
     let seed = from_environment("FUZZ_SEED").unwrap_or(0x5EED_5EEC);
-    let worlds = sampled_worlds(count);
+    let worlds = sampled_worlds(sample);
     let mut generator = QueryGenerator::new(seed);
     let mut ratios: Vec<(f64, String, f64, f64)> = Vec::new();
     let mut failures = Vec::new();
@@ -131,7 +131,7 @@ fn fuzzed_queries_track_sampled_seeds() {
         if f64::from(hits) < MEANINGFUL_HITS {
             continue;
         }
-        let observed = f64::from(hits) / worlds_len(worlds);
+        let observed = f64::from(hits) / count(worlds.len());
         ratios.push((estimate / observed, name.clone(), observed, estimate));
         if !within_tolerance(observed, estimate, f64::from(hits)) {
             failures.push(format!(
@@ -207,7 +207,7 @@ fn compare(name: &str, query: &SearchQuery, worlds: &[GeneratedWorld]) -> bool {
     if f64::from(hits) < MEANINGFUL_HITS {
         return false;
     }
-    let observed = f64::from(hits) / worlds_len(worlds);
+    let observed = f64::from(hits) / count(worlds.len());
     assert!(
         within_tolerance(observed, estimate, f64::from(hits)),
         "{name}: sampled {observed:.4e} over {} worlds, estimated {estimate:.4e}",
@@ -241,10 +241,6 @@ fn within_tolerance(observed: f64, estimate: f64, hits: f64) -> bool {
     let sampling = 1.0 + 3.0 / hits.sqrt();
     let ratio = estimate / observed;
     ratio <= TOLERANCE * sampling && ratio >= 1.0 / (TOLERANCE * sampling)
-}
-
-fn worlds_len(worlds: &[GeneratedWorld]) -> f64 {
-    f64::from(u32::try_from(worlds.len()).unwrap_or(u32::MAX))
 }
 
 /// Worlds spread evenly over the seed space, generated once per process.

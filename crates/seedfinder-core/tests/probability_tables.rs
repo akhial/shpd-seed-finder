@@ -10,7 +10,9 @@ use shpd_seedfinder_core::catalog::{ItemKind, item};
 use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::main_world::CanonicalMainWorldGenerator;
 use shpd_seedfinder_core::model::Accessibility;
-use shpd_seedfinder_core::probability_tables::{DEEPEST_FLOOR, Line, SUPPLY, line_of};
+use shpd_seedfinder_core::probability_tables::{
+    DEEPEST_FLOOR, KINDS_ORDER, Line, SUPPLY, kind_index, line_of,
+};
 use shpd_seedfinder_core::search::WorldGenerator;
 use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
 
@@ -127,7 +129,7 @@ fn measure() -> Vec<Row> {
                         std::collections::BTreeSet::new();
                     for candidate in &world.items {
                         let key = (
-                            kind_slot(item(candidate.item).kind),
+                            kind_index(item(candidate.item).kind),
                             line_of(candidate.item),
                             format!("{:?}", candidate.source),
                         );
@@ -158,28 +160,10 @@ fn measure() -> Vec<Row> {
     counted
         .into_iter()
         .map(|((kind, line, source), count)| Row {
-            kind: kind_of(kind),
+            kind: KINDS_ORDER[kind],
             line,
             source,
             slots: count / worlds,
         })
         .collect()
-}
-
-const fn kind_slot(kind: ItemKind) -> usize {
-    match kind {
-        ItemKind::Weapon => 0,
-        ItemKind::Armor => 1,
-        ItemKind::Wand => 2,
-        ItemKind::Ring => 3,
-    }
-}
-
-const fn kind_of(slot: usize) -> ItemKind {
-    match slot {
-        0 => ItemKind::Weapon,
-        1 => ItemKind::Armor,
-        2 => ItemKind::Wand,
-        _ => ItemKind::Ring,
-    }
 }

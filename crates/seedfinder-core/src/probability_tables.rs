@@ -33,6 +33,14 @@ const _: () = assert!(DEPTHS == DEEPEST_FLOOR as usize);
 /// Equipment families tracked by the estimator.
 pub const KINDS: usize = 4;
 
+/// Every equipment family, in table order.
+pub const KINDS_ORDER: [ItemKind; KINDS] = [
+    ItemKind::Weapon,
+    ItemKind::Armor,
+    ItemKind::Wand,
+    ItemKind::Ring,
+];
+
 /// Generator lines within one equipment family.
 ///
 /// Thrown weapons and tipped darts are [`ItemKind::Weapon`] to the catalog but
@@ -49,6 +57,9 @@ pub enum Line {
 
 /// Generator lines per family.
 pub const LINES: usize = 3;
+
+/// Every generator line, in table order.
+pub const LINES_ORDER: [Line; LINES] = [Line::Plain, Line::Thrown, Line::Tipped];
 
 /// Dense table index for one generator line.
 #[must_use]

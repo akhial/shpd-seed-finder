@@ -26,9 +26,9 @@ use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::main_world::CanonicalMainWorldGenerator;
 use shpd_seedfinder_core::model::GeneratedWorld;
 use shpd_seedfinder_core::probability_tables::{
-    DEEPEST_FLOOR, DEPTHS, FLOOR_SETS, IDENTITY_REPEAT_LIMIT, KINDS, LINES, Line,
-    MAX_TABLED_UPGRADE, TIERS, TIPPED_DARTS, bundle_size, kind_index, line_index, line_of,
-    source_index, sources,
+    DEEPEST_FLOOR, DEPTHS, FLOOR_SETS, IDENTITY_REPEAT_LIMIT, KINDS, KINDS_ORDER, LINES,
+    LINES_ORDER, Line, MAX_TABLED_UPGRADE, TIERS, TIPPED_DARTS, bundle_size, kind_index,
+    line_index, line_of, source_index, sources,
 };
 use shpd_seedfinder_core::search::WorldGenerator;
 use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
@@ -88,44 +88,25 @@ impl Tally {
 
     fn merge(&mut self, other: &Self) {
         self.worlds += other.worlds;
-        for (target, value) in self.counts.iter_mut().zip(&other.counts) {
-            *target += value;
-        }
-        for (target, value) in self.slots.iter_mut().zip(&other.slots) {
-            *target += value;
-        }
-        for (target, value) in self.prefix.iter_mut().zip(&other.prefix) {
-            *target += value;
-        }
-        for (target, value) in self.prefix_squares.iter_mut().zip(&other.prefix_squares) {
-            *target += value;
-        }
-        for (target, value) in self.upgrades.iter_mut().zip(&other.upgrades) {
-            *target += value;
-        }
-        for (target, value) in self.cursed.iter_mut().zip(&other.cursed) {
-            *target += value;
-        }
-        for (target, value) in self.enchanted.iter_mut().zip(&other.enchanted) {
-            *target += value;
-        }
-        for (target, value) in self.totals.iter_mut().zip(&other.totals) {
-            *target += value;
-        }
-        for (target, value) in self.tiers.iter_mut().zip(&other.tiers) {
-            *target += value;
-        }
-        for (target, value) in self.repeats.iter_mut().zip(&other.repeats) {
-            *target += value;
-        }
-        for (target, value) in self.identity_counts.iter_mut().zip(&other.identity_counts) {
-            *target += value;
-        }
-        for (target, value) in self.grouped.iter_mut().zip(&other.grouped) {
-            *target += value;
-        }
-        for (target, value) in self.agreeing.iter_mut().zip(&other.agreeing) {
-            *target += value;
+        let fields = [
+            (&mut self.counts, &other.counts),
+            (&mut self.slots, &other.slots),
+            (&mut self.prefix, &other.prefix),
+            (&mut self.prefix_squares, &other.prefix_squares),
+            (&mut self.upgrades, &other.upgrades),
+            (&mut self.cursed, &other.cursed),
+            (&mut self.enchanted, &other.enchanted),
+            (&mut self.totals, &other.totals),
+            (&mut self.tiers, &other.tiers),
+            (&mut self.repeats, &other.repeats),
+            (&mut self.identity_counts, &other.identity_counts),
+            (&mut self.grouped, &other.grouped),
+            (&mut self.agreeing, &other.agreeing),
+        ];
+        for (targets, values) in fields {
+            for (target, value) in targets.iter_mut().zip(values) {
+                *target += value;
+            }
         }
     }
 }
@@ -519,15 +500,6 @@ fn render_repeats(tally: &Tally, output: &mut String) {
     }
     let _ = writeln!(output, "];");
 }
-
-const KINDS_ORDER: [ItemKind; KINDS] = [
-    ItemKind::Weapon,
-    ItemKind::Armor,
-    ItemKind::Wand,
-    ItemKind::Ring,
-];
-
-const LINES_ORDER: [Line; LINES] = [Line::Plain, Line::Thrown, Line::Tipped];
 
 /// Widest the identity correction may run. A line whose repeats are too rare to
 /// measure would otherwise hand the estimator a wild multiplier.
