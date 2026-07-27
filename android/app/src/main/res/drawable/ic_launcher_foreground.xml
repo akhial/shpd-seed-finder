@@ -1,63 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-<!-- Adaptive-icon foreground: the abstract Seed Seeker mark — three arcs
-     brightening as they converge on the amber seed. Vector twin of
-     assets/icon/seed-seeker-square.svg; arcs are full circles cut down by
-     trimPathEnd (285°, 235°, 185°). Sized so the outer arc stays inside
-     the 66dp adaptive-icon safe zone. -->
+<!-- Adaptive-icon foreground: the Shattered Pixel Dungeon chest, recoloured,
+     on upstream's own 54-cell grid (2dp per cell), which puts the mark where
+     upstream's sits under every launcher mask.
+     See assets/icon/ATTRIBUTION.md. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:aapt="http://schemas.android.com/aapt"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <group android:rotation="-30" android:pivotX="54" android:pivotY="54">
-        <path
-            android:pathData="M 81.4,54 A 27.4,27.4 0 1 1 26.6,54 A 27.4,27.4 0 1 1 81.4,54"
-            android:strokeColor="#FF35906F"
-            android:strokeWidth="5.3"
-            android:strokeLineCap="round"
-            android:trimPathEnd="0.792" />
-    </group>
-    <group android:rotation="90" android:pivotX="54" android:pivotY="54">
-        <path
-            android:pathData="M 72.8,54 A 18.8,18.8 0 1 1 35.2,54 A 18.8,18.8 0 1 1 72.8,54"
-            android:strokeColor="#FF4FB88C"
-            android:strokeWidth="5.3"
-            android:strokeLineCap="round"
-            android:trimPathEnd="0.653" />
-    </group>
-    <group android:rotation="210" android:pivotX="54" android:pivotY="54">
-        <path
-            android:pathData="M 64.8,54 A 10.8,10.8 0 1 1 43.2,54 A 10.8,10.8 0 1 1 64.8,54"
-            android:strokeColor="#FF7DE2B8"
-            android:strokeWidth="5.1"
-            android:strokeLineCap="round"
-            android:trimPathEnd="0.514" />
-    </group>
-    <path android:pathData="M 67.7,54 A 13.7,13.7 0 1 1 40.3,54 A 13.7,13.7 0 1 1 67.7,54 Z">
-        <aapt:attr name="android:fillColor">
-            <gradient
-                android:type="radial"
-                android:centerX="54"
-                android:centerY="54"
-                android:gradientRadius="13.7">
-                <item android:offset="0" android:color="#8CFFC96B" />
-                <item android:offset="0.55" android:color="#24FFC96B" />
-                <item android:offset="1" android:color="#00FFC96B" />
-            </gradient>
-        </aapt:attr>
-    </path>
-    <path android:pathData="M 58.9,54 A 4.9,4.9 0 1 1 49.1,54 A 4.9,4.9 0 1 1 58.9,54 Z">
-        <aapt:attr name="android:fillColor">
-            <gradient
-                android:type="radial"
-                android:centerX="53.2"
-                android:centerY="52.6"
-                android:gradientRadius="7.4">
-                <item android:offset="0" android:color="#FFFFE3A8" />
-                <item android:offset="1" android:color="#FFFFC96B" />
-            </gradient>
-        </aapt:attr>
-    </path>
+    <path android:pathData="M26,26h6v6h-6zM50,26h8v6h-8zM76,26h6v6h-6zM26,48h6v8h-6zM76,48h6v8h-6zM46,52h16v4h-16zM26,56h16v4h-16zM46,56h4v10h-4zM58,56h4v10h-4zM66,56h16v4h-16zM28,60h12v2h-12zM68,60h12v2h-12zM28,64h4v12h-4zM76,64h4v12h-4zM44,66h6v2h-6zM58,66h6v2h-6zM42,68h24v4h-24zM28,76h52v4h-52z"
+        android:fillColor="#FFE8F0FF" />
+    <path android:pathData="M32,28h4v24h-4zM46,28h4v20h-4zM58,28h4v20h-4zM72,28h4v24h-4zM40,50h2v2h-2zM66,50h2v2h-2zM32,52h10v4h-10zM66,52h10v4h-10zM32,64h10v2h-10zM66,64h10v2h-10zM32,66h2v2h-2zM36,66h2v2h-2zM40,66h2v2h-2zM68,66h2v2h-2zM72,66h4v2h-4zM32,68h4v2h-4zM38,68h2v2h-2zM66,68h2v2h-2zM70,68h2v2h-2zM74,68h2v2h-2zM32,70h2v2h-2zM36,70h2v2h-2zM40,70h2v2h-2zM68,70h2v2h-2zM72,70h4v2h-4zM32,72h4v2h-4zM38,72h2v2h-2zM42,72h26v2h-26zM70,72h2v2h-2zM74,72h2v2h-2zM32,74h44v2h-44z"
+        android:fillColor="#FF0A2149" />
+    <path android:pathData="M36,28h10v4h-10zM62,28h10v4h-10zM44,46h2v2h-2zM62,46h2v2h-2zM36,48h6v2h-6zM66,48h6v2h-6zM36,50h4v2h-4zM68,50h4v2h-4zM34,66h2v2h-2zM38,66h2v2h-2zM66,66h2v2h-2zM70,66h2v2h-2zM36,68h2v2h-2zM40,68h2v2h-2zM68,68h2v2h-2zM72,68h2v2h-2zM34,70h2v2h-2zM38,70h2v2h-2zM66,70h2v2h-2zM70,70h2v2h-2zM36,72h2v2h-2zM40,72h2v2h-2zM68,72h2v2h-2zM72,72h2v2h-2z"
+        android:fillColor="#FF1E4E9E" />
+    <path android:pathData="M26,32h6v4h-6zM50,32h8v4h-8zM76,32h6v4h-6zM26,44h6v4h-6zM50,44h8v4h-8zM76,44h6v4h-6zM42,56h4v10h-4zM62,56h4v10h-4zM42,66h2v2h-2zM64,66h2v2h-2z"
+        android:fillColor="#FFF6F9FF" />
+    <path android:pathData="M36,32h10v4h-10zM62,32h10v4h-10zM36,44h10v2h-10zM62,44h10v2h-10zM36,46h8v2h-8zM64,46h8v2h-8z"
+        android:fillColor="#FF2E6AC8" />
+    <path android:pathData="M26,36h6v8h-6zM50,36h8v8h-8zM76,36h6v8h-6zM42,48h24v4h-24zM42,52h4v4h-4zM62,52h4v4h-4z"
+        android:fillColor="#FFFFFFFF" />
+    <path android:pathData="M36,36h10v8h-10zM62,36h10v8h-10z"
+        android:fillColor="#FF4A8AEA" />
+    <path android:pathData="M50,56h8v6h-8zM52,62h4v6h-4z"
+        android:fillColor="#FF050F2E" />
+    <path android:pathData="M26,60h2v2h-2zM40,60h2v2h-2zM66,60h2v2h-2zM80,60h2v2h-2zM26,62h16v2h-16zM50,62h2v6h-2zM56,62h2v6h-2zM66,62h16v2h-16z"
+        android:fillColor="#FFB7CDEF" />
 </vector>

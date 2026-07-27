@@ -4,8 +4,8 @@ Copyright (C) 2026 Seed Seeker contributors
 This is an unofficial project and is not endorsed by Shattered Pixel Dungeon or
 its developers.
 
-This software derives deterministic generation behavior and includes the item
-sprite atlas from:
+This software derives deterministic generation behavior, includes the item
+sprite atlas, and bases its application icon on the launcher icon of:
 
 Pixel Dungeon
 Copyright (C) 2012-2015 Oleg Dolya
