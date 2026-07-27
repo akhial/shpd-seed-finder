@@ -13,7 +13,9 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.StrokeCap
@@ -24,7 +26,6 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.seedseeker.app.model.CatalogItem
-import dev.seedseeker.app.model.ItemKind
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.ScoutAccessibility
 import dev.seedseeker.app.model.ScoutItem
@@ -32,8 +33,13 @@ import dev.seedseeker.app.model.ScoutItemSource
 import dev.seedseeker.app.model.SearchStatus
 import dev.seedseeker.app.model.TierMatch
 import dev.seedseeker.app.model.UpgradeMatch
-import dev.seedseeker.app.ui.theme.Amber
-import dev.seedseeker.app.ui.theme.Mint
+import dev.seedseeker.app.ui.theme.RegionCaves
+import dev.seedseeker.app.ui.theme.RegionCity
+import dev.seedseeker.app.ui.theme.RegionHalls
+import dev.seedseeker.app.ui.theme.RegionPrison
+import dev.seedseeker.app.ui.theme.RegionSewers
+import dev.seedseeker.app.ui.theme.SpdTeal
+import dev.seedseeker.app.ui.theme.SpdYellow
 import java.util.Locale
 import kotlin.math.floor
 import kotlin.math.log10
@@ -67,9 +73,9 @@ private val RingTypeIconSizes = listOf(
 fun CompassMark(modifier: Modifier = Modifier) {
     Canvas(modifier) {
         val stroke = size.minDimension * 0.07f
-        drawCircle(Mint, style = Stroke(stroke))
+        drawCircle(SpdTeal, style = Stroke(stroke))
         drawLine(
-            color = Amber,
+            color = SpdYellow,
             start = Offset(size.width * 0.32f, size.height * 0.72f),
             end = Offset(size.width * 0.67f, size.height * 0.28f),
             strokeWidth = stroke * 1.25f,
@@ -79,36 +85,63 @@ fun CompassMark(modifier: Modifier = Modifier) {
     }
 }
 
-/** 16×16 sprite from the upstream atlas, drawn with nearest-neighbour scaling. */
+/**
+ * 16×16 sprite from the upstream atlas, drawn with nearest-neighbour scaling.
+ *
+ * The art is anchored to the top-left of its atlas cell, so [LocalItemAtlas]
+ * holds a copy whose cells were re-centred on their alpha bounding box at decode
+ * time (see `centerSpriteCells`), keeping small items like rings and darts
+ * centred at the same pixel scale the web front-end renders them at.
+ *
+ * A [glow] paints the sprite's own opaque pixels with the enchantment or curse
+ * colour at the shared pulse clock's current blend factor — the same masked
+ * tint the web uses, reproducing upstream's `texel*(1-v) + glow*v` shader with
+ * no bloom or halo outside the silhouette.
+ */
 @Composable
 fun ItemSprite(
     item: CatalogItem,
-    modifierName: String? = null,
+    glow: Glow? = null,
     modifier: Modifier = Modifier,
 ) {
     val atlas = LocalItemAtlas.current
     val iconAtlas = LocalItemIconAtlas.current
+    val pulse = LocalGlowPulse.current
     val placeholderColor = MaterialTheme.colorScheme.outline
     Canvas(
         modifier = modifier.semantics { contentDescription = item.name },
     ) {
-        if (modifierName != null) {
-            val glow = if (item.kind == ItemKind.ARMOR) Mint else Amber
-            drawCircle(glow, radius = size.minDimension * 0.46f, alpha = 0.23f)
-            drawCircle(glow, radius = size.minDimension * 0.34f, alpha = 0.16f)
-        }
         if (atlas != null) {
+            val srcOffset = IntOffset(
+                x = (item.spriteIndex % ITEM_ATLAS_COLUMNS) * ITEM_SPRITE_SIZE,
+                y = (item.spriteIndex / ITEM_ATLAS_COLUMNS) * ITEM_SPRITE_SIZE,
+            )
+            val srcSize = IntSize(ITEM_SPRITE_SIZE, ITEM_SPRITE_SIZE)
+            val dstSize = IntSize(size.width.toInt(), size.height.toInt())
             drawImage(
                 image = atlas,
-                srcOffset = IntOffset(
-                    x = (item.spriteIndex % ITEM_ATLAS_COLUMNS) * ITEM_SPRITE_SIZE,
-                    y = (item.spriteIndex / ITEM_ATLAS_COLUMNS) * ITEM_SPRITE_SIZE,
-                ),
-                srcSize = IntSize(ITEM_SPRITE_SIZE, ITEM_SPRITE_SIZE),
+                srcOffset = srcOffset,
+                srcSize = srcSize,
                 dstOffset = IntOffset.Zero,
-                dstSize = IntSize(size.width.toInt(), size.height.toInt()),
+                dstSize = dstSize,
                 filterQuality = FilterQuality.None,
             )
+            if (glow != null) {
+                // Reading the clock here keeps the pulse in the draw phase, so a
+                // frame never recomposes a scout row.
+                drawImage(
+                    image = atlas,
+                    srcOffset = srcOffset,
+                    srcSize = srcSize,
+                    dstOffset = IntOffset.Zero,
+                    dstSize = dstSize,
+                    colorFilter = ColorFilter.tint(
+                        color = glow.color.copy(alpha = pulse.alphaFor(glow.period)),
+                        blendMode = BlendMode.SrcIn,
+                    ),
+                    filterQuality = FilterQuality.None,
+                )
+            }
         } else {
             drawCircle(placeholderColor, radius = size.minDimension * 0.28f)
         }
@@ -139,11 +172,15 @@ fun ItemSprite(
     }
 }
 
-/** Sprite inside a soft tonal tile; falls back to a "?" for wildcard requirements. */
+/**
+ * Sprite inside a soft tonal tile; falls back to a "?" for wildcard
+ * requirements. Used by the requirement editor and its pickers — scout rows show
+ * bare sprites on the row background, as the web does.
+ */
 @Composable
 fun SpriteTile(
     item: CatalogItem?,
-    modifierName: String? = null,
+    glow: Glow? = null,
     tileSize: Int = 60,
     modifier: Modifier = Modifier,
 ) {
@@ -162,7 +199,7 @@ fun SpriteTile(
             } else {
                 ItemSprite(
                     item = item,
-                    modifierName = modifierName,
+                    glow = glow,
                     modifier = Modifier.size((tileSize * 3 / 4).dp),
                 )
             }
@@ -228,6 +265,15 @@ fun floorRegion(depth: Int): String = when {
     depth < 16 -> "Caves"
     depth < 21 -> "Dwarven City"
     else -> "Demon Halls"
+}
+
+/** Region accent for a floor, mirrored from the web's `regionForDepth`. */
+fun floorRegionColor(depth: Int): Color = when {
+    depth < 6 -> RegionSewers
+    depth < 11 -> RegionPrison
+    depth < 16 -> RegionCaves
+    depth < 21 -> RegionCity
+    else -> RegionHalls
 }
 
 /** Selects one distinct, jointly obtainable scout item per matched requirement. */

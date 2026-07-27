@@ -734,7 +734,7 @@ private fun RequirementPreview(
                 .padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            SpriteTile(item = item, modifierName = modifierName, tileSize = 44)
+            SpriteTile(item = item, glow = ItemGlows.forEffect(modifierName), tileSize = 44)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
