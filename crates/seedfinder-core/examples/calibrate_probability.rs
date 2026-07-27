@@ -21,13 +21,14 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::sync::Mutex;
 
-use shpd_seedfinder_core::catalog::{ItemKind, item};
+use shpd_seedfinder_core::catalog::{ItemId, ItemKind, item};
 use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::main_world::CanonicalMainWorldGenerator;
 use shpd_seedfinder_core::model::GeneratedWorld;
 use shpd_seedfinder_core::probability_tables::{
-    DEEPEST_FLOOR, DEPTHS, FLOOR_SETS, IDENTITY_REPEAT_LIMIT, KINDS, MAX_TABLED_UPGRADE, TIERS,
-    bundle_size, is_missile, kind_index, source_index, sources,
+    DEEPEST_FLOOR, DEPTHS, FLOOR_SETS, IDENTITY_REPEAT_LIMIT, KINDS, LINES, Line,
+    MAX_TABLED_UPGRADE, TIERS, TIPPED_DARTS, bundle_size, kind_index, line_index, line_of,
+    source_index, sources,
 };
 use shpd_seedfinder_core::search::WorldGenerator;
 use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
@@ -54,11 +55,15 @@ struct Tally {
     totals: Vec<u64>,
     /// [kind][source][floor set][tier]
     tiers: Vec<u64>,
-    /// [kind][repeats][depth]: worlds containing at least `repeats + 1` items
-    /// of one identity within the depth prefix, summed over identities.
+    /// [kind][repeats][depth]: ways of choosing `repeats + 1` items of one
+    /// identity within the depth prefix, summed over identities and worlds.
     repeats: Vec<u64>,
     /// [kind][identity][depth]
     identity_counts: Vec<u64>,
+    /// [kind][source]: exclusive reward groups holding more than one item, and
+    /// how many of those upgraded and cursed every member alike.
+    grouped: Vec<u64>,
+    agreeing: Vec<u64>,
 }
 
 impl Tally {
@@ -76,6 +81,8 @@ impl Tally {
             tiers: vec![0; KINDS * FAMILIES * MAX_SOURCES * FLOOR_SETS * TIERS],
             repeats: vec![0; KINDS * FAMILIES * IDENTITY_REPEAT_LIMIT * DEPTHS],
             identity_counts: vec![0; KINDS * FAMILIES * MAX_IDENTITIES * DEPTHS],
+            grouped: vec![0; KINDS * FAMILIES * MAX_SOURCES],
+            agreeing: vec![0; KINDS * FAMILIES * MAX_SOURCES],
         }
     }
 
@@ -114,8 +121,18 @@ impl Tally {
         for (target, value) in self.identity_counts.iter_mut().zip(&other.identity_counts) {
             *target += value;
         }
+        for (target, value) in self.grouped.iter_mut().zip(&other.grouped) {
+            *target += value;
+        }
+        for (target, value) in self.agreeing.iter_mut().zip(&other.agreeing) {
+            *target += value;
+        }
     }
 }
+
+/// One choice inside an exclusive reward group: the acquisition plans that
+/// reach it, and the upgrade and curse it was rolled with.
+type Alternative = (u64, u8, bool);
 
 /// How many items of one group can be carried out of a world together.
 ///
@@ -132,8 +149,9 @@ fn co_obtainable(masks: &[u64]) -> u64 {
 
 const MAX_SOURCES: usize = 17;
 
-/// Melee and thrown weapons are tallied into separate halves of every table.
-const FAMILIES: usize = 2;
+/// Melee weapons, thrown weapons, and tipped darts are tallied into separate
+/// bands of every table.
+const FAMILIES: usize = LINES;
 const MAX_IDENTITIES: usize = 96;
 
 fn main() {
@@ -178,12 +196,12 @@ impl Tally {
     fn record(&mut self, world: &GeneratedWorld) {
         self.worlds += 1;
         let mut identity_depths: BTreeMap<(usize, u8), Vec<u8>> = BTreeMap::new();
-        let mut reward_groups: BTreeMap<(usize, usize, usize, u16), Vec<u64>> = BTreeMap::new();
+        let mut reward_groups: BTreeMap<(usize, usize, usize, u16), Vec<Alternative>> =
+            BTreeMap::new();
         let mut scattered: BTreeMap<usize, u64> = BTreeMap::new();
         for candidate in &world.items {
             let definition = item(candidate.item);
-            let kind =
-                kind_index(definition.kind) + if is_missile(candidate.item) { KINDS } else { 0 };
+            let kind = kind_index(definition.kind) + KINDS * line_index(line_of(candidate.item));
             let source = source_index(candidate.source);
             let depth = usize::from(candidate.depth) - 1;
             let row = kind * MAX_SOURCES + source;
@@ -208,7 +226,7 @@ impl Tally {
                     .entry((kind, source, depth, group))
                     .or_default();
                 let fresh = members.is_empty();
-                members.push(mask);
+                members.push((mask, candidate.upgrade, candidate.cursed));
                 fresh
             } else {
                 self.slots[row * DEPTHS + depth] += 1;
@@ -224,8 +242,21 @@ impl Tally {
                 .or_default()
                 .push(candidate.depth);
         }
-        for ((kind, source, depth, _), masks) in &reward_groups {
-            self.slots[(kind * MAX_SOURCES + source) * DEPTHS + depth] += co_obtainable(masks);
+        for ((kind, source, depth, _), members) in &reward_groups {
+            let row = kind * MAX_SOURCES + source;
+            let masks: Vec<u64> = members.iter().map(|(mask, _, _)| *mask).collect();
+            self.slots[row * DEPTHS + depth] += co_obtainable(&masks);
+            // Alternatives that always carry the same upgrade and curse were
+            // rolled once between them, so asking for one is a single chance.
+            if let Some((_, upgrade, cursed)) = members.first().filter(|_| members.len() > 1) {
+                self.grouped[row] += 1;
+                if members
+                    .iter()
+                    .all(|(_, other, curse)| other == upgrade && curse == cursed)
+                {
+                    self.agreeing[row] += 1;
+                }
+            }
         }
         self.record_prefixes(&scattered);
         self.record_identities(&identity_depths);
@@ -246,7 +277,12 @@ impl Tally {
         }
     }
 
-    /// How often one identity turns up more than once within a depth prefix.
+    /// How many sets of same-identity copies a world offers within each depth
+    /// prefix.
+    ///
+    /// Counting sets rather than worlds — a factorial moment rather than a tail
+    /// probability — is what makes the answer survive the upgrade and curse
+    /// filters a query puts on top of the identity: those thin every set alike.
     fn record_identities(&mut self, identity_depths: &BTreeMap<(usize, u8), Vec<u8>>) {
         for ((kind, identity), depths) in identity_depths {
             let mut sorted = depths.clone();
@@ -254,13 +290,15 @@ impl Tally {
             for depth in 0..DEPTHS {
                 let limit = u8::try_from(depth + 1).unwrap_or(u8::MAX);
                 let seen = sorted.iter().take_while(|value| **value <= limit).count();
-                if seen > 0 {
-                    self.identity_counts
-                        [(kind * MAX_IDENTITIES + usize::from(*identity)) * DEPTHS + depth] +=
-                        seen as u64;
+                if seen == 0 {
+                    continue;
                 }
+                self.identity_counts
+                    [(kind * MAX_IDENTITIES + usize::from(*identity)) * DEPTHS + depth] +=
+                    seen as u64;
                 for repeats in 0..IDENTITY_REPEAT_LIMIT.min(seen) {
-                    self.repeats[(kind * IDENTITY_REPEAT_LIMIT + repeats) * DEPTHS + depth] += 1;
+                    self.repeats[(kind * IDENTITY_REPEAT_LIMIT + repeats) * DEPTHS + depth] +=
+                        choose(seen, repeats + 1);
                 }
             }
         }
@@ -279,12 +317,13 @@ fn render(tally: &Tally) -> String {
          //! example and replace this file rather than editing it by hand.\n\n\
          use crate::catalog::ItemKind;\n\
          use crate::model::ItemSource;\n\n\
-         use super::{{DEPTHS, IDENTITY_REPEAT_LIMIT, KINDS, Supply}};",
+         use super::{{DEPTHS, IDENTITY_REPEAT_LIMIT, KINDS, LINES, Line, Supply, TIPPED_DARTS}};",
         tally.worlds
     );
     render_supply(tally, &mut output);
     render_spread(tally, &mut output);
     render_repeats(tally, &mut output);
+    render_tipped(tally, &mut output);
     output
 }
 
@@ -295,12 +334,12 @@ fn render_supply(tally: &Tally, output: &mut String) {
         output,
         "\n/// Every measured source/family combination.\npub static SUPPLY: &[Supply] = &["
     );
-    for (family, kind) in KINDS_ORDER
+    for (line, kind) in KINDS_ORDER
         .into_iter()
-        .flat_map(|kind| [(false, kind), (true, kind)])
+        .flat_map(|kind| LINES_ORDER.map(|line| (line, kind)))
     {
         for &source in sources() {
-            let kind_slot = kind_index(kind) + usize::from(family) * KINDS;
+            let kind_slot = kind_index(kind) + line_index(line) * KINDS;
             let source_slot = source_index(source);
             let total = tally.totals[kind_slot * MAX_SOURCES + source_slot];
             if total == 0 {
@@ -334,10 +373,14 @@ fn render_supply(tally: &Tally, output: &mut String) {
                 tally.enchanted[kind_slot * MAX_SOURCES + source_slot] as f64 / total as f64;
             let _ = writeln!(output, "    Supply {{");
             let _ = writeln!(output, "        kind: ItemKind::{kind:?},");
-            let _ = writeln!(output, "        missile: {family},");
+            let _ = writeln!(output, "        line: Line::{line:?},");
             let _ = writeln!(output, "        source: ItemSource::{source:?},");
             let _ = writeln!(output, "        bundle: {},", bundle_size(source, kind));
             let _ = writeln!(output, "        options: {},", format_number(options));
+            let grouped = tally.grouped[kind_slot * MAX_SOURCES + source_slot];
+            let agreeing = tally.agreeing[kind_slot * MAX_SOURCES + source_slot];
+            let shared = grouped > 0 && agreeing as f64 / grouped as f64 > AGREEMENT;
+            let _ = writeln!(output, "        shared_roll: {shared},");
 
             let _ = writeln!(
                 output,
@@ -399,12 +442,12 @@ fn render_spread(tally: &Tally, output: &mut String) {
          ///\n\
          /// Items are dealt from a decrementing category deck rather than drawn\n\
          /// independently, so a run produces a steadier stream than a Poisson\n\
-         /// process would and these sit below one. Entry `[family][depth - 1]`\n\
-         /// covers floors one through `depth`; families run melee, armor, wand,\n\
-         /// ring, then the thrown weapons.\n\
-         pub static SLOT_SPREAD: [[f32; DEPTHS]; KINDS * 2] = ["
+         /// process would and these sit below one. Entry `[line][depth - 1]`\n\
+         /// covers floors one through `depth`, with the rows running weapon,\n\
+         /// armor, wand, ring for each line in turn.\n\
+         pub static SLOT_SPREAD: [[f32; DEPTHS]; KINDS * LINES] = ["
     );
-    for family in 0..KINDS * 2 {
+    for family in 0..KINDS * LINES {
         let row: Vec<String> = (0..DEPTHS)
             .map(|depth| {
                 let mean = tally.prefix[family * DEPTHS + depth] as f64 / worlds;
@@ -429,16 +472,21 @@ fn render_repeats(tally: &Tally, output: &mut String) {
         output,
         "\n/// Correction for same-identity duplicates.\n\
          ///\n\
-         /// Wands, rings, weapons, and armor are drawn from decrementing decks,\n\
-         /// so a world holds fewer copies of one identity than independent draws\n\
-         /// would predict. Entry `[kind][copies - 1][depth - 1]` scales the\n\
-         /// independent estimate of holding `copies` items of a single identity\n\
-         /// within the depth prefix.\n\
-         pub static IDENTITY_REPEATS: [[[f32; DEPTHS]; IDENTITY_REPEAT_LIMIT]; KINDS] = ["
+         /// Every line is dealt from a decrementing deck, so a world offers\n\
+         /// fewer sets of one identity than independent draws would predict.\n\
+         /// Entry `[line][copies - 1][depth - 1]` scales the independent\n\
+         /// estimate of holding `copies` items of a single identity within the\n\
+         /// depth prefix. It compares how many such sets a world holds against\n\
+         /// how many independent draws of the same average would offer.\n\
+         pub static IDENTITY_REPEATS: [[[f32; DEPTHS]; IDENTITY_REPEAT_LIMIT]; KINDS * LINES] = ["
     );
-    for kind in KINDS_ORDER {
-        let kind_slot = kind_index(kind);
-        let _ = writeln!(output, "    // {kind:?}");
+    // Rows run in table order: every family for one line, then the next line.
+    for (line, kind) in LINES_ORDER
+        .into_iter()
+        .flat_map(|line| KINDS_ORDER.map(|kind| (line, kind)))
+    {
+        let kind_slot = kind_index(kind) + line_index(line) * KINDS;
+        let _ = writeln!(output, "    // {kind:?} {line:?}");
         let _ = writeln!(output, "    [");
         for repeats in 0..IDENTITY_REPEAT_LIMIT {
             let row: Vec<String> = (0..DEPTHS)
@@ -447,19 +495,21 @@ fn render_repeats(tally: &Tally, output: &mut String) {
                         [(kind_slot * IDENTITY_REPEAT_LIMIT + repeats) * DEPTHS + depth]
                         as f64
                         / worlds;
+                    // The same count if every draw picked its identity afresh.
+                    let power = i32::try_from(repeats + 1).unwrap_or(1);
                     let independent: f64 = (0..MAX_IDENTITIES)
                         .map(|identity| {
                             let mean = tally.identity_counts
                                 [(kind_slot * MAX_IDENTITIES + identity) * DEPTHS + depth]
                                 as f64
                                 / worlds;
-                            poisson_at_least(mean, repeats + 1)
+                            mean.powi(power) / factorial(repeats + 1)
                         })
                         .sum();
                     format_number(if independent <= 0.0 {
                         1.0
                     } else {
-                        observed / independent
+                        (observed / independent).clamp(0.0, MOST_REPEATS)
                     })
                 })
                 .collect();
@@ -477,18 +527,55 @@ const KINDS_ORDER: [ItemKind; KINDS] = [
     ItemKind::Ring,
 ];
 
+const LINES_ORDER: [Line; LINES] = [Line::Plain, Line::Thrown, Line::Tipped];
+
+/// Widest the identity correction may run. A line whose repeats are too rare to
+/// measure would otherwise hand the estimator a wild multiplier.
+const MOST_REPEATS: f64 = 4.0;
+
+/// How often a source's alternatives must agree before their upgrade and curse
+/// are taken to be one roll. The generator either shares the roll or draws it
+/// independently, so anything in between is sampling noise.
+const AGREEMENT: f64 = 0.99;
+
 #[allow(clippy::cast_precision_loss)]
-fn poisson_at_least(mean: f64, count: usize) -> f64 {
-    if mean <= 0.0 {
-        return 0.0;
+fn factorial(count: usize) -> f64 {
+    (1..=count).map(|step| step as f64).product()
+}
+
+/// Sets of `chosen` items that can be picked out of `count`.
+fn choose(count: usize, chosen: usize) -> u64 {
+    if chosen > count {
+        return 0;
     }
-    let mut term = (-mean).exp();
-    let mut below = term;
-    for step in 1..count {
-        term *= mean / step as f64;
-        below += term;
-    }
-    (1.0 - below).clamp(0.0, 1.0)
+    (0..chosen).fold(1_u64, |total, step| {
+        total * (count - step) as u64 / (step as u64 + 1)
+    })
+}
+
+/// Share of each tipped dart among the darts a run produces.
+#[allow(clippy::cast_precision_loss)]
+fn render_tipped(tally: &Tally, output: &mut String) {
+    let line = kind_index(ItemKind::Weapon) + line_index(Line::Tipped) * KINDS;
+    let counts: Vec<f64> = (0..TIPPED_DARTS)
+        .map(|dart| {
+            let identity = ItemId::RotDart as usize + dart;
+            tally.identity_counts[(line * MAX_IDENTITIES + identity) * DEPTHS + DEPTHS - 1] as f64
+        })
+        .collect();
+    let total: f64 = counts.iter().sum();
+    let _ = writeln!(
+        output,
+        "\n/// Share of each tipped dart among the darts a run offers, in catalog\n\
+         /// order from `RotDart`. The generator tips them from the plant seeds it\n\
+         /// has on hand rather than dealing them evenly.\n\
+         pub static TIPPED_SHARES: [f32; TIPPED_DARTS] = [{}];",
+        counts
+            .iter()
+            .map(|count| format_number(if total <= 0.0 { 0.0 } else { count / total }))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
 }
 
 /// Formats a probability with the digit separators clippy's pedantic lints

@@ -20,7 +20,7 @@ use crate::model::ItemSource;
 
 mod measured;
 
-pub use measured::{IDENTITY_REPEATS, SLOT_SPREAD, SUPPLY};
+pub use measured::{IDENTITY_REPEATS, SLOT_SPREAD, SUPPLY, TIPPED_SHARES};
 
 /// Deepest floor of the main dungeon.
 pub const DEPTHS: usize = 24;
@@ -32,6 +32,61 @@ const _: () = assert!(DEPTHS == DEEPEST_FLOOR as usize);
 
 /// Equipment families tracked by the estimator.
 pub const KINDS: usize = 4;
+
+/// Generator lines within one equipment family.
+///
+/// Thrown weapons and tipped darts are [`ItemKind::Weapon`] to the catalog but
+/// come out of their own generator categories, in their own quantities, tiers,
+/// and upgrades. Tallying them apart from melee weapons is what keeps a dart
+/// bought in a shop from making swords look plentiful. Every other family has
+/// only the plain line.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Line {
+    Plain,
+    Thrown,
+    Tipped,
+}
+
+/// Generator lines per family.
+pub const LINES: usize = 3;
+
+/// Dense table index for one generator line.
+#[must_use]
+pub const fn line_index(line: Line) -> usize {
+    match line {
+        Line::Plain => 0,
+        Line::Thrown => 1,
+        Line::Tipped => 2,
+    }
+}
+
+/// The line that produces a catalog identity.
+#[must_use]
+pub fn line_of(item: ItemId) -> Line {
+    if tipped_index(item).is_some() {
+        Line::Tipped
+    } else if is_missile(item) {
+        Line::Thrown
+    } else {
+        Line::Plain
+    }
+}
+
+/// Tipped darts, which the generator tips with a plant seed rather than drawing
+/// from the weapon deck. They are laid out contiguously in the catalog.
+pub const TIPPED_DARTS: usize = 12;
+
+const _: () = assert!(
+    ItemId::BlindingDart as usize - ItemId::RotDart as usize + 1 == TIPPED_DARTS,
+    "the tipped darts must stay contiguous in the catalog"
+);
+
+/// Position of a tipped dart in [`TIPPED_SHARES`], or `None` for anything else.
+#[must_use]
+pub fn tipped_index(item: ItemId) -> Option<usize> {
+    let offset = (item as usize).checked_sub(ItemId::RotDart as usize)?;
+    (offset < TIPPED_DARTS).then_some(offset)
+}
 
 /// Five-floor regions sharing one tier table.
 pub const FLOOR_SETS: usize = 5;
@@ -59,10 +114,7 @@ pub const IDENTITY_REPEAT_LIMIT: usize = 4;
 #[derive(Clone, Copy, Debug)]
 pub struct Supply {
     pub kind: ItemKind,
-    /// Thrown weapons come from their own generator category, in their own
-    /// quantities and tiers, so they are tallied apart from melee weapons even
-    /// though both are [`ItemKind::Weapon`].
-    pub missile: bool,
+    pub line: Line,
     pub source: ItemSource,
     /// Reward slots contributed each time this source appears, or `0` when the
     /// source scatters independent drops whose count is treated as Poisson.
@@ -71,6 +123,12 @@ pub struct Supply {
     /// Wandmaker's two wands, the Blacksmith's choice of prize — occupy one
     /// slot between them, so a slot matches when any of its options does.
     pub options: f32,
+    /// Whether those alternatives are upgraded and cursed as one.
+    ///
+    /// The Blacksmith offers its whole weapon rack at a single upgrade level,
+    /// so asking for a `+3` weapon there is one chance rather than three; the
+    /// Wandmaker rolls its two wands apart, so it is two.
+    pub shared_roll: bool,
     /// Expected number of reward slots on each floor `1..=24`.
     pub depth_slots: [f32; DEPTHS],
     /// Probability of each upgrade level `+0..=+4`.
@@ -207,10 +265,10 @@ pub const fn appears_once(source: ItemSource) -> bool {
     )
 }
 
-/// Row of [`SLOT_SPREAD`] covering one family.
+/// Row of [`SLOT_SPREAD`] covering one family's line.
 #[must_use]
-pub const fn spread_index(kind: ItemKind, missile: bool) -> usize {
-    kind_index(kind) + if missile { KINDS } else { 0 }
+pub const fn spread_index(kind: ItemKind, line: Line) -> usize {
+    kind_index(kind) + KINDS * line_index(line)
 }
 
 /// Supply rows for one equipment family.

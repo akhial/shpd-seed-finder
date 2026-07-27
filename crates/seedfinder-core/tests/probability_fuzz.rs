@@ -10,15 +10,21 @@
 //! cargo test --release -p shpd-seedfinder-core --test probability_fuzz \
 //!     -- --ignored --nocapture
 //! ```
+//!
+//! The sweep takes `FUZZ_WORLDS`, `FUZZ_QUERIES`, and `FUZZ_SEED` from the
+//! environment, so the same corpus can be rerun over a deeper sample while
+//! chasing a specific bias.
 
 use std::fmt::Write as _;
 use std::sync::OnceLock;
+use std::time::Instant;
 
 use shpd_seedfinder_core::catalog::{ArmorEffect, Effect, ItemId, ItemKind, WeaponEffect};
 use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::main_world::CanonicalMainWorldGenerator;
 use shpd_seedfinder_core::model::{GeneratedWorld, ItemSource};
 use shpd_seedfinder_core::probability::estimate_match_probability;
+use shpd_seedfinder_core::probability_tables::is_missile;
 use shpd_seedfinder_core::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
 use shpd_seedfinder_core::search::WorldGenerator;
 use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
@@ -27,11 +33,12 @@ use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
 /// unoptimised build, which limits it to queries that hit often.
 const SAMPLED_WORLDS: u64 = 512;
 
-/// Worlds sampled by the ignored sweep.
-const FUZZED_WORLDS: u64 = 30_000;
+/// Worlds sampled by the ignored sweep, unless `FUZZ_WORLDS` says otherwise.
+const FUZZED_WORLDS: u64 = 60_000;
 
-/// Randomly generated queries in the ignored sweep.
-const FUZZED_QUERIES: usize = 200;
+/// Randomly generated queries in the ignored sweep, unless `FUZZ_QUERIES` says
+/// otherwise.
+const FUZZED_QUERIES: usize = 400;
 
 /// A query needs at least this many hits before its rate is worth comparing.
 const MEANINGFUL_HITS: f64 = 12.0;
@@ -40,6 +47,10 @@ const MEANINGFUL_HITS: f64 = 12.0;
 /// accounted for. The model approximates competition between requirements and
 /// ignores challenges, so it is not expected to be exact — only close.
 const TOLERANCE: f64 = 2.0;
+
+/// A search shows its estimate while the user types, so it has to land well
+/// inside a frame even for the widest query.
+const BUDGET: std::time::Duration = std::time::Duration::from_millis(50);
 
 #[test]
 fn estimates_track_sampled_seeds() {
@@ -57,14 +68,60 @@ fn estimates_track_sampled_seeds() {
     );
 }
 
+/// The estimate is computed on the interface thread before a search starts, so
+/// the widest query it accepts still has to resolve well inside a frame.
+#[test]
+fn estimates_stay_fast() {
+    let mut generator = QueryGenerator::new(0xC0FF_EE00);
+    let mut widest = std::time::Duration::ZERO;
+    let mut slowest = String::new();
+    // Linked groups are the costly shape: every candidate identity re-runs the
+    // whole matching, so they set the ceiling.
+    for _ in 0..200 {
+        let query = generator.next_query();
+        if query.validate().is_err() {
+            continue;
+        }
+        let started = Instant::now();
+        let estimate = estimate_match_probability(&query);
+        let elapsed = started.elapsed();
+        assert!(
+            estimate.is_finite(),
+            "{} produced {estimate}",
+            describe(&query)
+        );
+        if elapsed > widest {
+            widest = elapsed;
+            slowest = describe(&query);
+        }
+    }
+    // Debug builds run this an order of magnitude slower than the release build
+    // the budget describes, so only the optimised build is held to it.
+    let budget = if cfg!(debug_assertions) {
+        BUDGET * 20
+    } else {
+        BUDGET
+    };
+    println!("slowest estimate: {widest:?} for {slowest}");
+    assert!(
+        widest < budget,
+        "slowest estimate took {widest:?}, over the {budget:?} budget: {slowest}"
+    );
+}
+
 #[test]
 #[ignore = "generates tens of thousands of worlds; run with --release"]
 fn fuzzed_queries_track_sampled_seeds() {
-    let worlds = sampled_worlds(FUZZED_WORLDS);
-    let mut generator = QueryGenerator::new(0x5EED_5EEC);
-    let mut checked = 0;
+    let count = from_environment("FUZZ_WORLDS").unwrap_or(FUZZED_WORLDS);
+    let queries = from_environment("FUZZ_QUERIES")
+        .and_then(|value| usize::try_from(value).ok())
+        .unwrap_or(FUZZED_QUERIES);
+    let seed = from_environment("FUZZ_SEED").unwrap_or(0x5EED_5EEC);
+    let worlds = sampled_worlds(count);
+    let mut generator = QueryGenerator::new(seed);
+    let mut ratios: Vec<(f64, String, f64, f64)> = Vec::new();
     let mut failures = Vec::new();
-    for _ in 0..FUZZED_QUERIES {
+    for _ in 0..queries {
         let query = generator.next_query();
         if query.validate().is_err() {
             continue;
@@ -74,22 +131,75 @@ fn fuzzed_queries_track_sampled_seeds() {
         if f64::from(hits) < MEANINGFUL_HITS {
             continue;
         }
-        checked += 1;
         let observed = f64::from(hits) / worlds_len(worlds);
-        let ratio = estimate / observed;
-        println!("{ratio:>8.3}  {observed:>10.3e}  {estimate:>10.3e}  {name}");
+        ratios.push((estimate / observed, name.clone(), observed, estimate));
         if !within_tolerance(observed, estimate, f64::from(hits)) {
             failures.push(format!(
                 "{name}: sampled {observed:.3e}, estimated {estimate:.3e}"
             ));
         }
     }
-    assert!(checked > 40, "only {checked} queries produced enough hits");
+    report(&mut ratios, worlds.len());
+    assert!(
+        ratios.len() > 40,
+        "only {} queries produced enough hits",
+        ratios.len()
+    );
     assert!(
         failures.is_empty(),
         "estimates drifted:\n{}",
         failures.join("\n")
     );
+}
+
+/// Prints every comparison worst-first, then the shape of the whole sweep.
+fn report(ratios: &mut [(f64, String, f64, f64)], worlds: usize) {
+    ratios.sort_by(|left, right| {
+        right
+            .0
+            .ln()
+            .abs()
+            .partial_cmp(&left.0.ln().abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    for (ratio, name, observed, estimate) in ratios.iter() {
+        println!("{ratio:>8.3}  {observed:>10.3e}  {estimate:>10.3e}  {name}");
+    }
+    let mut sorted: Vec<f64> = ratios.iter().map(|entry| entry.0).collect();
+    sorted.sort_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal));
+    let at = |fraction: f64| {
+        let index = ((count(sorted.len()) - 1.0) * fraction).round().max(0.0);
+        sorted.get(position(index)).copied().unwrap_or(f64::NAN)
+    };
+    let logs: f64 = sorted.iter().map(|ratio| ratio.ln().abs()).sum();
+    println!(
+        "\n{} queries over {worlds} worlds: median {:.3}, p10 {:.3}, p90 {:.3}, \
+         range {:.3}-{:.3}, mean |log| {:.4}",
+        sorted.len(),
+        at(0.5),
+        at(0.1),
+        at(0.9),
+        sorted.first().copied().unwrap_or(f64::NAN),
+        sorted.last().copied().unwrap_or(f64::NAN),
+        logs / count(sorted.len().max(1)),
+    );
+}
+
+/// A rounded, non-negative percentile position as an index.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn position(index: f64) -> usize {
+    index as usize
+}
+
+/// Sweep sizes stay far inside what an `f64` counts exactly, and percentile
+/// positions are already rounded and clamped before they are turned back.
+#[allow(clippy::cast_precision_loss)]
+fn count(value: usize) -> f64 {
+    value as f64
+}
+
+fn from_environment(name: &str) -> Option<u64> {
+    std::env::var(name).ok()?.parse().ok()
 }
 
 fn compare(name: &str, query: &SearchQuery, worlds: &[GeneratedWorld]) -> bool {
@@ -107,13 +217,22 @@ fn compare(name: &str, query: &SearchQuery, worlds: &[GeneratedWorld]) -> bool {
 }
 
 fn measure(query: &SearchQuery, worlds: &[GeneratedWorld]) -> (u32, f64) {
-    let hits = worlds
-        .iter()
-        .filter(|world| query.matches(world))
-        .count()
-        .try_into()
-        .unwrap_or(u32::MAX);
-    (hits, estimate_match_probability(query))
+    let workers = std::thread::available_parallelism().map_or(4, std::num::NonZeroUsize::get);
+    let chunk = worlds.len().div_ceil(workers.max(1)).max(1);
+    let hits: usize = std::thread::scope(|scope| {
+        let handles: Vec<_> = worlds
+            .chunks(chunk)
+            .map(|slice| scope.spawn(|| slice.iter().filter(|world| query.matches(world)).count()))
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().expect("no worker panics"))
+            .sum()
+    });
+    (
+        hits.try_into().unwrap_or(u32::MAX),
+        estimate_match_probability(query),
+    )
 }
 
 /// Whether an estimate is close enough, widening [`TOLERANCE`] by the sampling
@@ -277,12 +396,33 @@ fn modifier_queries() -> Vec<(String, SearchQuery)> {
         ),
     ));
     queries.push((
+        "a cursed weapon".to_owned(),
+        query(
+            vec![Requirement {
+                effect: Some(Effect::Weapon(WeaponEffect::Annoying)),
+                ..base(ItemKind::Weapon)
+            }],
+            24,
+        ),
+    ));
+    queries.push((
         "an uncursed ring at +3 or better".to_owned(),
         query(
             vec![Requirement {
                 upgrade: UpgradeRequirement::AtLeast(3),
                 require_uncursed: true,
                 ..base(ItemKind::Ring)
+            }],
+            24,
+        ),
+    ));
+    queries.push((
+        "a thrown weapon at +1 or better".to_owned(),
+        query(
+            vec![Requirement {
+                item: Some(ItemId::ThrowingSpear),
+                upgrade: UpgradeRequirement::AtLeast(1),
+                ..base(ItemKind::Weapon)
             }],
             24,
         ),
@@ -342,6 +482,25 @@ fn competition_queries() -> Vec<(String, SearchQuery)> {
             24,
         ),
     ));
+    // One family per requirement, so nothing competes but everything has to hold.
+    queries.push((
+        "one of every family at +1 or better".to_owned(),
+        query(
+            [
+                ItemKind::Weapon,
+                ItemKind::Armor,
+                ItemKind::Wand,
+                ItemKind::Ring,
+            ]
+            .into_iter()
+            .map(|kind| Requirement {
+                upgrade: UpgradeRequirement::AtLeast(1),
+                ..base(kind)
+            })
+            .collect(),
+            24,
+        ),
+    ));
     let mut with_blacksmith = query(
         vec![Requirement {
             upgrade: UpgradeRequirement::AtLeast(2),
@@ -359,10 +518,16 @@ fn competition_queries() -> Vec<(String, SearchQuery)> {
 
 fn describe(query: &SearchQuery) -> String {
     let mut text = format!("depth<={}", query.max_depth);
+    if query.require_blacksmith {
+        text.push_str(" +smith");
+    }
+    if query.exclude_blacksmith_rewards {
+        text.push_str(" -smith");
+    }
     for requirement in &query.requirements {
         let _ = write!(
             text,
-            " [{:?}{}{}{}{}{}{}{}]",
+            " [{:?}{}{}{}{}{}{}{}{}]",
             requirement.kind,
             requirement
                 .item
@@ -395,6 +560,10 @@ fn describe(query: &SearchQuery) -> String {
             requirement
                 .max_depth
                 .map(|value| format!(" by {value}"))
+                .unwrap_or_default(),
+            requirement
+                .identity_group
+                .map(|value| format!(" =g{value}"))
                 .unwrap_or_default(),
         );
     }
@@ -431,7 +600,7 @@ impl QueryGenerator {
     }
 
     fn next_query(&mut self) -> SearchQuery {
-        let count = 1 + self.pick(3);
+        let count = 1 + self.pick(4);
         let linked = self.chance(15);
         let kind = self.next_kind();
         let requirements = (0..count)
@@ -484,11 +653,18 @@ impl QueryGenerator {
             }
             _ => {}
         }
-        if self.chance(15) {
+        if self.chance(18) {
+            let curse = self.chance(25);
             requirement.effect = match kind {
+                ItemKind::Weapon if curse => Some(Effect::Weapon(
+                    WEAPON_CURSES[self.pick(WEAPON_CURSES.len())],
+                )),
                 ItemKind::Weapon => Some(Effect::Weapon(
                     WEAPON_EFFECTS[self.pick(WEAPON_EFFECTS.len())],
                 )),
+                ItemKind::Armor if curse => {
+                    Some(Effect::Armor(ARMOR_CURSES[self.pick(ARMOR_CURSES.len())]))
+                }
                 ItemKind::Armor => {
                     Some(Effect::Armor(ARMOR_EFFECTS[self.pick(ARMOR_EFFECTS.len())]))
                 }
@@ -501,17 +677,21 @@ impl QueryGenerator {
         if self.chance(10) {
             requirement.source = Some(SOURCES[self.pick(SOURCES.len())]);
         }
-        if self.chance(20) {
+        if self.chance(25) {
             requirement.max_depth = Some(1 + self.small(24));
         }
         requirement
     }
 
+    /// Named items, with thrown weapons drawn as often as melee ones so the
+    /// separate generator category they come from stays covered.
     fn next_item(&mut self, kind: ItemKind) -> Option<ItemId> {
+        let thrown = kind == ItemKind::Weapon && self.chance(40);
         let candidates: Vec<ItemId> = shpd_seedfinder_core::catalog::ITEMS
             .iter()
             .filter(|definition| definition.kind == kind)
             .map(|definition| definition.id)
+            .filter(|id| kind != ItemKind::Weapon || is_missile(*id) == thrown)
             .collect();
         let index = self.pick(candidates.len());
         candidates.get(index).copied()
@@ -533,7 +713,13 @@ const WEAPON_EFFECTS: [WeaponEffect; 6] = [
     WeaponEffect::Lucky,
     WeaponEffect::Projecting,
     WeaponEffect::Grim,
+    WeaponEffect::Vampiric,
+];
+
+const WEAPON_CURSES: [WeaponEffect; 3] = [
     WeaponEffect::Annoying,
+    WeaponEffect::Displacing,
+    WeaponEffect::Polarized,
 ];
 
 const ARMOR_EFFECTS: [ArmorEffect; 6] = [
@@ -542,7 +728,13 @@ const ARMOR_EFFECTS: [ArmorEffect; 6] = [
     ArmorEffect::Brimstone,
     ArmorEffect::Flow,
     ArmorEffect::Thorns,
+    ArmorEffect::AntiMagic,
+];
+
+const ARMOR_CURSES: [ArmorEffect; 3] = [
+    ArmorEffect::AntiEntropy,
     ArmorEffect::Corrosion,
+    ArmorEffect::Metabolism,
 ];
 
 const SOURCES: [ItemSource; 6] = [

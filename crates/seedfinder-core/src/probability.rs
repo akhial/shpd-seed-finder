@@ -6,23 +6,31 @@
 //! reward slots per floor and source, with the upgrade, curse, enchantment, and
 //! tier distributions each source produces.
 //!
-//! Every requirement becomes a filter over those slots, evaluated only down to
-//! its own floor limit. Scattered drops arrive as a steady stream rather than a
-//! Poisson one, because the generator deals item categories from a decrementing
-//! deck; quests and shops place a fixed number of slots on a single floor. Slots
-//! holding mutually exclusive prizes count once, since a run can only carry one
-//! of them out.
+//! Every requirement becomes a filter over those slots. Floor limits carve the
+//! dungeon into stretches, each holding its own supply, so two items wanted by
+//! floor four compete over what those four floors offer rather than over the
+//! whole run. Within a stretch a line's slots arrive as a run of independent
+//! chances rather than a Poisson process, because the generator deals item
+//! categories from a decrementing deck, and they all come out of that one run —
+//! which is what stops two requirements from each being handed an item when only
+//! one was ever produced. Quests and shops place a fixed number of slots on a
+//! single floor instead, and a slot holding mutually exclusive prizes counts
+//! once, since a run can only carry one of them out.
 //!
 //! Requirements are then matched one-to-one onto slots, so three wands are not
 //! scored as one wand three times and the Wandmaker's single prize is not spent
 //! twice. Requirements linked to one identity are summed over the identities
-//! they could share, discounted by the deck-driven scarcity of duplicates.
+//! they could share and resolved alongside the rest of their family, discounted
+//! by the deck-driven scarcity of duplicates.
 //!
-//! Known simplifications, all of which make the estimate slightly optimistic:
-//! challenges shift item placement but are ignored; rewards that exclude one
-//! another across families, like the Ghost's weapon-or-armor choice, are counted
-//! as independently obtainable; and a family carrying more requirements than
-//! one matching resolves keeps only its scarcest ones.
+//! Known simplifications: challenges shift item placement but are ignored;
+//! rewards that exclude one another across families, like the Ghost's
+//! weapon-or-armor choice, are counted as independently obtainable; and a family
+//! carrying more requirements than one matching resolves keeps only its scarcest
+//! ones. Those make the estimate optimistic. Against them, duplicate scarcity is
+//! measured over a whole line at once, so a linked group whose members want very
+//! different items — one `+3` alongside two plain ones — is discounted as
+//! heavily as one wanting three alike, and reads low.
 
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -35,10 +43,14 @@ use crate::generator::{
 use crate::model::ItemSource;
 use crate::probability_tables::{
     DEEPEST_FLOOR, DEPTHS, FLOOR_SETS, HIGHEST_TABLED_UPGRADE, HIGHEST_TIER, IDENTITY_REPEAT_LIMIT,
-    IDENTITY_REPEATS, SLOT_SPREAD, Supply, TIERS, appears_once, kind_index, missile_tier,
-    missile_tier_items, spread_index, supply_for,
+    IDENTITY_REPEATS, LINES, Line, SLOT_SPREAD, Supply, TIERS, TIPPED_DARTS, TIPPED_SHARES,
+    appears_once, kind_index, line_of, missile_tier, missile_tier_items, source_index,
+    spread_index, supply_for, tipped_index,
 };
 use crate::query::{Requirement, SearchQuery, UpgradeRequirement};
+
+/// Every generator line, in table order.
+const LINES_ORDER: [Line; LINES] = [Line::Plain, Line::Thrown, Line::Tipped];
 
 /// Estimates the fraction of seeds satisfying a query.
 ///
@@ -55,17 +67,34 @@ pub fn estimate_match_probability(query: &SearchQuery) -> f64 {
     }
 
     let mut probability = blacksmith_probability(query);
+    let mut groups: Vec<Vec<Requirement>> = Vec::new();
     for members in linked.into_values() {
         // A linked group that names its item constrains nothing extra: every
-        // member already matches that one identity.
+        // member already matches that one identity. Neither does a group of
+        // one, which has nothing to agree with.
         if let Some(pinned) = members.iter().find_map(|member| member.item) {
             independent.extend(members.into_iter().map(|member| Requirement {
                 item: Some(pinned),
                 ..member
             }));
+        } else if members.len() < 2 {
+            independent.extend(members);
         } else {
-            probability *= linked_probability(query, &members);
+            groups.push(members);
         }
+    }
+    for members in groups {
+        // Requirements of the same family draw on the same items whether or not
+        // they are linked, so they are resolved together rather than as though
+        // the group and the rest of the family never met.
+        let kind = members.first().map(|member| member.kind);
+        let others: Vec<Requirement> = independent
+            .iter()
+            .filter(|other| Some(other.kind) == kind)
+            .copied()
+            .collect();
+        independent.retain(|other| Some(other.kind) != kind);
+        probability *= linked_probability(query, &members, &others);
     }
     probability *= competing_probability(query, &independent);
     if probability <= 0.0 {
@@ -99,14 +128,14 @@ fn blacksmith_probability(query: &SearchQuery) -> f64 {
 /// per candidate identity and the results combined. Same-identity duplicates are
 /// rarer than independent draws suggest because the generator deals items from
 /// decrementing decks, which [`IDENTITY_REPEATS`] corrects for.
-fn linked_probability(query: &SearchQuery, members: &[Requirement]) -> f64 {
+fn linked_probability(query: &SearchQuery, members: &[Requirement], others: &[Requirement]) -> f64 {
     let Some(kind) = members.first().map(|member| member.kind) else {
         return 1.0;
     };
     let mut none = 1.0;
-    for identity in identities(kind) {
-        let shared = family_probability(query, members, Some(identity));
-        none *= 1.0 - shared.clamp(0.0, 1.0);
+    for (identity, alike) in identities(kind) {
+        let shared = family_probability(query, members, Some(identity), others);
+        none *= (1.0 - shared.clamp(0.0, 1.0)).powi(alike);
     }
     1.0 - none
 }
@@ -117,11 +146,94 @@ fn linked_probability(query: &SearchQuery, members: &[Requirement]) -> f64 {
 /// The generator deals each family from a decrementing deck, so drawing a wand
 /// makes the same wand less likely next time. Requirements that all name one
 /// item — or that are linked to share one — feel that suppression.
-fn repeat_correction(ordered: &[Predicate]) -> f64 {
+///
+/// [`IDENTITY_REPEATS`] is measured against independent draws, so a family
+/// asking for copies of one item is resolved on that footing too: the run of
+/// chances a line's slots normally arrive on already carries some of the same
+/// scarcity, and counting it twice would make duplicates look far rarer than
+/// they are.
+///
+/// The table counts how many sets of copies a world offers rather than how
+/// often it offers any, since only the former survives the upgrade and curse
+/// filters a query puts on top. [`thinned_by`] puts the matching's answer on
+/// the same footing, applies the scarcity there, and reads it back.
+fn repeat_correction(ordered: &[Predicate], holding: f64, copies: usize) -> f64 {
     let Some(kind) = ordered.first().map(|predicate| predicate.kind) else {
-        return 1.0;
+        return holding;
     };
-    let copies = ordered
+    let Some((repeated, _)) = repeated_identity(ordered) else {
+        return holding;
+    };
+    let depth = ordered
+        .iter()
+        .map(|predicate| predicate.max_depth)
+        .max()
+        .unwrap_or(DEEPEST_FLOOR);
+    let line = spread_index(kind, line_for(kind, repeated));
+    let copies = copies.min(IDENTITY_REPEAT_LIMIT);
+    let depth = usize::from(depth).clamp(1, DEPTHS) - 1;
+    thinned_by(
+        holding,
+        copies,
+        f64::from(IDENTITY_REPEATS[line][copies - 1][depth]),
+    )
+}
+
+/// Applies a scarcity measured on sets of `copies` items to a chance of holding
+/// that many.
+///
+/// A world that barely ever has the copies offers about one set when it does,
+/// so the scarcity multiplies straight through. A world that usually has them
+/// to spare offers several, and thinning those still leaves it some. Reading
+/// the answer back as a stream of arrivals gives the count of sets to thin;
+/// a run holding sets that scarce holds at least one about `1 - e^-sets` of
+/// the time.
+///
+/// Nothing converts the thinned count back into a chance of holding `copies`
+/// exactly, because a deck that suppresses duplicates rarely hands over more
+/// than the copies asked for: once they are that scarce, offering a set and
+/// holding one are close to the same event.
+fn thinned_by(holding: f64, copies: usize, scarcity: f64) -> f64 {
+    if holding <= 0.0 || copies == 0 {
+        return holding.max(0.0);
+    }
+    let mut low = 0.0;
+    let mut high = BUSIEST_RUN;
+    for _ in 0..ARRIVAL_STEPS {
+        let middle = f64::midpoint(low, high);
+        if poisson_at_least(middle, copies) < holding {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    let mean = f64::midpoint(low, high);
+    let sets = (1..=copies).fold(scarcity, |sets, taken| sets * mean / tally(taken));
+    let missing = (-sets.max(0.0)).exp();
+    1.0 - missing
+}
+
+/// Chance of at least `count` arrivals from a stream of that average.
+fn poisson_at_least(mean: f64, count: usize) -> f64 {
+    let mut term = (-mean).exp();
+    let mut below = term;
+    for step in 1..count {
+        term *= mean / tally(step);
+        below += term;
+    }
+    (1.0 - below).clamp(0.0, 1.0)
+}
+
+/// Widest average the arrival count is read back as. Anything busier is already
+/// certain to hand over the copies a query can ask for.
+const BUSIEST_RUN: f64 = 64.0;
+
+/// Bisection steps used to read an arrival count back from a probability.
+const ARRIVAL_STEPS: usize = 48;
+
+/// The identity a family wants more than one of, with how many it wants.
+fn repeated_identity(ordered: &[Predicate]) -> Option<(ItemId, usize)> {
+    ordered
         .iter()
         .filter_map(|predicate| predicate.item)
         .fold(
@@ -131,20 +243,18 @@ fn repeat_correction(ordered: &[Predicate]) -> f64 {
                 counts
             },
         )
-        .into_values()
-        .max()
-        .unwrap_or(1);
-    if copies < 2 {
-        return 1.0;
+        .into_iter()
+        .max_by_key(|(_, copies)| *copies)
+        .filter(|(_, copies)| *copies > 1)
+}
+
+/// The line an identity belongs to. Only weapons have more than one.
+fn line_for(kind: ItemKind, item: ItemId) -> Line {
+    if kind == ItemKind::Weapon {
+        line_of(item)
+    } else {
+        Line::Plain
     }
-    let depth = ordered
-        .iter()
-        .map(|predicate| predicate.max_depth)
-        .max()
-        .unwrap_or(DEEPEST_FLOOR);
-    let copies = copies.min(IDENTITY_REPEAT_LIMIT) - 1;
-    let depth = usize::from(depth).clamp(1, DEPTHS) - 1;
-    f64::from(IDENTITY_REPEATS[kind_index(kind)][copies][depth])
 }
 
 /// Probability that every requirement outside a linked group is satisfied at
@@ -162,7 +272,7 @@ fn competing_probability(query: &SearchQuery, requirements: &[Requirement]) -> f
     }
     families
         .into_values()
-        .map(|family| family_probability(query, &family, None))
+        .map(|family| family_probability(query, &family, None, &[]))
         .product()
 }
 
@@ -182,18 +292,58 @@ fn family_probability(
     query: &SearchQuery,
     requirements: &[Requirement],
     identity: Option<ItemId>,
+    others: &[Requirement],
 ) -> f64 {
+    let group = filters(query, requirements, identity, &[]);
+    let Some((_, copies)) = repeated_identity(&group) else {
+        return matching_chance(&filters(query, requirements, identity, others));
+    };
+    // Copies of one identity are scored against independent draws, since that is
+    // the footing [`repeat_correction`] was measured on. The scarcity is read off
+    // the group on its own, because what it corrects is how often one identity
+    // turns up that many times — not how the rest of the family fares alongside.
+    let alone = matching_chance(&group);
+    if alone <= 0.0 {
+        return 0.0;
+    }
+    let scarcer = repeat_correction(&group, alone, copies) / alone;
+    if others.is_empty() {
+        return (alone * scarcer).clamp(0.0, 1.0);
+    }
+    let together = matching_chance(&filters(query, requirements, identity, others));
+    (together * scarcer).clamp(0.0, 1.0)
+}
+
+/// The requirements of one family reduced to filters, scarcest first.
+///
+/// Keeping the scarcest first makes truncation lose the least: a family carrying
+/// more requirements than one matching resolves keeps the ones that decide it.
+fn filters(
+    query: &SearchQuery,
+    requirements: &[Requirement],
+    identity: Option<ItemId>,
+    others: &[Requirement],
+) -> Vec<Predicate> {
     let mut ordered: Vec<Predicate> = requirements
         .iter()
         .map(|requirement| Predicate::of(*requirement, identity).within(query, requirement))
+        .chain(
+            others
+                .iter()
+                .map(|requirement| Predicate::of(*requirement, None).within(query, requirement)),
+        )
         .collect();
-    // Keeping the scarcest requirements first makes truncation lose the least.
     ordered.sort_by(|left, right| {
         expected_slots(left)
             .partial_cmp(&expected_slots(right))
             .unwrap_or(Ordering::Equal)
     });
     ordered.truncate(MAX_REQUIREMENTS);
+    ordered
+}
+
+/// Probability that the supply can serve every filter with a distinct item.
+fn matching_chance(ordered: &[Predicate]) -> f64 {
     let Some(kind) = ordered.first().map(|predicate| predicate.kind) else {
         return 1.0;
     };
@@ -202,58 +352,101 @@ fn family_probability(
     // Every set of requirements narrows to one filter, matched by the items
     // that could serve all of them at once.
     let shared: Vec<Option<Predicate>> = (0..coverages)
-        .map(|coverage| narrow(&ordered, coverage))
+        .map(|coverage| narrow(ordered, coverage))
         .collect();
 
-    let mut scattered = vec![Spread::default(); coverages];
-    let mut slots: Vec<Slot> = Vec::new();
-    for supply in supply_for(kind) {
-        // A quest runs once per dungeon, so its floors are alternatives: the
-        // requirements it could cover are pooled across them, not repeated.
-        let mut once = vec![0.0; coverages];
-        for depth in 1..=DEPTHS {
-            let available = f64::from(supply.depth_slots[depth - 1]);
-            if available <= 0.0 {
-                continue;
-            }
-            let covered = coverage_shares(&shared, supply, depth);
-            if covered.iter().skip(1).all(|share| *share <= 0.0) {
-                continue;
-            }
-            if supply.bundle == 0 {
-                for (coverage, share) in covered.iter().enumerate() {
-                    let steadiness = f64::from(
-                        SLOT_SPREAD[spread_index(kind, supply.missile)]
-                            [window(shared[coverage].as_ref())],
-                    );
-                    scattered[coverage].add(available * share, steadiness, *share);
+    // Floor limits carve the dungeon into stretches that different requirements
+    // can reach. Each is its own supply: two items wanted by floor four compete
+    // over what those four floors hold, not over the whole run. Nothing past the
+    // deepest floor any requirement accepts can serve the query at all.
+    let mut limits: Vec<usize> = ordered
+        .iter()
+        .map(|predicate| usize::from(predicate.max_depth).clamp(1, DEPTHS))
+        .collect();
+    limits.sort_unstable();
+    limits.dedup();
+
+    let steady = repeated_identity(ordered).is_none();
+    let mut streams: Vec<Stream> = Vec::new();
+    // A shop's shelf and a quest's prize hold one item whichever line it comes
+    // from, so their lines are pooled into a single slot rather than each being
+    // offered a slot of its own. Quest floors are alternatives — a Ghost that
+    // appeared on floor two cannot also appear on floor three — so a quest pools
+    // its depths too, while a shop restocks on every shop floor.
+    let mut bundles: BTreeMap<(usize, usize), (u8, Vec<f64>)> = BTreeMap::new();
+    for (line, (from, until)) in LINES_ORDER
+        .into_iter()
+        .flat_map(|line| stretches(&limits).map(move |stretch| (line, stretch)))
+    {
+        let mut placed = 0.0;
+        let mut covered = vec![0.0; coverages];
+        for supply in supply_for(kind).filter(|supply| supply.line == line) {
+            for depth in from..=until {
+                let available = f64::from(supply.depth_slots[depth - 1]);
+                if available <= 0.0 {
+                    continue;
                 }
-                continue;
-            }
-            let appearances = available / f64::from(supply.bundle);
-            if appears_once(supply.source) {
-                for (coverage, share) in covered.iter().enumerate() {
-                    once[coverage] += appearances * share;
+                if supply.bundle == 0 {
+                    placed += available;
                 }
-                continue;
-            }
-            // A shop restocks on every shop floor, so each is its own chance.
-            for _ in 0..supply.bundle {
-                slots.push(Slot {
-                    covers: covered.iter().map(|share| appearances * share).collect(),
-                });
+                let covered_by = coverage_shares(&shared, supply, depth);
+                if covered_by.iter().skip(1).all(|share| *share <= 0.0) {
+                    continue;
+                }
+                if supply.bundle == 0 {
+                    for (coverage, share) in covered_by.iter().enumerate().skip(1) {
+                        covered[coverage] += available * share;
+                    }
+                    continue;
+                }
+                let appearances = available / f64::from(supply.bundle);
+                let floor = if appears_once(supply.source) {
+                    0
+                } else {
+                    depth
+                };
+                let bundle = bundles
+                    .entry((source_index(supply.source), floor))
+                    .or_insert_with(|| (supply.bundle, vec![0.0; coverages]));
+                for (coverage, share) in covered_by.iter().enumerate().skip(1) {
+                    bundle.1[coverage] += appearances * share;
+                }
             }
         }
-        if once.iter().skip(1).any(|share| *share > 0.0) {
-            for _ in 0..supply.bundle {
-                slots.push(Slot {
-                    covers: once.clone(),
-                });
-            }
+        if covered.iter().skip(1).any(|mass| *mass > 0.0) {
+            streams.push(Stream::of(
+                spread_index(kind, line),
+                until,
+                placed,
+                covered,
+                steady,
+            ));
         }
     }
-    let matched = matching_probability(wanted, &scattered, &slots);
-    (matched * repeat_correction(&ordered)).clamp(0.0, 1.0)
+    let mut slots: Vec<Slot> = Vec::new();
+    for (bundle, covers) in bundles.into_values() {
+        let claimed: f64 = covers.iter().skip(1).sum();
+        for _ in 0..bundle {
+            slots.push(Slot {
+                // A slot covers one set of requirements at most, so pooling the
+                // lines cannot leave it more than fully spoken for.
+                covers: covers.iter().map(|mass| mass / claimed.max(1.0)).collect(),
+            });
+        }
+    }
+    matching_probability(wanted, &streams, &slots).clamp(0.0, 1.0)
+}
+
+/// The stretches of floors the query's limits carve out, as inclusive ranges.
+fn stretches(limits: &[usize]) -> impl Iterator<Item = (usize, usize)> + '_ {
+    limits
+        .iter()
+        .scan(1, |from, until| {
+            let stretch = (*from, *until);
+            *from = until + 1;
+            Some(stretch)
+        })
+        .filter(|(from, until)| from <= until)
 }
 
 /// One reward slot, with the chance it covers each set of requirements.
@@ -261,33 +454,99 @@ struct Slot {
     covers: Vec<f64>,
 }
 
-/// How many scattered slots cover one set of requirements, and how widely that
-/// count varies.
-#[derive(Clone, Copy, Default)]
-struct Spread {
-    mean: f64,
-    variance: f64,
+/// The scattered supply of one generator line.
+///
+/// A line deals its items from a decrementing deck, so its slots arrive as a run
+/// of independent chances rather than a Poisson process: the same average, but
+/// far less likely to hand over three items where one was expected. All of the
+/// line's slots come out of that one run, which is what stops two requirements
+/// from each being handed their own item as though the other had not taken one.
+struct Stream {
+    /// Chances the line takes, or `None` when its count is spread widely enough
+    /// that random arrivals describe it just as well.
+    trials: Option<f64>,
+    /// Expected slots covering each set of requirements.
+    covered: Vec<f64>,
 }
 
-impl Spread {
-    /// Folds in `mean` slots drawn from a supply whose counts have the given
-    /// spread, of which a `share` covers this set.
+impl Stream {
+    fn of(line: usize, reach: usize, placed: f64, covered: Vec<f64>, steady: bool) -> Self {
+        let steadiness = f64::from(SLOT_SPREAD[line][reach - 1]).clamp(0.0, 1.0);
+        let chance = 1.0 - steadiness;
+        let trials = placed / chance;
+        let runs = steady && chance > 0.0 && trials <= MAX_CHANCES && placed > 0.0;
+        Self {
+            trials: runs.then_some(trials),
+            covered,
+        }
+    }
+
+    /// Folds this line's slots into the states reached so far.
     ///
-    /// Picking a share out of a stream only carries over that stream's
-    /// steadiness in proportion to the share, which is why a narrow filter over
-    /// a steady supply still looks like an ordinary random arrival.
-    fn add(&mut self, mean: f64, spread: f64, share: f64) {
-        self.mean += mean;
-        self.variance += mean * (1.0 + share * (spread - 1.0)).max(0.0);
+    /// The sets are taken one at a time out of the same run of chances, each
+    /// drawing on what the earlier ones left. That is what keeps two
+    /// requirements from both being handed an item when the line only ever
+    /// produced one, and it fades out on its own as the run grows longer.
+    fn fold(&self, states: BTreeMap<u128, f64>, cap: usize) -> BTreeMap<u128, f64> {
+        let mut states = states;
+        // How much of the run earlier sets have taken: the share of its chances
+        // they claimed, and the slots they took that a state cannot record.
+        let mut claimed = 0.0_f64;
+        let mut hidden = 0.0_f64;
+        for (coverage, mean) in self.covered.iter().enumerate().skip(1) {
+            if *mean <= 0.0 {
+                continue;
+            }
+            let chance = self
+                .trials
+                .map(|trials| (mean / trials / (1.0 - claimed).max(f64::EPSILON)).clamp(0.0, 1.0));
+            let mut arrivals: BTreeMap<u32, Vec<f64>> = BTreeMap::new();
+            let mut next = BTreeMap::new();
+            for (state, reached) in &states {
+                let spent = taken(*state, self.covered.len());
+                let counts = arrivals
+                    .entry(spent)
+                    .or_insert_with(|| self.counts(f64::from(spent) + hidden, *mean, chance, cap));
+                for (count, share) in counts.iter().enumerate() {
+                    if *share > 0.0 {
+                        accumulate(
+                            &mut next,
+                            add_count(*state, coverage, count, cap),
+                            reached * share,
+                        );
+                    }
+                }
+            }
+            if let Some(trials) = self.trials {
+                let typical = self.counts(hidden, *mean, chance, cap);
+                let recorded: f64 = typical
+                    .iter()
+                    .enumerate()
+                    .map(|(count, share)| tally(count) * share)
+                    .sum();
+                hidden += (mean - recorded).max(0.0);
+                claimed += mean / trials;
+            }
+            states = prune(next);
+        }
+        states
+    }
+
+    /// Chances of each number of slots covering one set, out of what is left of
+    /// the run once `spent` of its chances have gone.
+    fn counts(&self, spent: f64, mean: f64, chance: Option<f64>, cap: usize) -> Vec<f64> {
+        match (self.trials, chance) {
+            (Some(trials), Some(chance)) => binomial_counts((trials - spent).max(0.0), chance, cap),
+            _ => poisson_counts(mean, cap),
+        }
     }
 }
 
-/// Deepest floor a coverage set can draw on, as an index into [`SLOT_SPREAD`].
-fn window(narrowed: Option<&Predicate>) -> usize {
-    narrowed
-        .map_or(DEPTHS, |narrowed| usize::from(narrowed.max_depth))
-        .clamp(1, DEPTHS)
-        - 1
+/// Slots a packed state already holds, across every coverage set.
+fn taken(state: u128, coverages: usize) -> u32 {
+    (1..coverages)
+        .map(|coverage| slot_count(state, coverage))
+        .sum()
 }
 
 /// The filter matching items that satisfy every requirement in `coverage`.
@@ -333,30 +592,14 @@ fn coverage_shares(shared: &[Option<Predicate>], supply: &Supply, depth: usize) 
 
 /// Probability that the slots can be matched one-to-one onto the requirements.
 ///
-/// Scattered drops arrive as independent Poisson counts per coverage set; quest
-/// and shop slots are then folded in one at a time, each covering one set or
+/// Each scattered line contributes its whole run of chances at once; quest and
+/// shop slots are then folded in one at a time, each covering one set or
 /// nothing. The surviving states are the ones Hall's theorem admits.
-fn matching_probability(wanted: usize, scattered: &[Spread], slots: &[Slot]) -> f64 {
+fn matching_probability(wanted: usize, streams: &[Stream], slots: &[Slot]) -> f64 {
     let cap = wanted.min(MAX_COUNT);
     let mut states = BTreeMap::from([(0_u128, 1.0)]);
-    for (coverage, spread) in scattered.iter().enumerate().skip(1) {
-        if spread.mean <= 0.0 {
-            continue;
-        }
-        let arrivals = arrival_counts(*spread, cap);
-        let mut next = BTreeMap::new();
-        for (state, reached) in &states {
-            for (count, share) in arrivals.iter().enumerate() {
-                if *share > 0.0 {
-                    accumulate(
-                        &mut next,
-                        add_count(*state, coverage, count, cap),
-                        reached * share,
-                    );
-                }
-            }
-        }
-        states = prune(next);
+    for stream in streams {
+        states = stream.fold(states, cap);
     }
     for slot in slots {
         let missed = (1.0 - slot.covers.iter().skip(1).sum::<f64>()).max(0.0);
@@ -565,7 +808,10 @@ impl Predicate {
     /// filter.
     ///
     /// A slot holding mutually exclusive alternatives matches when any one of
-    /// them does, since the query is free to claim whichever qualifies.
+    /// them does, since the query is free to claim whichever qualifies. Whether
+    /// that is several chances or one depends on how the source rolls them: the
+    /// Blacksmith upgrades its whole weapon rack together, so a `+3` there is a
+    /// single chance however many weapons it lays out.
     fn slot_probability(self, supply: &Supply, depth: usize) -> f64 {
         if usize::from(self.max_depth) < depth
             || self.source.is_some_and(|wanted| wanted != supply.source)
@@ -573,21 +819,34 @@ impl Predicate {
         {
             return 0.0;
         }
-        let matching = self.identity_probability(supply, depth)
-            * self.upgrade_probability(supply)
+        let identity = self.identity_probability(supply, depth);
+        let rolled = self.upgrade_probability(supply)
             * self.effect_probability(supply)
             * self.uncursed_probability(supply);
-        1.0 - (1.0 - matching).powf(f64::from(supply.options))
+        let options = f64::from(supply.options);
+        if supply.shared_roll {
+            rolled * (1.0 - (1.0 - identity).powf(options))
+        } else {
+            1.0 - (1.0 - identity * rolled).powf(options)
+        }
     }
 
     fn identity_probability(self, supply: &Supply, depth: usize) -> f64 {
         let tiers = &supply.tiers[((depth - 1) / 5).min(FLOOR_SETS - 1)];
         match (self.kind, self.item) {
             (ItemKind::Weapon, Some(wanted)) => {
-                let Some((tier, siblings, missile)) = weapon_family(wanted) else {
+                if line_of(wanted) != supply.line {
+                    return 0.0;
+                }
+                // A tipped dart's identity is the plant seed it was tipped with,
+                // which the generator does not hand out evenly.
+                if let Some(dart) = tipped_index(wanted) {
+                    return self.tier_probability(tiers) * f64::from(TIPPED_SHARES[dart]);
+                }
+                let Some((tier, siblings)) = weapon_family(wanted) else {
                     return 0.0;
                 };
-                if missile != supply.missile || self.tiers & (1 << (tier - 1)) == 0 {
+                if self.tiers & (1 << (tier - 1)) == 0 {
                     return 0.0;
                 }
                 f64::from(tiers[usize::from(tier) - 1]) / tally(siblings)
@@ -671,18 +930,18 @@ fn effective_depth(query: &SearchQuery, requirement: &Requirement) -> u8 {
         .map_or(query.max_depth, |limit| limit.min(query.max_depth))
 }
 
-/// Tier, number of identities sharing that tier, and whether the weapon is
-/// thrown. `None` for anything the generator never produces.
-fn weapon_family(wanted: ItemId) -> Option<(u8, usize, bool)> {
+/// Tier of a melee or thrown weapon and how many identities share that tier.
+/// `None` for anything the generator never produces.
+fn weapon_family(wanted: ItemId) -> Option<(u8, usize)> {
     if let Some(tier) = melee_tier(wanted) {
-        return Some((tier, melee_tier_items(tier).iter().flatten().count(), false));
+        return Some((tier, melee_tier_items(tier).iter().flatten().count()));
     }
     missile_tier(wanted).map(|tier| {
         let siblings = missile_tier_items(tier)
             .iter()
             .filter(|kind| kind.item_id().is_some())
             .count();
-        (tier, siblings, true)
+        (tier, siblings)
     })
 }
 
@@ -700,22 +959,62 @@ fn melee_tier_items(tier: u8) -> &'static [Option<ItemId>] {
     }
 }
 
-/// Every identity a family can actually generate.
-fn identities(kind: ItemKind) -> Vec<ItemId> {
+/// Every identity a family can generate, collapsed onto one standing for each
+/// group the supply tables cannot tell apart, with how many it stands for.
+///
+/// Weapons of one tier are drawn equally often, and so are wands and rings, so
+/// resolving one of them and raising the answer to the size of its group is
+/// exact — and much cheaper than resolving all forty-odd weapon identities.
+fn identities(kind: ItemKind) -> Vec<(ItemId, i32)> {
     match kind {
-        ItemKind::Weapon => (1..=5)
-            .flat_map(|tier| melee_tier_items(tier).iter().flatten().copied())
-            .chain((1..=5).flat_map(|tier| {
-                missile_tier_items(tier)
-                    .iter()
-                    .filter_map(|kind| kind.item_id())
+        ItemKind::Weapon => (1..=HIGHEST_TIER)
+            .filter_map(|tier| {
+                let items = melee_tier_items(tier);
+                Some((*items.iter().flatten().next()?, alike(items.len())))
+            })
+            .chain((1..=HIGHEST_TIER).filter_map(|tier| {
+                let items = missile_tier_items(tier);
+                let first = items.iter().find_map(|kind| kind.item_id())?;
+                let generated = items.iter().filter_map(|kind| kind.item_id()).count();
+                Some((first, alike(generated)))
             }))
+            // Tipped darts follow the plant seeds a run happens to grow, which
+            // do not come up equally often.
+            .chain(TIPPED_DART_IDS.map(|dart| (dart, 1)))
             .collect(),
-        ItemKind::Armor => ARMOR_ITEMS.to_vec(),
-        ItemKind::Wand => WAND_ITEMS.to_vec(),
-        ItemKind::Ring => RING_ITEMS.iter().map(|ring| ring.item_id()).collect(),
+        ItemKind::Armor => ARMOR_ITEMS.iter().map(|armor| (*armor, 1)).collect(),
+        ItemKind::Wand => WAND_ITEMS
+            .first()
+            .map(|wand| vec![(*wand, alike(WAND_ITEMS.len()))])
+            .unwrap_or_default(),
+        ItemKind::Ring => RING_ITEMS
+            .first()
+            .map(|ring| vec![(ring.item_id(), alike(RING_ITEMS.len()))])
+            .unwrap_or_default(),
     }
 }
+
+/// Identities one representative stands for, as a power.
+#[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+fn alike(count: usize) -> i32 {
+    count.min(i32::MAX as usize) as i32
+}
+
+/// Every tipped dart the generator can produce, in catalog order.
+const TIPPED_DART_IDS: [ItemId; TIPPED_DARTS] = [
+    ItemId::RotDart,
+    ItemId::IncendiaryDart,
+    ItemId::AdrenalineDart,
+    ItemId::HealingDart,
+    ItemId::ChillingDart,
+    ItemId::ShockingDart,
+    ItemId::PoisonDart,
+    ItemId::CleansingDart,
+    ItemId::ParalyticDart,
+    ItemId::HolyDart,
+    ItemId::DisplacingDart,
+    ItemId::BlindingDart,
+];
 
 /// Fast mode drops the Crypt and Sacrificial-fire +3 prizes, making +3 weapon
 /// and armor requirements quest-only. See [`crate::feasibility`].
@@ -748,37 +1047,11 @@ fn tally(count: usize) -> f64 {
     count as f64
 }
 
-/// Chances of zero through `cap` slots arriving, with everything past the cap
-/// folded into the last bucket.
-///
-/// A steadier-than-random stream is a run of independent chances rather than a
-/// Poisson process: the same average, but far less likely to hand over three
-/// items where one was expected. Matching the spread picks how many chances
-/// that run holds.
-fn arrival_counts(spread: Spread, cap: usize) -> Vec<f64> {
-    let dispersion = (spread.variance / spread.mean).clamp(0.0, 1.0);
-    let chance = 1.0 - dispersion;
-    let chances = spread.mean / chance;
-    if chance <= 0.0 || chances > MAX_CHANCES {
-        return poisson_counts(spread.mean, cap);
-    }
-    let whole = chances.floor();
-    let mut counts = binomial_counts(whole, chance, cap);
-    let remainder = (chances - whole) * chance;
-    if remainder > 0.0 {
-        let mut shifted = vec![0.0; cap + 1];
-        for (count, share) in counts.iter().enumerate() {
-            shifted[count] += share * (1.0 - remainder);
-            shifted[(count + 1).min(cap)] += share * remainder;
-        }
-        counts = shifted;
-    }
-    counts
-}
-
 /// Past this many chances a run is indistinguishable from a Poisson process.
 const MAX_CHANCES: f64 = 64.0;
 
+/// Chances of zero through `cap` arrivals, with everything past the cap folded
+/// into the last bucket.
 fn poisson_counts(mean: f64, cap: usize) -> Vec<f64> {
     let mut counts = vec![0.0; cap + 1];
     if mean <= 0.0 {
@@ -956,6 +1229,72 @@ mod tests {
             24,
         );
         assert!(estimate_match_probability(&wand_before_the_wandmaker) <= 0.0);
+    }
+
+    #[test]
+    fn tipped_darts_are_obtainable() {
+        // Darts are weapons to the catalog but come from plant seeds sold in
+        // shops, so they are not in the weapon deck at all.
+        let dart = query(
+            vec![Requirement {
+                item: Some(ItemId::BlindingDart),
+                ..requirement(ItemKind::Weapon)
+            }],
+            24,
+        );
+        assert!(estimate_match_probability(&dart) > 0.1);
+        // The one dart the generator never tips is still impossible.
+        let never = query(
+            vec![Requirement {
+                item: Some(ItemId::RotDart),
+                ..requirement(ItemKind::Weapon)
+            }],
+            24,
+        );
+        assert!(estimate_match_probability(&never) <= 0.0);
+    }
+
+    #[test]
+    fn a_per_item_floor_limit_makes_its_own_supply_compete() {
+        // Two wands wanted by floor four draw on those four floors alone, so the
+        // second costs far more than it would with the run to draw on.
+        let shallow = |copies: usize| {
+            query(
+                vec![
+                    Requirement {
+                        upgrade: UpgradeRequirement::AtLeast(1),
+                        max_depth: Some(4),
+                        ..requirement(ItemKind::Wand)
+                    };
+                    copies
+                ],
+                24,
+            )
+        };
+        let one = estimate_match_probability(&shallow(1));
+        let two = estimate_match_probability(&shallow(2));
+        assert!(
+            two < one * one,
+            "{two:e} is not scarcer than {:e}",
+            one * one
+        );
+    }
+
+    #[test]
+    fn a_linked_group_competes_with_the_rest_of_its_family() {
+        let mut linked: Vec<Requirement> = (0..2)
+            .map(|_| Requirement {
+                identity_group: Some(1),
+                ..requirement(ItemKind::Wand)
+            })
+            .collect();
+        let alone = estimate_match_probability(&query(linked.clone(), 6));
+        linked.push(Requirement {
+            upgrade: UpgradeRequirement::AtLeast(2),
+            ..requirement(ItemKind::Wand)
+        });
+        let alongside = estimate_match_probability(&query(linked, 6));
+        assert!(alongside < alone);
     }
 
     #[test]

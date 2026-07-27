@@ -10,7 +10,7 @@ use shpd_seedfinder_core::catalog::{ItemKind, item};
 use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::main_world::CanonicalMainWorldGenerator;
 use shpd_seedfinder_core::model::Accessibility;
-use shpd_seedfinder_core::probability_tables::{DEEPEST_FLOOR, SUPPLY, is_missile};
+use shpd_seedfinder_core::probability_tables::{DEEPEST_FLOOR, Line, SUPPLY, line_of};
 use shpd_seedfinder_core::search::WorldGenerator;
 use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
 
@@ -42,7 +42,7 @@ fn tabled_supply_matches_the_generator() {
             .iter()
             .find(|row| {
                 row.kind == supply.kind
-                    && row.missile == supply.missile
+                    && row.line == supply.line
                     && row.source == format!("{:?}", supply.source)
             })
             .map_or(0.0, |row| row.slots);
@@ -56,7 +56,11 @@ fn tabled_supply_matches_the_generator() {
              rerun the calibrate_probability example",
             supply.kind,
             supply.source,
-            if supply.missile { " (thrown)" } else { "" }
+            match supply.line {
+                Line::Plain => "",
+                Line::Thrown => " (thrown)",
+                Line::Tipped => " (tipped)",
+            }
         );
     }
     assert!(checked > 20, "only {checked} rows were measurable");
@@ -96,7 +100,7 @@ fn every_tabled_distribution_is_normalised() {
 
 struct Row {
     kind: ItemKind,
-    missile: bool,
+    line: Line,
     source: String,
     slots: f64,
 }
@@ -105,26 +109,26 @@ fn measure() -> Vec<Row> {
     let generator = CanonicalMainWorldGenerator::with_challenges(Challenges::NONE);
     let stride = (TOTAL_SEEDS / WORLDS).max(1);
     let workers = std::thread::available_parallelism().map_or(4, std::num::NonZeroUsize::get);
-    let mut counted: std::collections::BTreeMap<(usize, bool, String), f64> =
+    let mut counted: std::collections::BTreeMap<(usize, Line, String), f64> =
         std::collections::BTreeMap::new();
     std::thread::scope(|scope| {
         let mut handles = Vec::new();
         for worker in 0..workers {
             let generator = &generator;
             handles.push(scope.spawn(move || {
-                let mut local: std::collections::BTreeMap<(usize, bool, String), f64> =
+                let mut local: std::collections::BTreeMap<(usize, Line, String), f64> =
                     std::collections::BTreeMap::new();
                 let mut index = worker as u64;
                 while index < WORLDS {
                     let value = index.wrapping_mul(stride) % TOTAL_SEEDS;
                     let seed = DungeonSeed::new(value).expect("stride stays in range");
                     let world = generator.generate(seed, DEEPEST_FLOOR);
-                    let mut groups: std::collections::BTreeSet<(usize, bool, String, u16)> =
+                    let mut groups: std::collections::BTreeSet<(usize, Line, String, u16)> =
                         std::collections::BTreeSet::new();
                     for candidate in &world.items {
                         let key = (
                             kind_slot(item(candidate.item).kind),
-                            is_missile(candidate.item),
+                            line_of(candidate.item),
                             format!("{:?}", candidate.source),
                         );
                         // Rewards that exclude one another share one slot.
@@ -153,9 +157,9 @@ fn measure() -> Vec<Row> {
     let worlds = WORLDS as f64;
     counted
         .into_iter()
-        .map(|((kind, missile, source), count)| Row {
+        .map(|((kind, line, source), count)| Row {
             kind: kind_of(kind),
-            missile,
+            line,
             source,
             slots: count / worlds,
         })
