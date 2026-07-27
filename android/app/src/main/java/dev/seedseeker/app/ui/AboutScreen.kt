@@ -87,54 +87,53 @@ fun AboutScreen(onBack: () -> Unit) {
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                // Every passage below is quoted verbatim from README.md, minus
+                // its inline link markup. Keep it that way: the app's prose is
+                // the project's own, not a second description of it that can
+                // drift. Section titles are the README's own headings.
                 item {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         BrandMark(Modifier.size(68.dp))
                         Spacer(Modifier.width(16.dp))
-                        Column {
-                            Text("Seed Seeker", style = MaterialTheme.typography.headlineSmall)
-                            Text(
-                                "Independent · unofficial · open source",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                        Text("Seed Seeker", style = MaterialTheme.typography.headlineSmall)
                     }
                 }
 
+                // The README's opening line sits under its "# Seed Seeker"
+                // heading, so it reads as a lede here rather than as a card
+                // that would repeat the title above it.
                 item {
-                    AboutSection("Exact offline engine") {
+                    Text(
+                        "An extremely fast seed finder for Shattered Pixel Dungeon, written in Rust — with native apps for Android, Linux, macOS, and Windows.",
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                item {
+                    AboutSection("Acknowledgements") {
                         Text(
-                            "The native Rust engine recreates the pinned v3.3.8 main dungeon through depth 24. It uses all available CPU cores, reports matches live, and completes after the first 1,024 matches or the end of the seed space.",
+                            "Seed Seeker reimplements the generation of Shattered Pixel Dungeon by Evan Debenham, itself based on Pixel Dungeon by Oleg Dolya.",
                         )
-                    }
-                }
-
-                item {
-                    AboutSection("Not the game") {
-                        Text(
-                            "Seed Seeker is an independent utility and is not affiliated with or endorsed by Shattered Pixel Dungeon or its authors. Its interface is original and no game UI components are used, but the app icon is based on the game's own icon — see the attribution below.",
-                        )
-                    }
-                }
-
-                item {
-                    AboutSection("Artwork attribution") {
-                        Text("The item sprites and type icons are unchanged copies of Shattered Pixel Dungeon's item atlases. The app icon is a recoloured derivative of the game's launcher icon — the palette is changed, the pixel geometry is not.")
                         Spacer(Modifier.height(10.dp))
+                        Text(
+                            "Elektrochecker's shpd-seed-finder serves as an oracle for this project's parity tests.",
+                        )
+                    }
+                }
+
+                item {
+                    AboutSection("License and identity") {
+                        Text(
+                            "This project is GPL-3.0-or-later. It contains a derived generation implementation and an unchanged item sprite atlas from Shattered Pixel Dungeon.",
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        AttributionLine("Pixel Dungeon", "© 2012–2015 Oleg Dolya / Watabou")
+                        AttributionLine("Shattered Pixel Dungeon", "© 2014–2026 Evan Debenham")
                         AttributionLine("Upstream", "Shattered Pixel Dungeon v3.3.8")
                         AttributionLine("Commit", "7b8b845a76fe76c6b7c031ae9e570852411f56db")
-                        AttributionLine("Pixel Dungeon", "© 2012–2015 Oleg Dolya")
-                        AttributionLine("Shattered Pixel Dungeon", "© 2014–2026 Evan Debenham")
-                        AttributionLine("Items atlas SHA-256", "ce2496368660e9b2…a294caacaf")
-                        AttributionLine("Type icons SHA-256", "38df728d32842d9f…24d7eb9b72")
-                    }
-                }
-
-                item {
-                    AboutSection("GNU GPL v3 or later") {
-                        Text(
-                            "This program is free software. You may redistribute and modify it under GPL-3.0-or-later. It comes with no warranty. Source distributions must retain the license and copyright notices.",
-                        )
+                        AttributionLine("Atlas SHA-256", "ce2496368660e9b2…a294caacaf")
+                        AttributionLine("Icon SHA-256", "38df728d32842d9f…24d7eb9b72")
                         Spacer(Modifier.height(8.dp))
                         TextButton(onClick = { showLicense = !showLicense }) {
                             Text(if (showLicense) "Hide full license" else "Read full license")

@@ -303,7 +303,7 @@ itself based on [Pixel Dungeon](https://github.com/watabou/pixel-dungeon) by Ole
 
 ## License and identity<a id="license-and-identity"></a>
 
-This project is GPL-3.0-or-later. It contains a derived generation implementation, an unchanged item sprite atlas, and an application icon based on the launcher icon of Shattered Pixel Dungeon — recoloured into a blueprint palette, with the pixel geometry unchanged. See [`assets/icon/ATTRIBUTION.md`](assets/icon/ATTRIBUTION.md).
+This project is GPL-3.0-or-later. It contains a derived generation implementation and an unchanged item sprite atlas from Shattered Pixel Dungeon.
 
 - Pixel Dungeon © 2012–2015 Oleg Dolya / Watabou
 - Shattered Pixel Dungeon © 2014–2026 Evan Debenham
