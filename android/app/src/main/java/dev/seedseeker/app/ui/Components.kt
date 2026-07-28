@@ -101,7 +101,7 @@ private const val ADAPTIVE_ICON_VISIBLE = 72f
  *
  * The art is anchored to the top-left of its atlas cell, so [LocalItemAtlas]
  * holds a copy whose cells were re-centred on their alpha bounding box at decode
- * time (see `centerSpriteCells`), keeping small items like rings and darts
+ * time (see `centerSpriteCells`), keeping small items like rings and stones
  * centred at the same pixel scale the web front-end renders them at.
  *
  * A [glow] paints the sprite's own opaque pixels with the enchantment or curse

@@ -419,7 +419,7 @@ pub fn generate_shop_inventory(
         .ok_or(ShopError::UnsearchableMissile(missile.kind))?;
     items.push(searchable(missile_item, depth_u8));
 
-    items.push(random_searchable_tipped_dart(random, depth_u8)?);
+    items.push(ShopStockItem::Generated(random_tipped_dart(random, 2)?));
     items.push(ShopStockItem::Direct(DirectShopItem::Alchemize {
         quantity: random.int_range(2, 3),
     }));
@@ -502,24 +502,6 @@ fn searchable(item: ItemId, depth: u8) -> ShopStockItem {
         ItemSource::Shop,
         Accessibility::Independent,
     ))
-}
-
-fn random_searchable_tipped_dart(
-    random: &mut RandomStack,
-    depth: u8,
-) -> Result<ShopStockItem, ShopError> {
-    let item = random_tipped_dart(random, 2)?;
-    let family = item.family();
-    let equipment = item
-        .searchable_equipment()
-        .ok_or(ShopError::ExpectedEquipment(family))?;
-    Ok(ShopStockItem::Searchable(WorldItem::from_equipment_roll(
-        equipment.item,
-        equipment.roll,
-        depth,
-        ItemSource::Shop,
-        Accessibility::Independent,
-    )))
 }
 
 fn expect_equipment(item: GeneratedItem) -> Result<GeneratedEquipment, ShopError> {
@@ -609,7 +591,7 @@ mod tests {
         ShopRunState, ShopStockItem, generate_shop_inventory,
     };
     use crate::catalog::{ItemId, ItemKind, item as catalog_item};
-    use crate::generator::{BombKind, GeneratedItem};
+    use crate::generator::{BombKind, GeneratedItem, SeedKind};
     use crate::rng::RandomStack;
     use crate::run::{PotionKind, RunState, ScrollKind};
 
@@ -623,7 +605,6 @@ mod tests {
                 6,
                 -2_576_934_230_888_777_338_i64,
                 &[
-                    ItemId::ParalyticDart,
                     ItemId::Spear,
                     ItemId::LeatherArmor,
                     ItemId::WandFrost,
@@ -633,29 +614,18 @@ mod tests {
             (
                 11,
                 -2_322_033_253_472_854_929_i64,
-                &[
-                    ItemId::MailArmor,
-                    ItemId::DisplacingDart,
-                    ItemId::ThrowingSpear,
-                    ItemId::Sai,
-                ],
+                &[ItemId::MailArmor, ItemId::ThrowingSpear, ItemId::Sai],
             ),
             (
                 16,
                 -1_642_119_509_135_141_100_i64,
-                &[
-                    ItemId::Tomahawk,
-                    ItemId::Crossbow,
-                    ItemId::ScaleArmor,
-                    ItemId::IncendiaryDart,
-                ],
+                &[ItemId::Tomahawk, ItemId::Crossbow, ItemId::ScaleArmor],
             ),
             (
                 20,
                 -5_415_521_948_692_282_354_i64,
                 &[
                     ItemId::Greatshield,
-                    ItemId::AdrenalineDart,
                     ItemId::WandBlastWave,
                     ItemId::ThrowingHammer,
                     ItemId::PlateArmor,
@@ -836,9 +806,12 @@ mod tests {
                 ItemId::LeatherArmor => "leather",
                 ItemId::WandFrost => "wand-frost",
                 ItemId::Shuriken => "shuriken",
-                ItemId::ParalyticDart => "tipped-earthroot",
                 _ => "other-searchable",
             },
+            ShopStockItem::Generated(GeneratedItem::TippedDart {
+                seed: SeedKind::Earthroot,
+                ..
+            }) => "tipped-earthroot",
             ShopStockItem::Generated(GeneratedItem::Potion {
                 kind: PotionKind::MindVision,
                 exotic: false,

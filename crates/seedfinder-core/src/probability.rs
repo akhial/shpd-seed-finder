@@ -43,9 +43,8 @@ use crate::generator::{
 use crate::model::ItemSource;
 use crate::probability_tables::{
     DEEPEST_FLOOR, DEPTHS, FLOOR_SETS, HIGHEST_TABLED_UPGRADE, HIGHEST_TIER, IDENTITY_REPEAT_LIMIT,
-    IDENTITY_REPEATS, LINES_ORDER, Line, SLOT_SPREAD, Supply, TIERS, TIPPED_DARTS, TIPPED_SHARES,
-    appears_once, kind_index, line_of, missile_tier, missile_tier_items, source_index,
-    spread_index, supply_for, tipped_index,
+    IDENTITY_REPEATS, LINES_ORDER, Line, SLOT_SPREAD, Supply, TIERS, appears_once, kind_index,
+    line_of, missile_tier, missile_tier_items, source_index, spread_index, supply_for,
 };
 use crate::query::{Requirement, SearchQuery, UpgradeRequirement};
 
@@ -835,11 +834,6 @@ impl Predicate {
                 if line_of(wanted) != supply.line {
                     return 0.0;
                 }
-                // A tipped dart's identity is the plant seed it was tipped with,
-                // which the generator does not hand out evenly.
-                if let Some(dart) = tipped_index(wanted) {
-                    return self.tier_probability(tiers) * f64::from(TIPPED_SHARES[dart]);
-                }
                 let Some((tier, siblings)) = weapon_family(wanted) else {
                     return 0.0;
                 };
@@ -975,9 +969,6 @@ fn identities(kind: ItemKind) -> Vec<(ItemId, i32)> {
                 let generated = items.iter().filter_map(|kind| kind.item_id()).count();
                 Some((first, alike(generated)))
             }))
-            // Tipped darts follow the plant seeds a run happens to grow, which
-            // do not come up equally often.
-            .chain(TIPPED_DART_IDS.map(|dart| (dart, 1)))
             .collect(),
         ItemKind::Armor => ARMOR_ITEMS.iter().map(|armor| (*armor, 1)).collect(),
         ItemKind::Wand => WAND_ITEMS
@@ -996,22 +987,6 @@ fn identities(kind: ItemKind) -> Vec<(ItemId, i32)> {
 fn alike(count: usize) -> i32 {
     count.min(i32::MAX as usize) as i32
 }
-
-/// Every tipped dart the generator can produce, in catalog order.
-const TIPPED_DART_IDS: [ItemId; TIPPED_DARTS] = [
-    ItemId::RotDart,
-    ItemId::IncendiaryDart,
-    ItemId::AdrenalineDart,
-    ItemId::HealingDart,
-    ItemId::ChillingDart,
-    ItemId::ShockingDart,
-    ItemId::PoisonDart,
-    ItemId::CleansingDart,
-    ItemId::ParalyticDart,
-    ItemId::HolyDart,
-    ItemId::DisplacingDart,
-    ItemId::BlindingDart,
-];
 
 /// Fast mode drops the Crypt and Sacrificial-fire +3 prizes, making +3 weapon
 /// and armor requirements quest-only. See [`crate::feasibility`].
@@ -1226,29 +1201,6 @@ mod tests {
             24,
         );
         assert!(estimate_match_probability(&wand_before_the_wandmaker) <= 0.0);
-    }
-
-    #[test]
-    fn tipped_darts_are_obtainable() {
-        // Darts are weapons to the catalog but come from plant seeds sold in
-        // shops, so they are not in the weapon deck at all.
-        let dart = query(
-            vec![Requirement {
-                item: Some(ItemId::BlindingDart),
-                ..requirement(ItemKind::Weapon)
-            }],
-            24,
-        );
-        assert!(estimate_match_probability(&dart) > 0.1);
-        // The one dart the generator never tips is still impossible.
-        let never = query(
-            vec![Requirement {
-                item: Some(ItemId::RotDart),
-                ..requirement(ItemKind::Weapon)
-            }],
-            24,
-        );
-        assert!(estimate_match_probability(&never) <= 0.0);
     }
 
     #[test]

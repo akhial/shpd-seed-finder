@@ -80,7 +80,7 @@ public enum SpriteLayer: Hashable, Sendable {
 /// The upstream item atlases, decoded once and diced into per-sprite images.
 ///
 /// Sprite art is anchored to the top-left of its 16×16 cell, so drawing a full
-/// cell leaves small items (rings, darts, seeds) hugging the corner. The art's
+/// cell leaves small items (rings, seeds, stones) hugging the corner. The art's
 /// alpha bounding box is therefore measured at runtime on first use and centred
 /// in the target box, keeping the pixel scale identical to a full-cell render —
 /// exactly what `spriteBoxCss` does on the web, without a build step.

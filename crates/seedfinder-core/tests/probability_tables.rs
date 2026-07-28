@@ -61,7 +61,6 @@ fn tabled_supply_matches_the_generator() {
             match supply.line {
                 Line::Plain => "",
                 Line::Thrown => " (thrown)",
-                Line::Tipped => " (tipped)",
             }
         );
     }

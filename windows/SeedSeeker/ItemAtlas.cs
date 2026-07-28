@@ -14,7 +14,7 @@ namespace SeedSeeker;
 /// The geometry mirrors <c>web/src/lib/sprites.ts</c>: <c>items.png</c> is a
 /// 16-column grid of 16×16 cells indexed row-major by sprite index, and the art is
 /// anchored to each cell's top-left, so drawing the full cell leaves small items
-/// (rings, darts, seeds) hugging the corner. Each cell's art is therefore cropped
+/// (rings, seeds, stones) hugging the corner. Each cell's art is therefore cropped
 /// to its alpha bounding box — measured here at runtime, no build step — and that
 /// crop is centred in the target box at the same pixel scale a full-cell render
 /// would use. Rings share one gemmed base sprite per type and are told apart by a

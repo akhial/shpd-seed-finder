@@ -21,14 +21,14 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::sync::Mutex;
 
-use shpd_seedfinder_core::catalog::{ItemId, ItemKind, item};
+use shpd_seedfinder_core::catalog::item;
 use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::main_world::CanonicalMainWorldGenerator;
 use shpd_seedfinder_core::model::GeneratedWorld;
 use shpd_seedfinder_core::probability_tables::{
     DEEPEST_FLOOR, DEPTHS, FLOOR_SETS, IDENTITY_REPEAT_LIMIT, KINDS, KINDS_ORDER, LINES,
-    LINES_ORDER, Line, MAX_TABLED_UPGRADE, TIERS, TIPPED_DARTS, bundle_size, kind_index,
-    line_index, line_of, source_index, sources,
+    LINES_ORDER, MAX_TABLED_UPGRADE, TIERS, bundle_size, kind_index, line_index, line_of,
+    source_index, sources,
 };
 use shpd_seedfinder_core::search::WorldGenerator;
 use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
@@ -130,8 +130,8 @@ fn co_obtainable(masks: &[u64]) -> u64 {
 
 const MAX_SOURCES: usize = 17;
 
-/// Melee weapons, thrown weapons, and tipped darts are tallied into separate
-/// bands of every table.
+/// Melee weapons and thrown weapons are tallied into separate bands of every
+/// table.
 const FAMILIES: usize = LINES;
 const MAX_IDENTITIES: usize = 96;
 
@@ -298,13 +298,12 @@ fn render(tally: &Tally) -> String {
          //! example and replace this file rather than editing it by hand.\n\n\
          use crate::catalog::ItemKind;\n\
          use crate::model::ItemSource;\n\n\
-         use super::{{DEPTHS, IDENTITY_REPEAT_LIMIT, KINDS, LINES, Line, Supply, TIPPED_DARTS}};",
+         use super::{{DEPTHS, IDENTITY_REPEAT_LIMIT, KINDS, LINES, Line, Supply}};",
         tally.worlds
     );
     render_supply(tally, &mut output);
     render_spread(tally, &mut output);
     render_repeats(tally, &mut output);
-    render_tipped(tally, &mut output);
     output
 }
 
@@ -523,31 +522,6 @@ fn choose(count: usize, chosen: usize) -> u64 {
     (0..chosen).fold(1_u64, |total, step| {
         total * (count - step) as u64 / (step as u64 + 1)
     })
-}
-
-/// Share of each tipped dart among the darts a run produces.
-#[allow(clippy::cast_precision_loss)]
-fn render_tipped(tally: &Tally, output: &mut String) {
-    let line = kind_index(ItemKind::Weapon) + line_index(Line::Tipped) * KINDS;
-    let counts: Vec<f64> = (0..TIPPED_DARTS)
-        .map(|dart| {
-            let identity = ItemId::RotDart as usize + dart;
-            tally.identity_counts[(line * MAX_IDENTITIES + identity) * DEPTHS + DEPTHS - 1] as f64
-        })
-        .collect();
-    let total: f64 = counts.iter().sum();
-    let _ = writeln!(
-        output,
-        "\n/// Share of each tipped dart among the darts a run offers, in catalog\n\
-         /// order from `RotDart`. The generator tips them from the plant seeds it\n\
-         /// has on hand rather than dealing them evenly.\n\
-         pub static TIPPED_SHARES: [f32; TIPPED_DARTS] = [{}];",
-        counts
-            .iter()
-            .map(|count| format_number(if total <= 0.0 { 0.0 } else { count / total }))
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
 }
 
 /// Formats a probability with the digit separators clippy's pedantic lints

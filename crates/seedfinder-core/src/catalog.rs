@@ -89,18 +89,6 @@ pub enum ItemId {
     WandWarding,
     WandRegrowth,
     WandTransfusion,
-    RotDart,
-    IncendiaryDart,
-    AdrenalineDart,
-    HealingDart,
-    ChillingDart,
-    ShockingDart,
-    PoisonDart,
-    CleansingDart,
-    ParalyticDart,
-    HolyDart,
-    DisplacingDart,
-    BlindingDart,
     RingAccuracy,
     RingArcana,
     RingElements,
@@ -431,88 +419,6 @@ pub const ITEMS: &[ItemDefinition] = &[
         None,
         220
     ),
-    item!(RotDart, "rot_dart", "Rot dart", Weapon, Some(2), 161),
-    item!(
-        IncendiaryDart,
-        "incendiary_dart",
-        "Incendiary dart",
-        Weapon,
-        Some(2),
-        162
-    ),
-    item!(
-        AdrenalineDart,
-        "adrenaline_dart",
-        "Adrenaline dart",
-        Weapon,
-        Some(2),
-        163
-    ),
-    item!(
-        HealingDart,
-        "healing_dart",
-        "Healing dart",
-        Weapon,
-        Some(2),
-        164
-    ),
-    item!(
-        ChillingDart,
-        "chilling_dart",
-        "Chilling dart",
-        Weapon,
-        Some(2),
-        165
-    ),
-    item!(
-        ShockingDart,
-        "shocking_dart",
-        "Shocking dart",
-        Weapon,
-        Some(2),
-        166
-    ),
-    item!(
-        PoisonDart,
-        "poison_dart",
-        "Poison dart",
-        Weapon,
-        Some(2),
-        167
-    ),
-    item!(
-        CleansingDart,
-        "cleansing_dart",
-        "Cleansing dart",
-        Weapon,
-        Some(2),
-        168
-    ),
-    item!(
-        ParalyticDart,
-        "paralytic_dart",
-        "Paralytic dart",
-        Weapon,
-        Some(2),
-        169
-    ),
-    item!(HolyDart, "holy_dart", "Holy dart", Weapon, Some(2), 170),
-    item!(
-        DisplacingDart,
-        "displacing_dart",
-        "Displacing dart",
-        Weapon,
-        Some(2),
-        171
-    ),
-    item!(
-        BlindingDart,
-        "blinding_dart",
-        "Blinding dart",
-        Weapon,
-        Some(2),
-        172
-    ),
     item!(
         RingAccuracy,
         "ring_accuracy",
@@ -800,11 +706,9 @@ mod tests {
             assert_eq!(item_by_stable_id(definition.stable_id), Some(definition));
         }
         assert_eq!(ItemId::WandTransfusion as u8, 63);
-        assert_eq!(ItemId::RotDart as u8, 64);
         assert_eq!(item(ItemId::WandTransfusion).sprite_index, 220);
         assert_eq!(item(ItemId::ThrowingSpike).tier, Some(1));
-        assert_eq!(item(ItemId::BlindingDart).sprite_index, 172);
-        assert_eq!(ItemId::RingAccuracy as u8, 76);
+        assert_eq!(ItemId::RingAccuracy as u8, 64);
         assert_eq!(item(ItemId::RingWealth).sprite_index, 235);
     }
 
@@ -814,6 +718,15 @@ mod tests {
         assert!(item_by_stable_id("pickaxe").is_none());
         assert!(item_by_stable_id("dart").is_none());
         assert!(item_by_stable_id("warrior_armor").is_none());
+    }
+
+    #[test]
+    fn tipped_darts_are_not_searchable() {
+        // Every seed grows the plant seeds that tip them, so a dart requirement
+        // would match everything. They are not part of the query catalog.
+        assert!(item_by_stable_id("rot_dart").is_none());
+        assert!(item_by_stable_id("incendiary_dart").is_none());
+        assert!(item_by_stable_id("blinding_dart").is_none());
     }
 
     #[test]

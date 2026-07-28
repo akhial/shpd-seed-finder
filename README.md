@@ -112,10 +112,7 @@ cargo run --release -p shpd-seedfinder-cli -- -i requirements.json -b 1000 --wor
         "greatshield" | "gauntlet" | "war_scythe" | "throwing_stone" |
         "throwing_knife" | "throwing_spike" | "fishing_spear" | "throwing_club" |
         "shuriken" | "throwing_spear" | "kunai" | "bolas" | "javelin" | "tomahawk" |
-        "heavy_boomerang" | "trident" | "throwing_hammer" | "force_cube" | "rot_dart" |
-        "incendiary_dart" | "adrenaline_dart" | "healing_dart" | "chilling_dart" |
-        "shocking_dart" | "poison_dart" | "cleansing_dart" | "paralytic_dart" |
-        "holy_dart" | "displacing_dart" | "blinding_dart" |
+        "heavy_boomerang" | "trident" | "throwing_hammer" | "force_cube" |
         // Armor
         "cloth_armor" | "leather_armor" | "mail_armor" | "scale_armor" | "plate_armor" |
         // Wands

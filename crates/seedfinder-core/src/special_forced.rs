@@ -1158,7 +1158,9 @@ mod tests {
     use super::*;
     use crate::catalog::ItemId;
     use crate::equipment::EquipmentRoll;
-    use crate::generator::{ArtifactKind, BombKind, GeneratedArtifact, GeneratedRing, StoneKind};
+    use crate::generator::{
+        ArtifactKind, BombKind, GeneratedArtifact, GeneratedRing, SeedKind, StoneKind,
+    };
     use crate::level::Feeling;
     use crate::room::{ConnectionRoomKind, Door, RoomConnection};
     use crate::run::{PotionKind, RingKind, RunState, ScrollKind};
@@ -1548,7 +1550,7 @@ mod tests {
                 (55, "remove-curse"),
                 (56, "ration"),
                 (60, "ration"),
-                (73, "cleansing-dart"),
+                (73, "tipped-mageroyal"),
                 (81, "shuriken"),
                 (86, "unstable-spellbook"),
                 (94, "leather"),
@@ -1568,7 +1570,6 @@ mod tests {
                 .map(|world| (world.item, world.source))
                 .collect::<Vec<_>>(),
             vec![
-                (ItemId::CleansingDart, ItemSource::Shop),
                 (ItemId::Spear, ItemSource::Shop),
                 (ItemId::LeatherArmor, ItemSource::Shop),
                 (ItemId::Shuriken, ItemSource::Shop),
@@ -1669,9 +1670,12 @@ mod tests {
                 ItemId::LeatherArmor => "leather",
                 ItemId::Shuriken => "shuriken",
                 ItemId::Spear => "spear",
-                ItemId::CleansingDart => "cleansing-dart",
                 _ => "other-searchable",
             },
+            ShopStockItem::Generated(GeneratedItem::TippedDart {
+                seed: SeedKind::Mageroyal,
+                ..
+            }) => "tipped-mageroyal",
             ShopStockItem::Generated(GeneratedItem::Potion {
                 kind: PotionKind::Haste,
                 exotic: false,

@@ -9,7 +9,7 @@
 //! * `items.png` is a 16-column grid of 16×16 cells indexed row-major by
 //!   [`ItemDefinition::sprite_index`].
 //! * Art is anchored to each cell's top-left, so drawing the whole cell leaves
-//!   small items (rings, darts, seeds) hugging the corner. We crop to the art's
+//!   small items (rings, seeds, stones) hugging the corner. We crop to the art's
 //!   alpha bounding box — measured at runtime on first use — and centre that
 //!   crop in the target box, keeping the pixel scale of a full-cell render.
 //! * Rings share one gemmed base sprite and are told apart by a type glyph from

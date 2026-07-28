@@ -871,7 +871,7 @@ mod tests {
     #[test]
     fn canonical_aaa_scout_response_contains_all_official_depth_twenty_four_items() {
         let generated = CanonicalMainWorldGenerator.generate(DungeonSeed::MIN, 24);
-        assert_eq!(generated.items.len(), 67);
+        assert_eq!(generated.items.len(), 63);
         assert_eq!(
             generated
                 .items
@@ -920,7 +920,6 @@ mod tests {
                 ItemId::PlateArmor,
                 ItemId::ThrowingHammer,
                 ItemId::Greatshield,
-                ItemId::IncendiaryDart,
             ]
         );
         assert!(decoded.items.iter().any(|item| {

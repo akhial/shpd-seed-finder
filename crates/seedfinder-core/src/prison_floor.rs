@@ -1094,14 +1094,6 @@ mod tests {
                     Accessibility::Independent,
                 ),
                 (
-                    ItemId::HolyDart,
-                    0,
-                    None,
-                    false,
-                    ItemSource::Shop,
-                    Accessibility::Independent,
-                ),
-                (
                     ItemId::Shuriken,
                     0,
                     None,

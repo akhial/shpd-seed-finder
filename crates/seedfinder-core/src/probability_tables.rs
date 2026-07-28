@@ -20,7 +20,7 @@ use crate::model::ItemSource;
 
 mod measured;
 
-pub use measured::{IDENTITY_REPEATS, SLOT_SPREAD, SUPPLY, TIPPED_SHARES};
+pub use measured::{IDENTITY_REPEATS, SLOT_SPREAD, SUPPLY};
 
 /// Deepest floor of the main dungeon.
 pub const DEPTHS: usize = 24;
@@ -43,23 +43,22 @@ pub const KINDS_ORDER: [ItemKind; KINDS] = [
 
 /// Generator lines within one equipment family.
 ///
-/// Thrown weapons and tipped darts are [`ItemKind::Weapon`] to the catalog but
-/// come out of their own generator categories, in their own quantities, tiers,
-/// and upgrades. Tallying them apart from melee weapons is what keeps a dart
-/// bought in a shop from making swords look plentiful. Every other family has
-/// only the plain line.
+/// Thrown weapons are [`ItemKind::Weapon`] to the catalog but come out of their
+/// own generator category, in their own quantities, tiers, and upgrades.
+/// Tallying them apart from melee weapons is what keeps a javelin found in a
+/// heap from making swords look plentiful. Every other family has only the
+/// plain line.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum Line {
     Plain,
     Thrown,
-    Tipped,
 }
 
 /// Generator lines per family.
-pub const LINES: usize = 3;
+pub const LINES: usize = 2;
 
 /// Every generator line, in table order.
-pub const LINES_ORDER: [Line; LINES] = [Line::Plain, Line::Thrown, Line::Tipped];
+pub const LINES_ORDER: [Line; LINES] = [Line::Plain, Line::Thrown];
 
 /// Dense table index for one generator line.
 #[must_use]
@@ -67,36 +66,17 @@ pub const fn line_index(line: Line) -> usize {
     match line {
         Line::Plain => 0,
         Line::Thrown => 1,
-        Line::Tipped => 2,
     }
 }
 
 /// The line that produces a catalog identity.
 #[must_use]
 pub fn line_of(item: ItemId) -> Line {
-    if tipped_index(item).is_some() {
-        Line::Tipped
-    } else if is_missile(item) {
+    if is_missile(item) {
         Line::Thrown
     } else {
         Line::Plain
     }
-}
-
-/// Tipped darts, which the generator tips with a plant seed rather than drawing
-/// from the weapon deck. They are laid out contiguously in the catalog.
-pub const TIPPED_DARTS: usize = 12;
-
-const _: () = assert!(
-    ItemId::BlindingDart as usize - ItemId::RotDart as usize + 1 == TIPPED_DARTS,
-    "the tipped darts must stay contiguous in the catalog"
-);
-
-/// Position of a tipped dart in [`TIPPED_SHARES`], or `None` for anything else.
-#[must_use]
-pub fn tipped_index(item: ItemId) -> Option<usize> {
-    let offset = (item as usize).checked_sub(ItemId::RotDart as usize)?;
-    (offset < TIPPED_DARTS).then_some(offset)
 }
 
 /// Five-floor regions sharing one tier table.

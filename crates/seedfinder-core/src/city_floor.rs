@@ -1083,7 +1083,6 @@ mod tests {
                 (ItemId::Longsword, 0, None, false, ItemSource::Shop),
                 (ItemId::ScaleArmor, 0, None, false, ItemSource::Shop),
                 (ItemId::Javelin, 0, None, false, ItemSource::Shop),
-                (ItemId::ChillingDart, 0, None, false, ItemSource::Shop),
             ],
             vec![],
             vec![

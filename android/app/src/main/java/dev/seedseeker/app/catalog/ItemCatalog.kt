@@ -58,18 +58,6 @@ object ItemCatalog {
         weapon("trident", "Trident", 5, 157),
         weapon("throwing_hammer", "Throwing Hammer", 5, 158),
         weapon("force_cube", "Force Cube", 5, 159),
-        weapon("rot_dart", "Rot Dart", 2, 161),
-        weapon("incendiary_dart", "Incendiary Dart", 2, 162),
-        weapon("adrenaline_dart", "Adrenaline Dart", 2, 163),
-        weapon("healing_dart", "Healing Dart", 2, 164),
-        weapon("chilling_dart", "Chilling Dart", 2, 165),
-        weapon("shocking_dart", "Shocking Dart", 2, 166),
-        weapon("poison_dart", "Poison Dart", 2, 167),
-        weapon("cleansing_dart", "Cleansing Dart", 2, 168),
-        weapon("paralytic_dart", "Paralytic Dart", 2, 169),
-        weapon("holy_dart", "Holy Dart", 2, 170),
-        weapon("displacing_dart", "Displacing Dart", 2, 171),
-        weapon("blinding_dart", "Blinding Dart", 2, 172),
     )
 
     val armor = listOf(
