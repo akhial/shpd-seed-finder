@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 216" width="780" height="216" role="img">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 180" width="780" height="180" role="img">
   <title>Bar chart of seed-search throughput: Seed Seeker tests 13,716 seeds per second on 12 cores and 1,567 on one core; the Java shpd-seed-finder tests 453 seeds per second across 6 processes and 94 in one process.</title>
 
   <style>
@@ -27,7 +27,7 @@
   </style>
 
   <!-- baseline -->
-  <line class="baseline" x1="221.5" y1="14" x2="221.5" y2="202"/>
+  <line class="baseline" x1="221.5" y1="14" x2="221.5" y2="166"/>
 
   <!-- Seed Seeker · 12 threads -->
   <text class="label ours" x="210" y="34" text-anchor="end">Seed Seeker (12 threads)</text>
@@ -35,17 +35,17 @@
   <text class="value ours" x="670" y="34">13,716 seeds/s</text>
 
   <!-- Seed Seeker · 1 thread -->
-  <text class="label ours" x="210" y="82" text-anchor="end">Seed Seeker (1 thread)</text>
-  <path class="bar-ours" d="M222 68 h50 q2 0 2 2 v16 q0 2 -2 2 h-50 z"/>
-  <text class="value ours" x="282" y="82">1,567</text>
+  <text class="label ours" x="210" y="70" text-anchor="end">Seed Seeker (1 thread)</text>
+  <path class="bar-ours" d="M222 56 h50 q2 0 2 2 v16 q0 2 -2 2 h-50 z"/>
+  <text class="value ours" x="282" y="70">1,567</text>
 
   <!-- shpd-seed-finder · 6 processes -->
-  <text class="label" x="210" y="130" text-anchor="end">shpd-seed-finder (6 processes)</text>
-  <path class="bar-theirs" d="M222 116 h14.5 q2 0 2 2 v16 q0 2 -2 2 h-14.5 z"/>
-  <text class="value" x="247" y="130">453</text>
+  <text class="label" x="210" y="106" text-anchor="end">shpd-seed-finder (6 processes)</text>
+  <path class="bar-theirs" d="M222 92 h14.5 q2 0 2 2 v16 q0 2 -2 2 h-14.5 z"/>
+  <text class="value" x="247" y="106">453</text>
 
   <!-- shpd-seed-finder · 1 process -->
-  <text class="label" x="210" y="178" text-anchor="end">shpd-seed-finder (1 process)</text>
-  <path class="bar-theirs" d="M222 164 h3 q2 0 2 2 v16 q0 2 -2 2 h-3 z"/>
-  <text class="value" x="235" y="178">94</text>
+  <text class="label" x="210" y="142" text-anchor="end">shpd-seed-finder (1 process)</text>
+  <path class="bar-theirs" d="M222 128 h3 q2 0 2 2 v16 q0 2 -2 2 h-3 z"/>
+  <text class="value" x="235" y="142">94</text>
 </svg>

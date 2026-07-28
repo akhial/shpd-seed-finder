@@ -1,7 +1,13 @@
-# Seed Seeker
+<p align="center">
+  <img alt="Seed Seeker app icon" src="assets/icon/seed-seeker-square.svg" width="128" height="128">
+</p>
 
-[![CI](https://github.com/akhial/shpd-seed-seeker/actions/workflows/ci.yml/badge.svg)](https://github.com/akhial/shpd-seed-seeker/actions/workflows/ci.yml)
-[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](COPYING)
+<h1 align="center">Seed Seeker</h1>
+
+<p align="center">
+  <a href="https://github.com/akhial/shpd-seed-seeker/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/akhial/shpd-seed-seeker/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="COPYING"><img alt="License: GPL-3.0-or-later" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg"></a>
+</p>
 
 An extremely fast seed finder for [Shattered Pixel Dungeon](https://shatteredpixel.com/),
 written in Rust — with native apps for Android, Linux, macOS, and Windows.
