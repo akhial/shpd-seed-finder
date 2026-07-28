@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.WindowsRuntime;
 using System.Text.Json;
 using Microsoft.UI.Text;
 using Microsoft.UI.Windowing;
@@ -10,8 +11,11 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Graphics;
+using Windows.Graphics.Imaging;
+using Windows.Storage;
 using Windows.System;
 using Windows.UI;
 
@@ -274,10 +278,10 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private static readonly (string Label, string Value)[] ArtworkAttribution =
     [
+        ("Pixel Dungeon", "© 2012–2015 Oleg Dolya / Watabou"),
+        ("Shattered Pixel Dungeon", "© 2014–2026 Evan Debenham"),
         ("Upstream", "Shattered Pixel Dungeon v3.3.8"),
         ("Commit", "7b8b845a76fe76c6b7c031ae9e570852411f56db"),
-        ("Pixel Dungeon", "© 2012–2015 Oleg Dolya"),
-        ("Shattered Pixel Dungeon", "© 2014–2026 Evan Debenham"),
         ("Atlas SHA-256", "ce2496368660e9b2…a294caacaf"),
         ("Icon SHA-256", "38df728d32842d9f…24d7eb9b72"),
     ];
@@ -290,8 +294,12 @@ public sealed partial class MainWindow : Window
 
     /// <summary>
     /// The app ships GPL-3.0-or-later artwork from Shattered Pixel Dungeon, so it
-    /// has to surface the attribution and a way to read the full license text. The
-    /// bundled ATTRIBUTION.md and LICENSE.txt are both readable from here.
+    /// has to surface the attribution and a way to read the full license text.
+    ///
+    /// Every passage below is quoted verbatim from README.md, minus its inline link
+    /// markup, and matches the Android About screen line for line. Keep it that way:
+    /// the app's prose is the project's own, not a second description of it that can
+    /// drift. Section titles are the README's own headings.
     /// </summary>
     private async void About_Click(object sender, RoutedEventArgs e)
     {
@@ -299,37 +307,51 @@ public sealed partial class MainWindow : Window
         var accent = ThemeBrush("AccentTextFillColorPrimaryBrush", Microsoft.UI.Colors.SteelBlue);
         var version = typeof(MainWindow).Assembly.GetName().Version;
         var current = version is null ? "0.0.0" : $"{version.Major}.{version.Minor}.{version.Build}";
-        var panel = new StackPanel { Spacing = 6, Width = 460 };
+        var panel = new StackPanel { Spacing = 12, Width = 460 };
 
-        void Header(string text) => panel.Children.Add(new TextBlock { Text = text, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 14, 0, 2) });
-        void Paragraph(string text) => panel.Children.Add(new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, FontSize = 12, Foreground = secondary });
+        var heading = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16 };
+        heading.Children.Add(new Image { Width = 68, Height = 68, Source = await BrandMarkAsync(), VerticalAlignment = VerticalAlignment.Center });
+        heading.Children.Add(new TextBlock { Text = "Seed Seeker", FontSize = 24, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+        panel.Children.Add(heading);
 
-        panel.Children.Add(new TextBlock { Text = $"Seed Seeker {current}", FontSize = 20, FontWeight = FontWeights.SemiBold });
-        panel.Children.Add(new TextBlock { Text = "Independent · unofficial · open source", FontSize = 12, Foreground = secondary });
+        // The README's opening line sits under its "# Seed Seeker" heading, so it
+        // reads as a lede here rather than as a card that would repeat the title
+        // above it.
+        panel.Children.Add(new TextBlock
+        {
+            Text = "An extremely fast seed finder for Shattered Pixel Dungeon, written in Rust — with native apps for Android, Linux, macOS, and Windows.",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = secondary,
+            Margin = new Thickness(4, 0, 4, 0),
+        });
 
-        Header("Not the game");
-        Paragraph("Seed Seeker is an independent utility and is not affiliated with or endorsed by Shattered Pixel Dungeon or its authors. Its Fluent interface is original; no game UI components are used.");
+        var acknowledgements = AboutSection(panel, "Acknowledgements");
+        acknowledgements.Children.Add(AboutText("Seed Seeker reimplements the generation of Shattered Pixel Dungeon by Evan Debenham, itself based on Pixel Dungeon by Oleg Dolya."));
+        acknowledgements.Children.Add(AboutText("Elektrochecker's shpd-seed-finder serves as an oracle for this project's parity tests."));
 
-        Header("Artwork attribution");
-        Paragraph("The item sprites and ring type icons are unchanged copies of Shattered Pixel Dungeon's item atlases.");
+        var license = AboutSection(panel, "License and identity");
+        license.Children.Add(AboutText("This project is GPL-3.0-or-later. It contains a derived generation implementation and an unchanged item sprite atlas from Shattered Pixel Dungeon."));
+        var attribution = new StackPanel { Spacing = 8 };
         foreach (var (label, value) in ArtworkAttribution)
         {
-            var line = new StackPanel { Spacing = 1, Margin = new Thickness(0, 6, 0, 0) };
+            var line = new StackPanel { Spacing = 1 };
             line.Children.Add(new TextBlock { Text = label, FontSize = 11, Foreground = accent });
             line.Children.Add(new TextBlock { Text = value, FontSize = 12, Foreground = secondary, TextWrapping = TextWrapping.Wrap });
-            panel.Children.Add(line);
+            attribution.Children.Add(line);
         }
-        panel.Children.Add(new HyperlinkButton
-        {
-            Content = "github.com/00-Evan/shattered-pixel-dungeon",
-            NavigateUri = new Uri("https://github.com/00-Evan/shattered-pixel-dungeon"),
-            FontSize = 12, Margin = new Thickness(-4, 2, 0, 0),
-        });
-        panel.Children.Add(FileReader("ATTRIBUTION.md", "Read the bundled attribution notice"));
+        license.Children.Add(attribution);
+        license.Children.Add(FileReader("LICENSE.txt", "Read full license"));
 
-        Header("GNU GPL v3 or later");
-        Paragraph("This program is free software. You may redistribute and modify it under GPL-3.0-or-later. It comes with no warranty. Source distributions must retain the license and copyright notices. ATTRIBUTION.md and LICENSE.txt ship in the app's Assets folder.");
-        panel.Children.Add(FileReader("LICENSE.txt", "Read the full license"));
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"Seed Seeker {current} · Shattered Pixel Dungeon v3.3.8 profile",
+            FontSize = 11,
+            Foreground = secondary,
+            TextWrapping = TextWrapping.Wrap,
+            TextAlignment = TextAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Margin = new Thickness(0, 2, 0, 2),
+        });
 
         var dialog = new ContentDialog
         {
@@ -340,6 +362,62 @@ public sealed partial class MainWindow : Window
             Content = VerticalScrollView(panel, 520, 500),
         };
         await dialog.ShowAsync();
+    }
+
+    /// <summary>
+    /// A titled card appended to <paramref name="parent"/>, mirroring the Android
+    /// About screen's sections; the returned panel holds the section's body.
+    /// </summary>
+    private static StackPanel AboutSection(StackPanel parent, string title)
+    {
+        var body = new StackPanel { Spacing = 10 };
+        var content = new StackPanel { Spacing = 8 };
+        content.Children.Add(new TextBlock { Text = title, FontWeight = FontWeights.SemiBold });
+        content.Children.Add(body);
+        parent.Children.Add(new Border
+        {
+            Style = (Style)Application.Current.Resources["SettingsCard"],
+            Padding = new Thickness(16),
+            Child = content,
+        });
+        return body;
+    }
+
+    private static TextBlock AboutText(string text) => new() { Text = text, TextWrapping = TextWrapping.Wrap };
+
+    /// <summary>
+    /// The app icon, for the About dialog's brand mark. The bundled .ico stores its
+    /// frames smallest first, so the largest one is picked explicitly rather than
+    /// letting the decoder settle for the 16×16 frame.
+    /// </summary>
+    private static async Task<ImageSource?> BrandMarkAsync()
+    {
+        try
+        {
+            var file = await StorageFile.GetFileFromPathAsync(Path.Combine(AppContext.BaseDirectory, "Assets", "SeedSeeker.ico"));
+            using var stream = await file.OpenReadAsync();
+            var decoder = await BitmapDecoder.CreateAsync(stream);
+            var frame = await decoder.GetFrameAsync(0);
+            for (uint index = 1; index < decoder.FrameCount; index++)
+            {
+                var candidate = await decoder.GetFrameAsync(index);
+                if (candidate.PixelWidth > frame.PixelWidth) frame = candidate;
+            }
+            var data = await frame.GetPixelDataAsync(
+                BitmapPixelFormat.Bgra8,
+                BitmapAlphaMode.Premultiplied,
+                new BitmapTransform(),
+                ExifOrientationMode.IgnoreExifOrientation,
+                ColorManagementMode.DoNotColorManage);
+            var bitmap = new WriteableBitmap((int)frame.PixelWidth, (int)frame.PixelHeight);
+            WindowsRuntimeBufferExtensions.CopyTo(data.DetachPixelData(), bitmap.PixelBuffer);
+            bitmap.Invalidate();
+            return bitmap;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>An expander that reads a bundled text file the first time it opens.</summary>
