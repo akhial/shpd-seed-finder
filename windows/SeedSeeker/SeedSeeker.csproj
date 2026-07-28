@@ -34,6 +34,12 @@
          disk next to the binary for the title bar and taskbar. -->
     <Content Include="Assets\SeedSeeker.ico" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\android\app\src\main\assets\third_party\shattered-pixel-dungeon\catalog-v3.3.8.json" Link="Assets\catalog-v3.3.8.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Upstream GPL-3.0-or-later item artwork, shared with the Android app rather
+         than duplicated here. Shipping the art means shipping its notices too. -->
+    <Content Include="..\..\android\app\src\main\assets\third_party\shattered-pixel-dungeon\items.png" Link="Assets\items.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\android\app\src\main\assets\third_party\shattered-pixel-dungeon\item_icons.png" Link="Assets\item_icons.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\android\app\src\main\assets\third_party\shattered-pixel-dungeon\LICENSE.txt" Link="Assets\LICENSE.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\android\app\src\main\assets\third_party\shattered-pixel-dungeon\ATTRIBUTION.md" Link="Assets\ATTRIBUTION.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <Target Name="BuildRustEngine" BeforeTargets="Build">
     <Error Condition="'$(RustTarget)' == ''" Text="Build with -p:Platform=ARM64 or -p:Platform=x64; platform '$(Platform)' has no Rust target mapping." />
