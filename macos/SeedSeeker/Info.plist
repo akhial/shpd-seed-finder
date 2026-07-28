@@ -13,12 +13,12 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.5.4</string>
+    <string>0.6.0</string>
     <!-- Sparkle decides whether an update applies by comparing
          CFBundleVersion, so every release must bump it along with the
          marketing version. -->
     <key>CFBundleVersion</key>
-    <string>9</string>
+    <string>10</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>NSHighResolutionCapable</key>
