@@ -81,7 +81,7 @@ fun RequirementSheet(
     var selectedItem by remember(identity) {
         mutableStateOf<CatalogItem?>(
             if (editing == null) {
-                ItemCatalog.forKind(kind).first { it.tier != 1 }
+                ItemCatalog.requestableForKind(kind).first { it.tier != 1 }
             } else {
                 editing.item
             },
@@ -155,7 +155,8 @@ fun RequirementSheet(
                                 onCheckedChange = { checked ->
                                     if (checked && kind != entry) {
                                         kind = entry
-                                        selectedItem = ItemCatalog.forKind(entry).first { it.tier != 1 }
+                                        selectedItem =
+                                            ItemCatalog.requestableForKind(entry).first { it.tier != 1 }
                                         tierMatch = TierMatch.ANY
                                         tier = 2
                                         modifierName = null
@@ -194,7 +195,10 @@ fun RequirementSheet(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        items(ItemCatalog.forKind(kind).filter { it.tier != 1 }, key = { it.id }) { item ->
+                        items(
+                            ItemCatalog.requestableForKind(kind).filter { it.tier != 1 },
+                            key = { it.id },
+                        ) { item ->
                             ItemTile(
                                 item = item,
                                 selected = selectedItem?.id == item.id,

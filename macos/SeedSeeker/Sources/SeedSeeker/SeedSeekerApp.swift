@@ -487,7 +487,7 @@ private struct RequirementEditor: View {
                             // Tier-1 melee weapons are starting gear and never spawn in the dungeon.
                             ForEach(2...5, id: \.self) { tier in
                                 Section("Tier \(tier)") {
-                                    ForEach(ItemCatalog.weapons.filter { $0.tier == tier }) { item in
+                                    ForEach(ItemCatalog.requestableForKind(.weapon).filter { $0.tier == tier }) { item in
                                         Label { Text(item.name) } icon: {
                                             ItemSpriteIcon(spriteIndex: item.spriteIndex)
                                         }.tag(item.id)
@@ -495,7 +495,7 @@ private struct RequirementEditor: View {
                                 }
                             }
                         } else {
-                            ForEach(ItemCatalog.forKind(kind).filter { $0.tier != 1 }) { item in
+                            ForEach(ItemCatalog.requestableForKind(kind).filter { $0.tier != 1 }) { item in
                                 Label { Text(item.name) } icon: {
                                     ItemSpriteIcon(spriteIndex: item.spriteIndex)
                                 }.tag(item.id)

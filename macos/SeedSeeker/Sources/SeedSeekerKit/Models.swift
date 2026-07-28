@@ -15,9 +15,28 @@ public struct CatalogItem: Codable, Hashable, Identifiable, Sendable {
     public let kind: ItemKind
     public let spriteIndex: Int
     public let tier: Int?
+    /// Whether a requirement may name this item. Scout results show everything;
+    /// only the item picker is narrowed. Tipped darts turn up on every seed, so
+    /// requiring one says nothing about a seed.
+    public let requestable: Bool
 
-    public init(id: String, name: String, kind: ItemKind, spriteIndex: Int, tier: Int? = nil) {
+    public init(id: String, name: String, kind: ItemKind, spriteIndex: Int, tier: Int? = nil,
+                requestable: Bool = true) {
         self.id = id; self.name = name; self.kind = kind; self.spriteIndex = spriteIndex; self.tier = tier
+        self.requestable = requestable
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, name, kind, spriteIndex, tier, requestable }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        kind = try container.decode(ItemKind.self, forKey: .kind)
+        spriteIndex = try container.decode(Int.self, forKey: .spriteIndex)
+        tier = try container.decodeIfPresent(Int.self, forKey: .tier)
+        // Saved queries predating the scout-only flag omit the key.
+        requestable = try container.decodeIfPresent(Bool.self, forKey: .requestable) ?? true
     }
 }
 
@@ -75,10 +94,11 @@ public enum Challenge: Int, CaseIterable, Sendable {
 }
 
 public enum ModelValidationError: Error, Equatable, LocalizedError {
-    case itemKind, tier, upgrade, modifier, uncursedCurse, identityGroup, itemMaximumDepth, emptyRequirements, maximumDepth, challenges
+    case itemKind, itemNotRequestable, tier, upgrade, modifier, uncursedCurse, identityGroup, itemMaximumDepth, emptyRequirements, maximumDepth, challenges
     public var errorDescription: String? {
         switch self {
         case .itemKind: "Selected item must belong to its category"
+        case .itemNotRequestable: "Selected item turns up on every seed and cannot be required"
         case .tier: "Tier predicate requires a wildcard weapon or armor and a non-redundant tier"
         case .upgrade: "Upgrade predicate is invalid"
         case .modifier: "This category cannot carry a modifier requirement"
@@ -113,6 +133,7 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
                 source: ScoutItemSource? = nil, identityGroup: Int? = nil,
                 maximumDepth: Int? = nil, requireUncursed: Bool = false) throws {
         guard item == nil || item?.kind == kind else { throw ModelValidationError.itemKind }
+        guard item?.requestable != false else { throw ModelValidationError.itemNotRequestable }
         let tierable = item == nil && (kind == .weapon || kind == .armor)
         let validTier = switch tierMatch {
         case .any: tier == 0

@@ -398,11 +398,14 @@ fn set_tier_value(editor: &Rc<Editor>, tier: u8) {
 }
 
 /// Items offered for one family. Tier-1 equipment is starting gear and never
-/// spawns in the dungeon, so it is not searchable.
+/// spawns in the dungeon, so it is not searchable, and items every seed offers
+/// anyway are not worth requiring.
 fn searchable_items(kind: ItemKind) -> Vec<&'static ItemDefinition> {
     let mut items: Vec<_> = ITEMS
         .iter()
-        .filter(|definition| definition.kind == kind && definition.tier != Some(1))
+        .filter(|definition| {
+            definition.kind == kind && definition.tier != Some(1) && definition.requestable
+        })
         .collect();
     if matches!(kind, ItemKind::Weapon | ItemKind::Armor) {
         items.sort_by_key(|definition| definition.tier);

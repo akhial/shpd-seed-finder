@@ -72,12 +72,14 @@ mod tests {
                     (2, ItemId::PlateArmor),
                     (3, ItemId::ThrowingHammer),
                     (7, ItemId::Greatshield),
+                    (16, ItemId::IncendiaryDart),
                 ],
             ),
             (
                 "AAA-AAA-AAB",
                 &[
                     (13, ItemId::Trident),
+                    (14, ItemId::HolyDart),
                     (18, ItemId::Greatshield),
                     (19, ItemId::PlateArmor),
                 ],
@@ -88,6 +90,7 @@ mod tests {
                     (3, ItemId::Trident),
                     (10, ItemId::PlateArmor),
                     (15, ItemId::Glaive),
+                    (17, ItemId::ParalyticDart),
                 ],
             ),
         ];

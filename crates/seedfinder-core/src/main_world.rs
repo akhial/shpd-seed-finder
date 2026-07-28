@@ -622,6 +622,7 @@ mod tests {
                 ItemId::PlateArmor,
                 ItemId::ThrowingHammer,
                 ItemId::Greatshield,
+                ItemId::IncendiaryDart,
             ]
         );
     }

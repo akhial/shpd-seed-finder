@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::catalog::{Effect, ItemId, ItemKind, item};
+use crate::catalog::{Effect, ItemId, ItemKind, is_requestable, item};
 use crate::challenges::Challenges;
 use crate::model::{GeneratedWorld, ItemSource, WorldItem};
 
@@ -96,14 +96,18 @@ impl Requirement {
     ///
     /// # Errors
     ///
-    /// Returns a validation error for a category mismatch, an effect intended
-    /// for another family, or an upgrade outside the UI's family-specific range.
+    /// Returns a validation error for a category mismatch, an item outside the
+    /// requestable catalog, an effect intended for another family, or an upgrade
+    /// outside the UI's family-specific range.
     pub fn validate(self) -> Result<(), QueryError> {
         if self
             .item
             .is_some_and(|item_id| item(item_id).kind != self.kind)
         {
             return Err(QueryError::ItemKindMismatch);
+        }
+        if self.item.is_some_and(|item_id| !is_requestable(item_id)) {
+            return Err(QueryError::ItemNotRequestable);
         }
         let tierable =
             self.item.is_none() && matches!(self.kind, ItemKind::Weapon | ItemKind::Armor);
@@ -352,6 +356,7 @@ pub enum QueryError {
     InvalidUpgrade,
     InvalidTier,
     ItemKindMismatch,
+    ItemNotRequestable,
     EffectKindMismatch,
     UncursedWithCurse,
     InvalidIdentityGroup,
@@ -368,6 +373,9 @@ impl fmt::Display for QueryError {
                 "tier filters require a wildcard weapon or armor and a non-redundant tier"
             }
             Self::ItemKindMismatch => "selected item is in a different category",
+            Self::ItemNotRequestable => {
+                "selected item turns up on every seed and cannot be required"
+            }
             Self::EffectKindMismatch => "selected enchantment or glyph is inapplicable",
             Self::UncursedWithCurse => "an uncursed item cannot have a curse",
             Self::InvalidIdentityGroup => "identity group zero is reserved for no group",
@@ -438,6 +446,20 @@ mod tests {
             ],
         };
         assert!(query.matches(&two));
+    }
+
+    #[test]
+    fn scout_only_items_cannot_be_required() {
+        // A tipped dart turns up on every seed, so requiring one says nothing
+        // about a seed. It still matches a world item, which is what lets the
+        // scout report it.
+        let dart = requirement(ItemId::BlindingDart);
+        assert_eq!(dart.validate(), Err(QueryError::ItemNotRequestable));
+        assert!(dart.matches(&world_item(
+            ItemId::BlindingDart,
+            Accessibility::Independent
+        )));
+        assert_eq!(requirement(ItemId::Sword).validate(), Ok(()));
     }
 
     #[test]

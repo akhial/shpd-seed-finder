@@ -12,7 +12,9 @@ public enum UpgradeMatch { Any, Exactly, AtLeast }
 public enum TierMatch { Any, Exactly, AtLeast, AtMost }
 public enum SearchState { Running, Completed, Cancelled, Failed }
 
-public sealed record CatalogItem(string Id, string Name, ItemKind Kind, int SpriteIndex, int? Tier);
+/// <summary>One catalog item. <paramref name="Requestable"/> is false for items the scout
+/// reports but a requirement cannot name — the tipped darts, which every seed offers.</summary>
+public sealed record CatalogItem(string Id, string Name, ItemKind Kind, int SpriteIndex, int? Tier, bool Requestable = true);
 
 public enum ScoutItemSource
 {
@@ -106,6 +108,20 @@ public sealed class QuerySettings
         FastMode = FastMode,
         Challenges = Challenges,
     };
+
+    /// <summary>Drops requirements the engine would now refuse — an item the catalog no
+    /// longer knows, or one it reports but cannot be required. Saved queries written before
+    /// an item became scout-only still name it.</summary>
+    public QuerySettings Sanitized()
+    {
+        foreach (var stale in Requirements
+                     .Where(x => x.Item is not null && ItemCatalog.Find(x.Item.Id)?.Requestable != true)
+                     .ToList())
+        {
+            Requirements.Remove(stale);
+        }
+        return this;
+    }
 }
 
 public sealed class QueryPreset
@@ -266,7 +282,7 @@ public static class ScoutMatcher
 public static class ItemCatalog
 {
     private sealed class Root { public Entry[] Entries { get; set; } = []; }
-    private sealed class Entry { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string Type { get; set; } = ""; public int? Tier { get; set; } public int Sprite { get; set; } }
+    private sealed class Entry { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string Type { get; set; } = ""; public int? Tier { get; set; } public int Sprite { get; set; } public bool Requestable { get; set; } = true; }
     public static IReadOnlyList<CatalogItem> All { get; } = Load();
     public static readonly string[] Enchantments = ["Blazing", "Blocking", "Blooming", "Chilling", "Corrupting", "Elastic", "Grim", "Kinetic", "Lucky", "Projecting", "Shocking", "Unstable", "Vampiric"];
     public static readonly string[] WeaponCurses = ["Annoying", "Dazzling", "Displacing", "Explosive", "Friendly", "Polarized", "Sacrificial", "Wayward"];
@@ -275,9 +291,11 @@ public static class ItemCatalog
     private static IReadOnlyList<CatalogItem> Load()
     {
         var root = JsonSerializer.Deserialize<Root>(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Assets", "catalog-v3.3.8.json")), new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
-        return root.Entries.Select(e => new CatalogItem(e.Id, e.Name, Enum.Parse<ItemKind>(e.Type, true), e.Sprite, e.Tier)).ToArray();
+        return root.Entries.Select(e => new CatalogItem(e.Id, e.Name, Enum.Parse<ItemKind>(e.Type, true), e.Sprite, e.Tier, e.Requestable)).ToArray();
     }
-    public static IEnumerable<CatalogItem> For(ItemKind kind) => All.Where(x => x.Kind == kind && x.Tier != 1);
+    /// <summary>The items a requirement may name, for the item picker. Tier-1 equipment is
+    /// starting gear, and scout-only items are offered on every seed anyway.</summary>
+    public static IEnumerable<CatalogItem> For(ItemKind kind) => All.Where(x => x.Kind == kind && x.Tier != 1 && x.Requestable);
     public static CatalogItem? Find(string id) => All.FirstOrDefault(x => x.Id == id);
     public static IEnumerable<string> Modifiers(ItemKind kind) => kind switch { ItemKind.Weapon => Enchantments.Concat(WeaponCurses), ItemKind.Armor => Glyphs.Concat(ArmorCurses), _ => [] };
     public static bool IsCurse(ItemKind kind, string effect) => (kind == ItemKind.Weapon ? WeaponCurses : ArmorCurses).Contains(effect);

@@ -70,7 +70,8 @@ class PresetStorage(private val preferences: SharedPreferences) {
             for (index in 0 until encodedRequirements.length()) {
                 val encoded = encodedRequirements.getJSONObject(index)
                 val item = encoded.stringOrNull("item")?.let { id ->
-                    requireNotNull(ItemCatalog.findById(id))
+                    // Presets written before an item became scout-only still name it.
+                    requireNotNull(ItemCatalog.findById(id)?.takeIf(CatalogItem::requestable))
                 }
                 add(
                     ItemRequirement(

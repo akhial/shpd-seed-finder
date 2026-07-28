@@ -22,6 +22,12 @@ data class CatalogItem(
     val spriteIndex: Int,
     val tier: Int? = null,
     val typeIconIndex: Int? = null,
+    /**
+     * Whether a requirement may name this item. Scout results show everything;
+     * only the item picker is narrowed. Tipped darts turn up on every seed, so
+     * requiring one says nothing about a seed.
+     */
+    val requestable: Boolean = true,
 )
 
 data class ItemRequirement(

@@ -16,7 +16,8 @@ class ItemCatalogTest {
                 (112..117).toSet() +
                 (120..126).toSet() +
                 (128..134).toSet() +
-                (145..159).toSet(),
+                (145..159).toSet() +
+                (161..172).toSet(),
             ItemCatalog.weapons.map { it.spriteIndex }.toSet(),
         )
         assertEquals((176..180).toList(), ItemCatalog.armor.map { it.spriteIndex })
@@ -32,10 +33,22 @@ class ItemCatalogTest {
         assertFalse("Mages Staff has zero generator weight", 101 in spriteIndices)
         assertFalse("Spirit Bow is hero equipment, not generated loot", 144 in spriteIndices)
         assertFalse("Plain darts have zero Generator weight", 160 in spriteIndices)
-        assertTrue("Tipped darts turn up on every seed, so they are not searchable",
-            (161..172).none { it in spriteIndices })
         assertFalse("Hero/class armors are not generated equipment", 181 in spriteIndices)
         assertTrue(ItemCatalog.all.none { it.id.contains("pickaxe") })
+    }
+
+    @Test
+    fun tippedDartsAreScoutedButNeverOfferedAsRequirements() {
+        // Every seed grows the plant seeds that tip them, so requiring one says
+        // nothing about a seed. Scout results still name and draw them.
+        val darts = ItemCatalog.weapons.filter { it.spriteIndex in 161..172 }
+        assertEquals(12, darts.size)
+        assertTrue(darts.none { it.requestable })
+        assertTrue(ItemCatalog.requestableForKind(ItemKind.WEAPON).none { it.id.endsWith("_dart") })
+        assertEquals("Rot Dart", ItemCatalog.findById("rot_dart")?.name)
+        for (kind in ItemKind.entries.filterNot { it == ItemKind.WEAPON }) {
+            assertEquals(ItemCatalog.forKind(kind), ItemCatalog.requestableForKind(kind))
+        }
     }
 
     @Test
@@ -47,7 +60,8 @@ class ItemCatalogTest {
         assertEquals(8, ItemCatalog.armorCurses.size)
         assertEquals("gloves", ItemCatalog.weapons.first { it.spriteIndex == 98 }.id)
         assertEquals("gauntlet", ItemCatalog.weapons.first { it.spriteIndex == 133 }.id)
-        assertEquals("force_cube", ItemCatalog.weapons.last().id)
+        assertEquals("rot_dart", ItemCatalog.weapons.first { it.spriteIndex == 161 }.id)
+        assertEquals("blinding_dart", ItemCatalog.weapons.first { it.spriteIndex == 172 }.id)
         assertEquals("ring_accuracy", ItemCatalog.rings.first().id)
         assertEquals("ring_wealth", ItemCatalog.rings.last().id)
     }

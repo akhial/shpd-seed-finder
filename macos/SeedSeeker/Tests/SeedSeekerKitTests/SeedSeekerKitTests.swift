@@ -247,6 +247,30 @@ final class SeedSeekerKitTests: XCTestCase {
             kind: .weapon, tier: 1, tierMatch: .exactly))
     }
 
+    func testTippedDartsAreScoutedButNeverRequested() throws {
+        // Every seed grows the plant seeds that tip them, so requiring one says
+        // nothing about a seed. Scout results still name and draw them.
+        let dart = try XCTUnwrap(ItemCatalog.findById("blinding_dart"))
+        XCTAssertEqual(dart.name, "Blinding Dart")
+        XCTAssertFalse(dart.requestable)
+        XCTAssertThrowsError(try ItemRequirement(key: 1, item: dart, upgrade: 0, kind: .weapon,
+                                                 upgradeMatch: .any)) { error in
+            XCTAssertEqual(error as? ModelValidationError, .itemNotRequestable)
+        }
+        XCTAssertTrue(ItemCatalog.requestableForKind(.weapon).allSatisfy { !$0.id.hasSuffix("_dart") })
+        for kind in [ItemKind.armor, .wand, .ring] {
+            XCTAssertEqual(ItemCatalog.forKind(kind), ItemCatalog.requestableForKind(kind))
+        }
+    }
+
+    /// Saved queries written before the scout-only flag omit the key entirely.
+    func testCatalogItemDecodesWithoutTheRequestableKey() throws {
+        let legacy = Data(#"{"id":"sword","name":"Sword","kind":0,"spriteIndex":112,"tier":3}"#.utf8)
+        let decoded = try JSONDecoder().decode(CatalogItem.self, from: legacy)
+        XCTAssertEqual(decoded, ItemCatalog.findById("sword"))
+        XCTAssertTrue(decoded.requestable)
+    }
+
     func testRealFFIScout() async throws {
         let world = try await ProductionSeedFinderEngine().scoutSeed("AAA-AAA-AAA", challenges: 0)
         XCTAssertFalse(world.items.isEmpty)

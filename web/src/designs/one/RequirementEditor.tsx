@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   armorCurses,
   armorGlyphs,
-  itemsByCategory,
+  requestableByCategory,
   sources,
   weaponCurses,
   weaponEnchantments,
@@ -147,14 +147,14 @@ export function RequirementEditor({
                 {kind === 'weapon'
                   ? [2, 3, 4, 5].map((tier) => (
                       <optgroup key={tier} label={`Tier ${tier}`}>
-                        {itemsByCategory.weapon
+                        {requestableByCategory.weapon
                           .filter((item) => item.tier === tier)
                           .map((item) => (
                             <option key={item.id} value={item.id}>{item.name}</option>
                           ))}
                       </optgroup>
                     ))
-                  : itemsByCategory[kind]
+                  : requestableByCategory[kind]
                       .filter((item) => item.tier !== 1)
                       .map((item) => (
                         <option key={item.id} value={item.id}>{item.name}</option>

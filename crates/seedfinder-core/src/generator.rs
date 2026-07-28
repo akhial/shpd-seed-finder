@@ -200,6 +200,28 @@ pub enum SeedKind {
     Starflower,
 }
 
+impl SeedKind {
+    /// Tipped-dart identity produced by `TippedDart.getTipped` for this seed.
+    /// The mapping follows the insertion-ordered upstream `types` table.
+    #[must_use]
+    pub const fn tipped_dart_item_id(self) -> ItemId {
+        match self {
+            Self::Rotberry => ItemId::RotDart,
+            Self::Sungrass => ItemId::HealingDart,
+            Self::Fadeleaf => ItemId::DisplacingDart,
+            Self::Icecap => ItemId::ChillingDart,
+            Self::Firebloom => ItemId::IncendiaryDart,
+            Self::Sorrowmoss => ItemId::PoisonDart,
+            Self::Swiftthistle => ItemId::AdrenalineDart,
+            Self::Blindweed => ItemId::BlindingDart,
+            Self::Stormvine => ItemId::ShockingDart,
+            Self::Earthroot => ItemId::ParalyticDart,
+            Self::Mageroyal => ItemId::CleansingDart,
+            Self::Starflower => ItemId::HolyDart,
+        }
+    }
+}
+
 /// Runestone classes in `STONE.classes` order.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(u8)]
@@ -331,12 +353,8 @@ impl GeneratedItem {
     }
 
     /// Searchable weapon/armor/wand/ring representation, if this generated item is
-    /// part of the equipment query catalog.
-    ///
-    /// Tipped darts are outside that catalog. Every run grows the plant seeds
-    /// the generator tips them from, so they turn up on every seed and searching
-    /// for one says nothing; they are still generated, because doing so consumes
-    /// the RNG the rest of the world depends on.
+    /// part of the equipment query catalog. Tipped darts are fixed level-zero,
+    /// clean weapons; their stack quantity does not affect search matching.
     #[must_use]
     pub const fn searchable_equipment(self) -> Option<GeneratedEquipment> {
         match self {
@@ -348,6 +366,14 @@ impl GeneratedItem {
                 }),
                 None => None,
             },
+            Self::TippedDart { seed, .. } => Some(GeneratedEquipment {
+                item: seed.tipped_dart_item_id(),
+                roll: EquipmentRoll {
+                    upgrade: 0,
+                    effect: None,
+                    cursed: false,
+                },
+            }),
             Self::Ring(ring) => Some(GeneratedEquipment {
                 item: ring.kind.item_id(),
                 roll: ring.roll,
@@ -360,8 +386,7 @@ impl GeneratedItem {
             | Self::Stone(_)
             | Self::Gold { .. }
             | Self::Trinket(_)
-            | Self::Bomb(_)
-            | Self::TippedDart { .. } => None,
+            | Self::Bomb(_) => None,
         }
     }
 }
@@ -1475,27 +1500,26 @@ mod tests {
     }
 
     #[test]
-    fn no_tipped_dart_is_searchable() {
-        // Every run grows the plant seeds the generator tips darts from, so a
-        // dart requirement would match every seed. They are generated for their
-        // RNG draws alone and stay out of the query catalog.
-        for seed in [
-            SeedKind::Rotberry,
-            SeedKind::Sungrass,
-            SeedKind::Fadeleaf,
-            SeedKind::Icecap,
-            SeedKind::Firebloom,
-            SeedKind::Sorrowmoss,
-            SeedKind::Swiftthistle,
-            SeedKind::Blindweed,
-            SeedKind::Stormvine,
-            SeedKind::Earthroot,
-            SeedKind::Mageroyal,
-            SeedKind::Starflower,
-        ] {
+    fn all_upstream_seed_types_map_to_their_tipped_dart_identities() {
+        let mappings = [
+            (SeedKind::Rotberry, ItemId::RotDart),
+            (SeedKind::Sungrass, ItemId::HealingDart),
+            (SeedKind::Fadeleaf, ItemId::DisplacingDart),
+            (SeedKind::Icecap, ItemId::ChillingDart),
+            (SeedKind::Firebloom, ItemId::IncendiaryDart),
+            (SeedKind::Sorrowmoss, ItemId::PoisonDart),
+            (SeedKind::Swiftthistle, ItemId::AdrenalineDart),
+            (SeedKind::Blindweed, ItemId::BlindingDart),
+            (SeedKind::Stormvine, ItemId::ShockingDart),
+            (SeedKind::Earthroot, ItemId::ParalyticDart),
+            (SeedKind::Mageroyal, ItemId::CleansingDart),
+            (SeedKind::Starflower, ItemId::HolyDart),
+        ];
+        for (seed, item) in mappings {
+            assert_eq!(seed.tipped_dart_item_id(), item);
             assert_eq!(
                 GeneratedItem::TippedDart { seed, quantity: 2 }.searchable_equipment(),
-                None
+                Some(expected(item, 0, false, None))
             );
         }
     }

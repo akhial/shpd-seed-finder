@@ -1,4 +1,4 @@
-import { getItem, isCurseForCategory } from './catalog'
+import { getItem, isCurseForCategory, isRequestable } from './catalog'
 import type {
   QueryDocument,
   QueryState,
@@ -99,6 +99,7 @@ export function validateRequirement(requirement: RequirementState): string[] {
   const kind = requirement.kind ?? item?.type
   if (!kind) errors.push('Choose an item category.')
   if (item && requirement.kind && item.type !== requirement.kind) errors.push('The item does not belong to this category.')
+  if (item && !isRequestable(item)) errors.push('This item turns up on every seed and cannot be required.')
   if (requirement.tier.mode !== 'any') {
     if (requirement.item || (kind !== 'weapon' && kind !== 'armor')) errors.push('Tier filters require a wildcard weapon or armor.')
     const { mode, value } = requirement.tier

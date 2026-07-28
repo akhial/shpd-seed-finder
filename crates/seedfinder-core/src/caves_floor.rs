@@ -1138,6 +1138,14 @@ mod tests {
                     Accessibility::Independent,
                 ),
                 (
+                    ItemId::ChillingDart,
+                    0,
+                    None,
+                    false,
+                    ItemSource::Shop,
+                    Accessibility::Independent,
+                ),
+                (
                     ItemId::Whip,
                     0,
                     None,
@@ -1311,6 +1319,14 @@ mod tests {
                         Accessibility::Independent,
                     ),
                     (
+                        ItemId::CleansingDart,
+                        0,
+                        None,
+                        false,
+                        ItemSource::Shop,
+                        Accessibility::Independent,
+                    ),
+                    (
                         ItemId::ThrowingSpear,
                         0,
                         None,
@@ -1345,6 +1361,14 @@ mod tests {
                 894,
                 &[534, 779, 877, 918, 922, 1_371, 1_510, 1_519],
                 &[
+                    (
+                        ItemId::DisplacingDart,
+                        0,
+                        None,
+                        false,
+                        ItemSource::Shop,
+                        Accessibility::Independent,
+                    ),
                     (
                         ItemId::Kunai,
                         0,
@@ -1425,6 +1449,14 @@ mod tests {
                     ),
                     (
                         ItemId::MailArmor,
+                        0,
+                        None,
+                        false,
+                        ItemSource::Shop,
+                        Accessibility::Independent,
+                    ),
+                    (
+                        ItemId::ChillingDart,
                         0,
                         None,
                         false,

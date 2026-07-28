@@ -58,6 +58,18 @@ object ItemCatalog {
         weapon("trident", "Trident", 5, 157),
         weapon("throwing_hammer", "Throwing Hammer", 5, 158),
         weapon("force_cube", "Force Cube", 5, 159),
+        scoutOnlyWeapon("rot_dart", "Rot Dart", 2, 161),
+        scoutOnlyWeapon("incendiary_dart", "Incendiary Dart", 2, 162),
+        scoutOnlyWeapon("adrenaline_dart", "Adrenaline Dart", 2, 163),
+        scoutOnlyWeapon("healing_dart", "Healing Dart", 2, 164),
+        scoutOnlyWeapon("chilling_dart", "Chilling Dart", 2, 165),
+        scoutOnlyWeapon("shocking_dart", "Shocking Dart", 2, 166),
+        scoutOnlyWeapon("poison_dart", "Poison Dart", 2, 167),
+        scoutOnlyWeapon("cleansing_dart", "Cleansing Dart", 2, 168),
+        scoutOnlyWeapon("paralytic_dart", "Paralytic Dart", 2, 169),
+        scoutOnlyWeapon("holy_dart", "Holy Dart", 2, 170),
+        scoutOnlyWeapon("displacing_dart", "Displacing Dart", 2, 171),
+        scoutOnlyWeapon("blinding_dart", "Blinding Dart", 2, 172),
     )
 
     val armor = listOf(
@@ -156,12 +168,17 @@ object ItemCatalog {
         "Stench",
     )
 
+    /** Every item of one family, including the ones only the scout shows. */
     fun forKind(kind: ItemKind): List<CatalogItem> = when (kind) {
         ItemKind.WEAPON -> weapons
         ItemKind.ARMOR -> armor
         ItemKind.WAND -> wands
         ItemKind.RING -> rings
     }
+
+    /** The items a requirement may name, for the item picker. */
+    fun requestableForKind(kind: ItemKind): List<CatalogItem> =
+        forKind(kind).filter(CatalogItem::requestable)
 
     fun findById(id: String): CatalogItem? = byId[id]
 
@@ -179,6 +196,10 @@ object ItemCatalog {
 
     private fun weapon(id: String, name: String, tier: Int, sprite: Int) =
         CatalogItem(id, name, ItemKind.WEAPON, sprite, tier)
+
+    /** A weapon the scout reports but the item picker never offers. */
+    private fun scoutOnlyWeapon(id: String, name: String, tier: Int, sprite: Int) =
+        CatalogItem(id, name, ItemKind.WEAPON, sprite, tier, requestable = false)
 
     private fun armor(id: String, name: String, tier: Int, sprite: Int) =
         CatalogItem(id, name, ItemKind.ARMOR, sprite, tier)

@@ -182,6 +182,12 @@ impl Tally {
         let mut scattered: BTreeMap<usize, u64> = BTreeMap::new();
         for candidate in &world.items {
             let definition = item(candidate.item);
+            // Items no requirement can name are supply the estimator never draws
+            // on. Counting the tipped darts a shop stocks would make weapons
+            // look plentiful.
+            if !definition.requestable {
+                continue;
+            }
             let kind = kind_index(definition.kind) + KINDS * line_index(line_of(candidate.item));
             let source = source_index(candidate.source);
             let depth = usize::from(candidate.depth) - 1;

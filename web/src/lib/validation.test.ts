@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { getItem, requestableByCategory } from './catalog'
 import { defaultQueryState, validateQuery } from './query'
 import type { QueryState, RequirementState } from './wasm/types'
 
@@ -16,6 +17,13 @@ describe('query validation', () => {
   })
   it('rejects curse with uncursed', () => {
     expect(validateQuery(state(requirement({ effect: 'Annoying', uncursed: true }))).errors.join(' ')).toMatch(/curse/)
+  })
+  it('rejects a scout-only item', () => {
+    // Every seed grows the plant seeds that tip darts, so requiring one says
+    // nothing about a seed. The item picker never offers them either.
+    expect(validateQuery(state(requirement({ item: 'blinding_dart' }))).errors.join(' ')).toMatch(/every seed/)
+    expect(requestableByCategory.weapon.some((item) => item.id.endsWith('_dart'))).toBe(false)
+    expect(getItem('blinding_dart')?.name).toBe('Blinding Dart')
   })
   it('rejects mismatched identity groups', () => {
     expect(validateQuery(state(requirement({ identityGroup: 1 }), requirement({ kind: 'armor', identityGroup: 1 }))).errors.join(' ')).toMatch(/Identity group/)

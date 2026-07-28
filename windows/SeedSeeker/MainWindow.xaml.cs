@@ -110,7 +110,7 @@ public sealed partial class MainWindow : Window
     private void LoadSettings()
     {
         restoring = true;
-        try { if (File.Exists(SettingsPath)) query = JsonSerializer.Deserialize<QuerySettings>(File.ReadAllText(SettingsPath)) ?? new(); } catch { query = new(); }
+        try { if (File.Exists(SettingsPath)) query = (JsonSerializer.Deserialize<QuerySettings>(File.ReadAllText(SettingsPath)) ?? new()).Sanitized(); } catch { query = new(); }
         FloorSlider.Value = query.MaximumDepth; RequireBlacksmith.IsOn = query.RequireBlacksmith; ExcludeRewards.IsOn = query.ExcludeBlacksmithRewards; FastMode.IsOn = query.FastMode; restoring = false;
     }
     private void SaveSettings() { if (restoring) return; Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!); File.WriteAllText(SettingsPath, JsonSerializer.Serialize(query, new JsonSerializerOptions { WriteIndented = true })); }
@@ -120,7 +120,8 @@ public sealed partial class MainWindow : Window
         {
             if (File.Exists(PresetsPath))
                 userPresets = (JsonSerializer.Deserialize<List<QueryPreset>>(File.ReadAllText(PresetsPath)) ?? [])
-                    .Where(x => !string.IsNullOrWhiteSpace(x.Name) && x.Query is not null).ToList();
+                    .Where(x => !string.IsNullOrWhiteSpace(x.Name) && x.Query is not null)
+                    .Select(x => { x.Query = x.Query.Sanitized(); return x; }).ToList();
         }
         catch { userPresets = []; }
     }

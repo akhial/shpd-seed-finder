@@ -1,7 +1,19 @@
 import catalogJson from '../generated/catalog.json'
 import type { ChallengeName, ItemCategory, ItemSource } from './wasm/types'
 
-export interface CatalogItem { id: string; name: string; type: ItemCategory; tier?: number; sprite: number }
+export interface CatalogItem {
+  id: string
+  name: string
+  type: ItemCategory
+  tier?: number
+  sprite: number
+  /**
+   * Whether a requirement may name this item. Scout results show everything;
+   * only the item picker is narrowed. Tipped darts turn up on every seed, so
+   * requiring one says nothing about a seed. Absent means requestable.
+   */
+  requestable?: boolean
+}
 interface CatalogDocument {
   entries: CatalogItem[]
   modifiers?: {
@@ -14,8 +26,13 @@ interface CatalogDocument {
 
 const catalog = catalogJson as CatalogDocument
 export const items = catalog.entries
+export const isRequestable = (item: CatalogItem): boolean => item.requestable !== false
 export const itemsByCategory = Object.fromEntries(
   (['weapon', 'armor', 'wand', 'ring'] as ItemCategory[]).map((category) => [category, items.filter((item) => item.type === category)]),
+) as Record<ItemCategory, CatalogItem[]>
+/** The items a requirement may name, per category. */
+export const requestableByCategory = Object.fromEntries(
+  (Object.entries(itemsByCategory) as [ItemCategory, CatalogItem[]][]).map(([category, entries]) => [category, entries.filter(isRequestable)]),
 ) as Record<ItemCategory, CatalogItem[]>
 const lookup = new Map(items.map((item) => [item.id, item]))
 export const getItem = (id: string): CatalogItem | undefined => lookup.get(id)

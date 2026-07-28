@@ -23,11 +23,12 @@ generator has been popped and is generally based on the unseeded base RNG.
 The seed scout reports this same static, searchable set rather than claiming to
 be a complete inventory of every consumable or future drop in a run.
 
-Tipped darts are outside the searchable catalog. Every run grows the plant seeds
-the generator tips them from, so they appear on every seed and neither a
-requirement nor a scout entry for one distinguishes anything. They are still
-generated in full, because their draws move the RNG the rest of the world
-depends on.
+Tipped darts are reported by the scout but cannot be required. Every run grows
+the plant seeds the generator tips them from, so a dart requirement matches
+essentially every seed while crowding out the weapon picker. The catalog marks
+them as not requestable: query validation rejects one, the probability estimator
+leaves their supply out of what a requirement can draw on, and every platform's
+item picker omits them while its scout list still names and draws them.
 
 Search source constraints refer to the source stored on these static records.
 Per-item uncursed constraints reject records whose cursed flag is set.
@@ -56,7 +57,7 @@ confined to that boss depth.
 Depth 20 must not be skipped. `CityBossLevel.build()` creates an `ImpShopRoom`,
 and `ImpShopRoom.paint()` eagerly calls `ShopRoom.generateItems()` before the
 shop is visible. The resulting cached tier-five weapon, Plate Armor, missile,
-and possible rare wand or ring are searchable initial-world content, and
+tipped darts, and possible rare wand or ring are searchable initial-world content, and
 the call mutates the live Generator state consumed by Halls. The Rust prefix
 therefore executes this transition between depths 19 and 21 and includes its
 shop records. Rewards generated only after fighting a boss remain excluded as
