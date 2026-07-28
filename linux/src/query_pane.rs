@@ -8,7 +8,8 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::gio;
 
-use crate::state::{AppState, kind_icon};
+use crate::state::{AppState, UiRequirement, kind_icon};
+use crate::{glow, sprites};
 
 type KeyHandler = Box<dyn Fn(u64)>;
 
@@ -253,7 +254,7 @@ impl QueryPane {
                 .subtitle(gtk::glib::markup_escape_text(&requirement.subtitle()))
                 .activatable(true)
                 .build();
-            row.add_prefix(&gtk::Image::from_icon_name(kind_icon(requirement.kind)));
+            row.add_prefix(&requirement_prefix(requirement));
             row.add_suffix(&remove_button);
 
             let key = requirement.key;
@@ -292,5 +293,19 @@ impl QueryPane {
             self.start_button.remove_css_class("destructive-action");
             self.start_button.add_css_class("suggested-action");
         }
+    }
+}
+
+/// The row icon for one requirement: the item's real sprite once a concrete
+/// item is pinned, pulsing the enchantment or curse the requirement asks for,
+/// and otherwise the family's symbolic icon — a wildcard requirement depicts no
+/// particular item.
+fn requirement_prefix(requirement: &UiRequirement) -> gtk::Widget {
+    match requirement.item {
+        Some(item_id) => sprites::item_image(
+            shpd_seedfinder_core::catalog::item(item_id),
+            glow::effect(requirement.effect),
+        ),
+        None => gtk::Image::from_icon_name(kind_icon(requirement.kind)).upcast(),
     }
 }
