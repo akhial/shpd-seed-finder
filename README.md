@@ -252,6 +252,16 @@ APPIMAGE_VERSION=dev bash scripts/build-linux-appimage.sh
 ./dist/seed-seeker-dev-"$(uname -m)".AppImage
 ```
 
+### Windows
+
+The Windows app requires Visual Studio with the WinUI application development and .NET desktop development workloads, and the Rust MSVC target (`rustup target add aarch64-pc-windows-msvc`); [`windows/README.md`](windows/README.md) lists the development packages.
+
+```powershell
+.\scripts\build-windows-app.ps1
+```
+
+The script builds for the host architecture; pass `-Platform ARM64` or `-Platform x64` to cross-build, and `-Configuration Debug` for a debug build. To build and run, open `windows\SeedSeeker\SeedSeeker.slnx` in Visual Studio and press F5, or launch the built `SeedSeeker.exe` under `windows\SeedSeeker\bin\`.
+
 ### Testing
 
 #### Rust
