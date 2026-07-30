@@ -517,6 +517,9 @@ private struct QueryView: View {
                         }
                         Slider(value: floorLimitBinding($maximumDepth),
                                in: 0...Double(FloorLimits.options.count - 1), step: 1)
+                            .accessibilityValue(Text("first \(maximumDepth) floor\(maximumDepth == 1 ? "" : "s")"))
+                        Text("Boss floors 5, 10 and 15 hold no items.")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 Section("Blacksmith") {
@@ -841,6 +844,7 @@ private struct RequirementEditor: View {
                         }
                         Slider(value: floorLimitBinding($maximumDepth),
                                in: 0...Double(FloorLimits.options.count - 1), step: 1)
+                            .accessibilityValue(Text("\(maximumDepth) floors"))
                     }
                 }
             }
@@ -1294,13 +1298,10 @@ private func intBinding(_ value: Binding<Int>) -> Binding<Double> {
 
 /// Maps a floor-limit binding onto an index into `FloorLimits.options`, so
 /// sliders skip the empty boss floors (5, 10, 15). Off-list values snap to
-/// the equivalent floor below.
+/// the nearest option below.
 private func floorLimitBinding(_ value: Binding<Int>) -> Binding<Double> {
     Binding(
-        get: {
-            let floor = FloorLimits.normalize(value.wrappedValue)
-            return Double(FloorLimits.options.firstIndex(of: floor) ?? 0)
-        },
+        get: { Double(FloorLimits.index(of: value.wrappedValue)) },
         set: {
             let index = min(max(Int($0.rounded()), 0), FloorLimits.options.count - 1)
             value.wrappedValue = FloorLimits.options[index]

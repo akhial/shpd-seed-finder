@@ -97,7 +97,9 @@ public sealed partial class MainWindow : Window
         // J/K step the scout pane through the search results from anywhere in
         // the window except a focused text field.
         if (Content is UIElement root) root.KeyDown += Root_KeyDown;
-        // The slider indexes into FloorLimits.Options so empty boss floors (5, 10, 15) are not offered.
+        // The slider indexes into FloorLimits.Options so empty boss floors (5, 10, 15) are not
+        // offered; the converter keeps the thumb tooltip showing the floor, not the raw index.
+        FloorSlider.ThumbToolTipValueConverter = new FloorLimitIndexConverter();
         FloorSlider.Minimum = 0; FloorSlider.Maximum = FloorLimits.Options.Length - 1; FloorSlider.Value = 0;
         results.CollectionChanged += (_, _) => UpdateTransferButtons();
         LoadSettings(); LoadPresets(); RefreshPresets(); RefreshQuery(); UpdateTransferButtons();
@@ -243,9 +245,16 @@ public sealed partial class MainWindow : Window
         var source = Combo(new[] { "Any source" }.Concat(Enum.GetValues<ScoutItemSource>().Select(Labels.Source)), r.Source is null ? 0 : (int)r.Source + 1); source.Header = "Source";
         var group = Combo(["None", "A", "B", "C", "D"], r.IdentityGroup ?? 0); group.Header = "Same-item group";
         var depthToggle = ToggleRow("Limit this item to a floor", r.MaximumDepth is not null, out var depthRow); var depth = Number("Within first floors", FloorLimits.Normalize(r.MaximumDepth ?? 4), 1, 24);
-        // Empty boss floors (5, 10, 15) are useless limits: spinning or typing one
-        // continues in the direction of travel (up from 4 lands on 6, down on 4).
-        depth.ValueChanged += (box, args) => { if (!double.IsNaN(args.NewValue) && FloorLimits.EmptyBossFloors.Contains((int)args.NewValue)) box.Value = args.NewValue >= args.OldValue ? args.NewValue + 1 : args.NewValue - 1; };
+        // Empty boss floors (5, 10, 15) are useless limits: a single upward spin skips to the
+        // next real floor, while typed values snap down (10 means the first 10 floors, ≡ 9).
+        depth.ValueChanged += (box, args) =>
+        {
+            if (double.IsNaN(args.NewValue)) return;
+            var requested = (int)args.NewValue;
+            var previous = double.IsNaN(args.OldValue) ? requested : (int)args.OldValue;
+            var target = FloorLimits.SkipTarget(previous, requested);
+            if (target != requested) box.Value = target;
+        };
         var content = new StackPanel { Spacing = 12, Padding = new Thickness(2, 4, 2, 4) }; foreach (var control in new UIElement[] { kind, item, tierMatch, tier, tierBound, upgradeMatch, upgrade, upgradeBound, modifier, uncursed, source, group, depthRow, depth }) content.Children.Add(control);
         void NormalizeTier()
         {

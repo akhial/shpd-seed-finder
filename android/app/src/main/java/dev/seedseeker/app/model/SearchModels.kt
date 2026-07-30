@@ -157,6 +157,17 @@ val FLOOR_LIMIT_OPTIONS: List<Int> = (1..24).filterNot(EMPTY_BOSS_FLOORS::contai
 /** Snaps an empty boss-floor limit to the equivalent floor below it (5→4, 10→9, 15→14). */
 fun normalizeFloorLimit(depth: Int): Int = if (depth in EMPTY_BOSS_FLOORS) depth - 1 else depth
 
+/**
+ * The selector index of a floor limit within [FLOOR_LIMIT_OPTIONS]; off-list
+ * values snap to the nearest option below (or the first option).
+ */
+fun floorLimitIndex(depth: Int): Int {
+    val floor = normalizeFloorLimit(depth)
+    val exact = FLOOR_LIMIT_OPTIONS.indexOf(floor)
+    if (exact >= 0) return exact
+    return FLOOR_LIMIT_OPTIONS.indexOfLast { it <= floor }.coerceAtLeast(0)
+}
+
 data class SearchRequest(
     val requirements: List<ItemRequirement>,
     val maximumDepth: Int = 24,

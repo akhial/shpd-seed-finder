@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react'
 import type { Glow } from '../../lib/glow'
+import { nearestOptionIndex } from '../../lib/query'
 import { ringIconCss, spriteBoxCss, spriteGlowCss } from '../../lib/sprites'
 
 export function Sprite({
@@ -73,31 +74,25 @@ export function Field({ label, children }: { label: string; children: ReactNode 
   )
 }
 
-export function SliderRow({
-  label,
-  valueLabel,
-  min = 1,
-  max,
-  value,
-  values,
-  onChange,
-  fill = false,
-}: {
+type SliderRowScale =
+  /** Explicit selectable values (e.g. floor limits that skip empty boss floors). */
+  | { values: readonly number[]; min?: undefined; max?: undefined }
+  | { values?: undefined; min: number; max: number }
+
+export function SliderRow(props: {
   label: string
   valueLabel: string
-  min?: number
-  max?: number
   value: number
-  /** Explicit selectable values (e.g. floor limits that skip empty boss floors). Overrides min/max. */
-  values?: readonly number[]
   onChange: (value: number) => void
   /** Fill the track left of the thumb — for "first N floors" style ranges. */
   fill?: boolean
-}) {
-  const options = values ?? Array.from({ length: (max ?? min) - min + 1 }, (_, index) => min + index)
+} & SliderRowScale) {
+  const { label, valueLabel, value, onChange, fill = false } = props
+  const options = props.values !== undefined
+    ? props.values
+    : Array.from({ length: props.max - props.min + 1 }, (_, index) => props.min + index)
   // Off-list values (e.g. a stored floor limit of an empty boss floor) snap to the nearest option below.
-  const exact = options.indexOf(value)
-  const index = exact >= 0 ? exact : options.reduce((best, option, tick) => (option <= value ? tick : best), 0)
+  const index = nearestOptionIndex(options, value)
   const percent = (index / (options.length - 1)) * 100
   return (
     <div className="d1-slider">

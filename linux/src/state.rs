@@ -50,6 +50,23 @@ pub fn normalize_floor_limit(depth: u8) -> u8 {
     }
 }
 
+/// Where a floor-limit control lands when the user moves it onto an empty
+/// boss floor. A single upward step (spin button, arrow key, scroll)
+/// continues to the next real floor; every other move — single steps down
+/// and typed jumps in either direction — snaps to the equivalent floor
+/// below, matching [`normalize_floor_limit`]. Typing "10" therefore means
+/// "first 10 floors" (≡ 9), never 11.
+#[must_use]
+pub fn floor_limit_skip_target(previous: u8, requested: u8) -> u8 {
+    if !EMPTY_BOSS_FLOORS.contains(&requested) {
+        requested
+    } else if requested == previous.saturating_add(1) {
+        requested + 1
+    } else {
+        requested - 1
+    }
+}
+
 /// One entry in the requirement editor's category picker: an item family,
 /// optionally narrowed to one weapon class.
 pub type KindChoice = (ItemKind, Option<WeaponCategory>);
@@ -558,8 +575,8 @@ mod tests {
 
     use super::{
         AppState, QuestRow, StartMode, TargetFacts, UiRequirement, blacksmith_quest_label,
-        ghost_quest_label, imp_target_label, quest_rows, shares_item, start_mode,
-        wandmaker_quest_label,
+        floor_limit_skip_target, ghost_quest_label, imp_target_label, normalize_floor_limit,
+        quest_rows, shares_item, start_mode, wandmaker_quest_label,
     };
 
     #[test]
@@ -622,6 +639,13 @@ mod tests {
             query,
             set_size: 3,
             remaining: 1_000,
+        }
+    }
+
+    #[test]
+    fn empty_boss_floor_limits_normalize_to_the_floor_below() {
+        for (limit, expected) in [(4, 4), (5, 4), (9, 9), (10, 9), (14, 14), (15, 14), (24, 24)] {
+            assert_eq!(normalize_floor_limit(limit), expected);
         }
     }
 
@@ -823,6 +847,27 @@ mod tests {
             start_mode(&deeper, Some(&empty(1_000)), None),
             StartMode::Anchor
         );
+    }
+
+    #[test]
+    fn single_upward_steps_skip_forward_and_everything_else_snaps_down() {
+        // Spinning up from the floor below an empty boss floor lands above it.
+        assert_eq!(floor_limit_skip_target(4, 5), 6);
+        assert_eq!(floor_limit_skip_target(9, 10), 11);
+        assert_eq!(floor_limit_skip_target(14, 15), 16);
+        // Spinning down lands on the equivalent floor below.
+        assert_eq!(floor_limit_skip_target(6, 5), 4);
+        assert_eq!(floor_limit_skip_target(11, 10), 9);
+        assert_eq!(floor_limit_skip_target(16, 15), 14);
+        // Typed jumps snap down: "10" means the first 10 floors (≡ 9), never 11.
+        assert_eq!(floor_limit_skip_target(4, 10), 9);
+        assert_eq!(floor_limit_skip_target(24, 15), 14);
+        assert_eq!(floor_limit_skip_target(4, 15), 14);
+        assert_eq!(floor_limit_skip_target(20, 5), 4);
+        // Non-boss floors pass through untouched.
+        assert_eq!(floor_limit_skip_target(4, 6), 6);
+        assert_eq!(floor_limit_skip_target(24, 1), 1);
+        assert_eq!(floor_limit_skip_target(1, 24), 24);
     }
 
     #[test]

@@ -118,8 +118,33 @@ public static class FloorLimits
     /// <summary>Snaps an empty boss-floor limit to the equivalent floor below it (5→4, 10→9, 15→14).</summary>
     public static int Normalize(int depth) => EmptyBossFloors.Contains(depth) ? depth - 1 : depth;
 
-    /// <summary>The slider index for a floor limit; off-list values snap to the floor below.</summary>
-    public static int IndexOf(int depth) => Math.Max(0, Array.IndexOf(Options, Normalize(depth)));
+    /// <summary>The slider index for a floor limit; off-list values snap to the nearest option below (or the first option).</summary>
+    public static int IndexOf(int depth)
+    {
+        var floor = Normalize(depth);
+        var exact = Array.IndexOf(Options, floor);
+        return exact >= 0 ? exact : Math.Max(0, Array.FindLastIndex(Options, option => option <= floor));
+    }
+
+    /// <summary>
+    /// Where a floor-limit control lands when the user moves it onto an empty boss floor.
+    /// A single upward step (spin button, arrow key) continues to the next real floor; every
+    /// other move — single steps down and typed jumps in either direction — snaps to the
+    /// equivalent floor below, matching <see cref="Normalize"/>. Typing "10" therefore means
+    /// "first 10 floors" (≡ 9), never 11.
+    /// </summary>
+    public static int SkipTarget(int previous, int requested) =>
+        !EmptyBossFloors.Contains(requested) ? requested
+        : requested == previous + 1 ? requested + 1
+        : requested - 1;
+}
+
+/// <summary>Renders a floor slider's raw index as the floor it selects, for the thumb tooltip.</summary>
+public sealed class FloorLimitIndexConverter : Microsoft.UI.Xaml.Data.IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) =>
+        FloorLimits.Options[Math.Clamp((int)Math.Round((double)value), 0, FloorLimits.Options.Length - 1)].ToString();
+    public object ConvertBack(object value, Type targetType, object parameter, string language) => throw new NotSupportedException();
 }
 
 public sealed class QuerySettings

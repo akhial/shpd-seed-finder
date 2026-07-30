@@ -17,6 +17,25 @@ class FloorLimitsTest {
     }
 
     @Test
+    fun floorLimitIndexMapsFloorsAndSnapsOffListValuesBelow() {
+        assertEquals(0, floorLimitIndex(1))
+        assertEquals(3, floorLimitIndex(4))
+        // Empty boss floors map to the index of the equivalent floor below.
+        assertEquals(3, floorLimitIndex(5))
+        assertEquals(7, floorLimitIndex(10))
+        assertEquals(11, floorLimitIndex(15))
+        assertEquals(16, floorLimitIndex(20))
+        assertEquals(20, floorLimitIndex(24))
+        // Out-of-range values snap to the nearest option below, never the first slot.
+        assertEquals(20, floorLimitIndex(30))
+        assertEquals(0, floorLimitIndex(0))
+        // Round-trips: every selectable floor maps to its own slot.
+        FLOOR_LIMIT_OPTIONS.forEachIndexed { index, floor ->
+            assertEquals(index, floorLimitIndex(floor))
+        }
+    }
+
+    @Test
     fun normalizeSnapsEmptyBossFloorsToTheFloorBelow() {
         assertEquals(4, normalizeFloorLimit(5))
         assertEquals(9, normalizeFloorLimit(10))

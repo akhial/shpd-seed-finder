@@ -107,6 +107,14 @@ public enum FloorLimits {
     public static func normalize(_ depth: Int) -> Int {
         emptyBossFloors.contains(depth) ? depth - 1 : depth
     }
+
+    /// The selector index of a floor limit within `options`; off-list values
+    /// snap to the nearest option below (or the first option).
+    public static func index(of depth: Int) -> Int {
+        let floor = normalize(depth)
+        if let exact = options.firstIndex(of: floor) { return exact }
+        return options.lastIndex(where: { $0 <= floor }) ?? 0
+    }
 }
 
 public enum ModelValidationError: Error, Equatable, LocalizedError {

@@ -50,6 +50,20 @@ final class SeedSeekerKitTests: XCTestCase {
                        [4, 4, 9, 9, 14, 14, 20, 24])
     }
 
+    func testFloorLimitIndexSnapsOffListValuesToTheNearestOptionBelow() {
+        // Every selectable floor maps to its own slot.
+        for (index, floor) in FloorLimits.options.enumerated() {
+            XCTAssertEqual(FloorLimits.index(of: floor), index)
+        }
+        // Empty boss floors map to the slot of the equivalent floor below.
+        XCTAssertEqual(FloorLimits.index(of: 5), FloorLimits.options.firstIndex(of: 4))
+        XCTAssertEqual(FloorLimits.index(of: 10), FloorLimits.options.firstIndex(of: 9))
+        XCTAssertEqual(FloorLimits.index(of: 15), FloorLimits.options.firstIndex(of: 14))
+        // Out-of-range values snap to the nearest option below, never slot 0.
+        XCTAssertEqual(FloorLimits.index(of: 30), FloorLimits.options.count - 1)
+        XCTAssertEqual(FloorLimits.index(of: 0), 0)
+    }
+
     func testSavedQueryDecodeSnapsEmptyBossFloorLimits() throws {
         let requirement = try ItemRequirement(key: 1, item: nil, upgrade: 1, kind: .wand,
                                               upgradeMatch: .exactly, maximumDepth: 10)

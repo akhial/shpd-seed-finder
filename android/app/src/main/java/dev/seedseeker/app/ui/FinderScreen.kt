@@ -59,6 +59,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -72,7 +74,7 @@ import dev.seedseeker.app.model.QueryPreset
 import dev.seedseeker.app.model.SearchState
 import dev.seedseeker.app.model.SearchStatus
 import dev.seedseeker.app.model.SeedResult
-import dev.seedseeker.app.model.normalizeFloorLimit
+import dev.seedseeker.app.model.floorLimitIndex
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -487,10 +489,7 @@ private fun ScopeSection(
                 }
                 // Indexes into FLOOR_LIMIT_OPTIONS so empty boss floors (5, 10, 15) are not offered.
                 Slider(
-                    value = FLOOR_LIMIT_OPTIONS
-                        .indexOf(normalizeFloorLimit(maximumDepth))
-                        .coerceAtLeast(0)
-                        .toFloat(),
+                    value = floorLimitIndex(maximumDepth).toFloat(),
                     onValueChange = {
                         val index = it.roundToInt().coerceIn(0, FLOOR_LIMIT_OPTIONS.lastIndex)
                         onMaximumDepthChange(FLOOR_LIMIT_OPTIONS[index])
@@ -498,6 +497,12 @@ private fun ScopeSection(
                     valueRange = 0f..FLOOR_LIMIT_OPTIONS.lastIndex.toFloat(),
                     steps = FLOOR_LIMIT_OPTIONS.size - 2,
                     enabled = enabled,
+                    modifier = Modifier.semantics { stateDescription = "Floor $maximumDepth" },
+                )
+                Text(
+                    "Boss floors 5, 10, and 15 hold no items.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 SwitchRow(
                     label = "Blacksmith reachable",

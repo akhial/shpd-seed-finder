@@ -8,27 +8,28 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::gio;
 
-use crate::state::{AppState, EMPTY_BOSS_FLOORS, UiRequirement, kind_icon, normalize_floor_limit};
+use crate::state::{
+    AppState, UiRequirement, floor_limit_skip_target, kind_icon, normalize_floor_limit,
+};
 use crate::{glow, sprites};
 
 /// Makes a floor-limit spin row skip the empty boss floors (5, 10, 15):
-/// spinning up from 4 lands on 6 and spinning down from 6 lands on 4, since
-/// those floors add no searchable items and are useless as limits.
+/// spinning up from 4 lands on 6, spinning down from 6 lands on 4, and typed
+/// values snap down (10 means the first 10 floors, ≡ 9), since those floors
+/// add no searchable items and are useless as limits.
 pub fn skip_empty_boss_floors(row: &adw::SpinRow) {
     let previous = Cell::new(row.value());
     row.connect_value_notify(move |row| {
         let value = row.value();
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        let depth = value.round() as u8;
-        if EMPTY_BOSS_FLOORS.contains(&depth) {
-            // Continue in the direction of travel; the corrected value
-            // re-enters this handler and records itself as the new anchor.
-            let next = if value >= previous.get() {
-                value + 1.0
-            } else {
-                value - 1.0
-            };
-            row.set_value(next);
+        let requested = value.round().clamp(0.0, 24.0) as u8;
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let anchor = previous.get().round().clamp(0.0, 24.0) as u8;
+        let target = floor_limit_skip_target(anchor, requested);
+        if target != requested {
+            // The corrected value re-enters this handler and, being a real
+            // floor, records itself as the new anchor.
+            row.set_value(f64::from(target));
             return;
         }
         previous.set(value);
@@ -90,7 +91,7 @@ impl QueryPane {
 
         let depth_row = adw::SpinRow::builder()
             .title("Floor limit")
-            .subtitle("Search only the first floors")
+            .subtitle("Search only the first floors — boss floors 5, 10 and 15 hold no items")
             .adjustment(&gtk::Adjustment::new(24.0, 1.0, 24.0, 1.0, 5.0, 0.0))
             .build();
         let blacksmith_row = adw::SwitchRow::builder()
@@ -240,7 +241,8 @@ impl QueryPane {
     /// Rebuilds every control from `state` without echoing change signals.
     pub fn refresh(self: &Rc<Self>, state: &AppState) {
         self.updating.set(true);
-        self.depth_row.set_value(f64::from(state.max_depth));
+        self.depth_row
+            .set_value(f64::from(normalize_floor_limit(state.max_depth)));
         self.blacksmith_row.set_active(state.require_blacksmith);
         self.blacksmith_row.set_sensitive(state.max_depth < 14);
         self.exclude_row

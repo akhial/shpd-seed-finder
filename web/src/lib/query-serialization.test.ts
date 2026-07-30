@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FLOOR_LIMIT_OPTIONS, defaultQueryState, fromQueryJson, normalizeFloorLimit, toQueryJson } from './query'
+import { FLOOR_LIMIT_OPTIONS, defaultQueryState, fromQueryJson, nearestOptionIndex, normalizeFloorLimit, toQueryJson } from './query'
 import type { QueryState } from './wasm/types'
 
 describe('query serialization', () => {
@@ -66,5 +66,19 @@ describe('query serialization', () => {
     expect(FLOOR_LIMIT_OPTIONS).toContain(20)
     expect(FLOOR_LIMIT_OPTIONS).toContain(24)
     expect([4, 5, 9, 10, 14, 15, 20, 24].map(normalizeFloorLimit)).toEqual([4, 4, 9, 9, 14, 14, 20, 24])
+  })
+
+  it('maps slider values to indices, snapping off-list values to the nearest option below', () => {
+    // Every selectable floor maps to its own slot.
+    FLOOR_LIMIT_OPTIONS.forEach((floor, index) => {
+      expect(nearestOptionIndex(FLOOR_LIMIT_OPTIONS, floor)).toBe(index)
+    })
+    // Empty boss floors land on the slot of the equivalent floor below.
+    expect(nearestOptionIndex(FLOOR_LIMIT_OPTIONS, 5)).toBe(FLOOR_LIMIT_OPTIONS.indexOf(4))
+    expect(nearestOptionIndex(FLOOR_LIMIT_OPTIONS, 10)).toBe(FLOOR_LIMIT_OPTIONS.indexOf(9))
+    expect(nearestOptionIndex(FLOOR_LIMIT_OPTIONS, 15)).toBe(FLOOR_LIMIT_OPTIONS.indexOf(14))
+    // Out-of-range values snap to the nearest option below, never slot 0.
+    expect(nearestOptionIndex(FLOOR_LIMIT_OPTIONS, 30)).toBe(FLOOR_LIMIT_OPTIONS.length - 1)
+    expect(nearestOptionIndex(FLOOR_LIMIT_OPTIONS, 0)).toBe(0)
   })
 })

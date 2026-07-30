@@ -24,6 +24,17 @@ export const FLOOR_LIMIT_OPTIONS: readonly number[] = Array.from({ length: 24 },
 export const normalizeFloorLimit = (value: number): number =>
   (EMPTY_BOSS_FLOORS.includes(value) ? value - 1 : value)
 
+/**
+ * The selector index of `value` within `options`; off-list values snap to
+ * the nearest option below (or the first option). This is the snapping rule
+ * every floor-limit slider uses.
+ */
+export const nearestOptionIndex = (options: readonly number[], value: number): number => {
+  const exact = options.indexOf(value)
+  if (exact >= 0) return exact
+  return options.reduce((best, option, index) => (option <= value ? index : best), 0)
+}
+
 export const defaultTier = (): TierFilter => ({ mode: 'any', value: 3 })
 export const defaultUpgrade = (): UpgradeFilter => ({ mode: 'any', value: 1 })
 
