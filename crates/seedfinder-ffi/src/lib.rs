@@ -6,8 +6,8 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 
 use shpd_seedfinder_session::{
-    NativeSession, ScoutCallError, ScoutPacketError, StartSessionError, close_session,
-    production_scout_packet, registry,
+    FilterPacketError, NativeSession, ScoutCallError, ScoutPacketError, StartSessionError,
+    close_session, production_filter_packet, production_scout_packet, registry,
 };
 
 const OK: i32 = 0;
@@ -62,6 +62,87 @@ pub extern "C" fn seedfinder_start_search(request: *const u8, request_len: usize
         }
     }))
     .unwrap_or(0)
+}
+
+/// Starts a search which resumes a previous traversal: it scans only the
+/// `scan_len` seeds beginning at `resume_from`, wrapping at the end of the
+/// seed space. Callers obtain both values from `seedfinder_resume_hint` on the
+/// stopped or completed session being refined.
+#[unsafe(no_mangle)]
+pub extern "C" fn seedfinder_start_resumed_search(
+    request: *const u8,
+    request_len: usize,
+    resume_from: u64,
+    scan_len: u64,
+) -> i64 {
+    catch_unwind(AssertUnwindSafe(|| {
+        let Some(bytes) = request_slice(request, request_len) else {
+            return 0;
+        };
+        match NativeSession::production_resumed_from_packet(bytes, resume_from, scan_len) {
+            Ok(session) => registry().insert(session),
+            Err(StartSessionError::Request(_) | StartSessionError::Spawn(_)) => 0,
+        }
+    }))
+    .unwrap_or(0)
+}
+
+/// Writes `[resume_position, remaining]` for the session into `out_hint`,
+/// which must reference two writable `i64` slots. The values are exact once
+/// the session has stopped and conservative while it is running.
+#[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn seedfinder_resume_hint(handle: i64, out_hint: *mut i64) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        if out_hint.is_null() {
+            return INVALID;
+        }
+        let Some(session) = registry().get(handle) else {
+            return UNKNOWN_HANDLE;
+        };
+        let hint = session.resume_hint();
+        // SAFETY: `out_hint` points to space for two `i64` values by contract.
+        unsafe { ptr::copy_nonoverlapping(hint.as_ptr(), out_hint, hint.len()) };
+        OK
+    }))
+    .unwrap_or(INTERNAL)
+}
+
+/// Re-verifies `seeds_len` seed values against the `SSF7` query in `request`
+/// and returns the surviving seeds as an `SSR1` packet in input order. This is
+/// the "filter existing results" half of refining a search.
+#[unsafe(no_mangle)]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
+pub extern "C" fn seedfinder_filter_seeds(
+    request: *const u8,
+    request_len: usize,
+    seeds: *const u64,
+    seeds_len: usize,
+    out_packet: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    clear_outputs(out_packet, out_len);
+    catch_unwind(AssertUnwindSafe(|| {
+        if out_packet.is_null() || out_len.is_null() || (seeds.is_null() && seeds_len != 0) {
+            return INVALID;
+        }
+        let Some(bytes) = request_slice(request, request_len) else {
+            return INVALID;
+        };
+        let seed_values = if seeds_len == 0 {
+            &[]
+        } else {
+            // SAFETY: the C contract requires `seeds` to reference `seeds_len`
+            // readable `u64` values.
+            unsafe { std::slice::from_raw_parts(seeds, seeds_len) }
+        };
+        match production_filter_packet(bytes, seed_values) {
+            Ok(packet) => return_packet(packet, out_packet, out_len),
+            Err(FilterPacketError::Request(_) | FilterPacketError::Filter(_)) => INVALID,
+            Err(FilterPacketError::Response(_) | FilterPacketError::Panicked) => INTERNAL,
+        }
+    }))
+    .unwrap_or(INTERNAL)
 }
 
 #[unsafe(no_mangle)]
@@ -217,6 +298,107 @@ mod tests {
         assert_eq!(
             seedfinder_status(handle, status.as_mut_ptr()),
             UNKNOWN_HANDLE
+        );
+    }
+
+    #[test]
+    fn resumed_search_and_hint_lifecycle() {
+        let request = query_packet();
+        let handle = seedfinder_start_search(request.as_ptr(), request.len());
+        assert!(handle > 0);
+        seedfinder_cancel(handle);
+        let mut status = [0; 5];
+        while {
+            assert_eq!(seedfinder_status(handle, status.as_mut_ptr()), OK);
+            status[0] == 0
+        } {
+            std::thread::yield_now();
+        }
+        let mut hint = [0_i64; 2];
+        assert_eq!(seedfinder_resume_hint(handle, hint.as_mut_ptr()), OK);
+        assert!(hint[0] >= 0);
+        assert!(hint[1] >= 0);
+        seedfinder_close(handle);
+
+        let resumed = seedfinder_start_resumed_search(
+            request.as_ptr(),
+            request.len(),
+            u64::try_from(hint[0]).unwrap(),
+            4,
+        );
+        assert!(resumed > 0);
+        seedfinder_cancel(resumed);
+        seedfinder_close(resumed);
+
+        // A scan length beyond the seed space is rejected before spawning.
+        assert_eq!(
+            seedfinder_start_resumed_search(request.as_ptr(), request.len(), 0, u64::MAX),
+            0
+        );
+        assert_eq!(
+            seedfinder_resume_hint(handle, hint.as_mut_ptr()),
+            UNKNOWN_HANDLE
+        );
+        assert_eq!(seedfinder_resume_hint(handle, ptr::null_mut()), INVALID);
+    }
+
+    #[test]
+    fn filter_seeds_returns_ssr1_and_rejects_invalid_input() {
+        let request = query_packet();
+        let seeds = [0_u64, 5];
+        let mut pointer = ptr::null_mut();
+        let mut len = 0;
+        assert_eq!(
+            seedfinder_filter_seeds(
+                request.as_ptr(),
+                request.len(),
+                seeds.as_ptr(),
+                seeds.len(),
+                &raw mut pointer,
+                &raw mut len
+            ),
+            OK
+        );
+        let packet = unsafe { take_packet(pointer, len) };
+        assert_eq!(&packet[..4], b"SSR1");
+
+        let mut pointer = ptr::null_mut();
+        assert_eq!(
+            seedfinder_filter_seeds(
+                request.as_ptr(),
+                request.len(),
+                ptr::null(),
+                0,
+                &raw mut pointer,
+                &raw mut len
+            ),
+            OK
+        );
+        let packet = unsafe { take_packet(pointer, len) };
+        assert_eq!(packet, b"SSR1\0\0");
+
+        let mut pointer = ptr::null_mut();
+        assert_eq!(
+            seedfinder_filter_seeds(
+                request.as_ptr(),
+                request.len(),
+                ptr::null(),
+                2,
+                &raw mut pointer,
+                &raw mut len
+            ),
+            INVALID
+        );
+        assert_eq!(
+            seedfinder_filter_seeds(
+                b"bad".as_ptr(),
+                3,
+                seeds.as_ptr(),
+                seeds.len(),
+                &raw mut pointer,
+                &raw mut len
+            ),
+            INVALID
         );
     }
 

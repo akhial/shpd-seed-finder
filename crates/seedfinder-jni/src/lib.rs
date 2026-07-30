@@ -6,8 +6,8 @@ use jni::JNIEnv;
 use jni::objects::{JByteArray, JClass, JLongArray};
 use jni::sys::{jint, jlong};
 use shpd_seedfinder_session::{
-    NativeSession, ScoutCallError, ScoutPacketError, StartSessionError, close_session,
-    production_scout_packet, registry,
+    FilterPacketError, NativeSession, ScoutCallError, ScoutPacketError, StartSessionError,
+    close_session, production_filter_packet, production_scout_packet, registry,
 };
 
 fn throw_illegal_argument(env: &mut JNIEnv<'_>, message: impl AsRef<str>) {
@@ -104,6 +104,139 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_startSearch<'l
         }
     };
     registry().insert(session)
+}
+
+/// Starts a search which resumes a previous traversal: it scans only the
+/// `scanLen` seeds beginning at `resumeFrom`, wrapping at the end of the seed
+/// space. Callers obtain both values from `resumeHint` on the stopped or
+/// completed session being refined.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_startResumedSearch<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    request: JByteArray<'local>,
+    resume_from: jlong,
+    scan_len: jlong,
+) -> jlong {
+    let bytes = match env.convert_byte_array(&request) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            throw_illegal_argument(&mut env, format!("invalid request array: {error}"));
+            return 0;
+        }
+    };
+    let (Ok(resume_from), Ok(scan_len)) = (u64::try_from(resume_from), u64::try_from(scan_len))
+    else {
+        throw_illegal_argument(&mut env, "resumeFrom and scanLen must be non-negative");
+        return 0;
+    };
+    let session = match NativeSession::production_resumed_from_packet(&bytes, resume_from, scan_len)
+    {
+        Ok(session) => session,
+        Err(StartSessionError::Request(error)) => {
+            throw_illegal_argument(&mut env, error.to_string());
+            return 0;
+        }
+        Err(StartSessionError::Spawn(error)) => {
+            throw_illegal_argument(&mut env, format!("cannot start resumed search: {error:?}"));
+            return 0;
+        }
+    };
+    registry().insert(session)
+}
+
+/// Returns `[resumePosition, remaining]` for a session: where and how much a
+/// follow-up traversal must scan to finish this session's coverage of the
+/// seed space. Exact once the session has stopped.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_resumeHint<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    handle: jlong,
+) -> JLongArray<'local> {
+    let Some(session) = registry().get(handle) else {
+        throw_illegal_state(&mut env, "unknown or closed native search handle");
+        return JLongArray::default();
+    };
+    let hint = session.resume_hint();
+    let array = match env.new_long_array(2) {
+        Ok(array) => array,
+        Err(error) => {
+            throw_illegal_state(&mut env, format!("cannot allocate hint array: {error}"));
+            return JLongArray::default();
+        }
+    };
+    if let Err(error) = env.set_long_array_region(&array, 0, &hint) {
+        throw_illegal_state(&mut env, format!("cannot populate hint array: {error}"));
+        return JLongArray::default();
+    }
+    array
+}
+
+/// Re-verifies specific seed values against the `SSF7` query in `request` and
+/// returns the surviving seeds as an `SSR1` packet in input order. This is the
+/// "filter existing results" half of refining a search.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_filterSeeds<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    request: JByteArray<'local>,
+    seeds: JLongArray<'local>,
+) -> JByteArray<'local> {
+    let bytes = match env.convert_byte_array(&request) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            throw_illegal_argument(&mut env, format!("invalid request array: {error}"));
+            return JByteArray::default();
+        }
+    };
+    let seed_count = match env.get_array_length(&seeds) {
+        Ok(length) => usize::try_from(length).unwrap_or_default(),
+        Err(error) => {
+            throw_illegal_argument(&mut env, format!("invalid seeds array: {error}"));
+            return JByteArray::default();
+        }
+    };
+    let mut seed_slots = vec![0_i64; seed_count];
+    if let Err(error) = env.get_long_array_region(&seeds, 0, &mut seed_slots) {
+        throw_illegal_argument(&mut env, format!("invalid seeds array: {error}"));
+        return JByteArray::default();
+    }
+    let Ok(seed_values) = seed_slots
+        .into_iter()
+        .map(u64::try_from)
+        .collect::<Result<Vec<_>, _>>()
+    else {
+        throw_illegal_argument(&mut env, "seed values must be non-negative");
+        return JByteArray::default();
+    };
+    let packet = match production_filter_packet(&bytes, &seed_values) {
+        Ok(packet) => packet,
+        Err(FilterPacketError::Request(error)) => {
+            throw_illegal_argument(&mut env, error.to_string());
+            return JByteArray::default();
+        }
+        Err(FilterPacketError::Filter(error)) => {
+            throw_illegal_argument(&mut env, format!("cannot filter seeds: {error:?}"));
+            return JByteArray::default();
+        }
+        Err(FilterPacketError::Response(error)) => {
+            throw_illegal_state(&mut env, format!("cannot encode result packet: {error}"));
+            return JByteArray::default();
+        }
+        Err(FilterPacketError::Panicked) => {
+            android_error("native seed filtering panicked");
+            throw_illegal_state(&mut env, "native seed filtering failed");
+            return JByteArray::default();
+        }
+    };
+    match env.byte_array_from_slice(&packet) {
+        Ok(array) => array,
+        Err(error) => {
+            throw_illegal_state(&mut env, format!("cannot allocate result packet: {error}"));
+            JByteArray::default()
+        }
+    }
 }
 
 #[unsafe(no_mangle)]
