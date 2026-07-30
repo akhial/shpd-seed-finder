@@ -38,6 +38,28 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertNotNil(preset.query.validated())
     }
 
+    func testFloorLimitOptionsSkipEmptyBossFloors() {
+        XCTAssertEqual(FloorLimits.options.count, 21)
+        XCTAssertFalse(FloorLimits.options.contains(5))
+        XCTAssertFalse(FloorLimits.options.contains(10))
+        XCTAssertFalse(FloorLimits.options.contains(15))
+        XCTAssertTrue(FloorLimits.options.contains(20))
+        XCTAssertEqual(FloorLimits.options.first, 1)
+        XCTAssertEqual(FloorLimits.options.last, 24)
+        XCTAssertEqual([4, 5, 9, 10, 14, 15, 20, 24].map(FloorLimits.normalize),
+                       [4, 4, 9, 9, 14, 14, 20, 24])
+    }
+
+    func testSavedQueryDecodeSnapsEmptyBossFloorLimits() throws {
+        let requirement = try ItemRequirement(key: 1, item: nil, upgrade: 1, kind: .wand,
+                                              upgradeMatch: .exactly, maximumDepth: 10)
+        let query = SavedQuery(requirements: [requirement], maximumDepth: 15)
+        let encoded = try XCTUnwrap(QueryPersistence.encode(query))
+        let decoded = QueryPersistence.decode(encoded)
+        XCTAssertEqual(decoded.maximumDepth, 14)
+        XCTAssertEqual(decoded.requirements.first?.maximumDepth, 9)
+    }
+
     func testPresetPersistenceDropsInvalidEntries() throws {
         let requirement = try ItemRequirement(key: 99, item: nil, upgrade: 1, kind: .wand,
                                               upgradeMatch: .atLeast, requireUncursed: true)

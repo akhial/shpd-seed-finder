@@ -34,6 +34,22 @@ pub const ALL_SOURCES: &[ItemSource] = &[
     ItemSource::ImpReward,
 ];
 
+/// Boss floors that generate no searchable items. The core treats a floor
+/// limit of 5/10/15 exactly like 4/9/14, so floor-limit selectors skip them.
+/// Floor 20 stays selectable: the Imp shop gives the City boss floor stock.
+pub const EMPTY_BOSS_FLOORS: [u8; 3] = [5, 10, 15];
+
+/// Snaps an empty boss-floor limit to the equivalent floor below it
+/// (5→4, 10→9, 15→14).
+#[must_use]
+pub fn normalize_floor_limit(depth: u8) -> u8 {
+    if EMPTY_BOSS_FLOORS.contains(&depth) {
+        depth - 1
+    } else {
+        depth
+    }
+}
+
 /// One entry in the requirement editor's category picker: an item family,
 /// optionally narrowed to one weapon class.
 pub type KindChoice = (ItemKind, Option<WeaponCategory>);

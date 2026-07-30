@@ -8,8 +8,32 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::gio;
 
-use crate::state::{AppState, UiRequirement, kind_icon};
+use crate::state::{AppState, EMPTY_BOSS_FLOORS, UiRequirement, kind_icon, normalize_floor_limit};
 use crate::{glow, sprites};
+
+/// Makes a floor-limit spin row skip the empty boss floors (5, 10, 15):
+/// spinning up from 4 lands on 6 and spinning down from 6 lands on 4, since
+/// those floors add no searchable items and are useless as limits.
+pub fn skip_empty_boss_floors(row: &adw::SpinRow) {
+    let previous = Cell::new(row.value());
+    row.connect_value_notify(move |row| {
+        let value = row.value();
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let depth = value.round() as u8;
+        if EMPTY_BOSS_FLOORS.contains(&depth) {
+            // Continue in the direction of travel; the corrected value
+            // re-enters this handler and records itself as the new anchor.
+            let next = if value >= previous.get() {
+                value + 1.0
+            } else {
+                value - 1.0
+            };
+            row.set_value(next);
+            return;
+        }
+        previous.set(value);
+    });
+}
 
 type KeyHandler = Box<dyn Fn(u64)>;
 
@@ -167,6 +191,7 @@ impl QueryPane {
             on_changed: RefCell::new(None),
         });
 
+        skip_empty_boss_floors(&pane.depth_row);
         pane.depth_row.connect_value_notify({
             let pane = Rc::clone(&pane);
             move |_| pane.notify_changed()
@@ -206,7 +231,7 @@ impl QueryPane {
     pub fn read_scope(&self, state: &mut AppState) {
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let depth = self.depth_row.value().round() as u8;
-        state.max_depth = depth.clamp(1, 24);
+        state.max_depth = normalize_floor_limit(depth.clamp(1, 24));
         state.require_blacksmith = self.blacksmith_row.is_active();
         state.exclude_blacksmith_rewards = self.exclude_row.is_active();
         state.fast_mode = self.fast_row.is_active();

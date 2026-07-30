@@ -84,7 +84,8 @@ class PresetStorage(private val preferences: SharedPreferences) {
                         upgradeMatch = UpgradeMatch.valueOf(encoded.getString("upgradeMatch")),
                         source = encoded.stringOrNull("source")?.let(ScoutItemSource::valueOf),
                         identityGroup = encoded.optInt("identityGroup").takeIf { !encoded.isNull("identityGroup") },
-                        maximumDepth = encoded.optInt("maximumDepth").takeIf { !encoded.isNull("maximumDepth") },
+                        maximumDepth = encoded.optInt("maximumDepth").takeIf { !encoded.isNull("maximumDepth") }
+                            ?.let(::normalizeFloorLimit),
                         requireUncursed = encoded.optBoolean("requireUncursed", false),
                     ),
                 )
@@ -92,7 +93,9 @@ class PresetStorage(private val preferences: SharedPreferences) {
         }
         return PresetQuery(
             requirements = requirements,
-            maximumDepth = maximumDepth,
+            // Presets saved before empty boss floors were removed may hold 5/10/15;
+            // snap them to the equivalent limit below.
+            maximumDepth = normalizeFloorLimit(maximumDepth),
             requireBlacksmith = value.optBoolean("requireBlacksmith"),
             excludeBlacksmithRewards = value.optBoolean("excludeBlacksmithRewards"),
             fastMode = value.optBoolean("fastMode"),

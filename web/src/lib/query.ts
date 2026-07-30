@@ -8,6 +8,22 @@ import type {
   UpgradeFilter,
 } from './wasm/types'
 
+/**
+ * Boss floors that generate no searchable items. The core treats a floor
+ * limit of 5/10/15 exactly like 4/9/14, so these are useless as bounds and
+ * floor-limit selectors skip them. Floor 20 stays: the Imp shop makes the
+ * City boss floor carry searchable stock.
+ */
+export const EMPTY_BOSS_FLOORS: readonly number[] = [5, 10, 15]
+
+/** Floors offered by floor-limit selectors: 1 through 24 minus the empty boss floors. */
+export const FLOOR_LIMIT_OPTIONS: readonly number[] = Array.from({ length: 24 }, (_, index) => index + 1)
+  .filter((floor) => !EMPTY_BOSS_FLOORS.includes(floor))
+
+/** Snaps an empty boss-floor limit to the equivalent floor below it (5→4, 10→9, 15→14). */
+export const normalizeFloorLimit = (value: number): number =>
+  (EMPTY_BOSS_FLOORS.includes(value) ? value - 1 : value)
+
 export const defaultTier = (): TierFilter => ({ mode: 'any', value: 3 })
 export const defaultUpgrade = (): UpgradeFilter => ({ mode: 'any', value: 1 })
 
@@ -102,7 +118,7 @@ function requirementFromDocument(value: RequirementDocument): RequirementState {
     uncursed: value.uncursed ?? false,
     source: value.source,
     identityGroup: value.identity_group,
-    maxDepth: value.max_depth,
+    maxDepth: value.max_depth === undefined ? undefined : normalizeFloorLimit(value.max_depth),
   }
 }
 
@@ -112,7 +128,7 @@ export function fromQueryJson(json: string): QueryState {
   if (document.challenges !== undefined && !Array.isArray(document.challenges)) throw new Error('challenges must be a list of challenge names')
   return {
     requirements: document.requirements.map(requirementFromDocument),
-    maxDepth: document.max_depth ?? 24,
+    maxDepth: normalizeFloorLimit(document.max_depth ?? 24),
     requireBlacksmith: document.require_blacksmith ?? false,
     excludeBlacksmithRewards: document.exclude_blacksmith_rewards ?? false,
     fastMode: document.fast_mode ?? false,

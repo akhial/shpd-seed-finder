@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { defaultQueryState, fromQueryJson, toQueryJson } from './query'
+import { FLOOR_LIMIT_OPTIONS, defaultQueryState, fromQueryJson, normalizeFloorLimit, toQueryJson } from './query'
 import type { QueryState } from './wasm/types'
 
 describe('query serialization', () => {
@@ -50,5 +50,21 @@ describe('query serialization', () => {
       challenges: ['faith_is_my_armor', 'hostile_champions'],
     }
     expect(fromQueryJson(toQueryJson(state))).toEqual(state)
+  })
+
+  it('snaps stored empty boss-floor limits to the equivalent floor below', () => {
+    const state = fromQueryJson('{"requirements":[{"kind":"wand","max_depth":5},{"kind":"ring","max_depth":10}],"max_depth":15}')
+    expect(state.maxDepth).toBe(14)
+    expect(state.requirements.map((requirement) => requirement.maxDepth)).toEqual([4, 9])
+  })
+
+  it('offers every floor except the empty boss floors as a limit', () => {
+    expect(FLOOR_LIMIT_OPTIONS).toHaveLength(21)
+    expect(FLOOR_LIMIT_OPTIONS).not.toContain(5)
+    expect(FLOOR_LIMIT_OPTIONS).not.toContain(10)
+    expect(FLOOR_LIMIT_OPTIONS).not.toContain(15)
+    expect(FLOOR_LIMIT_OPTIONS).toContain(20)
+    expect(FLOOR_LIMIT_OPTIONS).toContain(24)
+    expect([4, 5, 9, 10, 14, 15, 20, 24].map(normalizeFloorLimit)).toEqual([4, 4, 9, 9, 14, 14, 20, 24])
   })
 })

@@ -8,7 +8,7 @@ import {
   weaponCurses,
   weaponEnchantments,
 } from '../../lib/catalog'
-import { validateRequirement } from '../../lib/query'
+import { FLOOR_LIMIT_OPTIONS, validateRequirement } from '../../lib/query'
 import type { ItemCategory, ItemSource, RequirementKind, RequirementState } from '../../lib/wasm/types'
 import { Field, Segmented, SliderRow, Sprite } from './parts'
 import { requirementSprite, requirementTitle } from './summary'
@@ -349,7 +349,7 @@ export function RequirementEditor({
                 checked={draft.maxDepth !== undefined}
                 onChange={(event) => {
                   const limited = event.currentTarget.checked
-                  setDraft((current) => ({ ...current, maxDepth: limited ? 5 : undefined }))
+                  setDraft((current) => ({ ...current, maxDepth: limited ? 4 : undefined }))
                 }}
               />
               <span>Limit this item to a floor</span>
@@ -358,8 +358,7 @@ export function RequirementEditor({
               <SliderRow
                 label="Within first"
                 valueLabel={`${draft.maxDepth} floor${draft.maxDepth === 1 ? '' : 's'}`}
-                min={1}
-                max={24}
+                values={FLOOR_LIMIT_OPTIONS}
                 value={draft.maxDepth}
                 fill
                 onChange={(value) => setDraft((current) => ({ ...current, maxDepth: value }))}

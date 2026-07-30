@@ -66,11 +66,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.seedseeker.app.model.FLOOR_LIMIT_OPTIONS
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.QueryPreset
 import dev.seedseeker.app.model.SearchState
 import dev.seedseeker.app.model.SearchStatus
 import dev.seedseeker.app.model.SeedResult
+import dev.seedseeker.app.model.normalizeFloorLimit
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -483,11 +485,18 @@ private fun ScopeSection(
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
+                // Indexes into FLOOR_LIMIT_OPTIONS so empty boss floors (5, 10, 15) are not offered.
                 Slider(
-                    value = maximumDepth.toFloat(),
-                    onValueChange = { onMaximumDepthChange(it.roundToInt()) },
-                    valueRange = 1f..24f,
-                    steps = 22,
+                    value = FLOOR_LIMIT_OPTIONS
+                        .indexOf(normalizeFloorLimit(maximumDepth))
+                        .coerceAtLeast(0)
+                        .toFloat(),
+                    onValueChange = {
+                        val index = it.roundToInt().coerceIn(0, FLOOR_LIMIT_OPTIONS.lastIndex)
+                        onMaximumDepthChange(FLOOR_LIMIT_OPTIONS[index])
+                    },
+                    valueRange = 0f..FLOOR_LIMIT_OPTIONS.lastIndex.toFloat(),
+                    steps = FLOOR_LIMIT_OPTIONS.size - 2,
                     enabled = enabled,
                 )
                 SwitchRow(

@@ -144,6 +144,19 @@ enum class UpgradeMatch(val label: String) {
     AT_LEAST("At least"),
 }
 
+/**
+ * Boss floors that generate no searchable items. The engine treats a floor
+ * limit of 5/10/15 exactly like 4/9/14, so floor-limit selectors skip them.
+ * Floor 20 stays selectable: the Imp shop gives the City boss floor stock.
+ */
+val EMPTY_BOSS_FLOORS: Set<Int> = setOf(5, 10, 15)
+
+/** Floors offered by floor-limit selectors: 1..24 minus the empty boss floors. */
+val FLOOR_LIMIT_OPTIONS: List<Int> = (1..24).filterNot(EMPTY_BOSS_FLOORS::contains)
+
+/** Snaps an empty boss-floor limit to the equivalent floor below it (5→4, 10→9, 15→14). */
+fun normalizeFloorLimit(depth: Int): Int = if (depth in EMPTY_BOSS_FLOORS) depth - 1 else depth
+
 data class SearchRequest(
     val requirements: List<ItemRequirement>,
     val maximumDepth: Int = 24,

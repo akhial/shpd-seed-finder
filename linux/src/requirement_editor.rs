@@ -11,9 +11,10 @@ use shpd_seedfinder_core::catalog::{
 };
 use shpd_seedfinder_core::query::{TierRequirement, UpgradeRequirement};
 
+use crate::query_pane::skip_empty_boss_floors;
 use crate::state::{
     ALL_KIND_CHOICES, ALL_SOURCES, KindChoice, UiRequirement, kind_choice_label,
-    kind_choice_singular, source_label,
+    kind_choice_singular, normalize_floor_limit, source_label,
 };
 
 struct Editor {
@@ -132,7 +133,7 @@ fn build(requirement: &UiRequirement) -> Editor {
             .title("Limit to a floor")
             .subtitle("Require this item within the first floors only")
             .build(),
-        floor_value: spin_row("Within first … floors", 5.0, 1.0, 24.0),
+        floor_value: spin_row("Within first … floors", 4.0, 1.0, 24.0),
         updating: Cell::new(false),
         key: requirement.key,
     }
@@ -227,6 +228,7 @@ fn connect(editor: &Rc<Editor>) {
     editor
         .floor_switch
         .connect_active_notify(hook(Rc::clone(editor), refresh_visibility));
+    skip_empty_boss_floors(&editor.floor_value);
 }
 
 /// Wraps a handler so programmatic updates never re-enter it.
@@ -298,7 +300,9 @@ fn restore(editor: &Rc<Editor>, requirement: &UiRequirement) {
         .set_selected(u32::from(requirement.identity_group.unwrap_or(0).min(4)));
     if let Some(depth) = requirement.max_depth {
         editor.floor_switch.set_active(true);
-        editor.floor_value.set_value(f64::from(depth));
+        editor
+            .floor_value
+            .set_value(f64::from(normalize_floor_limit(depth)));
     }
     refresh_visibility(editor);
     editor.updating.set(false);
@@ -357,7 +361,7 @@ fn collect(editor: &Rc<Editor>) -> UiRequirement {
     let max_depth = editor
         .floor_switch
         .is_active()
-        .then(|| editor.floor_value.value().round() as u8);
+        .then(|| normalize_floor_limit(editor.floor_value.value().round() as u8));
     UiRequirement {
         key: editor.key,
         kind,

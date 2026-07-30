@@ -76,22 +76,29 @@ export function Field({ label, children }: { label: string; children: ReactNode 
 export function SliderRow({
   label,
   valueLabel,
-  min,
+  min = 1,
   max,
   value,
+  values,
   onChange,
   fill = false,
 }: {
   label: string
   valueLabel: string
-  min: number
-  max: number
+  min?: number
+  max?: number
   value: number
+  /** Explicit selectable values (e.g. floor limits that skip empty boss floors). Overrides min/max. */
+  values?: readonly number[]
   onChange: (value: number) => void
   /** Fill the track left of the thumb — for "first N floors" style ranges. */
   fill?: boolean
 }) {
-  const percent = ((value - min) / (max - min)) * 100
+  const options = values ?? Array.from({ length: (max ?? min) - min + 1 }, (_, index) => min + index)
+  // Off-list values (e.g. a stored floor limit of an empty boss floor) snap to the nearest option below.
+  const exact = options.indexOf(value)
+  const index = exact >= 0 ? exact : options.reduce((best, option, tick) => (option <= value ? tick : best), 0)
+  const percent = (index / (options.length - 1)) * 100
   return (
     <div className="d1-slider">
       <div className="d1-slider-head">
@@ -102,16 +109,17 @@ export function SliderRow({
         type="range"
         className={fill ? 'd1-range-fill' : undefined}
         style={{ '--d1-range-percent': `${percent}%` } as CSSProperties}
-        min={min}
-        max={max}
+        min={0}
+        max={options.length - 1}
         step={1}
-        value={value}
+        value={index}
         aria-label={label}
-        onChange={(event) => onChange(Number(event.currentTarget.value))}
+        aria-valuetext={String(options[index])}
+        onChange={(event) => onChange(options[Number(event.currentTarget.value)])}
       />
       <div className="d1-slider-ticks" aria-hidden="true">
-        {Array.from({ length: max - min + 1 }, (_, index) => (
-          <span key={index} className={min + index <= value && fill ? 'd1-tick-passed' : undefined} />
+        {options.map((option, tick) => (
+          <span key={option} className={tick <= index && fill ? 'd1-tick-passed' : undefined} />
         ))}
       </div>
     </div>

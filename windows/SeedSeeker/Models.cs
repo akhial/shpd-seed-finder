@@ -102,6 +102,26 @@ public sealed partial class ItemRequirement
     public ItemRequirement Clone() => (ItemRequirement)MemberwiseClone();
 }
 
+/// <summary>
+/// Floor-limit helpers shared by every floor selector. Boss floors 5, 10 and 15
+/// generate no searchable items: the engine treats a floor limit of 5/10/15
+/// exactly like 4/9/14, so selectors skip them. Floor 20 stays selectable
+/// because the Imp shop gives the City boss floor searchable stock.
+/// </summary>
+public static class FloorLimits
+{
+    public static readonly int[] EmptyBossFloors = [5, 10, 15];
+
+    /// <summary>Floors offered by floor-limit selectors: 1..24 minus the empty boss floors.</summary>
+    public static readonly int[] Options = Enumerable.Range(1, 24).Where(f => !EmptyBossFloors.Contains(f)).ToArray();
+
+    /// <summary>Snaps an empty boss-floor limit to the equivalent floor below it (5→4, 10→9, 15→14).</summary>
+    public static int Normalize(int depth) => EmptyBossFloors.Contains(depth) ? depth - 1 : depth;
+
+    /// <summary>The slider index for a floor limit; off-list values snap to the floor below.</summary>
+    public static int IndexOf(int depth) => Math.Max(0, Array.IndexOf(Options, Normalize(depth)));
+}
+
 public sealed class QuerySettings
 {
     public ObservableCollection<ItemRequirement> Requirements { get; set; } = [];

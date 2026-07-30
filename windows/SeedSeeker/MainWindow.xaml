@@ -86,7 +86,9 @@
                   <TextBlock Text="Floor limit" VerticalAlignment="Center"/>
                   <TextBlock x:Name="FloorLabel" Style="{StaticResource Caption}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                 </Grid>
-                <Slider x:Name="FloorSlider" StepFrequency="1" ValueChanged="FloorSlider_ValueChanged" HorizontalAlignment="Stretch" Margin="0,2,0,-8"/>
+                <!-- Indexes into FloorLimits.Options (skips the empty boss floors), so the raw
+     value is meaningless to show in the thumb tooltip; FloorLabel names the floor. -->
+                <Slider x:Name="FloorSlider" StepFrequency="1" IsThumbToolTipEnabled="False" ValueChanged="FloorSlider_ValueChanged" HorizontalAlignment="Stretch" Margin="0,2,0,-8"/>
               </StackPanel>
             </Border>
 
