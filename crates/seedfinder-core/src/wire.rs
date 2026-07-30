@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use crate::catalog::{Effect, ItemKind, item, item_by_stable_id};
+use crate::catalog::{Effect, ItemKind, WeaponCategory, item, item_by_stable_id};
 use crate::challenges::Challenges;
 use crate::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
 use crate::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
@@ -61,7 +61,10 @@ pub fn encode_query(query: &SearchQuery) -> Result<Vec<u8>, WireError> {
     output.extend_from_slice(&query.challenges.bits().to_le_bytes());
     output.extend_from_slice(&count.to_be_bytes());
     for requirement in &query.requirements {
-        output.push(item_kind_wire_id(requirement.kind));
+        output.push(requirement_kind_wire_id(
+            requirement.kind,
+            requirement.weapon_category,
+        ));
         push_utf8_u16(
             &mut output,
             requirement
@@ -110,7 +113,8 @@ fn decode_query_payload(input: &mut Input<'_>) -> Result<SearchQuery, WireError>
     }
     let mut requirements = Vec::with_capacity(count);
     for _ in 0..count {
-        let kind = item_kind_from_wire_id(input.u8()?).ok_or(WireError::UnknownItemKind)?;
+        let (kind, weapon_category) =
+            requirement_kind_from_wire_id(input.u8()?).ok_or(WireError::UnknownItemKind)?;
         let stable_id = input.utf8_u16()?;
         let item = if stable_id.is_empty() {
             None
@@ -162,6 +166,7 @@ fn decode_query_payload(input: &mut Input<'_>) -> Result<SearchQuery, WireError>
         }
         requirements.push(Requirement {
             kind,
+            weapon_category,
             item,
             tier,
             upgrade,
@@ -182,22 +187,30 @@ fn decode_query_payload(input: &mut Input<'_>) -> Result<SearchQuery, WireError>
     })
 }
 
-const fn item_kind_from_wire_id(id: u8) -> Option<ItemKind> {
+/// Requirement kind IDs. `0..=3` are the original four families; `4` and `5`
+/// were added for melee/thrown weapon filters, so packets from older
+/// frontends (which only emit `0..=3`) keep decoding to the same queries.
+const fn requirement_kind_from_wire_id(id: u8) -> Option<(ItemKind, Option<WeaponCategory>)> {
     Some(match id {
-        0 => ItemKind::Weapon,
-        1 => ItemKind::Armor,
-        2 => ItemKind::Wand,
-        3 => ItemKind::Ring,
+        0 => (ItemKind::Weapon, None),
+        1 => (ItemKind::Armor, None),
+        2 => (ItemKind::Wand, None),
+        3 => (ItemKind::Ring, None),
+        4 => (ItemKind::Weapon, Some(WeaponCategory::Melee)),
+        5 => (ItemKind::Weapon, Some(WeaponCategory::Thrown)),
         _ => return None,
     })
 }
 
-const fn item_kind_wire_id(kind: ItemKind) -> u8 {
-    match kind {
-        ItemKind::Weapon => 0,
-        ItemKind::Armor => 1,
-        ItemKind::Wand => 2,
-        ItemKind::Ring => 3,
+const fn requirement_kind_wire_id(kind: ItemKind, category: Option<WeaponCategory>) -> u8 {
+    match (kind, category) {
+        (ItemKind::Weapon, None) => 0,
+        (ItemKind::Weapon, Some(WeaponCategory::Melee)) => 4,
+        (ItemKind::Weapon, Some(WeaponCategory::Thrown)) => 5,
+        // A category with a non-weapon kind never survives validation.
+        (ItemKind::Armor, _) => 1,
+        (ItemKind::Wand, _) => 2,
+        (ItemKind::Ring, _) => 3,
     }
 }
 
@@ -645,6 +658,7 @@ mod tests {
             requirements: vec![
                 Requirement {
                     kind: ItemKind::Armor,
+                    weapon_category: None,
                     item: None,
                     tier: TierRequirement::AtMost(4),
                     upgrade: UpgradeRequirement::AtLeast(1),
@@ -656,6 +670,7 @@ mod tests {
                 },
                 Requirement {
                     kind: ItemKind::Weapon,
+                    weapon_category: None,
                     item: None,
                     tier: TierRequirement::Exact(3),
                     upgrade: UpgradeRequirement::Any,
@@ -667,6 +682,7 @@ mod tests {
                 },
                 Requirement {
                     kind: ItemKind::Armor,
+                    weapon_category: None,
                     item: None,
                     tier: TierRequirement::AtLeast(4),
                     upgrade: UpgradeRequirement::Exact(2),
@@ -687,6 +703,40 @@ mod tests {
         let packet = encode_query(&query).unwrap();
         assert_eq!(&packet[..4], b"SSF7");
         assert_eq!(decode_query(&packet), Ok(query));
+    }
+
+    #[test]
+    fn ssf7_kind_bytes_cover_melee_and_thrown_and_stay_backwards_compatible() {
+        use crate::catalog::WeaponCategory;
+
+        // A legacy packet with kind byte 0 still decodes to an unfiltered
+        // weapon requirement that matches melee and thrown weapons alike.
+        let legacy = query_packet(0, 0, 0, "", [0, 0], [0, 0]);
+        let decoded = decode_query(&legacy).unwrap();
+        assert_eq!(decoded.requirements[0].kind, ItemKind::Weapon);
+        assert_eq!(decoded.requirements[0].weapon_category, None);
+
+        // Kind bytes 4 and 5 carry the melee/thrown filters.
+        for (byte, category) in [(4, WeaponCategory::Melee), (5, WeaponCategory::Thrown)] {
+            let packet = query_packet(0, 0, byte, "", [0, 0], [0, 0]);
+            let decoded = decode_query(&packet).unwrap();
+            assert_eq!(decoded.requirements[0].kind, ItemKind::Weapon);
+            assert_eq!(decoded.requirements[0].weapon_category, Some(category));
+            let encoded = encode_query(&decoded).unwrap();
+            assert_eq!(encoded[10], byte);
+            assert_eq!(decode_query(&encoded), Ok(decoded));
+        }
+
+        // A thrown filter accepts a matching pinned item and rejects others.
+        let consistent = query_packet(0, 0, 5, "shuriken", [0, 0], [0, 0]);
+        assert_eq!(
+            decode_query(&consistent).unwrap().requirements[0].item,
+            Some(ItemId::Shuriken)
+        );
+        let inconsistent = query_packet(0, 0, 5, "sword", [0, 0], [0, 0]);
+        assert_eq!(decode_query(&inconsistent), Err(WireError::InvalidQuery));
+        let unknown = query_packet(0, 0, 6, "", [0, 0], [0, 0]);
+        assert_eq!(decode_query(&unknown), Err(WireError::UnknownItemKind));
     }
 
     #[test]

@@ -13,7 +13,33 @@ enum class ItemKind(
     ARMOR("Armor", "armor", "Glyph", 3),
     WAND("Wands", "wand", null, 3),
     RING("Rings", "ring", null, 4),
+
+    // Wire kind IDs 4 and 5 (the enum ordinal is the wire ID): weapon
+    // requirements narrowed to one weapon class. Catalog items always carry
+    // the WEAPON family, never a narrowed kind.
+    MELEE_WEAPON("Melee weapons", "melee weapon", "Enchantment", 3),
+    THROWN_WEAPON("Thrown weapons", "thrown weapon", "Enchantment", 3),
+    ;
+
+    /** The broad item family this kind belongs to. */
+    val family: ItemKind
+        get() = if (this == MELEE_WEAPON || this == THROWN_WEAPON) WEAPON else this
+
+    /** The weapon class this kind restricts to, or null when unrestricted. */
+    val weaponClass: WeaponClass?
+        get() = when (this) {
+            MELEE_WEAPON -> WeaponClass.MELEE
+            THROWN_WEAPON -> WeaponClass.THROWN
+            else -> null
+        }
+
+    /** Whether a catalog item can satisfy a requirement of this kind. */
+    fun accepts(item: CatalogItem): Boolean =
+        item.kind == family && (weaponClass == null || item.weaponClass == weaponClass)
 }
+
+/** Melee/thrown classification of weapon catalog entries. */
+enum class WeaponClass { MELEE, THROWN }
 
 data class CatalogItem(
     val id: String,
@@ -22,6 +48,7 @@ data class CatalogItem(
     val spriteIndex: Int,
     val tier: Int? = null,
     val typeIconIndex: Int? = null,
+    val weaponClass: WeaponClass? = null,
 )
 
 data class ItemRequirement(
@@ -39,8 +66,8 @@ data class ItemRequirement(
     val requireUncursed: Boolean = false,
 ) {
     init {
-        require(item == null || item.kind == kind) { "Selected item must belong to its category" }
-        val tierable = item == null && kind in setOf(ItemKind.WEAPON, ItemKind.ARMOR)
+        require(item == null || kind.accepts(item)) { "Selected item must belong to its category" }
+        val tierable = item == null && kind.family in setOf(ItemKind.WEAPON, ItemKind.ARMOR)
         val validTier = when (tierMatch) {
             TierMatch.ANY -> tier == 0
             TierMatch.EXACT -> tierable && tier in 2..5

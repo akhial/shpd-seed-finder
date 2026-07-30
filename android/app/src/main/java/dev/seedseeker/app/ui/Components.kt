@@ -299,7 +299,7 @@ internal fun scoutMatchIndices(
         item.depth <= maximumDepth &&
             item.depth <= (requirement.maximumDepth ?: maximumDepth) &&
             (!excludeBlacksmithRewards || item.source != ScoutItemSource.BLACKSMITH_REWARD) &&
-            requirement.kind == item.item.kind &&
+            requirement.kind.accepts(item.item) &&
             (requirement.item == null || requirement.item.id == item.item.id) &&
             when (requirement.tierMatch) {
                 dev.seedseeker.app.model.TierMatch.ANY -> true

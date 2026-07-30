@@ -2,6 +2,7 @@
 package dev.seedseeker.app.catalog
 
 import dev.seedseeker.app.model.ItemKind
+import dev.seedseeker.app.model.WeaponClass
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -25,6 +26,28 @@ class ItemCatalogTest {
         assertEquals((224..235).toList(), ItemCatalog.rings.map { it.spriteIndex })
         assertEquals((0..11).toList(), ItemCatalog.rings.map { it.typeIconIndex })
         assertTrue(ItemCatalog.all.filterNot { it.kind == ItemKind.RING }.all { it.typeIconIndex == null })
+    }
+
+    @Test
+    fun weaponsSplitIntoMeleeAndThrownClasses() {
+        assertEquals(31, ItemCatalog.meleeWeapons.size)
+        assertEquals(27, ItemCatalog.thrownWeapons.size)
+        assertEquals(ItemCatalog.meleeWeapons + ItemCatalog.thrownWeapons, ItemCatalog.weapons)
+        assertTrue(ItemCatalog.meleeWeapons.all { it.weaponClass == WeaponClass.MELEE })
+        assertTrue(ItemCatalog.thrownWeapons.all { it.weaponClass == WeaponClass.THROWN })
+        assertTrue(
+            ItemCatalog.all
+                .filterNot { it.kind == ItemKind.WEAPON }
+                .all { it.weaponClass == null },
+        )
+        // The crossbow is wielded; every dart and "throwing" item is thrown.
+        assertEquals(WeaponClass.MELEE, ItemCatalog.findById("crossbow")?.weaponClass)
+        assertEquals(WeaponClass.THROWN, ItemCatalog.findById("shuriken")?.weaponClass)
+        assertEquals(WeaponClass.THROWN, ItemCatalog.findById("poison_dart")?.weaponClass)
+        assertEquals(ItemCatalog.meleeWeapons, ItemCatalog.forKind(ItemKind.MELEE_WEAPON))
+        assertEquals(ItemCatalog.thrownWeapons, ItemCatalog.forKind(ItemKind.THROWN_WEAPON))
+        assertEquals(ItemCatalog.modifiersFor(ItemKind.WEAPON), ItemCatalog.modifiersFor(ItemKind.THROWN_WEAPON))
+        assertEquals(ItemCatalog.cursesFor(ItemKind.WEAPON), ItemCatalog.cursesFor(ItemKind.MELEE_WEAPON))
     }
 
     @Test

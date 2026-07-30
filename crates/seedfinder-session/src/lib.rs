@@ -606,6 +606,7 @@ mod tests {
         SearchQuery {
             requirements: vec![Requirement {
                 kind: ItemKind::Wand,
+                weapon_category: None,
                 item: Some(ItemId::WandFrost),
                 tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Exact(2),
@@ -766,6 +767,7 @@ mod tests {
         let satisfiable = SearchQuery {
             requirements: vec![Requirement {
                 kind: definition.kind,
+                weapon_category: None,
                 item: Some(known.item),
                 tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Any,
