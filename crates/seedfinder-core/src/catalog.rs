@@ -187,7 +187,38 @@ impl ItemId {
             | Self::HolyDart
             | Self::DisplacingDart
             | Self::BlindingDart => Some(WeaponCategory::Thrown),
-            _ => None,
+            // Spelled out so adding a weapon without classifying it becomes a
+            // compile error instead of a confusing test failure.
+            Self::ClothArmor
+            | Self::LeatherArmor
+            | Self::MailArmor
+            | Self::ScaleArmor
+            | Self::PlateArmor
+            | Self::WandMagicMissile
+            | Self::WandFireblast
+            | Self::WandFrost
+            | Self::WandLightning
+            | Self::WandDisintegration
+            | Self::WandPrismaticLight
+            | Self::WandCorrosion
+            | Self::WandLivingEarth
+            | Self::WandBlastWave
+            | Self::WandCorruption
+            | Self::WandWarding
+            | Self::WandRegrowth
+            | Self::WandTransfusion
+            | Self::RingAccuracy
+            | Self::RingArcana
+            | Self::RingElements
+            | Self::RingEnergy
+            | Self::RingEvasion
+            | Self::RingForce
+            | Self::RingFuror
+            | Self::RingHaste
+            | Self::RingMight
+            | Self::RingSharpshooting
+            | Self::RingTenacity
+            | Self::RingWealth => None,
         }
     }
 }

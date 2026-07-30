@@ -51,6 +51,25 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertEqual(PresetPersistence.decode("not json"), [])
     }
 
+    func testPresetPersistenceDropsOnlyUnreadableElements() throws {
+        // A preset written by a future build (say, an unknown kind raw value)
+        // must drop alone instead of taking the whole collection with it.
+        let requirement = try ItemRequirement(key: 7, item: nil, upgrade: 0, kind: .thrownWeapon,
+                                              upgradeMatch: .any)
+        let valid = QueryPreset(name: "Thrown", query: SavedQuery(requirements: [requirement]))
+        let encoded = try XCTUnwrap(PresetPersistence.encode([valid]))
+        let future = """
+        {"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","name":"Future","query":{"requirements":\
+        [{"key":1,"upgrade":0,"kind":99,"tier":0,"tierMatch":0,"upgradeMatch":0,\
+        "requireUncursed":false}],"maximumDepth":24,"requireBlacksmith":false,\
+        "excludeBlacksmithRewards":false,"fastMode":false,"challenges":0}}
+        """
+        // Splice the valid preset into an array after two unreadable elements.
+        let futuristic = "[" + future + ",\"garbage\"," + String(encoded.dropFirst())
+        let decoded = PresetPersistence.decode(futuristic)
+        XCTAssertEqual(decoded, [valid])
+    }
+
     func testScoutMatchesSelectOnlyOneMutuallyExclusiveReward() throws {
         let warding = try XCTUnwrap(ItemCatalog.findById("wand_warding"))
         let light = try XCTUnwrap(ItemCatalog.findById("wand_prismatic_light"))

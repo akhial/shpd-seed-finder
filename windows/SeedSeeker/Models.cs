@@ -52,8 +52,8 @@ public enum ScoutItemSource
 /// </summary>
 public static class KindStyle
 {
-    public static string Glyph(ItemKind kind) => kind switch { ItemKind.Weapon => "", ItemKind.Armor => "", ItemKind.Wand => "", _ => "" };
-    public static Brush Tint(ItemKind kind) => new SolidColorBrush(kind switch { ItemKind.Weapon => Colors.DarkOrange, ItemKind.Armor => Colors.DodgerBlue, ItemKind.Wand => Colors.MediumPurple, _ => Colors.Goldenrod });
+    public static string Glyph(ItemKind kind) => kind.Family() switch { ItemKind.Weapon => "", ItemKind.Armor => "", ItemKind.Wand => "", _ => "" };
+    public static Brush Tint(ItemKind kind) => new SolidColorBrush(kind.Family() switch { ItemKind.Weapon => Colors.DarkOrange, ItemKind.Armor => Colors.DodgerBlue, ItemKind.Wand => Colors.MediumPurple, _ => Colors.Goldenrod });
 }
 
 public static class Labels

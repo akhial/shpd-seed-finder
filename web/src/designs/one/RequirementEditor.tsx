@@ -92,6 +92,9 @@ export function RequirementEditor({
   }, [onCancel])
 
   const setKind = (nextKind: RequirementKind) => {
+    // Re-clicking the already-selected family must not widen a narrowed
+    // weapon kind or wipe the item, tier, and effect selections.
+    if (kindFamily(nextKind) === family) return
     setDraft((current) => {
       const nextMax = kindFamily(nextKind) === 'ring' ? 4 : 3
       let upgrade = { ...current.upgrade }

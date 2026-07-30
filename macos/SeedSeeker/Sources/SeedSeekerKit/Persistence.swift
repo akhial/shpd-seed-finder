@@ -122,8 +122,16 @@ public enum PresetPersistence {
     }
 
     public static func decode(_ text: String) -> [QueryPreset] {
+        // Decode per element so one unreadable preset (for example, written
+        // by a newer build with kinds this build predates) drops only
+        // itself, never the whole collection.
         guard let data = text.data(using: .utf8),
-              let presets = try? JSONDecoder().decode([QueryPreset].self, from: data) else { return [] }
+              let elements = (try? JSONSerialization.jsonObject(with: data)) as? [Any] else { return [] }
+        let presets = elements.compactMap { element -> QueryPreset? in
+            guard JSONSerialization.isValidJSONObject(element),
+                  let elementData = try? JSONSerialization.data(withJSONObject: element) else { return nil }
+            return try? JSONDecoder().decode(QueryPreset.self, from: elementData)
+        }
         return presets.filter { !$0.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.query.validated() != nil }
     }
 }

@@ -172,8 +172,11 @@ fn connect(editor: &Rc<Editor>) {
     editor
         .category
         .connect_selected_notify(hook(Rc::clone(editor), |editor| {
-            populate_items(editor, None);
-            populate_effects(editor, None);
+            // Keep selections that remain valid under the new category (for
+            // example, switching Weapon to Thrown with a shuriken pinned);
+            // anything absent from the repopulated lists falls back to Any.
+            populate_items(editor, selected_item(editor));
+            populate_effects(editor, selected_effect(editor));
             editor.tier_row.set_selected(0);
             normalize_upgrades(editor);
             refresh_visibility(editor);

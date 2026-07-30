@@ -370,8 +370,10 @@ private struct QueryView: View {
                     .font(.callout).foregroundStyle(.secondary)
             }
         } else {
-            ForEach(ItemKind.allCases, id: \.self) { kind in
-                let group = requirements.filter { $0.kind == kind }
+            // Group by the broad family so a narrowed "Any thrown weapon"
+            // requirement sits with the other weapons.
+            ForEach([ItemKind.weapon, .armor, .wand, .ring], id: \.self) { kind in
+                let group = requirements.filter { $0.kind.family == kind }
                 if !group.isEmpty {
                     Section {
                         ForEach(group) { requirement in

@@ -26,7 +26,7 @@
 //! consumable or torch, so there is no challenge-dependent availability bound
 //! to apply here. Its RNG knock-on effects are handled by generation itself.
 
-use crate::catalog::{Effect, ItemKind};
+use crate::catalog::{Effect, ItemKind, WeaponCategory};
 use crate::model::{ItemSource, WorldItem};
 use crate::query::{Requirement, SearchQuery, UpgradeRequirement};
 use crate::search::FloorGate;
@@ -103,11 +103,25 @@ enum EffectPolicy {
 const fn source_profile(
     source: ItemSource,
     kind: ItemKind,
+    weapon_category: Option<WeaponCategory>,
     fast_mode: bool,
 ) -> Option<(u8, u8, EffectPolicy)> {
     use EffectPolicy::{Any, GoodOnly, Never};
     use ItemKind::{Armor, Ring, Wand, Weapon};
     use ItemSource as S;
+    // The Ghost and Sacrificial-fire prizes and both statue drops roll
+    // exclusively melee weapons in v3.3.8, so a thrown-narrowed weapon
+    // requirement can never be satisfied by them. Every thrown-capable
+    // source also rolls melee weapons, so a melee filter removes nothing.
+    if matches!(kind, Weapon)
+        && matches!(weapon_category, Some(WeaponCategory::Thrown))
+        && matches!(
+            source,
+            S::GhostReward | S::SacrificialFire | S::Statue | S::ArmoredStatue
+        )
+    {
+        return None;
+    }
     Some(match (source, kind) {
         // Plain drops and chest variants use the natural rolls, capped at +2,
         // as do crystal chests/mimics (which stock only wands and rings).
@@ -177,7 +191,13 @@ fn source_feasible(requirement: &Requirement, source: ItemSource, fast_mode: boo
     // An explicit source pin is the user's claim, not ours: honor it verbatim
     // rather than applying the fast-mode refinement.
     let fast_mode = fast_mode && requirement.source.is_none();
-    source_profile(source, requirement.kind, fast_mode).is_some_and(|(low, high, policy)| {
+    source_profile(
+        source,
+        requirement.kind,
+        requirement.weapon_category,
+        fast_mode,
+    )
+    .is_some_and(|(low, high, policy)| {
         upgrade_reachable(requirement.upgrade, low, high)
             && effect_reachable(requirement.effect, policy)
     })
@@ -595,6 +615,63 @@ mod tests {
             ..query(vec![], 24)
         });
         assert!(impossible.is_unsatisfiable());
+    }
+
+    #[test]
+    fn melee_only_sources_never_satisfy_thrown_requirements() {
+        use crate::catalog::WeaponCategory;
+
+        // The Ghost, Sacrificial fire, and both statue kinds roll melee
+        // weapons only, so pinning one with a thrown filter is impossible.
+        for source in [
+            ItemSource::GhostReward,
+            ItemSource::SacrificialFire,
+            ItemSource::Statue,
+            ItemSource::ArmoredStatue,
+        ] {
+            let thrown = Requirement {
+                weapon_category: Some(WeaponCategory::Thrown),
+                source: Some(source),
+                ..requirement(ItemKind::Weapon, UpgradeRequirement::Any)
+            };
+            assert!(
+                QueryPlan::analyze(&query(vec![thrown], 24)).is_unsatisfiable(),
+                "{source:?}"
+            );
+            let melee = Requirement {
+                weapon_category: Some(WeaponCategory::Melee),
+                ..thrown
+            };
+            assert!(
+                !QueryPlan::analyze(&query(vec![melee], 24)).is_unsatisfiable(),
+                "{source:?}"
+            );
+        }
+
+        // Unpinned thrown requirements stay satisfiable through open drops,
+        // and a +3 in fast mode becomes Blacksmith-only: the Ghost no longer
+        // counts, so the plan ends at the Blacksmith's depth-14 deadline.
+        let thrown = Requirement {
+            weapon_category: Some(WeaponCategory::Thrown),
+            ..requirement(ItemKind::Weapon, UpgradeRequirement::Any)
+        };
+        assert!(!QueryPlan::analyze(&query(vec![thrown], 24)).is_unsatisfiable());
+        let fast = QueryPlan::analyze(&SearchQuery {
+            fast_mode: true,
+            ..query(
+                vec![Requirement {
+                    upgrade: UpgradeRequirement::Exact(3),
+                    ..thrown
+                }],
+                24,
+            )
+        });
+        assert!(!fast.is_unsatisfiable());
+        assert_eq!(fast.generation_depth(), 14);
+        let ghost_resolved = [item(ItemId::Sword, 3, 3, ItemSource::GhostReward)];
+        assert!(fast.viable_after_floor(4, &ghost_resolved));
+        let blacksmith_resolved = [item(ItemId::Sword, 3, 13, ItemSource::BlacksmithReward)];
+        assert!(!fast.viable_after_floor(14, &blacksmith_resolved));
     }
 
     #[test]
