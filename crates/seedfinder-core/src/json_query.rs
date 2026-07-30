@@ -383,7 +383,9 @@ mod tests {
     use crate::catalog::{ArmorEffect, Effect, ItemId, ItemKind, WeaponEffect};
     use crate::challenges::Challenges;
     use crate::model::ItemSource;
-    use crate::query::{EffectRequirement, EffectSet, TierRequirement, UpgradeRequirement, UpgradeSum};
+    use crate::query::{
+        EffectRequirement, EffectSet, TierRequirement, UpgradeRequirement, UpgradeSum,
+    };
 
     use super::decode;
 
@@ -544,10 +546,7 @@ mod tests {
             vec![Some(1), Some(1), Some(1), None, Some(2), Some(2)]
         );
         assert_eq!(query.requirements[0].item, Some(ItemId::Spear));
-        assert_eq!(
-            query.requirements[1].upgrade,
-            UpgradeRequirement::Exact(2)
-        );
+        assert_eq!(query.requirements[1].upgrade, UpgradeRequirement::Exact(2));
 
         assert!(decode(r#"{"requirements":[{"any_of":[]}]}"#).is_err());
         // Nested groups are not representable.
@@ -574,7 +573,10 @@ mod tests {
                 minimum_total: 2,
             })
         );
-        assert_eq!(query.requirements[0].upgrade_sum, query.requirements[1].upgrade_sum);
+        assert_eq!(
+            query.requirements[0].upgrade_sum,
+            query.requirements[1].upgrade_sum
+        );
 
         // Disagreeing totals and unattainable sums are query errors.
         assert!(

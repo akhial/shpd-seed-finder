@@ -146,7 +146,8 @@ fn effective_requirements(query: &SearchQuery) -> Vec<Requirement> {
                 let candidate_slots =
                     expected_slots(&Predicate::of(requirement, None).within(query, &requirement));
                 let replace = alternatives.get(&group).is_none_or(|kept| {
-                    candidate_slots > expected_slots(&Predicate::of(*kept, None).within(query, kept))
+                    candidate_slots
+                        > expected_slots(&Predicate::of(*kept, None).within(query, kept))
                 });
                 if replace {
                     alternatives.insert(group, requirement);
@@ -1457,9 +1458,7 @@ mod tests {
         );
         let any_glyph = query(
             vec![Requirement {
-                effect: EffectRequirement::OneOf(
-                    EffectSet::enchantments(ItemKind::Armor).unwrap(),
-                ),
+                effect: EffectRequirement::OneOf(EffectSet::enchantments(ItemKind::Armor).unwrap()),
                 ..requirement(ItemKind::Armor)
             }],
             24,

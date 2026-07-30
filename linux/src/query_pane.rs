@@ -265,8 +265,7 @@ impl QueryPane {
                 Some(group) if rendered_groups.contains(&group) => {}
                 Some(group) => {
                     rendered_groups.push(group);
-                    self.list
-                        .append(&self.group_card(&group_members[&group]));
+                    self.list.append(&self.group_card(&group_members[&group]));
                 }
             }
         }

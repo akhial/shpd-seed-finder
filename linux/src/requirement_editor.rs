@@ -506,14 +506,16 @@ fn populate_effect_modes(editor: &Rc<Editor>, selection: u32) {
     editor
         .effect_mode
         .set_title(if armor { "Glyph" } else { "Enchantment" });
-    editor.effect_expander.set_title(if armor {
-        "Glyphs"
-    } else {
-        "Enchantments"
-    });
+    editor
+        .effect_expander
+        .set_title(if armor { "Glyphs" } else { "Enchantments" });
     editor.effect_mode.set_model(Some(&gtk::StringList::new(&[
         "Any",
-        if armor { "Any glyph" } else { "Any enchantment" },
+        if armor {
+            "Any glyph"
+        } else {
+            "Any enchantment"
+        },
         "Specific…",
     ])));
     editor.effect_mode.set_selected(selection);
@@ -528,8 +530,16 @@ fn populate_effect_checks(editor: &Rc<Editor>, selection: Option<EffectSet>) {
     }
     let hide_curses = editor.uncursed.is_active();
     let family: Vec<Effect> = match selected_kind(editor) {
-        ItemKind::Weapon => ALL_WEAPON_EFFECTS.iter().copied().map(Effect::Weapon).collect(),
-        ItemKind::Armor => ALL_ARMOR_EFFECTS.iter().copied().map(Effect::Armor).collect(),
+        ItemKind::Weapon => ALL_WEAPON_EFFECTS
+            .iter()
+            .copied()
+            .map(Effect::Weapon)
+            .collect(),
+        ItemKind::Armor => ALL_ARMOR_EFFECTS
+            .iter()
+            .copied()
+            .map(Effect::Armor)
+            .collect(),
         ItemKind::Wand | ItemKind::Ring => Vec::new(),
     };
     let mut checks = Vec::new();

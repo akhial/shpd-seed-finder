@@ -164,10 +164,7 @@ mod tests {
             alternative_group: Some(1),
             ..requirement(key, ItemKind::Weapon, Some(item))
         };
-        let requirements = [
-            alternative(1, ItemId::Spear),
-            alternative(2, ItemId::Sword),
-        ];
+        let requirements = [alternative(1, ItemId::Spear), alternative(2, ItemId::Sword)];
         let items = [world_item(ItemId::Sword, 3, Accessibility::Independent)];
         assert_eq!(
             scout_match_indices(&items, &requirements, 24, false),

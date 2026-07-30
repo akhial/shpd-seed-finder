@@ -425,7 +425,9 @@ mod tests {
     use crate::catalog::{ItemId, ItemKind};
     use crate::feasibility::QueryPlan;
     use crate::model::{ItemSource, WorldItem};
-    use crate::query::{EffectRequirement, Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
+    use crate::query::{
+        EffectRequirement, Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
+    };
     use crate::search::{FloorGate, WorldGenerator};
     use crate::seed::DungeonSeed;
 

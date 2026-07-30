@@ -1,6 +1,5 @@
 //! Thin JSON and cooperative-search adapter for browser WebAssembly.
 
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use shpd_seedfinder_core::catalog::{Effect, ItemKind, item};

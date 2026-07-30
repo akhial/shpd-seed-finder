@@ -3,9 +3,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::catalog::{
-    ALL_ARMOR_EFFECTS, ALL_WEAPON_EFFECTS, Effect, ItemId, ItemKind, item,
-};
+use crate::catalog::{ALL_ARMOR_EFFECTS, ALL_WEAPON_EFFECTS, Effect, ItemId, ItemKind, item};
 use crate::challenges::Challenges;
 use crate::model::{GeneratedWorld, ItemSource, WorldItem};
 
@@ -168,7 +166,9 @@ fn family_effects(kind: ItemKind) -> Option<Box<dyn Iterator<Item = Effect>>> {
         ItemKind::Weapon => Some(Box::new(
             ALL_WEAPON_EFFECTS.iter().copied().map(Effect::Weapon),
         )),
-        ItemKind::Armor => Some(Box::new(ALL_ARMOR_EFFECTS.iter().copied().map(Effect::Armor))),
+        ItemKind::Armor => Some(Box::new(
+            ALL_ARMOR_EFFECTS.iter().copied().map(Effect::Armor),
+        )),
         ItemKind::Wand | ItemKind::Ring => None,
     }
 }
@@ -400,10 +400,9 @@ impl SearchQuery {
                 ));
             }
             if let Some(sum) = requirement.upgrade_sum {
-                let (minimum_total, reachable) = upgrade_sums.entry(sum.group).or_insert((
-                    sum.minimum_total,
-                    0,
-                ));
+                let (minimum_total, reachable) = upgrade_sums
+                    .entry(sum.group)
+                    .or_insert((sum.minimum_total, 0));
                 if *minimum_total != sum.minimum_total {
                     return Err(QueryError::InconsistentUpgradeSum);
                 }
@@ -569,10 +568,14 @@ impl<'query> Assignment<'query> {
             undo.scenario = Some((group, self.scenarios.insert(group, compatible)));
         }
         if let Some(sum) = requirement.upgrade_sum {
-            let group = self.sum_groups.get(&sum.group).copied().unwrap_or(SumGroup {
-                members: 0,
-                minimum_total: 0,
-            });
+            let group = self
+                .sum_groups
+                .get(&sum.group)
+                .copied()
+                .unwrap_or(SumGroup {
+                    members: 0,
+                    minimum_total: 0,
+                });
             let (assigned, total) = self.sums.get(&sum.group).copied().unwrap_or((0, 0));
             let assigned = assigned + 1;
             let total = total + u16::from(self.items[item_index].upgrade);
@@ -669,9 +672,7 @@ impl BestSubset<'_> {
             let counted: Vec<usize> = self
                 .selected
                 .iter()
-                .filter(|(_, sum_group)| {
-                    sum_group.is_none_or(|group| !failed.contains(&group))
-                })
+                .filter(|(_, sum_group)| sum_group.is_none_or(|group| !failed.contains(&group)))
                 .map(|(item_index, _)| *item_index)
                 .collect();
             if counted.len() > self.best_score {
@@ -735,9 +736,7 @@ impl fmt::Display for QueryError {
                 "linked item requirements must use the same category and item"
             }
             Self::InvalidAlternativeGroup => "alternative group zero is reserved for no group",
-            Self::InvalidUpgradeSum => {
-                "combined upgrade groups need a non-zero group and total"
-            }
+            Self::InvalidUpgradeSum => "combined upgrade groups need a non-zero group and total",
             Self::InconsistentUpgradeSum => {
                 "requirements in a combined upgrade group must agree on the total"
             }
@@ -813,7 +812,10 @@ mod tests {
 
     #[test]
     fn and_query_requires_distinct_item_occurrences() {
-        let two_swords = query(vec![requirement(ItemId::Sword), requirement(ItemId::Sword)], 4);
+        let two_swords = query(
+            vec![requirement(ItemId::Sword), requirement(ItemId::Sword)],
+            4,
+        );
         let one = world(vec![world_item(ItemId::Sword, Accessibility::Independent)]);
         assert!(!two_swords.matches(&one));
         let two = world(vec![
@@ -1251,9 +1253,7 @@ mod tests {
         );
 
         let mismatched = Requirement {
-            effect: EffectRequirement::OneOf(EffectSet::single(Effect::Armor(
-                ArmorEffect::Thorns,
-            ))),
+            effect: EffectRequirement::OneOf(EffectSet::single(Effect::Armor(ArmorEffect::Thorns))),
             ..requirement(ItemId::Sword)
         };
         assert_eq!(mismatched.validate(), Err(QueryError::EffectKindMismatch));
@@ -1586,14 +1586,8 @@ mod tests {
             ..requirement(ItemId::RingMight)
         };
         let pair = query(vec![ring(), ring()], 24);
-        let matching = world(vec![
-            make(ItemId::RingMight, 0),
-            make(ItemId::RingMight, 2),
-        ]);
-        let short = world(vec![
-            make(ItemId::RingMight, 0),
-            make(ItemId::RingMight, 1),
-        ]);
+        let matching = world(vec![make(ItemId::RingMight, 0), make(ItemId::RingMight, 2)]);
+        let short = world(vec![make(ItemId::RingMight, 0), make(ItemId::RingMight, 1)]);
         assert!(pair.matches(&matching));
         assert_eq!(best_match_indices(&pair, &matching).len(), 2);
         assert!(!pair.matches(&short));

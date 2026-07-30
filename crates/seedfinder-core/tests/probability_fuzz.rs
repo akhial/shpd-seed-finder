@@ -379,7 +379,9 @@ fn modifier_queries() -> Vec<(String, SearchQuery)> {
         "a blazing weapon".to_owned(),
         query(
             vec![Requirement {
-                effect: EffectRequirement::OneOf(EffectSet::single(Effect::Weapon(WeaponEffect::Blazing))),
+                effect: EffectRequirement::OneOf(EffectSet::single(Effect::Weapon(
+                    WeaponEffect::Blazing,
+                ))),
                 ..base(ItemKind::Weapon)
             }],
             24,
@@ -389,7 +391,9 @@ fn modifier_queries() -> Vec<(String, SearchQuery)> {
         "a viscous armor".to_owned(),
         query(
             vec![Requirement {
-                effect: EffectRequirement::OneOf(EffectSet::single(Effect::Armor(ArmorEffect::Viscosity))),
+                effect: EffectRequirement::OneOf(EffectSet::single(Effect::Armor(
+                    ArmorEffect::Viscosity,
+                ))),
                 ..base(ItemKind::Armor)
             }],
             24,
@@ -399,7 +403,9 @@ fn modifier_queries() -> Vec<(String, SearchQuery)> {
         "a cursed weapon".to_owned(),
         query(
             vec![Requirement {
-                effect: EffectRequirement::OneOf(EffectSet::single(Effect::Weapon(WeaponEffect::Annoying))),
+                effect: EffectRequirement::OneOf(EffectSet::single(Effect::Weapon(
+                    WeaponEffect::Annoying,
+                ))),
                 ..base(ItemKind::Weapon)
             }],
             24,
@@ -546,7 +552,8 @@ fn describe(query: &SearchQuery) -> String {
             },
             match requirement.effect {
                 EffectRequirement::Any => String::new(),
-                EffectRequirement::OneOf(set) => format!(" {:?}", set.effects().collect::<Vec<_>>()),
+                EffectRequirement::OneOf(set) =>
+                    format!(" {:?}", set.effects().collect::<Vec<_>>()),
             },
             if requirement.require_uncursed {
                 " uncursed"

@@ -390,9 +390,7 @@ fn source_from_key(key: &str) -> Option<ItemSource> {
 mod tests {
     use shpd_seedfinder_core::catalog::{Effect, ItemId, ItemKind, WeaponEffect};
     use shpd_seedfinder_core::model::ItemSource;
-    use shpd_seedfinder_core::query::{
-        EffectSet, TierRequirement, UpgradeRequirement, UpgradeSum,
-    };
+    use shpd_seedfinder_core::query::{EffectSet, TierRequirement, UpgradeRequirement, UpgradeSum};
 
     use super::{SavedPreset, decode_presets, restore_requirement, save_requirement, save_state};
     use crate::state::{AppState, UiEffect, UiRequirement};

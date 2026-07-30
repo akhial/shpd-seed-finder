@@ -126,11 +126,7 @@ const fn source_profile(
         // three; in fast mode these exotic paths are deliberately ignored so
         // +3 weapons and armor become quest-only.
         (S::Tomb, Armor) | (S::SacrificialFire, Weapon) | (S::Chest, Weapon | Armor) => {
-            if fast_mode {
-                (0, 2, Any)
-            } else {
-                (0, 3, Any)
-            }
+            if fast_mode { (0, 2, Any) } else { (0, 3, Any) }
         }
         // Shop stock is always +0 with no effect.
         (S::Shop, _) => (0, 0, Never),
@@ -448,8 +444,7 @@ mod tests {
     use crate::catalog::{ArmorEffect, Effect, ItemId, ItemKind, WeaponEffect};
     use crate::model::{Accessibility, ItemSource, WorldItem};
     use crate::query::{
-        EffectRequirement, EffectSet, Requirement, SearchQuery, TierRequirement,
-        UpgradeRequirement,
+        EffectRequirement, EffectSet, Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
     };
 
     use super::QueryPlan;
@@ -611,9 +606,7 @@ mod tests {
 
         // A good glyph on +3 armor is still reachable via Ghost/Blacksmith.
         let good = Requirement {
-            effect: EffectRequirement::OneOf(EffectSet::single(Effect::Armor(
-                ArmorEffect::Thorns,
-            ))),
+            effect: EffectRequirement::OneOf(EffectSet::single(Effect::Armor(ArmorEffect::Thorns))),
             require_uncursed: false,
             ..requirement(ItemKind::Armor, UpgradeRequirement::Exact(3))
         };

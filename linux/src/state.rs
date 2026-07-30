@@ -447,9 +447,7 @@ pub const ALL_CHALLENGES: &[ChallengeInfo] = &[
 #[cfg(test)]
 mod tests {
     use shpd_seedfinder_core::catalog::{ArmorEffect, Effect, ItemId, ItemKind, WeaponEffect};
-    use shpd_seedfinder_core::query::{
-        EffectSet, TierRequirement, UpgradeRequirement, UpgradeSum,
-    };
+    use shpd_seedfinder_core::query::{EffectSet, TierRequirement, UpgradeRequirement, UpgradeSum};
 
     use super::{AppState, UiEffect, UiRequirement};
 
@@ -480,9 +478,8 @@ mod tests {
     #[test]
     fn subtitles_phrase_effect_sets_by_size_and_family() {
         let mut requirement = UiRequirement::new(1);
-        requirement.effect = UiEffect::OneOf(EffectSet::single(Effect::Weapon(
-            WeaponEffect::Blazing,
-        )));
+        requirement.effect =
+            UiEffect::OneOf(EffectSet::single(Effect::Weapon(WeaponEffect::Blazing)));
         assert_eq!(requirement.subtitle(), "Any upgrade · Blazing");
 
         requirement.effect = UiEffect::OneOf(
@@ -511,20 +508,20 @@ mod tests {
             )
             .unwrap(),
         );
-        assert_eq!(requirement.subtitle(), "Any upgrade · any of 5 enchantments");
+        assert_eq!(
+            requirement.subtitle(),
+            "Any upgrade · any of 5 enchantments"
+        );
 
         requirement.effect = UiEffect::AnyEnchantment;
         assert_eq!(requirement.subtitle(), "Any upgrade · any enchantment");
-        requirement.effect =
-            UiEffect::OneOf(EffectSet::enchantments(ItemKind::Weapon).unwrap());
+        requirement.effect = UiEffect::OneOf(EffectSet::enchantments(ItemKind::Weapon).unwrap());
         assert_eq!(requirement.subtitle(), "Any upgrade · any enchantment");
 
         requirement.kind = ItemKind::Armor;
         requirement.effect = UiEffect::AnyEnchantment;
         assert_eq!(requirement.subtitle(), "Any upgrade · any glyph");
-        requirement.effect = UiEffect::OneOf(EffectSet::single(Effect::Armor(
-            ArmorEffect::Thorns,
-        )));
+        requirement.effect = UiEffect::OneOf(EffectSet::single(Effect::Armor(ArmorEffect::Thorns)));
         assert_eq!(requirement.subtitle(), "Any upgrade · Thorns");
     }
 
@@ -536,7 +533,10 @@ mod tests {
             group: 1,
             minimum_total: 2,
         });
-        assert_eq!(requirement.subtitle(), "Any upgrade · combined +2 total (group A)");
+        assert_eq!(
+            requirement.subtitle(),
+            "Any upgrade · combined +2 total (group A)"
+        );
     }
 
     #[test]
