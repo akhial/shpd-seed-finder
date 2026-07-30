@@ -21,6 +21,14 @@ impl ItemKind {
     }
 }
 
+/// Melee/thrown classification for `ItemKind::Weapon` catalog entries.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[repr(u8)]
+pub enum WeaponCategory {
+    Melee,
+    Thrown,
+}
+
 /// Stable identifiers for equipment that can be generated in a seeded world.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
@@ -115,6 +123,106 @@ pub enum ItemId {
     RingWealth,
 }
 
+impl ItemId {
+    /// Whether a weapon is wielded (melee) or thrown (missile weapons and
+    /// tipped darts). `None` for armor, wands, and rings.
+    #[must_use]
+    pub const fn weapon_category(self) -> Option<WeaponCategory> {
+        match self {
+            Self::WornShortsword
+            | Self::Cudgel
+            | Self::StuddedGloves
+            | Self::Rapier
+            | Self::Dagger
+            | Self::Shortsword
+            | Self::HandAxe
+            | Self::Spear
+            | Self::Quarterstaff
+            | Self::Dirk
+            | Self::Sickle
+            | Self::Sword
+            | Self::Mace
+            | Self::Scimitar
+            | Self::RoundShield
+            | Self::Sai
+            | Self::Whip
+            | Self::Longsword
+            | Self::BattleAxe
+            | Self::Flail
+            | Self::RunicBlade
+            | Self::AssassinsBlade
+            | Self::Crossbow
+            | Self::Katana
+            | Self::Greatsword
+            | Self::WarHammer
+            | Self::Glaive
+            | Self::Greataxe
+            | Self::Greatshield
+            | Self::StoneGauntlet
+            | Self::WarScythe => Some(WeaponCategory::Melee),
+            Self::ThrowingStone
+            | Self::ThrowingKnife
+            | Self::ThrowingSpike
+            | Self::FishingSpear
+            | Self::ThrowingClub
+            | Self::Shuriken
+            | Self::ThrowingSpear
+            | Self::Kunai
+            | Self::Bolas
+            | Self::Javelin
+            | Self::Tomahawk
+            | Self::HeavyBoomerang
+            | Self::Trident
+            | Self::ThrowingHammer
+            | Self::ForceCube
+            | Self::RotDart
+            | Self::IncendiaryDart
+            | Self::AdrenalineDart
+            | Self::HealingDart
+            | Self::ChillingDart
+            | Self::ShockingDart
+            | Self::PoisonDart
+            | Self::CleansingDart
+            | Self::ParalyticDart
+            | Self::HolyDart
+            | Self::DisplacingDart
+            | Self::BlindingDart => Some(WeaponCategory::Thrown),
+            // Spelled out so adding a weapon without classifying it becomes a
+            // compile error instead of a confusing test failure.
+            Self::ClothArmor
+            | Self::LeatherArmor
+            | Self::MailArmor
+            | Self::ScaleArmor
+            | Self::PlateArmor
+            | Self::WandMagicMissile
+            | Self::WandFireblast
+            | Self::WandFrost
+            | Self::WandLightning
+            | Self::WandDisintegration
+            | Self::WandPrismaticLight
+            | Self::WandCorrosion
+            | Self::WandLivingEarth
+            | Self::WandBlastWave
+            | Self::WandCorruption
+            | Self::WandWarding
+            | Self::WandRegrowth
+            | Self::WandTransfusion
+            | Self::RingAccuracy
+            | Self::RingArcana
+            | Self::RingElements
+            | Self::RingEnergy
+            | Self::RingEvasion
+            | Self::RingForce
+            | Self::RingFuror
+            | Self::RingHaste
+            | Self::RingMight
+            | Self::RingSharpshooting
+            | Self::RingTenacity
+            | Self::RingWealth => None,
+        }
+    }
+}
+
 /// Static display and sprite data for one item.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ItemDefinition {
@@ -126,6 +234,14 @@ pub struct ItemDefinition {
     pub tier: Option<u8>,
     /// Zero-based 16×16 cell in the upstream `items.png` atlas.
     pub sprite_index: u16,
+}
+
+impl ItemDefinition {
+    /// Melee/thrown classification; `None` for non-weapons.
+    #[must_use]
+    pub const fn weapon_category(&self) -> Option<WeaponCategory> {
+        self.id.weapon_category()
+    }
 }
 
 macro_rules! item {
@@ -806,6 +922,84 @@ mod tests {
         assert_eq!(item(ItemId::BlindingDart).sprite_index, 172);
         assert_eq!(ItemId::RingAccuracy as u8, 76);
         assert_eq!(item(ItemId::RingWealth).sprite_index, 235);
+    }
+
+    #[test]
+    fn every_weapon_is_melee_or_thrown_and_nothing_else_is() {
+        use super::{ItemKind, WeaponCategory};
+
+        for definition in ITEMS {
+            assert_eq!(
+                definition.weapon_category().is_some(),
+                definition.kind == ItemKind::Weapon,
+                "{} must be categorized iff it is a weapon",
+                definition.stable_id
+            );
+        }
+        assert_eq!(ITEMS.len(), 88);
+        assert_eq!(
+            ITEMS
+                .iter()
+                .filter(|definition| definition.weapon_category() == Some(WeaponCategory::Melee))
+                .count(),
+            31
+        );
+        assert_eq!(
+            ITEMS
+                .iter()
+                .filter(|definition| definition.weapon_category() == Some(WeaponCategory::Thrown))
+                .count(),
+            27
+        );
+        // The crossbow fires darts but is wielded as a melee weapon; shields
+        // and gauntlets are melee; every dart and "throwing" item is thrown.
+        for melee in ["crossbow", "round_shield", "gauntlet", "whip"] {
+            assert_eq!(
+                item_by_stable_id(melee).unwrap().weapon_category(),
+                Some(WeaponCategory::Melee),
+                "{melee}"
+            );
+        }
+        for thrown in ["shuriken", "bolas", "force_cube", "heavy_boomerang"] {
+            assert_eq!(
+                item_by_stable_id(thrown).unwrap().weapon_category(),
+                Some(WeaponCategory::Thrown),
+                "{thrown}"
+            );
+        }
+        for definition in ITEMS {
+            let name_says_thrown = definition.stable_id.starts_with("throwing_")
+                || definition.stable_id.ends_with("_dart");
+            if name_says_thrown {
+                assert_eq!(
+                    definition.weapon_category(),
+                    Some(WeaponCategory::Thrown),
+                    "{}",
+                    definition.stable_id
+                );
+            }
+        }
+        // The classification agrees with the probability model's generator
+        // lines: the plain line rolls melee weapons, the missile and
+        // tipped-dart lines roll thrown ones.
+        for definition in ITEMS {
+            if definition.kind != ItemKind::Weapon {
+                continue;
+            }
+            let expected = if crate::probability_tables::line_of(definition.id)
+                == crate::probability_tables::Line::Plain
+            {
+                WeaponCategory::Melee
+            } else {
+                WeaponCategory::Thrown
+            };
+            assert_eq!(
+                definition.weapon_category(),
+                Some(expected),
+                "{}",
+                definition.stable_id
+            );
+        }
     }
 
     #[test]

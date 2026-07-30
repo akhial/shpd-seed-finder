@@ -280,6 +280,7 @@ fn benchmark_query() -> SearchQuery {
     SearchQuery {
         requirements: vec![Requirement {
             kind: ItemKind::Wand,
+            weapon_category: None,
             item: Some(ItemId::WandFireblast),
             tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Exact(3),

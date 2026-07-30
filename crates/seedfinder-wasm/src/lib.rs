@@ -671,10 +671,14 @@ mod tests {
     struct AndroidEntry {
         id: String,
         sprite: u16,
+        #[serde(default)]
+        class: Option<String>,
     }
 
     #[test]
     fn scout_matches_canonical_world_and_android_catalog() {
+        use shpd_seedfinder_core::catalog::{WeaponCategory, item_by_stable_id};
+
         let output: Value =
             serde_json::from_str(&scout_impl(r#"{"seed":"AAA-AAA-AAA"}"#).unwrap()).unwrap();
         let world = generate_main_world(DungeonSeed::MIN, 24).unwrap();
@@ -687,8 +691,8 @@ mod tests {
         .unwrap();
         let sprites = catalog
             .entries
-            .into_iter()
-            .map(|entry| (entry.id, entry.sprite))
+            .iter()
+            .map(|entry| (entry.id.clone(), entry.sprite))
             .collect::<BTreeMap<_, _>>();
         for (output_item, world_item) in output_items.iter().zip(&world.items) {
             let definition = item(world_item.item);
@@ -698,6 +702,19 @@ mod tests {
                 output_item["spriteIndex"],
                 sprites.get(definition.stable_id).copied().unwrap()
             );
+        }
+
+        // The asset's melee/thrown classes mirror the core catalog exactly.
+        for entry in &catalog.entries {
+            let expected =
+                item_by_stable_id(&entry.id)
+                    .unwrap()
+                    .weapon_category()
+                    .map(|category| match category {
+                        WeaponCategory::Melee => "melee",
+                        WeaponCategory::Thrown => "thrown",
+                    });
+            assert_eq!(entry.class.as_deref(), expected, "{}", entry.id);
         }
     }
 

@@ -1,5 +1,5 @@
-import { displayItemName, getItem, sourceLabel, wildcardSprites } from '../../lib/catalog'
-import type { ItemCategory, RequirementState } from '../../lib/wasm/types'
+import { displayItemName, getItem, kindFamily, sourceLabel, wildcardSpriteForKind, wildcardSprites } from '../../lib/catalog'
+import type { ItemCategory, RequirementKind, RequirementState } from '../../lib/wasm/types'
 
 export const categoryLabel: Record<ItemCategory, string> = {
   weapon: 'Weapon',
@@ -22,8 +22,16 @@ export const categoryTint: Record<ItemCategory, string> = {
   ring: '#e8d05f',
 }
 
+export const kindLabel: Record<RequirementKind, string> = {
+  ...categoryLabel,
+  melee_weapon: 'Melee weapon',
+  thrown_weapon: 'Thrown weapon',
+}
+
+/** The broad family a requirement belongs to, used for grouping and sprites. */
 export function requirementKind(requirement: RequirementState): ItemCategory | undefined {
-  return requirement.kind ?? (requirement.item ? getItem(requirement.item)?.type : undefined)
+  if (requirement.kind) return kindFamily(requirement.kind)
+  return requirement.item ? getItem(requirement.item)?.type : undefined
 }
 
 export function requirementSprite(requirement: RequirementState): number {
@@ -31,12 +39,13 @@ export function requirementSprite(requirement: RequirementState): number {
     const item = getItem(requirement.item)
     if (item) return item.sprite
   }
+  if (requirement.kind) return wildcardSpriteForKind(requirement.kind)
   return wildcardSprites[requirementKind(requirement) ?? 'weapon']
 }
 
 export function requirementTitle(requirement: RequirementState): string {
   if (requirement.item) return displayItemName(requirement.item)
-  const kind = requirement.kind ? categoryLabel[requirement.kind].toLowerCase() : 'item'
+  const kind = requirement.kind ? kindLabel[requirement.kind].toLowerCase() : 'item'
   const tier = requirement.tier
   if (tier.mode === 'exact') return `Any tier-${tier.value} ${kind}`
   if (tier.mode === 'at_least') return `Any ${kind} · tier ${tier.value}+`
