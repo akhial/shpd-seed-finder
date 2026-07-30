@@ -35,7 +35,7 @@
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
-use crate::catalog::{Effect, ItemId, ItemKind, item};
+use crate::catalog::{Effect, ItemId, ItemKind, WeaponCategory, item};
 use crate::generator::{
     ARMOR_ITEMS, RING_ITEMS, WAND_ITEMS, WEAPON_TIER_1_ITEMS, WEAPON_TIER_2_ITEMS,
     WEAPON_TIER_3_ITEMS, WEAPON_TIER_4_ITEMS, WEAPON_TIER_5_ITEMS,
@@ -243,6 +243,15 @@ fn repeated_identity(ordered: &[Predicate]) -> Option<(ItemId, usize)> {
         .into_iter()
         .max_by_key(|(_, copies)| *copies)
         .filter(|(_, copies)| *copies > 1)
+}
+
+/// Whether one generator line produces weapons of one melee/thrown class.
+/// The plain line rolls wielded weapons; missiles and tipped darts are thrown.
+const fn line_matches_category(line: Line, category: WeaponCategory) -> bool {
+    match category {
+        WeaponCategory::Melee => matches!(line, Line::Plain),
+        WeaponCategory::Thrown => matches!(line, Line::Thrown | Line::Tipped),
+    }
 }
 
 /// The line an identity belongs to. Only weapons have more than one.
@@ -710,6 +719,7 @@ fn expected_slots(predicate: &Predicate) -> f64 {
 #[derive(Clone, Copy, Debug)]
 struct Predicate {
     kind: ItemKind,
+    weapon_category: Option<WeaponCategory>,
     item: Option<ItemId>,
     tiers: u8,
     upgrades: u8,
@@ -742,6 +752,7 @@ impl Predicate {
         }
         Self {
             kind: requirement.kind,
+            weapon_category: requirement.weapon_category,
             item: identity.or(requirement.item),
             tiers,
             upgrades,
@@ -768,6 +779,10 @@ impl Predicate {
         if self.kind != other.kind {
             return None;
         }
+        let weapon_category = match (self.weapon_category, other.weapon_category) {
+            (Some(left), Some(right)) if left != right => return None,
+            (left, right) => left.or(right),
+        };
         let item = match (self.item, other.item) {
             (Some(left), Some(right)) if left != right => return None,
             (left, right) => left.or(right),
@@ -789,6 +804,7 @@ impl Predicate {
         }
         Some(Self {
             kind: self.kind,
+            weapon_category,
             item,
             tiers,
             upgrades,
@@ -814,6 +830,11 @@ impl Predicate {
             || self.source.is_some_and(|wanted| wanted != supply.source)
             || (self.exclude_blacksmith && supply.source == ItemSource::BlacksmithReward)
         {
+            return 0.0;
+        }
+        if self.weapon_category.is_some_and(|category| {
+            self.kind == ItemKind::Weapon && !line_matches_category(supply.line, category)
+        }) {
             return 0.0;
         }
         let identity = self.identity_probability(supply, depth);
@@ -1095,6 +1116,7 @@ mod tests {
     fn requirement(kind: ItemKind) -> Requirement {
         Requirement {
             kind,
+            weapon_category: None,
             item: None,
             tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Any,
@@ -1115,6 +1137,35 @@ mod tests {
             exclude_blacksmith_rewards: false,
             fast_mode: false,
         }
+    }
+
+    #[test]
+    fn weapon_category_narrows_the_estimate() {
+        use crate::catalog::WeaponCategory;
+
+        let exact_two = Requirement {
+            upgrade: UpgradeRequirement::Exact(2),
+            ..requirement(ItemKind::Weapon)
+        };
+        let melee = Requirement {
+            weapon_category: Some(WeaponCategory::Melee),
+            ..exact_two
+        };
+        let thrown = Requirement {
+            weapon_category: Some(WeaponCategory::Thrown),
+            ..exact_two
+        };
+        let any = estimate_match_probability(&query(vec![exact_two], 6));
+        let melee = estimate_match_probability(&query(vec![melee], 6));
+        let thrown = estimate_match_probability(&query(vec![thrown], 6));
+
+        assert!(melee > 0.0, "{melee}");
+        assert!(thrown > 0.0, "{thrown}");
+        assert!(melee < any, "{melee} vs {any}");
+        assert!(thrown < any, "{thrown} vs {any}");
+        // One weapon of either class is at least as likely as one of a fixed
+        // class, and no likelier than having one of each class to pick from.
+        assert!(any <= melee + thrown + 1e-9, "{any} vs {melee} + {thrown}");
     }
 
     fn staff(max_depth: u8) -> SearchQuery {

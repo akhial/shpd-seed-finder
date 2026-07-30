@@ -45,6 +45,42 @@ class QueryCodecTest {
     }
 
     @Test
+    fun meleeAndThrownWeaponKindsUseWireIdsFourAndFive() {
+        val melee = ItemRequirement(
+            key = 1,
+            item = null,
+            upgrade = 0,
+            kind = ItemKind.MELEE_WEAPON,
+            upgradeMatch = UpgradeMatch.ANY,
+        )
+        val meleePacket = QueryCodec.encode(SearchRequest(listOf(melee)))
+        assertEquals(4, meleePacket[10].toInt())
+
+        val shuriken = ItemCatalog.thrownWeapons.first { it.id == "shuriken" }
+        val thrown = ItemRequirement(
+            key = 2,
+            item = shuriken,
+            upgrade = 0,
+            kind = ItemKind.THROWN_WEAPON,
+            upgradeMatch = UpgradeMatch.ANY,
+        )
+        val thrownPacket = QueryCodec.encode(SearchRequest(listOf(thrown)))
+        assertEquals(5, thrownPacket[10].toInt())
+        assertEquals("Any melee weapon", melee.title)
+
+        // A narrowed kind rejects an item of the other weapon class.
+        assertThrows(IllegalArgumentException::class.java) {
+            ItemRequirement(
+                key = 3,
+                item = ItemCatalog.meleeWeapons.first { it.id == "sword" },
+                upgrade = 0,
+                kind = ItemKind.THROWN_WEAPON,
+                upgradeMatch = UpgradeMatch.ANY,
+            )
+        }
+    }
+
+    @Test
     fun encodesAtMostTierPredicate() {
         val requirement = ItemRequirement(
             key = 1,
