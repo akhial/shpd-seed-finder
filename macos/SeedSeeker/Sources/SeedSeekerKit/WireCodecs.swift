@@ -86,7 +86,7 @@ public enum QueryCodec {
             let effectNames: [String] = switch requirement.effect {
             case .any: []
             case .anyEnchantment:
-                requirement.kind == .weapon ? ItemCatalog.enchantments : ItemCatalog.glyphs
+                requirement.kind.family == .weapon ? ItemCatalog.enchantments : ItemCatalog.glyphs
             case .oneOf(let names): names
             }
             if effectNames.isEmpty {

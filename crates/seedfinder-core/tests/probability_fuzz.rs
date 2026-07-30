@@ -19,7 +19,9 @@ use std::fmt::Write as _;
 use std::sync::OnceLock;
 use std::time::Instant;
 
-use shpd_seedfinder_core::catalog::{ArmorEffect, Effect, ItemId, ItemKind, WeaponEffect};
+use shpd_seedfinder_core::catalog::{
+    ArmorEffect, Effect, ItemId, ItemKind, WeaponCategory, WeaponEffect,
+};
 use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::main_world::CanonicalMainWorldGenerator;
 use shpd_seedfinder_core::model::{GeneratedWorld, ItemSource};
@@ -288,6 +290,7 @@ fn generate(count: u64) -> Vec<GeneratedWorld> {
 fn base(kind: ItemKind) -> Requirement {
     Requirement {
         kind,
+        weapon_category: None,
         item: None,
         tier: TierRequirement::Any,
         upgrade: UpgradeRequirement::Any,
@@ -352,6 +355,7 @@ fn depth_queries() -> Vec<(String, SearchQuery)> {
 }
 
 /// Identity, upgrade, curse, and enchantment rolls.
+#[allow(clippy::too_many_lines)]
 fn modifier_queries() -> Vec<(String, SearchQuery)> {
     let mut queries = vec![(
         "one named wand".to_owned(),
@@ -428,6 +432,29 @@ fn modifier_queries() -> Vec<(String, SearchQuery)> {
             vec![Requirement {
                 item: Some(ItemId::ThrowingSpear),
                 upgrade: UpgradeRequirement::AtLeast(1),
+                ..base(ItemKind::Weapon)
+            }],
+            24,
+        ),
+    ));
+    // Narrowed wildcards exercise the estimator's per-line category filter.
+    queries.push((
+        "any thrown weapon at +1 or better".to_owned(),
+        query(
+            vec![Requirement {
+                weapon_category: Some(WeaponCategory::Thrown),
+                upgrade: UpgradeRequirement::AtLeast(1),
+                ..base(ItemKind::Weapon)
+            }],
+            24,
+        ),
+    ));
+    queries.push((
+        "any melee weapon at exactly +2".to_owned(),
+        query(
+            vec![Requirement {
+                weapon_category: Some(WeaponCategory::Melee),
+                upgrade: UpgradeRequirement::Exact(2),
                 ..base(ItemKind::Weapon)
             }],
             24,
@@ -533,8 +560,12 @@ fn describe(query: &SearchQuery) -> String {
     for requirement in &query.requirements {
         let _ = write!(
             text,
-            " [{:?}{}{}{}{}{}{}{}{}]",
+            " [{:?}{}{}{}{}{}{}{}{}{}]",
             requirement.kind,
+            requirement
+                .weapon_category
+                .map(|value| format!(" {value:?}"))
+                .unwrap_or_default(),
             requirement
                 .item
                 .map(|value| format!(" {value:?}"))
@@ -638,8 +669,15 @@ impl QueryGenerator {
     fn next_requirement(&mut self, forced: Option<ItemKind>) -> Requirement {
         let kind = forced.unwrap_or_else(|| self.next_kind());
         let mut requirement = base(kind);
+        if kind == ItemKind::Weapon {
+            requirement.weapon_category = match self.below(5) {
+                0 => Some(WeaponCategory::Melee),
+                1 => Some(WeaponCategory::Thrown),
+                _ => None,
+            };
+        }
         if self.chance(35) {
-            requirement.item = self.next_item(kind);
+            requirement.item = self.next_item(kind, requirement.weapon_category);
         }
         if requirement.item.is_none() && matches!(kind, ItemKind::Weapon | ItemKind::Armor) {
             match self.below(8) {
@@ -698,9 +736,14 @@ impl QueryGenerator {
     }
 
     /// Named items, with thrown weapons drawn as often as melee ones so the
-    /// separate generator category they come from stays covered.
-    fn next_item(&mut self, kind: ItemKind) -> Option<ItemId> {
-        let thrown = kind == ItemKind::Weapon && self.chance(40);
+    /// separate generator category they come from stays covered. A narrowed
+    /// requirement only pins items of its own weapon class.
+    fn next_item(&mut self, kind: ItemKind, category: Option<WeaponCategory>) -> Option<ItemId> {
+        let thrown = kind == ItemKind::Weapon
+            && match category {
+                Some(category) => category == WeaponCategory::Thrown,
+                None => self.chance(40),
+            };
         let candidates: Vec<ItemId> = shpd_seedfinder_core::catalog::ITEMS
             .iter()
             .filter(|definition| definition.kind == kind)

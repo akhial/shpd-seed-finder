@@ -401,6 +401,9 @@ fn requirement_prefix(requirement: &UiRequirement) -> gtk::Widget {
             shpd_seedfinder_core::catalog::item(item_id),
             glow::effect(requirement.effect.single()),
         ),
-        None => gtk::Image::from_icon_name(kind_icon(requirement.kind)).upcast(),
+        None => {
+            gtk::Image::from_icon_name(kind_icon(requirement.kind, requirement.weapon_category))
+                .upcast()
+        }
     }
 }

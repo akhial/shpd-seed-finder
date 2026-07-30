@@ -112,7 +112,7 @@ export function QueryPanel({
   const addAlternative = (index: number) => {
     const source = query.requirements[index]
     if (!source) return
-    setEditor({ index: null, requirement: emptyRequirement(requirementKind(source) ?? 'weapon'), attachTo: index })
+    setEditor({ index: null, requirement: emptyRequirement(source.kind ?? requirementKind(source) ?? 'weapon'), attachTo: index })
   }
 
   const commitRequirement = (session: EditorSession, requirement: RequirementState) => {

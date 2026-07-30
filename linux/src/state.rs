@@ -4,7 +4,7 @@
 
 use std::fmt::Write as _;
 
-use shpd_seedfinder_core::catalog::{Effect, ItemId, ItemKind, item};
+use shpd_seedfinder_core::catalog::{Effect, ItemId, ItemKind, WeaponCategory, item};
 use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::model::ItemSource;
 use shpd_seedfinder_core::query::{
@@ -34,12 +34,19 @@ pub const ALL_SOURCES: &[ItemSource] = &[
     ItemSource::ImpReward,
 ];
 
-/// Every user-facing item family, in presentation order.
-pub const ALL_KINDS: &[ItemKind] = &[
-    ItemKind::Weapon,
-    ItemKind::Armor,
-    ItemKind::Wand,
-    ItemKind::Ring,
+/// One entry in the requirement editor's category picker: an item family,
+/// optionally narrowed to one weapon class.
+pub type KindChoice = (ItemKind, Option<WeaponCategory>);
+
+/// Every user-facing category choice, in presentation order. A plain weapon
+/// requirement keeps matching melee and thrown weapons alike.
+pub const ALL_KIND_CHOICES: &[KindChoice] = &[
+    (ItemKind::Weapon, None),
+    (ItemKind::Weapon, Some(WeaponCategory::Melee)),
+    (ItemKind::Weapon, Some(WeaponCategory::Thrown)),
+    (ItemKind::Armor, None),
+    (ItemKind::Wand, None),
+    (ItemKind::Ring, None),
 ];
 
 /// Effect predicate as edited in the interface. `AnyEnchantment` expands to
@@ -71,6 +78,8 @@ impl UiEffect {
 pub struct UiRequirement {
     pub key: u64,
     pub kind: ItemKind,
+    /// Optional melee/thrown narrowing for weapon requirements.
+    pub weapon_category: Option<WeaponCategory>,
     pub item: Option<ItemId>,
     pub tier: TierRequirement,
     pub upgrade: UpgradeRequirement,
@@ -88,6 +97,7 @@ impl UiRequirement {
         Self {
             key,
             kind: ItemKind::Weapon,
+            weapon_category: None,
             item: None,
             tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Any,
@@ -105,6 +115,7 @@ impl UiRequirement {
     pub fn to_core(self) -> Requirement {
         Requirement {
             kind: self.kind,
+            weapon_category: self.weapon_category,
             item: self.item,
             tier: self.tier,
             upgrade: self.upgrade,
@@ -123,22 +134,29 @@ impl UiRequirement {
         }
     }
 
-    /// Primary row label, e.g. `Any Tier 3+ weapon` or `Ring of tenacity`.
+    /// The editor category choice this requirement uses.
+    #[must_use]
+    pub const fn kind_choice(&self) -> KindChoice {
+        (self.kind, self.weapon_category)
+    }
+
+    /// Primary row label, e.g. `Any Tier 3+ thrown weapon` or `Ring of tenacity`.
     #[must_use]
     pub fn title(&self) -> String {
         if let Some(item_id) = self.item {
             return item(item_id).name.to_owned();
         }
+        let singular = kind_choice_singular(self.kind_choice());
         match self.tier {
-            TierRequirement::Any => format!("Any {}", kind_singular(self.kind)),
+            TierRequirement::Any => format!("Any {singular}"),
             TierRequirement::Exact(tier) => {
-                format!("Any Tier {tier} {}", kind_singular(self.kind))
+                format!("Any Tier {tier} {singular}")
             }
             TierRequirement::AtLeast(tier) => {
-                format!("Any Tier {tier}+ {}", kind_singular(self.kind))
+                format!("Any Tier {tier}+ {singular}")
             }
             TierRequirement::AtMost(tier) => {
-                format!("Any Tier {tier} or lower {}", kind_singular(self.kind))
+                format!("Any Tier {tier} or lower {singular}")
             }
         }
     }
@@ -318,31 +336,37 @@ impl AppState {
     }
 }
 
-pub const fn kind_label(kind: ItemKind) -> &'static str {
-    match kind {
-        ItemKind::Weapon => "Weapon",
-        ItemKind::Armor => "Armor",
-        ItemKind::Wand => "Wand",
-        ItemKind::Ring => "Ring",
+pub const fn kind_choice_label(choice: KindChoice) -> &'static str {
+    match choice {
+        (ItemKind::Weapon, None) => "Weapon",
+        (ItemKind::Weapon, Some(WeaponCategory::Melee)) => "Melee weapon",
+        (ItemKind::Weapon, Some(WeaponCategory::Thrown)) => "Thrown weapon",
+        (ItemKind::Armor, _) => "Armor",
+        (ItemKind::Wand, _) => "Wand",
+        (ItemKind::Ring, _) => "Ring",
     }
 }
 
-pub const fn kind_singular(kind: ItemKind) -> &'static str {
-    match kind {
-        ItemKind::Weapon => "weapon",
-        ItemKind::Armor => "armor",
-        ItemKind::Wand => "wand",
-        ItemKind::Ring => "ring",
+pub const fn kind_choice_singular(choice: KindChoice) -> &'static str {
+    match choice {
+        (ItemKind::Weapon, None) => "weapon",
+        (ItemKind::Weapon, Some(WeaponCategory::Melee)) => "melee weapon",
+        (ItemKind::Weapon, Some(WeaponCategory::Thrown)) => "thrown weapon",
+        (ItemKind::Armor, _) => "armor",
+        (ItemKind::Wand, _) => "wand",
+        (ItemKind::Ring, _) => "ring",
     }
 }
 
-/// Bundled symbolic icon name for one item family.
-pub const fn kind_icon(kind: ItemKind) -> &'static str {
-    match kind {
-        ItemKind::Weapon => "kind-weapon-symbolic",
-        ItemKind::Armor => "kind-armor-symbolic",
-        ItemKind::Wand => "kind-wand-symbolic",
-        ItemKind::Ring => "kind-ring-symbolic",
+/// Bundled symbolic icon name for one item family, with a dedicated glyph
+/// for thrown weapons.
+pub const fn kind_icon(kind: ItemKind, weapon_category: Option<WeaponCategory>) -> &'static str {
+    match (kind, weapon_category) {
+        (ItemKind::Weapon, Some(WeaponCategory::Thrown)) => "kind-weapon-thrown-symbolic",
+        (ItemKind::Weapon, _) => "kind-weapon-symbolic",
+        (ItemKind::Armor, _) => "kind-armor-symbolic",
+        (ItemKind::Wand, _) => "kind-wand-symbolic",
+        (ItemKind::Ring, _) => "kind-ring-symbolic",
     }
 }
 
@@ -600,6 +624,26 @@ mod tests {
             Some(Effect::Weapon(WeaponEffect::Lucky))
         );
         assert_eq!(UiEffect::AnyEnchantment.single(), None);
+    }
+
+    #[test]
+    fn weapon_category_narrows_labels_and_the_core_query() {
+        use shpd_seedfinder_core::catalog::WeaponCategory;
+
+        let mut requirement = UiRequirement::new(1);
+        requirement.weapon_category = Some(WeaponCategory::Thrown);
+        assert_eq!(requirement.title(), "Any thrown weapon");
+        requirement.tier = TierRequirement::Exact(5);
+        assert_eq!(requirement.title(), "Any Tier 5 thrown weapon");
+        assert_eq!(
+            requirement.to_core().weapon_category,
+            Some(WeaponCategory::Thrown)
+        );
+        assert!(requirement.to_core().validate().is_ok());
+
+        requirement.weapon_category = Some(WeaponCategory::Melee);
+        requirement.tier = TierRequirement::Any;
+        assert_eq!(requirement.title(), "Any melee weapon");
     }
 
     #[test]

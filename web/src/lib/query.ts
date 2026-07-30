@@ -1,4 +1,4 @@
-import { getItem, isCurseForCategory } from './catalog'
+import { getItem, isCurseForCategory, kindFamily, kindWeaponClass } from './catalog'
 import type {
   EffectFilter,
   QueryDocument,
@@ -144,22 +144,25 @@ export function validateRequirement(requirement: RequirementState): string[] {
   const errors: string[] = []
   const item = requirement.item ? getItem(requirement.item) : undefined
   const kind = requirement.kind ?? item?.type
+  const family = kind ? kindFamily(kind) : undefined
+  const weaponClass = kind ? kindWeaponClass(kind) : undefined
   if (!kind) errors.push('Choose an item category.')
-  if (item && requirement.kind && item.type !== requirement.kind) errors.push('The item does not belong to this category.')
+  if (item && requirement.kind && item.type !== family) errors.push('The item does not belong to this category.')
+  else if (item && weaponClass && item.class !== weaponClass) errors.push(`The item is not a ${weaponClass} weapon.`)
   if (requirement.tier.mode !== 'any') {
-    if (requirement.item || (kind !== 'weapon' && kind !== 'armor')) errors.push('Tier filters require a wildcard weapon or armor.')
+    if (requirement.item || (family !== 'weapon' && family !== 'armor')) errors.push('Tier filters require a wildcard weapon or armor.')
     const { mode, value } = requirement.tier
     if (mode === 'exact' && (value < 2 || value > 5)) errors.push('Exact tier must be 2 through 5.')
     if ((mode === 'at_least' || mode === 'at_most') && (value < 3 || value > 4)) errors.push('Tier bounds must be 3 or 4.')
   }
   if (requirement.upgrade.mode !== 'any') {
-    const maximum = kind === 'ring' ? 4 : 3
+    const maximum = family === 'ring' ? 4 : 3
     const minimum = requirement.upgrade.mode === 'exact' ? 1 : 0
     if (requirement.upgrade.value < minimum || requirement.upgrade.value > maximum) errors.push(`Upgrade must be ${minimum} through +${maximum}.`)
   }
   if (requirement.maxDepth !== undefined && (requirement.maxDepth < 1 || requirement.maxDepth > 24)) errors.push('Requirement floor must be 1 through 24.')
   if (requirement.effect) {
-    if (kind !== 'weapon' && kind !== 'armor') {
+    if (!kind || (family !== 'weapon' && family !== 'armor')) {
       errors.push('Effects require a weapon or armor category.')
     } else if (requirement.effect.mode === 'one_of') {
       const names = requirement.effect.names
@@ -206,7 +209,7 @@ export function validateQuery(state: QueryState): ValidationResult {
     if (!requirement.identityGroup) return
     const current = {
       alternative: requirement.alternativeGroup,
-      kind: requirement.kind ?? getItem(requirement.item ?? '')?.type,
+      kind: requirement.kind ? kindFamily(requirement.kind) : getItem(requirement.item ?? '')?.type,
       item: requirement.item,
     }
     const members = groups.get(requirement.identityGroup) ?? []

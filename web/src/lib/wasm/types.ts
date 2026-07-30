@@ -1,5 +1,15 @@
 export type ItemCategory = 'weapon' | 'armor' | 'wand' | 'ring'
 
+/** Melee/thrown classification carried by weapon catalog entries. */
+export type WeaponClass = 'melee' | 'thrown'
+
+/**
+ * Category filter of one requirement. `weapon` matches melee and thrown
+ * weapons alike (the historical behavior); the two narrowed kinds restrict a
+ * weapon requirement to one class.
+ */
+export type RequirementKind = ItemCategory | 'melee_weapon' | 'thrown_weapon'
+
 export type ChallengeName =
   | 'on_diet'
   | 'faith_is_my_armor'
@@ -46,7 +56,7 @@ export type EffectFilter =
 export interface UpgradeSumFilter { group: number; atLeast: number }
 
 export interface RequirementState {
-  kind?: ItemCategory
+  kind?: RequirementKind
   item?: string
   tier: TierFilter
   upgrade: UpgradeFilter
@@ -73,7 +83,7 @@ export type TierDocument = { exact: number } | { at_least: number } | { at_most:
 export type UpgradeDocument = number | { at_least: number }
 
 export interface RequirementDocument {
-  kind?: ItemCategory
+  kind?: RequirementKind
   item?: string
   tier?: TierDocument
   upgrade?: UpgradeDocument

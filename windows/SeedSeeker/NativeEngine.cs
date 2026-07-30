@@ -64,7 +64,7 @@ public sealed class NativeEngine
             w.U8((int)r.UpgradeMatch); w.U8(r.Upgrade);
             // Effect predicate: mode 0 = any, mode 1 = one-of a count and that
             // many names. "Any enchantment" is the family's full non-curse set.
-            string[] effects = r.Kind is ItemKind.Weapon or ItemKind.Armor
+            string[] effects = r.Kind.Family() is ItemKind.Weapon or ItemKind.Armor
                 ? r.EffectMode switch
                 {
                     EffectMode.AnyEnchantment => ItemCatalog.NonCurse(r.Kind),

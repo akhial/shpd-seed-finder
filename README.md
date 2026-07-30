@@ -107,7 +107,9 @@ cargo run --release -p shpd-seedfinder-cli -- -i requirements.json -b 1000 --wor
     // Members use the requirement schema below, except "upgrade_sum".
     {
       // Supply "item", "kind", or both; when both are present they must agree.
-      "kind"?: "weapon" | "armor" | "wand" | "ring",
+      // "weapon" matches melee and thrown weapons alike; "melee_weapon" and
+      // "thrown_weapon" narrow it to one class.
+      "kind"?: "weapon" | "melee_weapon" | "thrown_weapon" | "armor" | "wand" | "ring",
       "item"?:
         // Weapons
         "worn_shortsword" | "cudgel" | "gloves" | "rapier" | "dagger" |

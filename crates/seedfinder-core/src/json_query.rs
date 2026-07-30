@@ -1,6 +1,6 @@
 //! JSON search-query document decoding shared by the CLI and native frontends.
 
-use crate::catalog::{Effect, ItemKind, item_by_stable_id};
+use crate::catalog::{Effect, ItemKind, WeaponCategory, item_by_stable_id};
 use crate::challenges::Challenges;
 use crate::model::ItemSource;
 use crate::query::{
@@ -148,18 +148,26 @@ struct AtMostTier {
 #[serde(rename_all = "snake_case")]
 enum FileItemKind {
     Weapon,
+    /// A weapon narrowed to wielded weapons. Plain "weapon" continues to
+    /// match both melee and thrown weapons, so pre-existing documents keep
+    /// their meaning.
+    MeleeWeapon,
+    /// A weapon narrowed to missile weapons and tipped darts.
+    ThrownWeapon,
     Armor,
     Wand,
     Ring,
 }
 
-impl From<FileItemKind> for ItemKind {
-    fn from(value: FileItemKind) -> Self {
-        match value {
-            FileItemKind::Weapon => Self::Weapon,
-            FileItemKind::Armor => Self::Armor,
-            FileItemKind::Wand => Self::Wand,
-            FileItemKind::Ring => Self::Ring,
+impl FileItemKind {
+    const fn decompose(self) -> (ItemKind, Option<WeaponCategory>) {
+        match self {
+            Self::Weapon => (ItemKind::Weapon, None),
+            Self::MeleeWeapon => (ItemKind::Weapon, Some(WeaponCategory::Melee)),
+            Self::ThrownWeapon => (ItemKind::Weapon, Some(WeaponCategory::Thrown)),
+            Self::Armor => (ItemKind::Armor, None),
+            Self::Wand => (ItemKind::Wand, None),
+            Self::Ring => (ItemKind::Ring, None),
         }
     }
 }
@@ -333,10 +341,10 @@ fn convert_requirement(
             item_by_stable_id(stable_id).ok_or_else(|| format!("unknown item '{stable_id}'"))
         })
         .transpose()?;
-    let kind = requirement
+    let (kind, weapon_category) = requirement
         .kind
-        .map(ItemKind::from)
-        .or_else(|| definition.map(|value| value.kind))
+        .map(FileItemKind::decompose)
+        .or_else(|| definition.map(|value| (value.kind, None)))
         .ok_or_else(|| "kind is required when item is omitted".to_owned())?;
     let effect = requirement
         .effect
@@ -362,6 +370,7 @@ fn convert_requirement(
     };
     Ok(Requirement {
         kind,
+        weapon_category,
         item: definition.map(|value| value.id),
         tier,
         upgrade,
@@ -417,6 +426,48 @@ mod tests {
         assert_eq!(
             query.requirements[1].upgrade,
             UpgradeRequirement::AtLeast(2)
+        );
+    }
+
+    #[test]
+    fn melee_and_thrown_kinds_narrow_weapons_and_stay_compatible() {
+        use crate::catalog::WeaponCategory;
+
+        let query = decode(
+            r#"{"requirements":[
+                {"kind":"weapon"},
+                {"kind":"melee_weapon", "tier":{"exact":5}},
+                {"kind":"thrown_weapon"},
+                {"kind":"thrown_weapon", "item":"shuriken"}
+            ]}"#,
+        )
+        .unwrap();
+        assert_eq!(query.requirements[0].kind, ItemKind::Weapon);
+        assert_eq!(query.requirements[0].weapon_category, None);
+        assert_eq!(
+            query.requirements[1].weapon_category,
+            Some(WeaponCategory::Melee)
+        );
+        assert_eq!(query.requirements[1].tier, TierRequirement::Exact(5));
+        assert_eq!(
+            query.requirements[2].weapon_category,
+            Some(WeaponCategory::Thrown)
+        );
+        assert_eq!(query.requirements[3].item, Some(ItemId::Shuriken));
+        assert_eq!(
+            query.requirements[3].weapon_category,
+            Some(WeaponCategory::Thrown)
+        );
+
+        // A melee kind cannot pin a thrown item and vice versa.
+        assert!(decode(r#"{"requirements":[{"kind":"melee_weapon","item":"shuriken"}]}"#).is_err());
+        assert!(decode(r#"{"requirements":[{"kind":"thrown_weapon","item":"sword"}]}"#).is_err());
+        // Enchantments remain valid for both weapon sub-kinds.
+        let enchanted =
+            decode(r#"{"requirements":[{"kind":"thrown_weapon","effect":"Projecting"}]}"#).unwrap();
+        assert_eq!(
+            enchanted.requirements[0].effect,
+            EffectRequirement::OneOf(EffectSet::single(Effect::Weapon(WeaponEffect::Projecting)))
         );
     }
 

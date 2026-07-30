@@ -189,33 +189,35 @@ fun RequirementSheet(
                             .padding(horizontal = 20.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(3.dp),
                     ) {
-                        ItemKind.entries.forEach { entry ->
-                            ToggleButton(
-                                checked = kind == entry,
-                                onCheckedChange = { checked ->
-                                    if (checked && kind != entry) {
-                                        kind = entry
-                                        selectedItem = ItemCatalog.forKind(entry).first { it.tier != 1 }
-                                        tierMatch = TierMatch.ANY
-                                        tier = 2
-                                        effectMode = EffectMode.ANY
-                                        selectedEffects = emptySet()
-                                        clampUpgrade(upgradeMatch, entry)
-                                    }
-                                },
-                                modifier = Modifier.weight(1f),
-                                colors = ToggleButtonDefaults.toggleButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                ),
-                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
-                            ) {
-                                Text(entry.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        listOf(ItemKind.WEAPON, ItemKind.ARMOR, ItemKind.WAND, ItemKind.RING)
+                            .forEach { entry ->
+                                ToggleButton(
+                                    checked = kind.family == entry,
+                                    onCheckedChange = { checked ->
+                                        if (checked && kind.family != entry) {
+                                            kind = entry
+                                            selectedItem = ItemCatalog.forKind(entry).first { it.tier != 1 }
+                                            tierMatch = TierMatch.ANY
+                                            tier = 2
+                                            effectMode = EffectMode.ANY
+                                            selectedEffects = emptySet()
+                                            clampUpgrade(upgradeMatch, entry)
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ToggleButtonDefaults.toggleButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+                                ) {
+                                    Text(entry.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
                             }
-                        }
                     }
 
                     Row(
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         FilterChip(
@@ -223,6 +225,27 @@ fun RequirementSheet(
                             onClick = { selectedItem = null },
                             label = { Text("Any ${kind.label.lowercase(Locale.ROOT)}") },
                         )
+                        if (kind.family == ItemKind.WEAPON) {
+                            listOf(
+                                ItemKind.WEAPON to "All",
+                                ItemKind.MELEE_WEAPON to "Melee",
+                                ItemKind.THROWN_WEAPON to "Thrown",
+                            ).forEach { (weaponKind, label) ->
+                                FilterChip(
+                                    selected = kind == weaponKind,
+                                    onClick = {
+                                        if (kind != weaponKind) {
+                                            kind = weaponKind
+                                            if (selectedItem?.let(weaponKind::accepts) == false) {
+                                                selectedItem = ItemCatalog.forKind(weaponKind)
+                                                    .first { it.tier != 1 }
+                                            }
+                                        }
+                                    },
+                                    label = { Text(label) },
+                                )
+                            }
+                        }
                     }
 
                     // Item picker — the only scrollable region on this step.
@@ -279,7 +302,7 @@ fun RequirementSheet(
                             .verticalScroll(rememberScrollState())
                             .padding(horizontal = 20.dp),
                     ) {
-                        if (selectedItem == null && kind in setOf(ItemKind.WEAPON, ItemKind.ARMOR)) {
+                        if (selectedItem == null && kind.family in setOf(ItemKind.WEAPON, ItemKind.ARMOR)) {
                             Text("Tier", style = MaterialTheme.typography.titleSmall)
                             Spacer(Modifier.height(8.dp))
                             Row(
@@ -481,7 +504,7 @@ fun RequirementSheet(
                                 val modeLabels = listOf(
                                     EffectMode.ANY to "Any",
                                     EffectMode.ANY_ENCHANTMENT to
-                                        if (kind == ItemKind.WEAPON) "Any enchantment" else "Any glyph",
+                                        if (kind.family == ItemKind.WEAPON) "Any enchantment" else "Any glyph",
                                     EffectMode.ONE_OF to "Specific…",
                                 )
                                 modeLabels.forEach { (mode, label) ->
@@ -501,12 +524,12 @@ fun RequirementSheet(
                             if (effectMode == EffectMode.ONE_OF) {
                                 Spacer(Modifier.height(8.dp))
                                 Text(
-                                    if (kind == ItemKind.WEAPON) "ENCHANTMENTS" else "GLYPHS",
+                                    if (kind.family == ItemKind.WEAPON) "ENCHANTMENTS" else "GLYPHS",
                                     style = MaterialTheme.typography.labelSmall,
                                     letterSpacing = 1.sp,
                                     color = MaterialTheme.colorScheme.primary,
                                 )
-                                val regularModifiers = if (kind == ItemKind.WEAPON) {
+                                val regularModifiers = if (kind.family == ItemKind.WEAPON) {
                                     ItemCatalog.enchantments
                                 } else {
                                     ItemCatalog.glyphs

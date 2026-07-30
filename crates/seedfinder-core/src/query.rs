@@ -3,7 +3,9 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::catalog::{ALL_ARMOR_EFFECTS, ALL_WEAPON_EFFECTS, Effect, ItemId, ItemKind, item};
+use crate::catalog::{
+    ALL_ARMOR_EFFECTS, ALL_WEAPON_EFFECTS, Effect, ItemId, ItemKind, WeaponCategory, item,
+};
 use crate::challenges::Challenges;
 use crate::model::{GeneratedWorld, ItemSource, WorldItem};
 
@@ -211,6 +213,10 @@ pub struct UpgradeSum {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Requirement {
     pub kind: ItemKind,
+    /// Optional melee/thrown narrowing; only meaningful for weapon
+    /// requirements. `None` matches both, preserving the pre-existing
+    /// "any weapon" semantics.
+    pub weapon_category: Option<WeaponCategory>,
     pub item: Option<ItemId>,
     pub tier: TierRequirement,
     pub upgrade: UpgradeRequirement,
@@ -244,6 +250,9 @@ impl Requirement {
         };
         let definition = item(identity);
         (definition.kind == self.kind
+            && self
+                .weapon_category
+                .is_none_or(|wanted| definition.weapon_category() == Some(wanted))
             && self.tier.matches(definition.tier)
             && self.upgrade.matches(candidate.upgrade)
             && self.effect.matches(candidate.effect)
@@ -276,6 +285,15 @@ impl Requirement {
             .is_some_and(|item_id| item(item_id).kind != self.kind)
         {
             return Err(QueryError::ItemKindMismatch);
+        }
+        if let Some(category) = self.weapon_category {
+            if self.kind != ItemKind::Weapon
+                || self
+                    .item
+                    .is_some_and(|item_id| item_id.weapon_category() != Some(category))
+            {
+                return Err(QueryError::InvalidWeaponCategory);
+            }
         }
         let tierable =
             self.item.is_none() && matches!(self.kind, ItemKind::Weapon | ItemKind::Armor);
@@ -708,6 +726,7 @@ pub enum QueryError {
     InvalidUpgrade,
     InvalidTier,
     ItemKindMismatch,
+    InvalidWeaponCategory,
     EffectKindMismatch,
     UncursedWithCurse,
     InvalidIdentityGroup,
@@ -729,6 +748,9 @@ impl fmt::Display for QueryError {
                 "tier filters require a wildcard weapon or armor and a non-redundant tier"
             }
             Self::ItemKindMismatch => "selected item is in a different category",
+            Self::InvalidWeaponCategory => {
+                "melee/thrown filters require a weapon requirement and a matching item"
+            }
             Self::EffectKindMismatch => "selected enchantment or glyph is inapplicable",
             Self::UncursedWithCurse => "an uncursed item cannot be limited to curses",
             Self::InvalidIdentityGroup => "identity group zero is reserved for no group",
@@ -755,7 +777,7 @@ impl std::error::Error for QueryError {}
 
 #[cfg(test)]
 mod tests {
-    use crate::catalog::{ArmorEffect, Effect, ItemId, ItemKind, WeaponEffect};
+    use crate::catalog::{ArmorEffect, Effect, ItemId, ItemKind, WeaponCategory, WeaponEffect};
     use crate::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
     use crate::seed::DungeonSeed;
 
@@ -779,6 +801,7 @@ mod tests {
     fn requirement(item: ItemId) -> Requirement {
         Requirement {
             kind: crate::catalog::item(item).kind,
+            weapon_category: None,
             item: Some(item),
             tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Exact(2),
@@ -947,6 +970,79 @@ mod tests {
     }
 
     #[test]
+    fn weapon_category_narrows_wildcard_weapon_requirements() {
+        let any_weapon = Requirement {
+            item: None,
+            upgrade: UpgradeRequirement::Any,
+            ..requirement(ItemId::Sword)
+        };
+        let melee = Requirement {
+            weapon_category: Some(WeaponCategory::Melee),
+            ..any_weapon
+        };
+        let thrown = Requirement {
+            weapon_category: Some(WeaponCategory::Thrown),
+            ..any_weapon
+        };
+        let sword = world_item(ItemId::Sword, Accessibility::Independent);
+        let shuriken = world_item(ItemId::Shuriken, Accessibility::Independent);
+        let dart = world_item(ItemId::PoisonDart, Accessibility::Independent);
+
+        assert!(any_weapon.matches(&sword));
+        assert!(any_weapon.matches(&shuriken));
+        assert!(melee.matches(&sword));
+        assert!(!melee.matches(&shuriken));
+        assert!(!melee.matches(&dart));
+        assert!(!thrown.matches(&sword));
+        assert!(thrown.matches(&shuriken));
+        assert!(thrown.matches(&dart));
+
+        // Tier filters compose with the category filter.
+        let tier_five_thrown = Requirement {
+            tier: TierRequirement::Exact(5),
+            ..thrown
+        };
+        assert_eq!(tier_five_thrown.validate(), Ok(()));
+        assert!(tier_five_thrown.matches(&world_item(
+            ItemId::ThrowingHammer,
+            Accessibility::Independent
+        )));
+        assert!(
+            !tier_five_thrown.matches(&world_item(ItemId::Greatsword, Accessibility::Independent))
+        );
+        assert!(!tier_five_thrown.matches(&shuriken));
+    }
+
+    #[test]
+    fn weapon_category_validation_requires_a_consistent_weapon() {
+        use crate::catalog::WeaponCategory;
+
+        let melee_wand = Requirement {
+            weapon_category: Some(WeaponCategory::Melee),
+            ..requirement(ItemId::WandFrost)
+        };
+        assert_eq!(
+            melee_wand.validate(),
+            Err(QueryError::InvalidWeaponCategory)
+        );
+
+        let melee_shuriken = Requirement {
+            weapon_category: Some(WeaponCategory::Melee),
+            ..requirement(ItemId::Shuriken)
+        };
+        assert_eq!(
+            melee_shuriken.validate(),
+            Err(QueryError::InvalidWeaponCategory)
+        );
+
+        let thrown_shuriken = Requirement {
+            weapon_category: Some(WeaponCategory::Thrown),
+            ..requirement(ItemId::Shuriken)
+        };
+        assert_eq!(thrown_shuriken.validate(), Ok(()));
+    }
+
+    #[test]
     fn validation_rejects_uncursed_items_limited_to_curses() {
         let invalid = Requirement {
             effect: EffectRequirement::OneOf(EffectSet::single(Effect::Weapon(
@@ -990,6 +1086,7 @@ mod tests {
     fn tier_predicates_match_exact_minimum_and_maximum_tiers() {
         let tier_five = Requirement {
             kind: ItemKind::Weapon,
+            weapon_category: None,
             item: None,
             tier: TierRequirement::Exact(5),
             ..requirement(ItemId::Sword)
@@ -1054,6 +1151,7 @@ mod tests {
     fn linked_wands_require_distinct_copies_and_a_blacksmith_in_range() {
         let linked = |upgrade, source| Requirement {
             kind: ItemKind::Wand,
+            weapon_category: None,
             item: None,
             upgrade,
             source,
@@ -1070,6 +1168,7 @@ mod tests {
                 linked(UpgradeRequirement::AtLeast(0), None),
                 Requirement {
                     kind: ItemKind::Wand,
+                    weapon_category: None,
                     item: None,
                     upgrade: UpgradeRequirement::Exact(1),
                     ..requirement(ItemId::WandFrost)
@@ -1137,6 +1236,7 @@ mod tests {
     fn wildcard_does_not_hide_conflicting_concrete_identity_group_members() {
         let linked = |item| Requirement {
             kind: ItemKind::Wand,
+            weapon_category: None,
             item,
             upgrade: UpgradeRequirement::Any,
             identity_group: Some(1),

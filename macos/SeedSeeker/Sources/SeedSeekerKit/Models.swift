@@ -1,12 +1,29 @@
 import Foundation
 
 public enum ItemKind: Int, Codable, CaseIterable, Sendable {
-    case weapon, armor, wand, ring
+    // The raw value doubles as the SSF7 wire kind ID: 0...3 are the original
+    // families and 4/5 narrow a weapon requirement to one weapon class, so
+    // saved queries and packets from older builds keep their meaning.
+    case weapon, armor, wand, ring, meleeWeapon, thrownWeapon
 
-    public var label: String { ["Weapons", "Armor", "Wands", "Rings"][rawValue] }
-    public var singularLabel: String { ["weapon", "armor", "wand", "ring"][rawValue] }
-    public var modifierLabel: String? { self == .weapon ? "Enchantment" : self == .armor ? "Glyph" : nil }
+    public var label: String { ["Weapons", "Armor", "Wands", "Rings", "Melee weapons", "Thrown weapons"][rawValue] }
+    public var singularLabel: String { ["weapon", "armor", "wand", "ring", "melee weapon", "thrown weapon"][rawValue] }
+    public var modifierLabel: String? { family == .weapon ? "Enchantment" : family == .armor ? "Glyph" : nil }
     public var maximumSearchUpgrade: Int { self == .ring ? 4 : 3 }
+
+    /// The broad item family; catalog items always carry the family.
+    public var family: ItemKind { self == .meleeWeapon || self == .thrownWeapon ? .weapon : self }
+    /// The weapon class this kind restricts to, or nil when unrestricted.
+    public var weaponClass: WeaponClass? { self == .meleeWeapon ? .melee : self == .thrownWeapon ? .thrown : nil }
+    /// Whether a catalog item can satisfy a requirement of this kind.
+    public func accepts(_ item: CatalogItem) -> Bool {
+        item.kind == family && (weaponClass == nil || ItemCatalog.weaponClass(of: item.id) == weaponClass)
+    }
+}
+
+/// Melee/thrown classification of weapon catalog entries.
+public enum WeaponClass: Sendable, Equatable {
+    case melee, thrown
 }
 
 public struct CatalogItem: Codable, Hashable, Identifiable, Sendable {
@@ -145,8 +162,8 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
                 maximumDepth: Int? = nil, requireUncursed: Bool = false,
                 alternativeGroup: Int? = nil,
                 upgradeSumGroup: Int? = nil, upgradeSumTotal: Int? = nil) throws {
-        guard item == nil || item?.kind == kind else { throw ModelValidationError.itemKind }
-        let tierable = item == nil && (kind == .weapon || kind == .armor)
+        guard item == nil || item.map(kind.accepts) == true else { throw ModelValidationError.itemKind }
+        let tierable = item == nil && (kind.family == .weapon || kind.family == .armor)
         let validTier = switch tierMatch {
         case .any: tier == 0
         case .exactly: tierable && (2...5).contains(tier)
@@ -283,14 +300,14 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
 
     /// Human summary of the effect predicate, or nil for the wildcard.
     public var effectSummary: String? {
-        let family = kind == .weapon ? "enchantment" : "glyph"
+        let family = kind.family == .weapon ? "enchantment" : "glyph"
         switch effect {
         case .any:
             return nil
         case .anyEnchantment:
             return "any \(family)"
         case .oneOf(let names):
-            let nonCurse = kind == .weapon ? ItemCatalog.enchantments : ItemCatalog.glyphs
+            let nonCurse = kind.family == .weapon ? ItemCatalog.enchantments : ItemCatalog.glyphs
             if Set(names) == Set(nonCurse) { return "any \(family)" }
             if names.count == 1 { return names[0] }
             if names.count <= 4 {
@@ -418,7 +435,7 @@ public func scoutMatchIndices(items: [ScoutItem], requirements: [ItemRequirement
         guard item.depth <= maximumDepth,
               item.depth <= (requirement.maximumDepth ?? maximumDepth),
               !excludeBlacksmithRewards || item.source != .blacksmithReward,
-              requirement.kind == item.item.kind,
+              requirement.kind.accepts(item.item),
               requirement.item == nil || requirement.item?.id == item.item.id,
               requirement.effect.matches(item.effect, kind: requirement.kind),
               !requirement.requireUncursed || !item.cursed,

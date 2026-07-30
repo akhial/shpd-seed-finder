@@ -46,6 +46,15 @@ describe('query validation', () => {
       validateQuery(state(ring({ upgradeSum: sum(2), alternativeGroup: 1 }), ring({ upgradeSum: sum(2), alternativeGroup: 1 }))).errors.join(' '),
     ).toMatch(/alternative/)
   })
+  it('validates melee and thrown weapon kinds', () => {
+    expect(validateQuery(state(requirement({ kind: 'melee_weapon' })))).toEqual({ valid: true, errors: [] })
+    expect(validateQuery(state(requirement({ kind: 'thrown_weapon', tier: { mode: 'exact', value: 5 } })))).toEqual({ valid: true, errors: [] })
+    expect(validateQuery(state(requirement({ kind: 'thrown_weapon', item: 'shuriken' })))).toEqual({ valid: true, errors: [] })
+    expect(validateQuery(state(requirement({ kind: 'thrown_weapon', effect: { mode: 'one_of', names: ['Projecting'] } })))).toEqual({ valid: true, errors: [] })
+    expect(validateQuery(state(requirement({ kind: 'melee_weapon', item: 'shuriken' }))).errors.join(' ')).toMatch(/melee weapon/)
+    expect(validateQuery(state(requirement({ kind: 'thrown_weapon', item: 'sword' }))).errors.join(' ')).toMatch(/thrown weapon/)
+    expect(validateQuery(state(requirement({ kind: 'melee_weapon', item: 'ring_haste' }))).errors.join(' ')).toMatch(/category/)
+  })
   it('accepts a valid full query', () => {
     const query = state(
       requirement({ tier: { mode: 'at_least', value: 3 }, upgrade: { mode: 'at_least', value: 2 }, effect: { mode: 'one_of', names: ['Blazing'] }, source: 'locked_chest', maxDepth: 12, identityGroup: 1 }),

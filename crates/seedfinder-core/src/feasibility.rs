@@ -5,10 +5,13 @@
 //! The rules here mirror structural facts of the v3.3.8 generator:
 //!
 //! - Natural equipment rolls never exceed +2 ([`crate::equipment`]), so +3
-//!   weapons come only from the Sacrificial-fire room, the Secret Maze's chest
-//!   prize, the Ghost quest, or the Blacksmith; +3 armor only from the Crypt,
-//!   the Secret Maze, the Ghost, or the Blacksmith; +3 wands only from the
-//!   Wandmaker; and +3/+4 rings only from the Imp.
+//!   weapons come only from the Sacrificial-fire room, the Ghost quest, the
+//!   Blacksmith, or a special-room chest prize (the flooded-vault and sentry
+//!   rooms bump a weapon, missile, or armor roll by one, and the secret maze
+//!   bumps a melee weapon or armor roll — all dropped as chests); +3 armor
+//!   only from the Crypt, the Ghost, the Blacksmith, or those same chest
+//!   prizes; +3 wands only from the Wandmaker; and +3/+4 rings only from the
+//!   Imp.
 //! - Every quest resolves inside a fixed depth window (Ghost 2–4, Wandmaker
 //!   7–9, Blacksmith 12–14, Imp 17–19) and spawns at most once per run, with
 //!   the spawn forced on the window's final floor.
@@ -18,7 +21,7 @@
 //! Everything derived from these rules is exact: a rejected seed can never
 //! match, and a shortened generation depth can never hide a match. The one
 //! deliberately lossy refinement is [`SearchQuery::fast_mode`], which ignores
-//! the rare Crypt/Sacrificial-fire/Secret-Maze +3 prizes so that +3
+//! the rare Crypt/Sacrificial-fire/chest-prize +3 rolls so that +3
 //! weapon/armor requirements become quest-only and inherit the Blacksmith's
 //! depth-14 deadline.
 //!
@@ -29,7 +32,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::catalog::ItemKind;
+use crate::catalog::{ItemKind, WeaponCategory};
 use crate::model::{ItemSource, WorldItem};
 use crate::query::{EffectRequirement, Requirement, SearchQuery, UpgradeRequirement};
 use crate::search::FloorGate;
@@ -106,12 +109,35 @@ enum EffectPolicy {
 const fn source_profile(
     source: ItemSource,
     kind: ItemKind,
+    weapon_category: Option<WeaponCategory>,
     fast_mode: bool,
 ) -> Option<(u8, u8, EffectPolicy)> {
     use EffectPolicy::{Any, GoodOnly, Never};
     use ItemKind::{Armor, Ring, Wand, Weapon};
     use ItemSource as S;
+    // The Ghost and Sacrificial-fire prizes and both statue drops roll
+    // exclusively melee weapons in v3.3.8, so a thrown-narrowed weapon
+    // requirement can never be satisfied by them. Every thrown-capable
+    // source also rolls melee weapons, so a melee filter removes nothing.
+    if matches!(kind, Weapon)
+        && matches!(weapon_category, Some(WeaponCategory::Thrown))
+        && matches!(
+            source,
+            S::GhostReward | S::SacrificialFire | S::Statue | S::ArmoredStatue
+        )
+    {
+        return None;
+    }
     Some(match (source, kind) {
+        // Rare +3 rolls outside the quests: the Crypt bumps non-cursed
+        // armor, the Sacrificial fire bumps its melee prize, and plain
+        // chests front the flooded-vault, sentry, and secret-maze prizes,
+        // each bumping one natural weapon/missile/armor roll. Fast mode
+        // deliberately ignores all of these exotic paths so +3 weapon/armor
+        // requirements become quest-only.
+        (S::Chest, Weapon | Armor) | (S::Tomb, Armor) | (S::SacrificialFire, Weapon) => {
+            if fast_mode { (0, 2, Any) } else { (0, 3, Any) }
+        }
         // Plain drops and chest variants use the natural rolls, capped at +2,
         // as do crystal chests/mimics (which stock only wands and rings).
         (S::Heap | S::LockedChest | S::Skeleton | S::Mimic, _)
@@ -120,13 +146,6 @@ const fn source_profile(
         // Neither exceeds the natural +2 cap.
         (S::GoldenMimic, _) | (S::Statue, Weapon) | (S::ArmoredStatue, Weapon | Armor) => {
             (0, 2, GoodOnly)
-        }
-        // The Crypt bumps non-cursed armor to at most +3, and the Secret
-        // Maze's chest prize (a weapon or armor) is re-upgraded one time in
-        // three; in fast mode these exotic paths are deliberately ignored so
-        // +3 weapons and armor become quest-only.
-        (S::Tomb, Armor) | (S::SacrificialFire, Weapon) | (S::Chest, Weapon | Armor) => {
-            if fast_mode { (0, 2, Any) } else { (0, 3, Any) }
         }
         // Shop stock is always +0 with no effect.
         (S::Shop, _) => (0, 0, Never),
@@ -186,7 +205,13 @@ fn source_feasible(requirement: &Requirement, source: ItemSource, fast_mode: boo
     // An explicit source pin is the user's claim, not ours: honor it verbatim
     // rather than applying the fast-mode refinement.
     let fast_mode = fast_mode && requirement.source.is_none();
-    source_profile(source, requirement.kind, fast_mode).is_some_and(|(low, high, policy)| {
+    source_profile(
+        source,
+        requirement.kind,
+        requirement.weapon_category,
+        fast_mode,
+    )
+    .is_some_and(|(low, high, policy)| {
         upgrade_reachable(requirement.upgrade, low, high)
             && effect_reachable(requirement.effect, policy, requirement.require_uncursed)
     })
@@ -452,6 +477,7 @@ mod tests {
     fn requirement(kind: ItemKind, upgrade: UpgradeRequirement) -> Requirement {
         Requirement {
             kind,
+            weapon_category: None,
             item: None,
             tier: TierRequirement::Any,
             upgrade,
@@ -733,6 +759,118 @@ mod tests {
             ..query(vec![], 24)
         });
         assert!(impossible.is_unsatisfiable());
+    }
+
+    #[test]
+    fn melee_only_sources_never_satisfy_thrown_requirements() {
+        use crate::catalog::WeaponCategory;
+
+        // The Ghost, Sacrificial fire, and both statue kinds roll melee
+        // weapons only, so pinning one with a thrown filter is impossible.
+        for source in [
+            ItemSource::GhostReward,
+            ItemSource::SacrificialFire,
+            ItemSource::Statue,
+            ItemSource::ArmoredStatue,
+        ] {
+            let thrown = Requirement {
+                weapon_category: Some(WeaponCategory::Thrown),
+                source: Some(source),
+                ..requirement(ItemKind::Weapon, UpgradeRequirement::Any)
+            };
+            assert!(
+                QueryPlan::analyze(&query(vec![thrown], 24)).is_unsatisfiable(),
+                "{source:?}"
+            );
+            let melee = Requirement {
+                weapon_category: Some(WeaponCategory::Melee),
+                ..thrown
+            };
+            assert!(
+                !QueryPlan::analyze(&query(vec![melee], 24)).is_unsatisfiable(),
+                "{source:?}"
+            );
+        }
+
+        // Unpinned thrown requirements stay satisfiable through open drops,
+        // and a +3 in fast mode becomes Blacksmith-only: the Ghost no longer
+        // counts, so the plan ends at the Blacksmith's depth-14 deadline.
+        let thrown = Requirement {
+            weapon_category: Some(WeaponCategory::Thrown),
+            ..requirement(ItemKind::Weapon, UpgradeRequirement::Any)
+        };
+        assert!(!QueryPlan::analyze(&query(vec![thrown], 24)).is_unsatisfiable());
+        let fast = QueryPlan::analyze(&SearchQuery {
+            fast_mode: true,
+            ..query(
+                vec![Requirement {
+                    upgrade: UpgradeRequirement::Exact(3),
+                    ..thrown
+                }],
+                24,
+            )
+        });
+        assert!(!fast.is_unsatisfiable());
+        assert_eq!(fast.generation_depth(), 14);
+        let ghost_resolved = [item(ItemId::Sword, 3, 3, ItemSource::GhostReward)];
+        assert!(fast.viable_after_floor(4, &ghost_resolved));
+        let blacksmith_resolved = [item(ItemId::Sword, 3, 13, ItemSource::BlacksmithReward)];
+        assert!(!fast.viable_after_floor(14, &blacksmith_resolved));
+    }
+
+    #[test]
+    fn chest_prizes_reach_plus_three_outside_fast_mode() {
+        use crate::catalog::WeaponCategory;
+
+        // The flooded-vault, sentry, and secret-maze rooms bump one natural
+        // weapon/missile/armor roll and drop it as a plain chest, so a
+        // chest-pinned +3 must stay satisfiable — seed AAA-AAA-ACO carries a
+        // +3 thrown weapon in exactly such a chest at depth 24.
+        for (kind, category) in [
+            (ItemKind::Weapon, None),
+            (ItemKind::Weapon, Some(WeaponCategory::Melee)),
+            (ItemKind::Weapon, Some(WeaponCategory::Thrown)),
+            (ItemKind::Armor, None),
+        ] {
+            let pinned = Requirement {
+                weapon_category: category,
+                source: Some(ItemSource::Chest),
+                ..requirement(kind, UpgradeRequirement::Exact(3))
+            };
+            assert!(
+                !QueryPlan::analyze(&query(vec![pinned], 24)).is_unsatisfiable(),
+                "{kind:?} {category:?}"
+            );
+            // A source pin is honored verbatim even in a fast-mode query.
+            let fast_pinned = SearchQuery {
+                fast_mode: true,
+                ..query(vec![pinned], 24)
+            };
+            assert!(
+                !QueryPlan::analyze(&fast_pinned).is_unsatisfiable(),
+                "fast pinned {kind:?} {category:?}"
+            );
+        }
+
+        // No chest path upgrades wands or rings past the natural rolls.
+        let wand = Requirement {
+            source: Some(ItemSource::Chest),
+            ..requirement(ItemKind::Wand, UpgradeRequirement::Exact(3))
+        };
+        assert!(QueryPlan::analyze(&query(vec![wand], 24)).is_unsatisfiable());
+
+        // With chests open at any depth, an unpinned thrown +3 must not
+        // inherit the Blacksmith's depth-14 deadline outside fast mode: the
+        // depth-24 chest prize of seed AAA-AAA-ACO would otherwise be
+        // silently skipped.
+        let thrown = Requirement {
+            weapon_category: Some(WeaponCategory::Thrown),
+            ..requirement(ItemKind::Weapon, UpgradeRequirement::Exact(3))
+        };
+        let plan = QueryPlan::analyze(&query(vec![thrown], 24));
+        assert!(!plan.is_unsatisfiable());
+        assert_eq!(plan.generation_depth(), 24);
+        assert!(plan.viable_after_floor(14, &[]));
     }
 
     #[test]

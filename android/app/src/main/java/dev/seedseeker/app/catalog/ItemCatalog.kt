@@ -3,6 +3,7 @@ package dev.seedseeker.app.catalog
 
 import dev.seedseeker.app.model.CatalogItem
 import dev.seedseeker.app.model.ItemKind
+import dev.seedseeker.app.model.WeaponClass
 
 /**
  * Searchable, naturally generated equipment in Shattered Pixel Dungeon v3.3.8.
@@ -11,7 +12,7 @@ import dev.seedseeker.app.model.ItemKind
  * Pickaxe, Spirit Bow, and hero/class armor are absent because they have no generated-world pool.
  */
 object ItemCatalog {
-    val weapons = listOf(
+    val meleeWeapons = listOf(
         weapon("worn_shortsword", "Worn Shortsword", 1, 96),
         weapon("cudgel", "Cudgel", 1, 97),
         weapon("gloves", "Studded Gloves", 1, 98),
@@ -43,34 +44,39 @@ object ItemCatalog {
         weapon("greatshield", "Greatshield", 5, 132),
         weapon("gauntlet", "Stone Gauntlet", 5, 133),
         weapon("war_scythe", "War Scythe", 5, 134),
-        weapon("throwing_stone", "Throwing Stone", 1, 147),
-        weapon("throwing_knife", "Throwing Knife", 1, 146),
-        weapon("throwing_spike", "Throwing Spike", 1, 145),
-        weapon("fishing_spear", "Fishing Spear", 2, 148),
-        weapon("throwing_club", "Throwing Club", 2, 150),
-        weapon("shuriken", "Shuriken", 2, 149),
-        weapon("throwing_spear", "Throwing Spear", 3, 151),
-        weapon("kunai", "Kunai", 3, 153),
-        weapon("bolas", "Bolas", 3, 152),
-        weapon("javelin", "Javelin", 4, 154),
-        weapon("tomahawk", "Tomahawk", 4, 155),
-        weapon("heavy_boomerang", "Heavy Boomerang", 4, 156),
-        weapon("trident", "Trident", 5, 157),
-        weapon("throwing_hammer", "Throwing Hammer", 5, 158),
-        weapon("force_cube", "Force Cube", 5, 159),
-        weapon("rot_dart", "Rot Dart", 2, 161),
-        weapon("incendiary_dart", "Incendiary Dart", 2, 162),
-        weapon("adrenaline_dart", "Adrenaline Dart", 2, 163),
-        weapon("healing_dart", "Healing Dart", 2, 164),
-        weapon("chilling_dart", "Chilling Dart", 2, 165),
-        weapon("shocking_dart", "Shocking Dart", 2, 166),
-        weapon("poison_dart", "Poison Dart", 2, 167),
-        weapon("cleansing_dart", "Cleansing Dart", 2, 168),
-        weapon("paralytic_dart", "Paralytic Dart", 2, 169),
-        weapon("holy_dart", "Holy Dart", 2, 170),
-        weapon("displacing_dart", "Displacing Dart", 2, 171),
-        weapon("blinding_dart", "Blinding Dart", 2, 172),
     )
+
+    val thrownWeapons = listOf(
+        thrownWeapon("throwing_stone", "Throwing Stone", 1, 147),
+        thrownWeapon("throwing_knife", "Throwing Knife", 1, 146),
+        thrownWeapon("throwing_spike", "Throwing Spike", 1, 145),
+        thrownWeapon("fishing_spear", "Fishing Spear", 2, 148),
+        thrownWeapon("throwing_club", "Throwing Club", 2, 150),
+        thrownWeapon("shuriken", "Shuriken", 2, 149),
+        thrownWeapon("throwing_spear", "Throwing Spear", 3, 151),
+        thrownWeapon("kunai", "Kunai", 3, 153),
+        thrownWeapon("bolas", "Bolas", 3, 152),
+        thrownWeapon("javelin", "Javelin", 4, 154),
+        thrownWeapon("tomahawk", "Tomahawk", 4, 155),
+        thrownWeapon("heavy_boomerang", "Heavy Boomerang", 4, 156),
+        thrownWeapon("trident", "Trident", 5, 157),
+        thrownWeapon("throwing_hammer", "Throwing Hammer", 5, 158),
+        thrownWeapon("force_cube", "Force Cube", 5, 159),
+        thrownWeapon("rot_dart", "Rot Dart", 2, 161),
+        thrownWeapon("incendiary_dart", "Incendiary Dart", 2, 162),
+        thrownWeapon("adrenaline_dart", "Adrenaline Dart", 2, 163),
+        thrownWeapon("healing_dart", "Healing Dart", 2, 164),
+        thrownWeapon("chilling_dart", "Chilling Dart", 2, 165),
+        thrownWeapon("shocking_dart", "Shocking Dart", 2, 166),
+        thrownWeapon("poison_dart", "Poison Dart", 2, 167),
+        thrownWeapon("cleansing_dart", "Cleansing Dart", 2, 168),
+        thrownWeapon("paralytic_dart", "Paralytic Dart", 2, 169),
+        thrownWeapon("holy_dart", "Holy Dart", 2, 170),
+        thrownWeapon("displacing_dart", "Displacing Dart", 2, 171),
+        thrownWeapon("blinding_dart", "Blinding Dart", 2, 172),
+    )
+
+    val weapons = meleeWeapons + thrownWeapons
 
     val armor = listOf(
         armor("cloth_armor", "Cloth Armor", 1, 176),
@@ -170,6 +176,8 @@ object ItemCatalog {
 
     fun forKind(kind: ItemKind): List<CatalogItem> = when (kind) {
         ItemKind.WEAPON -> weapons
+        ItemKind.MELEE_WEAPON -> meleeWeapons
+        ItemKind.THROWN_WEAPON -> thrownWeapons
         ItemKind.ARMOR -> armor
         ItemKind.WAND -> wands
         ItemKind.RING -> rings
@@ -177,20 +185,23 @@ object ItemCatalog {
 
     fun findById(id: String): CatalogItem? = byId[id]
 
-    fun modifiersFor(kind: ItemKind): List<String> = when (kind) {
+    fun modifiersFor(kind: ItemKind): List<String> = when (kind.family) {
         ItemKind.WEAPON -> enchantments + weaponCurses
         ItemKind.ARMOR -> glyphs + armorCurses
-        ItemKind.WAND, ItemKind.RING -> emptyList()
+        else -> emptyList()
     }
 
-    fun cursesFor(kind: ItemKind): List<String> = when (kind) {
+    fun cursesFor(kind: ItemKind): List<String> = when (kind.family) {
         ItemKind.WEAPON -> weaponCurses
         ItemKind.ARMOR -> armorCurses
-        ItemKind.WAND, ItemKind.RING -> emptyList()
+        else -> emptyList()
     }
 
     private fun weapon(id: String, name: String, tier: Int, sprite: Int) =
-        CatalogItem(id, name, ItemKind.WEAPON, sprite, tier)
+        CatalogItem(id, name, ItemKind.WEAPON, sprite, tier, weaponClass = WeaponClass.MELEE)
+
+    private fun thrownWeapon(id: String, name: String, tier: Int, sprite: Int) =
+        CatalogItem(id, name, ItemKind.WEAPON, sprite, tier, weaponClass = WeaponClass.THROWN)
 
     private fun armor(id: String, name: String, tier: Int, sprite: Int) =
         CatalogItem(id, name, ItemKind.ARMOR, sprite, tier)

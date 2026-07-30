@@ -205,7 +205,8 @@ private struct ChallengesSettingsView: View {
 extension ItemKind {
     var icon: String {
         switch self {
-        case .weapon: "hammer.fill"
+        case .weapon, .meleeWeapon: "hammer.fill"
+        case .thrownWeapon: "scope"
         case .armor: "shield.fill"
         case .wand: "wand.and.stars"
         case .ring: "circle.circle.fill"
@@ -213,7 +214,7 @@ extension ItemKind {
     }
     var tint: Color {
         switch self {
-        case .weapon: .orange
+        case .weapon, .meleeWeapon, .thrownWeapon: .orange
         case .armor: .blue
         case .wand: .purple
         case .ring: .yellow
@@ -395,11 +396,12 @@ private struct QueryView: View {
                     .font(.callout).foregroundStyle(.secondary)
             }
         } else {
-            // Ungrouped rows keep their per-category sections; each
-            // alternative group renders as one "Any of" card in its own
+            // Ungrouped rows keep their per-family sections so a narrowed
+            // "Any thrown weapon" requirement sits with the other weapons;
+            // each alternative group renders as one "Any of" card in its own
             // section, since a group may span categories.
-            ForEach(ItemKind.allCases, id: \.self) { kind in
-                let group = requirements.filter { $0.kind == kind && $0.alternativeGroup == nil }
+            ForEach([ItemKind.weapon, .armor, .wand, .ring], id: \.self) { kind in
+                let group = requirements.filter { $0.kind.family == kind && $0.alternativeGroup == nil }
                 if !group.isEmpty {
                     Section {
                         ForEach(group) { requirement in row(requirement) }
@@ -595,22 +597,34 @@ private struct RequirementEditor: View {
                 .font(.headline).padding(.top, 14).padding(.bottom, 4)
             Form {
                 Section("Item") {
-                    Picker("Category", selection: $kind) {
-                        ForEach(ItemKind.allCases, id: \.self) { Text($0.label).tag($0) }
+                    Picker("Category", selection: Binding(get: { kind.family }, set: { kind = $0 })) {
+                        ForEach([ItemKind.weapon, .armor, .wand, .ring], id: \.self) { Text($0.label).tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    .onChange(of: kind) { _, _ in
-                        itemID = ""; tierMatch = .any; tier = 2
-                        effectMode = .any; selectedEffects = []
-                        normalizeUpgrade()
+                    .onChange(of: kind) { previous, value in
+                        if previous.family != value.family {
+                            itemID = ""; tierMatch = .any; tier = 2
+                            effectMode = .any; selectedEffects = []
+                            normalizeUpgrade()
+                        } else if let item = ItemCatalog.findById(itemID), !value.accepts(item) {
+                            itemID = ""
+                        }
+                    }
+                    if kind.family == .weapon {
+                        Picker("Weapon type", selection: $kind) {
+                            Text("Any").tag(ItemKind.weapon)
+                            Text("Melee").tag(ItemKind.meleeWeapon)
+                            Text("Thrown").tag(ItemKind.thrownWeapon)
+                        }
+                        .pickerStyle(.segmented)
                     }
                     Picker("Item", selection: $itemID) {
                         Text("Any \(kind.singularLabel)").tag("")
-                        if kind == .weapon {
-                            // Tier-1 melee weapons are starting gear and never spawn in the dungeon.
+                        if kind.family == .weapon {
+                            // Tier-1 weapons are starting gear and never spawn in the dungeon.
                             ForEach(2...5, id: \.self) { tier in
                                 Section("Tier \(tier)") {
-                                    ForEach(ItemCatalog.weapons.filter { $0.tier == tier }) { item in
+                                    ForEach(ItemCatalog.forKind(kind).filter { $0.tier == tier }) { item in
                                         Label { Text(item.name) } icon: {
                                             ItemSpriteIcon(spriteIndex: item.spriteIndex)
                                         }.tag(item.id)
@@ -626,7 +640,7 @@ private struct RequirementEditor: View {
                         }
                     }
                     .onChange(of: itemID) { _, value in if !value.isEmpty { tierMatch = .any } }
-                    if itemID.isEmpty && (kind == .weapon || kind == .armor) {
+                    if itemID.isEmpty && (kind.family == .weapon || kind.family == .armor) {
                         Picker("Tier", selection: $tierMatch) {
                             ForEach(TierMatch.allCases, id: \.self) { Text($0.label).tag($0) }
                         }
@@ -693,7 +707,7 @@ private struct RequirementEditor: View {
                     if kind.modifierLabel != nil {
                         Picker(kind.modifierLabel!, selection: $effectMode) {
                             Text("Any").tag(EffectMode.any)
-                            Text(kind == .weapon ? "Any enchantment" : "Any glyph")
+                            Text(kind.family == .weapon ? "Any enchantment" : "Any glyph")
                                 .tag(EffectMode.anyEnchantment)
                             Text("Specific…").tag(EffectMode.specific)
                         }
@@ -760,6 +774,7 @@ private struct RequirementEditor: View {
 
     private var sheetHeight: CGFloat {
         var height: CGFloat = 470
+        if kind.family == .weapon { height += 40 }
         if kind.modifierLabel != nil { height += 40 }
         if kind.modifierLabel != nil && effectMode == .specific { height += 170 }
         if original.alternativeGroup == nil { height += sumGroup == 0 ? 70 : 130 }
@@ -771,7 +786,7 @@ private struct RequirementEditor: View {
     private var effectChecklist: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 3) {
-                ForEach(kind == .weapon ? ItemCatalog.enchantments : ItemCatalog.glyphs,
+                ForEach(kind.family == .weapon ? ItemCatalog.enchantments : ItemCatalog.glyphs,
                         id: \.self) { name in
                     Toggle(name, isOn: effectBinding(name)).toggleStyle(.checkbox)
                 }

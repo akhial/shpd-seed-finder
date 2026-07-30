@@ -6,7 +6,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use shpd_seedfinder_core::catalog::{Effect, ItemKind, item, item_by_stable_id};
+use shpd_seedfinder_core::catalog::{Effect, ItemKind, WeaponCategory, item, item_by_stable_id};
 use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::model::ItemSource;
 use shpd_seedfinder_core::query::{EffectSet, TierRequirement, UpgradeRequirement, UpgradeSum};
@@ -185,7 +185,7 @@ fn write_json(path: PathBuf, value: &impl Serialize) {
 
 fn save_requirement(requirement: &UiRequirement) -> SavedRequirement {
     SavedRequirement {
-        kind: kind_key(requirement.kind).to_owned(),
+        kind: kind_key(requirement.kind, requirement.weapon_category).to_owned(),
         item: requirement
             .item
             .map(|item_id| item(item_id).stable_id.to_owned()),
@@ -240,7 +240,7 @@ fn save_predicate(predicate: Option<(&str, u8)>) -> Option<SavedPredicate> {
 }
 
 fn restore_requirement(saved: &SavedRequirement, key: u64) -> Option<UiRequirement> {
-    let kind = kind_from_key(&saved.kind)?;
+    let (kind, weapon_category) = kind_from_key(&saved.kind)?;
     let item = match &saved.item {
         None => None,
         Some(stable_id) => Some(item_by_stable_id(stable_id)?.id),
@@ -268,6 +268,7 @@ fn restore_requirement(saved: &SavedRequirement, key: u64) -> Option<UiRequireme
     Some(UiRequirement {
         key,
         kind,
+        weapon_category,
         item,
         tier,
         upgrade,
@@ -337,21 +338,28 @@ fn restore_predicate<T>(
     }
 }
 
-const fn kind_key(kind: ItemKind) -> &'static str {
-    match kind {
-        ItemKind::Weapon => "weapon",
-        ItemKind::Armor => "armor",
-        ItemKind::Wand => "wand",
-        ItemKind::Ring => "ring",
+/// Stable snake-case kind names, matching the CLI's JSON query format. Plain
+/// "weapon" keeps meaning "melee or thrown", so older saved states restore
+/// with their original semantics.
+const fn kind_key(kind: ItemKind, weapon_category: Option<WeaponCategory>) -> &'static str {
+    match (kind, weapon_category) {
+        (ItemKind::Weapon, None) => "weapon",
+        (ItemKind::Weapon, Some(WeaponCategory::Melee)) => "melee_weapon",
+        (ItemKind::Weapon, Some(WeaponCategory::Thrown)) => "thrown_weapon",
+        (ItemKind::Armor, _) => "armor",
+        (ItemKind::Wand, _) => "wand",
+        (ItemKind::Ring, _) => "ring",
     }
 }
 
-fn kind_from_key(key: &str) -> Option<ItemKind> {
+fn kind_from_key(key: &str) -> Option<(ItemKind, Option<WeaponCategory>)> {
     match key {
-        "weapon" => Some(ItemKind::Weapon),
-        "armor" => Some(ItemKind::Armor),
-        "wand" => Some(ItemKind::Wand),
-        "ring" => Some(ItemKind::Ring),
+        "weapon" => Some((ItemKind::Weapon, None)),
+        "melee_weapon" => Some((ItemKind::Weapon, Some(WeaponCategory::Melee))),
+        "thrown_weapon" => Some((ItemKind::Weapon, Some(WeaponCategory::Thrown))),
+        "armor" => Some((ItemKind::Armor, None)),
+        "wand" => Some((ItemKind::Wand, None)),
+        "ring" => Some((ItemKind::Ring, None)),
         _ => None,
     }
 }
@@ -400,6 +408,7 @@ mod tests {
         let requirement = UiRequirement {
             key: 7,
             kind: ItemKind::Weapon,
+            weapon_category: None,
             item: Some(ItemId::Greatsword),
             tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::AtLeast(2),
@@ -460,6 +469,34 @@ mod tests {
         assert_eq!(
             restore_requirement(&saved, 1).unwrap().effect,
             UiEffect::Any
+        );
+    }
+
+    #[test]
+    fn weapon_category_round_trips_with_stable_keys() {
+        use shpd_seedfinder_core::catalog::WeaponCategory;
+
+        for (category, key) in [
+            (None, "weapon"),
+            (Some(WeaponCategory::Melee), "melee_weapon"),
+            (Some(WeaponCategory::Thrown), "thrown_weapon"),
+        ] {
+            let mut requirement = UiRequirement::new(3);
+            requirement.weapon_category = category;
+            let saved = save_requirement(&requirement);
+            assert_eq!(saved.kind, key);
+            assert_eq!(restore_requirement(&saved, 3), Some(requirement));
+        }
+
+        // A narrowed kind with an item of the other class is dropped instead
+        // of silently widening.
+        let mut inconsistent = UiRequirement::new(4);
+        inconsistent.weapon_category = Some(WeaponCategory::Thrown);
+        inconsistent.item = Some(ItemId::Greatsword);
+        let saved = save_requirement(&inconsistent);
+        assert!(
+            restore_requirement(&saved, 4)
+                .is_none_or(|requirement| requirement.to_core().validate().is_err())
         );
     }
 

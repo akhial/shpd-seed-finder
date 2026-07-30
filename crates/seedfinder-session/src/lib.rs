@@ -461,6 +461,7 @@ mod tests {
         SearchQuery {
             requirements: vec![Requirement {
                 kind: ItemKind::Wand,
+                weapon_category: None,
                 item: Some(ItemId::WandFrost),
                 tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Exact(2),

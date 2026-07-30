@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react'
 import {
   armorCurses,
   armorGlyphs,
-  itemsByCategory,
+  itemsForKind,
+  kindFamily,
   sources,
   weaponCurses,
   weaponEnchantments,
 } from '../../lib/catalog'
 import { validateRequirement } from '../../lib/query'
-import type { EffectFilter, ItemCategory, ItemSource, RequirementState } from '../../lib/wasm/types'
+import type { EffectFilter, ItemCategory, ItemSource, RequirementKind, RequirementState } from '../../lib/wasm/types'
 import { Field, Segmented, SliderRow, Sprite } from './parts'
 import { requirementSprite, requirementTitle } from './summary'
 
@@ -18,6 +19,21 @@ const CATEGORY_OPTIONS: { value: ItemCategory; label: string }[] = [
   { value: 'wand', label: 'Wand' },
   { value: 'ring', label: 'Ring' },
 ]
+
+const WEAPON_TYPE_OPTIONS: { value: RequirementKind; label: string }[] = [
+  { value: 'weapon', label: 'Any' },
+  { value: 'melee_weapon', label: 'Melee' },
+  { value: 'thrown_weapon', label: 'Thrown' },
+]
+
+const WILDCARD_LABELS: Record<RequirementKind, string> = {
+  weapon: 'Any weapon',
+  melee_weapon: 'Any melee weapon',
+  thrown_weapon: 'Any thrown weapon',
+  armor: 'Any armor',
+  wand: 'Any wand',
+  ring: 'Any ring',
+}
 
 const TIER_OPTIONS = [
   { value: 'any', label: 'Any' },
@@ -70,10 +86,11 @@ export function RequirementEditor({
   }))
 
   const kind = draft.kind ?? 'weapon'
-  const maxUpgrade = kind === 'ring' ? 4 : 3
-  const wildcardGear = !draft.item && (kind === 'weapon' || kind === 'armor')
-  const enchantments = kind === 'weapon' ? weaponEnchantments : armorGlyphs
-  const curses = kind === 'weapon' ? weaponCurses : armorCurses
+  const family = kindFamily(kind)
+  const maxUpgrade = family === 'ring' ? 4 : 3
+  const wildcardGear = !draft.item && (family === 'weapon' || family === 'armor')
+  const enchantments = family === 'weapon' ? weaponEnchantments : armorGlyphs
+  const curses = family === 'weapon' ? weaponCurses : armorCurses
   const errors = validateRequirement(draft)
   const effectMode: EffectMode = draft.effect?.mode ?? 'any'
   const selectedEffects = draft.effect?.mode === 'one_of' ? draft.effect.names : []
@@ -108,9 +125,12 @@ export function RequirementEditor({
     return () => window.removeEventListener('keydown', onKey)
   }, [onCancel])
 
-  const setKind = (nextKind: ItemCategory) => {
+  const setKind = (nextKind: RequirementKind) => {
+    // Re-clicking the already-selected family must not widen a narrowed
+    // weapon kind or wipe the item, tier, and effect selections.
+    if (kindFamily(nextKind) === family) return
     setDraft((current) => {
-      const nextMax = nextKind === 'ring' ? 4 : 3
+      const nextMax = kindFamily(nextKind) === 'ring' ? 4 : 3
       let upgrade = { ...current.upgrade }
       if (upgrade.mode === 'exact') upgrade = { ...upgrade, value: clamp(upgrade.value, 1, nextMax) }
       if (upgrade.mode === 'at_least') upgrade = { ...upgrade, value: clamp(upgrade.value, 1, nextMax - 1) }
@@ -136,7 +156,7 @@ export function RequirementEditor({
 
   const setUpgradeMode = (mode: (typeof UPGRADE_OPTIONS)[number]['value']) => {
     setDraft((current) => {
-      const max = (current.kind ?? 'weapon') === 'ring' ? 4 : 3
+      const max = kindFamily(current.kind ?? 'weapon') === 'ring' ? 4 : 3
       let value = current.upgrade.value
       if (mode === 'exact') value = clamp(value, 1, max)
       if (mode === 'at_least') value = clamp(value, 1, max - 1)
@@ -163,7 +183,23 @@ export function RequirementEditor({
         <div className="d1-modal-body">
           <section className="d1-modal-section">
             <h3>Item</h3>
-            <Segmented value={kind} options={CATEGORY_OPTIONS} onChange={setKind} ariaLabel="Category" fill />
+            <Segmented value={family} options={CATEGORY_OPTIONS} onChange={setKind} ariaLabel="Category" fill />
+            {family === 'weapon' && (
+              <Field label="Weapon type">
+                <Segmented
+                  value={kind}
+                  options={WEAPON_TYPE_OPTIONS}
+                  onChange={(nextKind) => {
+                    setDraft((current) => {
+                      const keepItem = current.item !== undefined
+                        && itemsForKind(nextKind).some((item) => item.id === current.item)
+                      return { ...current, kind: nextKind, item: keepItem ? current.item : undefined }
+                    })
+                  }}
+                  ariaLabel="Weapon type"
+                />
+              </Field>
+            )}
             <Field label="Item">
               <select
                 className="d1-select"
@@ -177,18 +213,18 @@ export function RequirementEditor({
                   }))
                 }}
               >
-                <option value="">Any {kind}</option>
-                {kind === 'weapon'
+                <option value="">{WILDCARD_LABELS[kind]}</option>
+                {family === 'weapon'
                   ? [2, 3, 4, 5].map((tier) => (
                       <optgroup key={tier} label={`Tier ${tier}`}>
-                        {itemsByCategory.weapon
+                        {itemsForKind(kind)
                           .filter((item) => item.tier === tier)
                           .map((item) => (
                             <option key={item.id} value={item.id}>{item.name}</option>
                           ))}
                       </optgroup>
                     ))
-                  : itemsByCategory[kind]
+                  : itemsForKind(kind)
                       .filter((item) => item.tier !== 1)
                       .map((item) => (
                         <option key={item.id} value={item.id}>{item.name}</option>
@@ -248,7 +284,7 @@ export function RequirementEditor({
             {draft.upgrade.mode === 'at_least' &&
               // Rings span +1…+3, enough range to warrant a slider; other kinds
               // have just +1/+2, which read more clearly as a dropdown.
-              (kind === 'ring' ? (
+              (family === 'ring' ? (
                 <SliderRow
                   label="Minimum upgrade"
                   valueLabel={`+${draft.upgrade.value} or higher`}
@@ -277,24 +313,24 @@ export function RequirementEditor({
 
           <section className="d1-modal-section">
             <h3>Details</h3>
-            {(kind === 'weapon' || kind === 'armor') && (
+            {(family === 'weapon' || family === 'armor') && (
               <>
-                <Field label={kind === 'weapon' ? 'Enchantment' : 'Glyph'}>
+                <Field label={family === 'weapon' ? 'Enchantment' : 'Glyph'}>
                   <Segmented
                     value={effectMode}
                     options={[
                       { value: 'any' as EffectMode, label: 'Any' },
-                      { value: 'any_enchantment' as EffectMode, label: kind === 'weapon' ? 'Any enchantment' : 'Any glyph' },
+                      { value: 'any_enchantment' as EffectMode, label: family === 'weapon' ? 'Any enchantment' : 'Any glyph' },
                       { value: 'one_of' as EffectMode, label: 'Specific…' },
                     ]}
                     onChange={setEffectMode}
-                    ariaLabel={kind === 'weapon' ? 'Enchantment filter' : 'Glyph filter'}
+                    ariaLabel={family === 'weapon' ? 'Enchantment filter' : 'Glyph filter'}
                     fill
                   />
                 </Field>
                 {effectMode === 'any_enchantment' && (
                   <p className="d1-caption">
-                    Matches items carrying any {kind === 'weapon' ? 'enchantment' : 'glyph'}, but not plain or curse-only items.
+                    Matches items carrying any {family === 'weapon' ? 'enchantment' : 'glyph'}, but not plain or curse-only items.
                   </p>
                 )}
                 {effectMode === 'one_of' && (
