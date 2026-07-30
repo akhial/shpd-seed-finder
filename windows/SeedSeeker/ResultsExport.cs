@@ -14,19 +14,23 @@ public sealed class ResultsExportException(string message) : Exception(message);
 ///
 /// The canonical implementation and compatibility rules live in the Rust core
 /// (crates/seedfinder-core/src/results_export.rs); the schema is documented in
-/// docs/results-export-format.md. Keep this codec byte-compatible with it:
+/// docs/results-export-format.md. Keep this codec schema-compatible with it:
 /// unknown envelope and per-result fields are ignored, files declaring a newer
 /// format_version are rejected with an "update the app" message, and unknown
-/// query content fails the import instead of silently changing its meaning.
+/// or wrong-typed query content fails the import instead of silently changing
+/// its meaning.
 /// </summary>
 public static partial class ResultsExport
 {
     public const string FileFormat = "seed-seeker-results";
     public const int FormatVersion = 1;
     public const string SuggestedFileName = "seed-seeker-results";
+    /// <summary>Mirrors the Rust core's SHPD_VERSION, the source of truth.</summary>
     public const string ShpdVersion = "3.3.8";
+    /// <summary>Import size cap; a maximal legal results file is far below this.</summary>
+    public const int MaxFileBytes = 2 * 1024 * 1024;
 
-    public sealed record Imported(QuerySettings Query, IReadOnlyList<string> Seeds);
+    public sealed record Imported(QuerySettings Query, IReadOnlyList<string> Seeds, string? FileShpdVersion);
 
     /// <summary>Stable document names, indexed by the matching enum value.</summary>
     private static readonly string[] KindNames = ["weapon", "armor", "wand", "ring"];
@@ -80,11 +84,17 @@ public static partial class ResultsExport
         {
             throw new ResultsExportException("This is not a Seed Seeker results file (not valid JSON).");
         }
-        if ((document["format"] as JsonValue)?.GetValue<string>() != FileFormat)
+        // TryGetValue-based reads throughout: GetValue<string>() would throw a
+        // raw .NET exception on number or boolean nodes.
+        if (TolerantString(document, "format") != FileFormat)
             throw new ResultsExportException("This is not a Seed Seeker results file.");
-        if (document["format_version"] is not JsonValue versionValue
-            || !versionValue.TryGetValue(out int version) || version < 1)
+        var versionNode = document["format_version"];
+        if (versionNode is null)
             throw new ResultsExportException("This results file is missing its format version.");
+        if (versionNode is not JsonValue versionValue
+            || !versionValue.TryGetValue(out int version) || version < 1)
+            throw new ResultsExportException(
+                "This results file does not declare a valid format version (a positive whole number).");
         if (version > FormatVersion)
             throw new ResultsExportException(
                 $"This results file uses format version {version}, but this app understands " +
@@ -97,13 +107,19 @@ public static partial class ResultsExport
         var seeds = new List<string>();
         foreach (var (entry, index) in resultsValue.Select((entry, index) => (entry, index)))
         {
-            var seed = ((entry as JsonObject)?["seed"] as JsonValue)?.GetValue<string>();
+            string? seed = null;
+            if ((entry as JsonObject)?["seed"] is JsonValue seedValue) seedValue.TryGetValue(out seed);
             if (seed is null || !SeedCodePattern().IsMatch(seed))
-                throw new ResultsExportException($"Result {index + 1} does not have a valid seed code.");
+                throw new ResultsExportException(
+                    $"Result {index + 1} does not have a valid seed code (canonical XXX-XXX-XXX form).");
             seeds.Add(seed);
         }
-        return new Imported(query, seeds);
+        return new Imported(query, seeds, TolerantString(document, "shpd_version"));
     }
+
+    /// <summary>Reads informational envelope strings; wrong types are ignored, not errors.</summary>
+    private static string? TolerantString(JsonObject document, string key) =>
+        document[key] is JsonValue value && value.TryGetValue(out string? text) ? text : null;
 
     private static JsonObject EncodeQuery(QuerySettings query)
     {
@@ -177,12 +193,17 @@ public static partial class ResultsExport
         if (maximumDepth is < 1 or > 24)
             throw new ResultsExportException("Maximum floor must be 1..24.");
         var challenges = 0;
-        if (value["challenges"] is JsonArray names)
+        var challengesNode = value["challenges"];
+        if (challengesNode is not null)
         {
+            if (challengesNode is not JsonArray names)
+                throw new ResultsExportException("\"challenges\" must be a list of challenge names");
             foreach (var nameValue in names)
             {
-                var name = (nameValue as JsonValue)?.GetValue<string>();
-                var match = ChallengeNames.FirstOrDefault(c => c.Name == name?.ToLowerInvariant());
+                string? name = null;
+                if (nameValue is JsonValue nameJson) nameJson.TryGetValue(out name);
+                // Challenge names match the core decoder exactly.
+                var match = ChallengeNames.FirstOrDefault(c => c.Name == name);
                 if (name is null || match.Name is null)
                     throw new ResultsExportException(
                         $"The query in this results file uses an unknown challenge \"{nameValue}\".");
@@ -211,10 +232,12 @@ public static partial class ResultsExport
         CatalogItem? item = null;
         if (StringField(entry, "item") is string id)
             item = ItemCatalog.Find(id) ?? throw new ResultsExportException($"unknown item \"{id}\"");
+        // Enum names match the core decoder exactly (lowercase snake_case);
+        // only effect names and the "any" keyword match case-insensitively.
         ItemKind kind;
         if (StringField(entry, "kind") is string kindName)
         {
-            var index = Array.IndexOf(KindNames, kindName.ToLowerInvariant());
+            var index = Array.IndexOf(KindNames, kindName);
             if (index < 0) throw new ResultsExportException($"unknown category \"{kindName}\"");
             kind = (ItemKind)index;
         }
@@ -240,7 +263,7 @@ public static partial class ResultsExport
         ScoutItemSource? source = null;
         if (StringField(entry, "source") is string sourceName)
         {
-            var index = Array.IndexOf(SourceNames, sourceName.ToLowerInvariant());
+            var index = Array.IndexOf(SourceNames, sourceName);
             if (index < 0) throw new ResultsExportException($"unknown source \"{sourceName}\"");
             source = (ScoutItemSource)index;
         }
@@ -292,12 +315,30 @@ public static partial class ResultsExport
         _ => throw new ResultsExportException("unrecognized upgrade filter"),
     };
 
-    private static string? StringField(JsonObject entry, string key) =>
-        entry[key] is JsonValue value && value.TryGetValue(out string? text) ? text : null;
+    // Strict typed readers: a present-but-wrong-type value is an error, never
+    // coerced or treated as absent. A JSON null is parsed as a null JsonNode,
+    // so explicit nulls count as absent, matching the core decoder.
+    private static string? StringField(JsonObject entry, string key)
+    {
+        var node = entry[key];
+        if (node is null) return null;
+        if (node is JsonValue value && value.TryGetValue(out string? text)) return text;
+        throw new ResultsExportException($"\"{key}\" must be a string");
+    }
 
-    private static int? IntField(JsonObject entry, string key) =>
-        entry[key] is JsonValue value && value.TryGetValue(out int number) ? number : null;
+    private static int? IntField(JsonObject entry, string key)
+    {
+        var node = entry[key];
+        if (node is null) return null;
+        if (node is JsonValue value && value.TryGetValue(out int number)) return number;
+        throw new ResultsExportException($"\"{key}\" must be a whole number");
+    }
 
-    private static bool BoolField(JsonObject entry, string key) =>
-        entry[key] is JsonValue value && value.TryGetValue(out bool flag) && flag;
+    private static bool BoolField(JsonObject entry, string key)
+    {
+        var node = entry[key];
+        if (node is null) return false;
+        if (node is JsonValue value && value.TryGetValue(out bool flag)) return flag;
+        throw new ResultsExportException($"\"{key}\" must be true or false");
+    }
 }

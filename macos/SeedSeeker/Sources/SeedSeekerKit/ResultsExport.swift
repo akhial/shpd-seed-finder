@@ -12,21 +12,28 @@ public struct ResultsExportError: Error, LocalizedError, Equatable {
 ///
 /// The canonical implementation and compatibility rules live in the Rust core
 /// (`crates/seedfinder-core/src/results_export.rs`); the schema is documented
-/// in `docs/results-export-format.md`. Keep this codec byte-compatible with
+/// in `docs/results-export-format.md`. Keep this codec schema-compatible with
 /// it: unknown envelope and per-result fields are ignored, files declaring a
 /// newer `format_version` are rejected with an "update the app" message, and
-/// unknown query content fails the import instead of silently changing the
-/// query's meaning.
+/// unknown or wrong-typed query content fails the import instead of silently
+/// changing the query's meaning.
 public enum ResultsExport {
     public static let fileFormat = "seed-seeker-results"
     public static let formatVersion = 1
     public static let suggestedFileName = "seed-seeker-results"
+    /// Mirrors the Rust core's `SHPD_VERSION`, the source of truth.
     public static let shpdVersion = "3.3.8"
+    /// Import size cap; a maximal legal results file is far below this.
+    public static let maxFileBytes = 2 * 1024 * 1024
 
     public struct Imported: Sendable {
         public let query: SavedQuery
         public let seeds: [String]
-        public init(query: SavedQuery, seeds: [String]) { self.query = query; self.seeds = seeds }
+        /// The upstream game version the file declares, if any.
+        public let shpdVersion: String?
+        public init(query: SavedQuery, seeds: [String], shpdVersion: String?) {
+            self.query = query; self.seeds = seeds; self.shpdVersion = shpdVersion
+        }
     }
 
     /// Stable document names, indexed by the matching enum raw value.
@@ -74,8 +81,14 @@ public enum ResultsExport {
               document["format"] as? String == fileFormat else {
             throw ResultsExportError("This is not a Seed Seeker results file.")
         }
-        guard let version = document["format_version"] as? Int, version >= 1 else {
+        guard let versionValue = document["format_version"] else {
             throw ResultsExportError("This results file is missing its format version.")
+        }
+        // Strictly a positive integer: NSNumber bridging would otherwise let
+        // `true` or `1.5` slip through `as? Int`.
+        guard let version = strictInt(versionValue), version >= 1 else {
+            throw ResultsExportError(
+                "This results file does not declare a valid format version (a positive whole number).")
         }
         guard version <= formatVersion else {
             throw ResultsExportError(
@@ -92,11 +105,55 @@ public enum ResultsExport {
         let seeds = try resultsValue.enumerated().map { index, entry -> String in
             guard let entry = entry as? [String: Any],
                   let seed = entry["seed"] as? String, isSeedCode(seed) else {
-                throw ResultsExportError("Result \(index + 1) does not have a valid seed code.")
+                throw ResultsExportError(
+                    "Result \(index + 1) does not have a valid seed code (canonical XXX-XXX-XXX form).")
             }
             return seed
         }
-        return Imported(query: query, seeds: seeds)
+        return Imported(query: query, seeds: seeds,
+                        shpdVersion: document["shpd_version"] as? String)
+    }
+
+    // MARK: Strict typed readers
+
+    /// A present-but-wrong-type value is an error, never coerced or treated
+    /// as absent. JSON booleans and integers both bridge to `NSNumber`, so
+    /// the two are told apart via `CFBoolean`, and fractions are rejected.
+    private static func strictInt(_ value: Any) -> Int? {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID(),
+              let exact = Int(exactly: number) else { return nil }
+        return exact
+    }
+
+    private static func strictBool(_ value: Any) -> Bool? {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
+        return number.boolValue
+    }
+
+    private static func intField(_ entry: [String: Any], _ key: String) throws -> Int? {
+        guard let value = entry[key], !(value is NSNull) else { return nil }
+        guard let number = strictInt(value) else {
+            throw ResultsExportError("\"\(key)\" must be a whole number")
+        }
+        return number
+    }
+
+    private static func stringField(_ entry: [String: Any], _ key: String) throws -> String? {
+        guard let value = entry[key], !(value is NSNull) else { return nil }
+        guard let text = value as? String, !(value is NSNumber) else {
+            throw ResultsExportError("\"\(key)\" must be a string")
+        }
+        return text
+    }
+
+    private static func boolField(_ entry: [String: Any], _ key: String) throws -> Bool {
+        guard let value = entry[key] else { return false }
+        guard let flag = strictBool(value) else {
+            throw ResultsExportError("\"\(key)\" must be true or false")
+        }
+        return flag
     }
 
     private static func isSeedCode(_ text: String) -> Bool {
@@ -169,27 +226,31 @@ public enum ResultsExport {
                 throw ResultsExportError("Requirement \(index + 1): \(reason)")
             }
         }
-        let maximumDepth = value["max_depth"] as? Int ?? 24
+        let maximumDepth = try intField(value, "max_depth") ?? 24
         guard (1...24).contains(maximumDepth) else {
             throw ResultsExportError("Maximum floor must be 1..24.")
         }
         var challenges = 0
-        if let names = value["challenges"] as? [Any] {
+        if let challengesValue = value["challenges"], !(challengesValue is NSNull) {
+            guard let names = challengesValue as? [Any] else {
+                throw ResultsExportError("\"challenges\" must be a list of challenge names")
+            }
             for nameValue in names {
+                // Challenge names match the core decoder exactly.
                 guard let name = nameValue as? String,
-                      let match = challengeNames.first(where: { $0.name == name.lowercased() }) else {
+                      let match = challengeNames.first(where: { $0.name == name }) else {
                     throw ResultsExportError(
                         "The query in this results file uses an unknown challenge \"\(nameValue)\".")
                 }
                 challenges |= match.challenge.rawValue
             }
         }
-        return SavedQuery(
+        return try SavedQuery(
             requirements: requirements,
             maximumDepth: maximumDepth,
-            requireBlacksmith: value["require_blacksmith"] as? Bool ?? false,
-            excludeBlacksmithRewards: value["exclude_blacksmith_rewards"] as? Bool ?? false,
-            fastMode: value["fast_mode"] as? Bool ?? false,
+            requireBlacksmith: boolField(value, "require_blacksmith"),
+            excludeBlacksmithRewards: boolField(value, "exclude_blacksmith_rewards"),
+            fastMode: boolField(value, "fast_mode"),
             challenges: challenges)
     }
 
@@ -198,15 +259,17 @@ public enum ResultsExport {
             throw ResultsExportError("unknown field \"\(field)\" — update Seed Seeker to import it")
         }
         var item: CatalogItem?
-        if let id = entry["item"] as? String {
+        if let id = try stringField(entry, "item") {
             guard let found = ItemCatalog.findById(id) else {
                 throw ResultsExportError("unknown item \"\(id)\"")
             }
             item = found
         }
+        // Enum names match the core decoder exactly (lowercase snake_case);
+        // only effect names and the "any" keyword match case-insensitively.
         let kind: ItemKind
-        if let name = entry["kind"] as? String {
-            guard let index = kindNames.firstIndex(of: name.lowercased()),
+        if let name = try stringField(entry, "kind") {
+            guard let index = kindNames.firstIndex(of: name),
                   let value = ItemKind(rawValue: index) else {
                 throw ResultsExportError("unknown category \"\(name)\"")
             }
@@ -219,14 +282,14 @@ public enum ResultsExport {
         var tier = 0
         var tierMatch = TierMatch.any
         if let tierValue = entry["tier"] {
-            if let name = tierValue as? String {
+            if let name = tierValue as? String, !(tierValue is NSNumber) {
                 guard name.lowercased() == "any" else {
                     throw ResultsExportError("unknown tier mode \"\(name)\"")
                 }
             } else if let object = tierValue as? [String: Any], object.count == 1 {
-                if let exact = object["exact"] as? Int { tier = exact; tierMatch = .exactly }
-                else if let atLeast = object["at_least"] as? Int { tier = atLeast; tierMatch = .atLeast }
-                else if let atMost = object["at_most"] as? Int { tier = atMost; tierMatch = .atMost }
+                if object["exact"] != nil { tier = try intField(object, "exact") ?? 0; tierMatch = .exactly }
+                else if object["at_least"] != nil { tier = try intField(object, "at_least") ?? 0; tierMatch = .atLeast }
+                else if object["at_most"] != nil { tier = try intField(object, "at_most") ?? 0; tierMatch = .atMost }
                 else { throw ResultsExportError("unrecognized tier filter") }
             } else {
                 throw ResultsExportError("unrecognized tier filter")
@@ -235,15 +298,15 @@ public enum ResultsExport {
         var upgrade = 0
         var upgradeMatch = UpgradeMatch.any
         if let upgradeValue = entry["upgrade"] {
-            if let name = upgradeValue as? String {
+            if let name = upgradeValue as? String, !(upgradeValue is NSNumber) {
                 guard name.lowercased() == "any" else {
                     throw ResultsExportError("unknown upgrade mode \"\(name)\"")
                 }
             } else if let object = upgradeValue as? [String: Any], object.count == 1 {
-                if let exact = object["exact"] as? Int { upgrade = exact; upgradeMatch = .exactly }
-                else if let atLeast = object["at_least"] as? Int { upgrade = atLeast; upgradeMatch = .atLeast }
+                if object["exact"] != nil { upgrade = try intField(object, "exact") ?? 0; upgradeMatch = .exactly }
+                else if object["at_least"] != nil { upgrade = try intField(object, "at_least") ?? 0; upgradeMatch = .atLeast }
                 else { throw ResultsExportError("unrecognized upgrade filter") }
-            } else if let number = upgradeValue as? Int {
+            } else if let number = strictInt(upgradeValue) {
                 upgrade = number
                 upgradeMatch = .exactly
             } else {
@@ -251,7 +314,7 @@ public enum ResultsExport {
             }
         }
         var modifier: String?
-        if let name = entry["effect"] as? String {
+        if let name = try stringField(entry, "effect") {
             guard let match = ItemCatalog.modifiersFor(kind)
                 .first(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) else {
                 throw ResultsExportError("unknown effect \"\(name)\"")
@@ -259,8 +322,8 @@ public enum ResultsExport {
             modifier = match
         }
         var source: ScoutItemSource?
-        if let name = entry["source"] as? String {
-            guard let index = sourceNames.firstIndex(of: name.lowercased()),
+        if let name = try stringField(entry, "source") {
+            guard let index = sourceNames.firstIndex(of: name),
                   let value = ScoutItemSource(rawValue: index) else {
                 throw ResultsExportError("unknown source \"\(name)\"")
             }
@@ -276,8 +339,8 @@ public enum ResultsExport {
             tierMatch: tierMatch,
             upgradeMatch: upgradeMatch,
             source: source,
-            identityGroup: entry["identity_group"] as? Int,
-            maximumDepth: entry["max_depth"] as? Int,
-            requireUncursed: entry["uncursed"] as? Bool ?? false)
+            identityGroup: try intField(entry, "identity_group"),
+            maximumDepth: try intField(entry, "max_depth"),
+            requireUncursed: try boolField(entry, "uncursed"))
     }
 }

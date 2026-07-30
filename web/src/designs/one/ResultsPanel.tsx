@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useStore } from '@tanstack/react-store'
 import { compactNumber, formatDuration, probabilityLabel } from '../../lib/format'
 import { CheckIcon, CopyIcon, DownloadIcon, UploadIcon } from '../../lib/icons'
-import { validateQuery } from '../../lib/query'
 import {
+  MAX_RESULTS_FILE_BYTES,
   RESULTS_FILE_NAME,
   decodeResultsFile,
   encodeResultsFile,
@@ -62,7 +62,8 @@ export function ResultsPanel({
 }) {
   const search = useStore(searchStore)
   const [copied, setCopied] = useState<string | undefined>(undefined)
-  const [fileNotice, setFileNotice] = useState<string | undefined>(undefined)
+  const [fileError, setFileError] = useState<string | undefined>(undefined)
+  const [fileInfo, setFileInfo] = useState<string | undefined>(undefined)
   const fileInput = useRef<HTMLInputElement>(null)
 
   const copySeed = (code: string) => {
@@ -89,31 +90,44 @@ export function ResultsPanel({
           : undefined
 
   const exportResults = () => {
-    const query = queryStore.state
-    const validation = validateQuery(query)
-    if (!validation.valid) {
-      setFileNotice(`Cannot export — fix the query first: ${validation.errors[0]}`)
+    // Export the query snapshot captured when the results were produced (at
+    // search start or import), never the live editor state.
+    const query = search.query
+    if (!query || search.matches.length === 0) {
+      setFileError('Run a search first — there are no results to export yet.')
       return
     }
     triggerJsonDownload(
-      encodeResultsFile(query, search.matches.map((match) => match.code), shpdVersion),
+      encodeResultsFile(query, search.matches.map((match) => match.code), shpdVersion ?? 'unknown'),
       RESULTS_FILE_NAME,
     )
-    setFileNotice(undefined)
+    setFileError(undefined)
   }
 
   const importResults = async (file: File) => {
     try {
+      if (file.size > MAX_RESULTS_FILE_BYTES) {
+        throw new Error('This file is too large to be a Seed Seeker results file (2 MiB limit).')
+      }
       const decoded = decodeResultsFile(await file.text())
-      // The engine validates the query strictly: unknown items, effects,
+      // The engine re-validates the query strictly: unknown items, effects,
       // challenges, or query fields fail here instead of being dropped.
       const verdict = await analyzeQuery(JSON.stringify(decoded.queryDocument))
       if (!verdict.valid) throw new Error(`The query in this results file is not usable: ${verdict.error}`)
+      // A search may have started while the picker or the awaits were pending.
+      if (searchStore.state.state === 'running') {
+        throw new Error('A search is running — stop it before importing results.')
+      }
       queryStore.setState(() => decoded.query)
-      loadImportedResults(decoded.seeds.map(parsedSeedFromCode))
-      setFileNotice(undefined)
+      loadImportedResults(decoded.seeds.map(parsedSeedFromCode), decoded.queryDocument)
+      setFileError(undefined)
+      setFileInfo(
+        decoded.shpdVersion !== undefined && shpdVersion !== undefined && decoded.shpdVersion !== shpdVersion
+          ? `This file was made for Shattered Pixel Dungeon v${decoded.shpdVersion}; this app targets v${shpdVersion}. The seeds may generate differently.`
+          : undefined,
+      )
     } catch (error) {
-      setFileNotice(error instanceof Error ? error.message : String(error))
+      setFileError(error instanceof Error ? error.message : String(error))
     }
   }
 
@@ -145,7 +159,7 @@ export function ResultsPanel({
             className="d1-io-btn"
             title="Export results to a file"
             aria-label="Export results to a file"
-            disabled={running || search.matches.length === 0}
+            disabled={running || search.matches.length === 0 || !search.query}
             onClick={exportResults}
           >
             <DownloadIcon size={13} />
@@ -166,7 +180,8 @@ export function ResultsPanel({
 
       <div className="d1-results-status">
         {search.error && <div className="d1-banner d1-banner-error" role="alert">{search.error}</div>}
-        {fileNotice && <div className="d1-banner d1-banner-error" role="alert">{fileNotice}</div>}
+        {fileError && <div className="d1-banner d1-banner-error" role="alert">{fileError}</div>}
+        {fileInfo && <div className="d1-banner d1-banner-info" role="status">{fileInfo}</div>}
 
         {running && (
           <>
@@ -204,7 +219,9 @@ export function ResultsPanel({
             <span className={`d1-state-chip${search.state === 'completed' || search.state === 'imported' ? ' d1-state-ok' : ''}`}>{statusChip}</span>
             <span className="d1-caption">
               {search.state === 'imported'
-                ? `${search.matches.length.toLocaleString()} seed${search.matches.length === 1 ? '' : 's'} loaded from file`
+                ? `${search.matches.length.toLocaleString()} seed${search.matches.length === 1 ? '' : 's'} loaded from file${
+                    search.importedDropped ? ` · ${search.importedDropped.toLocaleString()} entr${search.importedDropped === 1 ? 'y' : 'ies'} dropped (duplicates or beyond the 1,024-seed limit)` : ''
+                  }`
                 : `${search.matches.length.toLocaleString()} seed${search.matches.length === 1 ? '' : 's'} · tested ${compactNumber(search.tested)} in ${formatDuration(search.elapsed)}`}
             </span>
           </div>
@@ -218,7 +235,9 @@ export function ResultsPanel({
           <div className="d1-results-empty">
             {search.state === 'completed'
               ? <p>No seeds matched this query in the searched range.</p>
-              : <p>Matching seeds will appear here as they're found.</p>}
+              : search.state === 'imported'
+                ? <p>The imported file contained no seeds.</p>
+                : <p>Matching seeds will appear here as they're found.</p>}
           </div>
         ) : (
           <ol className="d1-result-list">

@@ -1056,6 +1056,12 @@ input[type='range']::-moz-range-thumb {
   border: 1px solid rgba(217, 108, 95, 0.35);
 }
 
+.d1-banner-info {
+  color: var(--d1-text-2);
+  background: var(--d1-raised);
+  border: 1px solid var(--d1-border-strong);
+}
+
 .d1-results-empty {
   padding: 28px 18px;
   text-align: center;

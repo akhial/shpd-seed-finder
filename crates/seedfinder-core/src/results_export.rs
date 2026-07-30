@@ -82,9 +82,11 @@ pub fn decode(contents: &str) -> Result<ResultsFile, String> {
     }
     let format_version = document
         .get("format_version")
-        .and_then(Value::as_u64)
-        .ok_or("this results file is missing its \"format_version\" number")?;
-    if format_version == 0 || format_version > FORMAT_VERSION {
+        .ok_or("this results file is missing its \"format_version\" number")?
+        .as_u64()
+        .filter(|version| *version >= 1)
+        .ok_or("this results file does not declare a valid format version (a positive integer)")?;
+    if format_version > FORMAT_VERSION {
         return Err(format!(
             "this results file uses format version {format_version}, but this app understands \
              up to version {FORMAT_VERSION}; update Seed Seeker to import it"
@@ -96,6 +98,16 @@ pub fn decode(contents: &str) -> Result<ResultsFile, String> {
         .ok_or("this results file is missing its \"query\" object")?;
     let query = json_query::decode(&query_value.to_string())
         .map_err(|error| format!("the query in this results file is not usable: {error}"))?;
+    for (index, requirement) in query.requirements.iter().enumerate() {
+        // The results format restricts same-item groups to what every app's
+        // editor can express (A..D), even though the engine allows more.
+        if requirement.identity_group.is_some_and(|group| group > 4) {
+            return Err(format!(
+                "requirement {}: same-item group must be between 1 and 4 (A..D)",
+                index + 1
+            ));
+        }
+    }
     let results = document
         .get("results")
         .and_then(Value::as_array)
@@ -114,12 +126,52 @@ pub fn decode(contents: &str) -> Result<ResultsFile, String> {
     })
 }
 
+/// Deduplicates seeds (keeping the first occurrence) and caps the list at
+/// `limit`, returning the kept seeds and how many entries were dropped.
+/// All importers apply this rule so a given file restores the same list
+/// everywhere.
+#[must_use]
+pub fn dedupe_and_cap(seeds: &[DungeonSeed], limit: usize) -> (Vec<DungeonSeed>, usize) {
+    let mut seen = std::collections::HashSet::new();
+    let mut kept = Vec::new();
+    for seed in seeds {
+        if kept.len() == limit {
+            break;
+        }
+        if seen.insert(*seed) {
+            kept.push(*seed);
+        }
+    }
+    let dropped = seeds.len() - kept.len();
+    (kept, dropped)
+}
+
 fn decode_result_seed(index: usize, entry: &Value) -> Result<DungeonSeed, String> {
     let code = entry
         .get("seed")
         .and_then(Value::as_str)
         .ok_or_else(|| format!("result {}: missing \"seed\" code", index + 1))?;
+    // Stricter than the interactive parser on purpose: files must carry the
+    // canonical form so every platform accepts exactly the same documents.
+    if !is_canonical_code(code) {
+        return Err(format!(
+            "result {}: seed code must use the canonical XXX-XXX-XXX form",
+            index + 1
+        ));
+    }
     DungeonSeed::from_code(code).map_err(|error| format!("result {}: {error}", index + 1))
+}
+
+fn is_canonical_code(code: &str) -> bool {
+    let bytes = code.as_bytes();
+    bytes.len() == 11
+        && bytes.iter().enumerate().all(|(index, byte)| {
+            if index == 3 || index == 7 {
+                *byte == b'-'
+            } else {
+                byte.is_ascii_uppercase()
+            }
+        })
 }
 
 fn field_string(document: &Map<String, Value>, key: &str) -> Option<String> {
@@ -134,7 +186,7 @@ mod tests {
     use crate::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
     use crate::seed::DungeonSeed;
 
-    use super::{FORMAT_VERSION, decode, encode};
+    use super::{FORMAT_VERSION, decode, dedupe_and_cap, encode};
 
     fn sample_query() -> SearchQuery {
         SearchQuery {
@@ -292,5 +344,75 @@ mod tests {
         }"#;
         let error = decode(contents).unwrap_err();
         assert!(error.starts_with("result 2:"), "{error}");
+    }
+
+    #[test]
+    fn only_canonical_seed_codes_are_accepted() {
+        // The interactive parser tolerates these; the file format must not,
+        // or files would import on some platforms and fail on others.
+        for code in ["aaa-aaa-aab", "AAAAAAAAB", "AAA AAA AAB", " AAA-AAA-AAB"] {
+            let contents = format!(
+                r#"{{"format":"seed-seeker-results","format_version":1,
+                    "query":{{"requirements":[{{"item":"sword"}}]}},
+                    "results":[{{"seed":"{code}"}}]}}"#
+            );
+            let error = decode(&contents).unwrap_err();
+            assert!(error.contains("canonical"), "{code}: {error}");
+        }
+    }
+
+    #[test]
+    fn format_version_must_be_a_positive_integer() {
+        for version in ["0", "1.5", "true", "\"1\"", "-1"] {
+            let contents = format!(
+                r#"{{"format":"seed-seeker-results","format_version":{version},
+                    "query":{{"requirements":[{{"item":"sword"}}]}},"results":[]}}"#
+            );
+            let error = decode(&contents).unwrap_err();
+            assert!(error.contains("valid format version"), "{version}: {error}");
+        }
+    }
+
+    #[test]
+    fn wrong_typed_query_fields_are_rejected() {
+        for query in [
+            r#"{"requirements":[{"item":"sword"}],"max_depth":"12"}"#,
+            r#"{"requirements":[{"item":42}]}"#,
+            r#"{"requirements":[{"item":"sword"}],"challenges":"barren_land"}"#,
+            r#"{"requirements":[{"item":"sword","upgrade":true}]}"#,
+        ] {
+            let contents = format!(
+                r#"{{"format":"seed-seeker-results","format_version":1,
+                    "query":{query},"results":[]}}"#
+            );
+            assert!(decode(&contents).is_err(), "{query}");
+        }
+    }
+
+    #[test]
+    fn same_item_groups_above_four_are_rejected() {
+        let contents = r#"{
+            "format": "seed-seeker-results",
+            "format_version": 1,
+            "query": {"requirements": [{"kind": "wand", "identity_group": 5}]},
+            "results": []
+        }"#;
+        let error = decode(contents).unwrap_err();
+        assert!(error.contains("1 and 4"), "{error}");
+    }
+
+    #[test]
+    fn importers_dedupe_then_cap_preserving_first_occurrences() {
+        let raw = seeds(&["AAA-AAA-AAC", "AAA-AAA-AAB", "AAA-AAA-AAC"]);
+        let (kept, dropped) = dedupe_and_cap(&raw, 1_024);
+        assert_eq!(kept, seeds(&["AAA-AAA-AAC", "AAA-AAA-AAB"]));
+        assert_eq!(dropped, 1);
+
+        let many: Vec<_> = (0..1_500)
+            .map(|value| DungeonSeed::new(value).unwrap())
+            .collect();
+        let (kept, dropped) = dedupe_and_cap(&many, 1_024);
+        assert_eq!(kept.len(), 1_024);
+        assert_eq!(dropped, 476);
     }
 }

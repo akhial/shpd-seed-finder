@@ -36,42 +36,19 @@ class ResultsExportTest {
     )
 
     /**
-     * The canonical version-1 fixture, schema-identical to
-     * crates/seedfinder-core/tests/fixtures/results-export-v1.json. Files
-     * exported today must always stay readable; never edit this fixture.
+     * The canonical frozen version-1 fixture, read straight from the Rust
+     * core's test data so this codec can never silently drift from it. Files
+     * exported today must always stay readable; never edit the fixture.
+     * Gradle runs unit tests with the module directory as the working
+     * directory, so the repository root is two levels up.
      */
-    private val version1Fixture = """
-        {
-          "format": "seed-seeker-results",
-          "format_version": 1,
-          "app_version": "0.6.1",
-          "shpd_version": "3.3.8",
-          "query": {
-            "requirements": [
-              {
-                "kind": "ring",
-                "item": "ring_tenacity",
-                "upgrade": 4,
-                "source": "imp_reward"
-              },
-              {
-                "kind": "wand",
-                "upgrade": { "at_least": 2 },
-                "uncursed": true,
-                "identity_group": 1,
-                "max_depth": 9
-              }
-            ],
-            "max_depth": 12,
-            "require_blacksmith": true,
-            "challenges": ["barren_land"]
-          },
-          "results": [
-            { "seed": "AAA-AAA-BUH" },
-            { "seed": "ABC-DEF-GHI" }
-          ]
-        }
-    """.trimIndent()
+    private val version1Fixture: String by lazy {
+        val fixture = java.io.File(
+            "../../crates/seedfinder-core/tests/fixtures/results-export-v1.json",
+        )
+        check(fixture.exists()) { "canonical fixture not found at ${fixture.absolutePath}" }
+        fixture.readText()
+    }
 
     @Test
     fun encodeThenDecodeRoundTripsQueryAndSeeds() {
@@ -120,6 +97,7 @@ class ResultsExportTest {
     fun version1FixtureAlwaysDecodes() {
         val imported = ResultsExport.decode(version1Fixture)
         assertEquals(listOf("AAA-AAA-BUH", "ABC-DEF-GHI"), imported.seeds)
+        assertEquals("3.3.8", imported.shpdVersion)
         assertEquals(12, imported.query.maximumDepth)
         assertEquals(Challenge.NO_HERBALISM.bit, imported.query.challenges)
         assertEquals("ring_tenacity", imported.query.requirements[0].item?.id)
@@ -201,6 +179,55 @@ class ResultsExportTest {
             )
         }
         assertTrue(failure.message!!.contains("Result 2"))
+    }
+
+    @Test
+    fun formatVersionMustBeAPositiveInteger() {
+        for (version in listOf("0", "1.5", "true", "\"1\"", "-1")) {
+            val failure = assertThrows(IllegalArgumentException::class.java) {
+                ResultsExport.decode(
+                    """{"format":"seed-seeker-results","format_version":$version,
+                       "query":{"requirements":[{"item":"sword"}]},"results":[]}""",
+                )
+            }
+            assertTrue("$version: ${failure.message}", failure.message!!.contains("format version"))
+        }
+    }
+
+    @Test
+    fun wrongTypedQueryFieldsAreRejectedNotCoerced() {
+        val payloads = listOf(
+            """{"requirements":[{"item":"sword"}],"max_depth":"12"}""",
+            """{"requirements":[{"item":"sword"}],"max_depth":99}""",
+            """{"requirements":[{"item":42}]}""",
+            """{"requirements":[{"item":""}]}""",
+            """{"requirements":[{"item":"sword"}],"challenges":"barren_land"}""",
+            """{"requirements":[{"item":"sword","upgrade":true}]}""",
+            """{"requirements":[{"item":"sword","uncursed":"yes"}]}""",
+            """{"requirements":[{"kind":"RING"}]}""",
+        )
+        for (query in payloads) {
+            assertThrows(query, IllegalArgumentException::class.java) {
+                ResultsExport.decode(
+                    """{"format":"seed-seeker-results","format_version":1,
+                       "query":$query,"results":[]}""",
+                )
+            }
+        }
+    }
+
+    @Test
+    fun onlyCanonicalSeedCodesAreAccepted() {
+        for (seed in listOf("aaa-aaa-aab", "AAAAAAAAB", "AAA AAA AAB", " AAA-AAA-AAB")) {
+            val failure = assertThrows(IllegalArgumentException::class.java) {
+                ResultsExport.decode(
+                    """{"format":"seed-seeker-results","format_version":1,
+                       "query":{"requirements":[{"item":"sword"}]},
+                       "results":[{"seed":"$seed"}]}""",
+                )
+            }
+            assertTrue("$seed: ${failure.message}", failure.message!!.contains("Result 1"))
+        }
     }
 
     @Test

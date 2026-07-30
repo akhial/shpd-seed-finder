@@ -11,19 +11,28 @@ import org.json.JSONObject
  *
  * The canonical implementation and compatibility rules live in the Rust core
  * (`crates/seedfinder-core/src/results_export.rs`); the schema is documented
- * in `docs/results-export-format.md`. Keep this codec byte-compatible with
+ * in `docs/results-export-format.md`. Keep this codec schema-compatible with
  * it: unknown envelope and per-result fields are ignored, files declaring a
  * newer `format_version` are rejected with an "update the app" message, and
- * unknown query content fails the import instead of silently changing the
- * query's meaning.
+ * unknown or wrong-typed query content fails the import instead of silently
+ * changing the query's meaning.
  */
 object ResultsExport {
     const val FILE_FORMAT = "seed-seeker-results"
     const val FORMAT_VERSION = 1
     const val SUGGESTED_FILE_NAME = "seed-seeker-results.json"
+
+    /** Mirrors the Rust core's `SHPD_VERSION`, the source of truth. */
     const val SHPD_VERSION = "3.3.8"
 
-    data class Imported(val query: PresetQuery, val seeds: List<String>)
+    /** Import size cap; a maximal legal results file is far below this. */
+    const val MAX_FILE_BYTES = 2 * 1024 * 1024
+
+    data class Imported(
+        val query: PresetQuery,
+        val seeds: List<String>,
+        val shpdVersion: String?,
+    )
 
     private val SEED_CODE = Regex("^[A-Z]{3}-[A-Z]{3}-[A-Z]{3}$")
 
@@ -71,18 +80,37 @@ object ResultsExport {
         }.toString(2)
 
     /** @throws IllegalArgumentException with a user-facing message. */
-    fun decode(text: String): Imported {
+    fun decode(text: String): Imported = try {
+        decodeDocument(text)
+    } catch (failure: IllegalArgumentException) {
+        throw failure
+    } catch (_: Exception) {
+        // Anything the strict readers below did not anticipate (for example
+        // an org.json parse quirk) must not leak a raw exception message.
+        throw IllegalArgumentException("This results file is malformed.")
+    }
+
+    private fun decodeDocument(text: String): Imported {
         val document = runCatching { JSONObject(text) }.getOrElse {
             throw IllegalArgumentException("This is not a Seed Seeker results file (not valid JSON).")
         }
-        require(document.optString("format") == FILE_FORMAT) {
+        require(document.opt("format") == FILE_FORMAT) {
             "This is not a Seed Seeker results file."
         }
-        val version = document.opt("format_version") as? Number
-        requireNotNull(version) { "This results file is missing its format version." }
-        require(version.toInt() >= 1) { "This results file is missing its format version." }
-        require(version.toInt() <= FORMAT_VERSION) {
-            "This results file uses format version ${version.toInt()}, but this app understands " +
+        val version = document.opt("format_version")
+        requireNotNull(version.takeIf { it != JSONObject.NULL }) {
+            "This results file is missing its format version."
+        }
+        // Strictly a positive integer: no booleans, strings, or fractions.
+        require(version is Int || version is Long) {
+            "This results file does not declare a valid format version (a positive whole number)."
+        }
+        val versionNumber = (version as Number).toLong()
+        require(versionNumber >= 1) {
+            "This results file does not declare a valid format version (a positive whole number)."
+        }
+        require(versionNumber <= FORMAT_VERSION) {
+            "This results file uses format version $versionNumber, but this app understands " +
                 "up to version $FORMAT_VERSION. Update Seed Seeker to import it."
         }
         val queryValue = document.optJSONObject("query")
@@ -92,14 +120,15 @@ object ResultsExport {
         requireNotNull(resultsValue) { "This results file is missing its results list." }
         val seeds = buildList {
             for (index in 0 until resultsValue.length()) {
-                val seed = resultsValue.optJSONObject(index)?.optString("seed", "")
+                val seed = resultsValue.optJSONObject(index)?.opt("seed") as? String
                 require(seed != null && SEED_CODE.matches(seed)) {
-                    "Result ${index + 1} does not have a valid seed code."
+                    "Result ${index + 1} does not have a valid seed code " +
+                        "(canonical XXX-XXX-XXX form)."
                 }
                 add(seed)
             }
         }
-        return Imported(query, seeds)
+        return Imported(query, seeds, document.opt("shpd_version") as? String)
     }
 
     private fun encodeQuery(query: PresetQuery) = JSONObject().apply {
@@ -159,22 +188,29 @@ object ResultsExport {
             }
         }
         require(requirements.isNotEmpty()) { "The query in this results file has no requirements." }
-        val challenges = value.optJSONArray("challenges")?.let { names ->
-            var mask = 0
-            for (index in 0 until names.length()) {
-                val name = names.optString(index, "")
-                val challenge = CHALLENGE_NAMES[name.lowercase()]
-                requireNotNull(challenge) { "The query in this results file uses an unknown challenge \"$name\"." }
-                mask = mask or challenge.bit
+        val challengesValue = value.opt("challenges")
+        var challenges = 0
+        if (challengesValue != null && challengesValue != JSONObject.NULL) {
+            require(challengesValue is JSONArray) {
+                "\"challenges\" must be a list of challenge names"
             }
-            mask
-        } ?: 0
+            for (index in 0 until challengesValue.length()) {
+                val name = challengesValue.opt(index)
+                val challenge = (name as? String)?.let(CHALLENGE_NAMES::get)
+                requireNotNull(challenge) {
+                    "The query in this results file uses an unknown challenge \"$name\"."
+                }
+                challenges = challenges or challenge.bit
+            }
+        }
+        val maximumDepth = value.strictIntOrNull("max_depth") ?: 24
+        require(maximumDepth in 1..24) { "Maximum floor must be 1..24." }
         return PresetQuery(
             requirements = requirements,
-            maximumDepth = if (value.has("max_depth")) value.getInt("max_depth") else 24,
-            requireBlacksmith = value.optBoolean("require_blacksmith"),
-            excludeBlacksmithRewards = value.optBoolean("exclude_blacksmith_rewards"),
-            fastMode = value.optBoolean("fast_mode"),
+            maximumDepth = maximumDepth,
+            requireBlacksmith = value.strictBool("require_blacksmith"),
+            excludeBlacksmithRewards = value.strictBool("exclude_blacksmith_rewards"),
+            fastMode = value.strictBool("fast_mode"),
             challenges = challenges,
         )
     }
@@ -183,11 +219,13 @@ object ResultsExport {
         for (key in entry.keys()) {
             require(key in REQUIREMENT_KEYS) { "unknown field \"$key\" — update Seed Seeker to import it" }
         }
-        val item = entry.stringOrNull("item")?.let { id ->
+        val item = entry.strictStringOrNull("item")?.let { id ->
             requireNotNull(ItemCatalog.findById(id)) { "unknown item \"$id\"" }
         }
-        val kind = entry.stringOrNull("kind")?.let { name ->
-            requireNotNull(ItemKind.entries.firstOrNull { it.name.equals(name, ignoreCase = true) }) {
+        // Enum names match the core decoder exactly (lowercase snake_case);
+        // only effect names and the "any" keyword are matched case-insensitively.
+        val kind = entry.strictStringOrNull("kind")?.let { name ->
+            requireNotNull(ItemKind.entries.firstOrNull { it.name.lowercase() == name }) {
                 "unknown category \"$name\""
             }
         } ?: item?.kind ?: throw IllegalArgumentException("a category is required when no item is set")
@@ -202,15 +240,15 @@ object ResultsExport {
                 require(tierValue.length() == 1) { "unrecognized tier filter" }
                 when {
                     tierValue.has("exact") -> {
-                        tier = tierValue.getInt("exact")
+                        tier = tierValue.strictInt("exact")
                         tierMatch = TierMatch.EXACT
                     }
                     tierValue.has("at_least") -> {
-                        tier = tierValue.getInt("at_least")
+                        tier = tierValue.strictInt("at_least")
                         tierMatch = TierMatch.AT_LEAST
                     }
                     tierValue.has("at_most") -> {
-                        tier = tierValue.getInt("at_most")
+                        tier = tierValue.strictInt("at_most")
                         tierMatch = TierMatch.AT_MOST
                     }
                     else -> throw IllegalArgumentException("unrecognized tier filter")
@@ -222,8 +260,8 @@ object ResultsExport {
         var upgradeMatch = UpgradeMatch.ANY
         when (val upgradeValue = entry.opt("upgrade")) {
             null, JSONObject.NULL -> {}
-            is Number -> {
-                upgrade = upgradeValue.toInt()
+            is Int, is Long -> {
+                upgrade = (upgradeValue as Number).toInt()
                 upgradeMatch = UpgradeMatch.EXACT
             }
             is String -> require(upgradeValue.equals("any", ignoreCase = true)) {
@@ -233,11 +271,11 @@ object ResultsExport {
                 require(upgradeValue.length() == 1) { "unrecognized upgrade filter" }
                 when {
                     upgradeValue.has("exact") -> {
-                        upgrade = upgradeValue.getInt("exact")
+                        upgrade = upgradeValue.strictInt("exact")
                         upgradeMatch = UpgradeMatch.EXACT
                     }
                     upgradeValue.has("at_least") -> {
-                        upgrade = upgradeValue.getInt("at_least")
+                        upgrade = upgradeValue.strictInt("at_least")
                         upgradeMatch = UpgradeMatch.AT_LEAST
                     }
                     else -> throw IllegalArgumentException("unrecognized upgrade filter")
@@ -245,15 +283,15 @@ object ResultsExport {
             }
             else -> throw IllegalArgumentException("unrecognized upgrade filter")
         }
-        val modifier = entry.stringOrNull("effect")?.let { name ->
+        val modifier = entry.strictStringOrNull("effect")?.let { name ->
             requireNotNull(
                 ItemCatalog.modifiersFor(kind).firstOrNull { it.equals(name, ignoreCase = true) },
             ) { "unknown effect \"$name\"" }
         }
-        val source = entry.stringOrNull("source")?.let { name ->
-            requireNotNull(
-                ScoutItemSource.entries.firstOrNull { it.name.equals(name, ignoreCase = true) },
-            ) { "unknown source \"$name\"" }
+        val source = entry.strictStringOrNull("source")?.let { name ->
+            requireNotNull(ScoutItemSource.entries.firstOrNull { it.name.lowercase() == name }) {
+                "unknown source \"$name\""
+            }
         }
         return ItemRequirement(
             key = index + 1L,
@@ -265,12 +303,35 @@ object ResultsExport {
             tierMatch = tierMatch,
             upgradeMatch = upgradeMatch,
             source = source,
-            identityGroup = if (entry.isNull("identity_group")) null else entry.getInt("identity_group"),
-            maximumDepth = if (entry.isNull("max_depth")) null else entry.getInt("max_depth"),
-            requireUncursed = entry.optBoolean("uncursed"),
+            identityGroup = entry.strictIntOrNull("identity_group"),
+            maximumDepth = entry.strictIntOrNull("max_depth"),
+            requireUncursed = entry.strictBool("uncursed"),
         )
     }
 
-    private fun JSONObject.stringOrNull(key: String): String? =
-        if (isNull(key)) null else getString(key).takeIf(String::isNotEmpty)
+    // Strict typed readers: a present-but-wrong-type value is an error, never
+    // silently coerced or treated as absent. JSON null counts as absent for
+    // the optional string/int fields, matching the core decoder.
+    private fun JSONObject.strictStringOrNull(key: String): String? {
+        val value = opt(key)
+        if (value == null || value == JSONObject.NULL) return null
+        require(value is String) { "\"$key\" must be a string" }
+        return value
+    }
+
+    private fun JSONObject.strictIntOrNull(key: String): Int? {
+        val value = opt(key)
+        if (value == null || value == JSONObject.NULL) return null
+        require(value is Int || value is Long) { "\"$key\" must be a whole number" }
+        return (value as Number).toInt()
+    }
+
+    private fun JSONObject.strictInt(key: String): Int =
+        requireNotNull(strictIntOrNull(key)) { "\"$key\" must be a whole number" }
+
+    private fun JSONObject.strictBool(key: String): Boolean {
+        val value = opt(key) ?: return false
+        require(value is Boolean) { "\"$key\" must be true or false" }
+        return value
+    }
 }

@@ -101,6 +101,8 @@ fun FinderScreen(
     onFastModeChange: (Boolean) -> Unit,
     onSearch: () -> Unit,
     onCancel: () -> Unit,
+    canExportResults: Boolean,
+    importNotice: String?,
     onExportResults: () -> Unit,
     onImportResults: () -> Unit,
     onScoutSeed: (String) -> Unit,
@@ -141,7 +143,7 @@ fun FinderScreen(
                             )
                             DropdownMenuItem(
                                 text = { Text("Export results…") },
-                                enabled = !isSearching && results.isNotEmpty() && requirements.isNotEmpty(),
+                                enabled = !isSearching && canExportResults,
                                 onClick = {
                                     showOverflowMenu = false
                                     onExportResults()
@@ -210,6 +212,18 @@ fun FinderScreen(
                     contentPadding = PaddingValues(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
+                    importNotice?.let { notice ->
+                        item {
+                            Text(
+                                notice,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     if (results.isEmpty()) {
                         item {
                             Text(

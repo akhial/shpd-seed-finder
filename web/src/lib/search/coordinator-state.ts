@@ -1,4 +1,4 @@
-import type { ParsedSeed } from '../wasm/types'
+import type { ParsedSeed, QueryDocument } from '../wasm/types'
 
 export type SearchStatus = 'idle' | 'running' | 'completed' | 'cancelled' | 'imported'
 export interface RateSample { at: number; tested: number }
@@ -17,6 +17,10 @@ export interface CoordinatorState {
   startedAt: number
   rateSamples: RateSample[]
   error?: string
+  /** The query that produced `matches` (captured at search start or import). */
+  query?: QueryDocument
+  /** Imported entries dropped as duplicates or beyond the result cap. */
+  importedDropped?: number
 }
 
 export const RESULT_CAP = 1_024
@@ -49,14 +53,30 @@ export function calculateRate(samples: RateSample[]): number {
   return seconds > 0 ? (last.tested - first.tested) / seconds : 0
 }
 
-/** Replaces the whole search state with results restored from a file. */
-export function importedResultsState(state: CoordinatorState, matches: ParsedSeed[]): CoordinatorState {
+/**
+ * Replaces the whole search state with results restored from a file.
+ * Matching every other platform, imported seeds are deduplicated (keeping the
+ * first occurrence) and capped at the result limit, with the dropped count
+ * reported for the UI.
+ */
+export function importedResultsState(state: CoordinatorState, matches: ParsedSeed[], query: QueryDocument): CoordinatorState {
+  const seen = new Set<string>()
+  const kept: ParsedSeed[] = []
+  for (const match of matches) {
+    if (kept.length === RESULT_CAP) break
+    if (!seen.has(match.code)) {
+      seen.add(match.code)
+      kept.push(match)
+    }
+  }
   return {
     ...initialCoordinatorState(state.total),
     sessionId: state.sessionId,
     state: 'imported',
-    matches: matches.slice(0, RESULT_CAP),
-    capped: matches.length > RESULT_CAP,
+    matches: kept,
+    capped: kept.length === RESULT_CAP && matches.length > RESULT_CAP,
+    query,
+    importedDropped: matches.length - kept.length,
   }
 }
 

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { defaultQueryState } from './query'
+// The canonical frozen fixture, imported verbatim from the Rust core's test
+// data so this codec can never silently drift from it.
+import VERSION_1_FIXTURE from '../../../crates/seedfinder-core/tests/fixtures/results-export-v1.json?raw'
+import { defaultQueryState, toQueryDocument } from './query'
 import {
   RESULTS_FILE_VERSION,
   decodeResultsFile,
@@ -35,41 +38,8 @@ const loadedQuery: QueryState = {
   challenges: ['barren_land'],
 }
 
-/**
- * The canonical version-1 fixture, byte-for-byte the same schema as
- * crates/seedfinder-core/tests/fixtures/results-export-v1.json. Files
- * exported today must always stay readable; never edit this fixture.
- */
-const VERSION_1_FIXTURE = `{
-  "format": "seed-seeker-results",
-  "format_version": 1,
-  "app_version": "0.6.1",
-  "shpd_version": "3.3.8",
-  "query": {
-    "requirements": [
-      {
-        "kind": "ring",
-        "item": "ring_tenacity",
-        "upgrade": 4,
-        "source": "imp_reward"
-      },
-      {
-        "kind": "wand",
-        "upgrade": { "at_least": 2 },
-        "uncursed": true,
-        "identity_group": 1,
-        "max_depth": 9
-      }
-    ],
-    "max_depth": 12,
-    "require_blacksmith": true,
-    "challenges": ["barren_land"]
-  },
-  "results": [
-    { "seed": "AAA-AAA-BUH" },
-    { "seed": "ABC-DEF-GHI" }
-  ]
-}`
+const file = (query: unknown, results: unknown[] = []) =>
+  JSON.stringify({ format: 'seed-seeker-results', format_version: 1, query, results })
 
 describe('results file', () => {
   it('computes seed values in the engine base-26 form', () => {
@@ -80,16 +50,17 @@ describe('results file', () => {
   })
 
   it('round-trips the query and seeds through encode and decode', () => {
-    const text = encodeResultsFile(loadedQuery, ['AAA-AAA-BUH', 'ABC-DEF-GHI'], '3.3.8')
+    const text = encodeResultsFile(toQueryDocument(loadedQuery), ['AAA-AAA-BUH', 'ABC-DEF-GHI'], '3.3.8')
     const decoded = decodeResultsFile(text)
     expect(decoded.formatVersion).toBe(RESULTS_FILE_VERSION)
     expect(decoded.appVersion).toBeDefined()
+    expect(decoded.shpdVersion).toBe('3.3.8')
     expect(decoded.query).toEqual(loadedQuery)
     expect(decoded.seeds).toEqual(['AAA-AAA-BUH', 'ABC-DEF-GHI'])
   })
 
   it('emits the documented envelope fields', () => {
-    const parsed = JSON.parse(encodeResultsFile(loadedQuery, ['AAA-AAA-AAB'], '3.3.8')) as Record<string, unknown>
+    const parsed = JSON.parse(encodeResultsFile(toQueryDocument(loadedQuery), ['AAA-AAA-AAB'], '3.3.8')) as Record<string, unknown>
     expect(parsed.format).toBe('seed-seeker-results')
     expect(parsed.format_version).toBe(1)
     expect(typeof parsed.app_version).toBe('string')
@@ -106,10 +77,11 @@ describe('results file', () => {
     })
   })
 
-  it('always decodes the frozen version-1 fixture', () => {
+  it('always decodes the canonical frozen version-1 fixture', () => {
     const decoded = decodeResultsFile(VERSION_1_FIXTURE)
     expect(decoded.formatVersion).toBe(1)
     expect(decoded.appVersion).toBe('0.6.1')
+    expect(decoded.shpdVersion).toBe('3.3.8')
     expect(decoded.query).toEqual(loadedQuery)
     expect(decoded.seeds).toEqual(['AAA-AAA-BUH', 'ABC-DEF-GHI'])
   })
@@ -131,10 +103,22 @@ describe('results file', () => {
     const text = JSON.stringify({
       format: 'seed-seeker-results',
       format_version: 2,
-      query: { requirements: [] },
+      query: { requirements: [{ item: 'sword' }] },
       results: [],
     })
     expect(() => decodeResultsFile(text)).toThrowError(/format version 2.*Update Seed Seeker/s)
+  })
+
+  it('requires the format version to be a positive whole number', () => {
+    for (const version of [0, 1.5, true, '1', -1, null]) {
+      const text = JSON.stringify({
+        format: 'seed-seeker-results',
+        format_version: version,
+        query: { requirements: [{ item: 'sword' }] },
+        results: [],
+      })
+      expect(() => decodeResultsFile(text), JSON.stringify(version)).toThrowError(/format version/)
+    }
   })
 
   it('rejects foreign and malformed files clearly', () => {
@@ -142,23 +126,72 @@ describe('results file', () => {
       expect(() => decodeResultsFile(text)).toThrowError(/not a Seed Seeker results file/)
     }
     expect(() =>
-      decodeResultsFile(JSON.stringify({ format: 'seed-seeker-results', query: {}, results: [] })),
+      decodeResultsFile(JSON.stringify({ format: 'seed-seeker-results', query: { requirements: [{ item: 'sword' }] }, results: [] })),
     ).toThrowError(/format version/)
   })
 
-  it('rejects invalid seed codes and names the offending result', () => {
-    const text = JSON.stringify({
-      format: 'seed-seeker-results',
-      format_version: 1,
-      query: { requirements: [] },
-      results: [{ seed: 'AAA-AAA-AAB' }, { seed: 'AAA-AAA-AA0' }],
-    })
-    expect(() => decodeResultsFile(text)).toThrowError(/Result 2/)
+  it('accepts all core tier and upgrade forms', () => {
+    const decoded = decodeResultsFile(file({
+      requirements: [
+        { kind: 'weapon', tier: 'any', upgrade: 'any' },
+        { kind: 'weapon', tier: { exact: 2 }, upgrade: { exact: 3 } },
+        { kind: 'armor', tier: { at_least: 3 }, upgrade: { at_least: 1 } },
+        { kind: 'armor', tier: { at_most: 4 }, effect: 'anti-magic' },
+      ],
+    }))
+    const requirements = decoded.query.requirements
+    expect(requirements[0].tier.mode).toBe('any')
+    expect(requirements[0].upgrade.mode).toBe('any')
+    expect(requirements[1].tier).toEqual({ mode: 'exact', value: 2 })
+    expect(requirements[1].upgrade).toEqual({ mode: 'exact', value: 3 })
+    expect(requirements[2].tier).toEqual({ mode: 'at_least', value: 3 })
+    expect(requirements[2].upgrade).toEqual({ mode: 'at_least', value: 1 })
+    expect(requirements[3].tier).toEqual({ mode: 'at_most', value: 4 })
   })
 
-  it('round-trips a default query with no results', () => {
-    const decoded = decodeResultsFile(encodeResultsFile(defaultQueryState(), [], undefined))
-    expect(decoded.query).toEqual(defaultQueryState())
+  it('rejects unknown query content instead of changing its meaning', () => {
+    expect(() => decodeResultsFile(file({ requirements: [{ item: 'item_from_the_future' }] })))
+      .toThrowError(/item_from_the_future/)
+    expect(() => decodeResultsFile(file({ requirements: [{ item: 'sword' }], wished_luck: 7 })))
+      .toThrowError(/wished_luck/)
+    expect(() => decodeResultsFile(file({ requirements: [{ item: 'sword', teleports: true }] })))
+      .toThrowError(/teleports/)
+    expect(() => decodeResultsFile(file({ requirements: [{ kind: 'RING' }] })))
+      .toThrowError(/unknown category/)
+    expect(() => decodeResultsFile(file({ requirements: [{ kind: 'weapon', effect: 'Sparkling' }] })))
+      .toThrowError(/Sparkling/)
+    expect(() => decodeResultsFile(file({ requirements: [{ kind: 'wand', identity_group: 5 }] })))
+      .toThrowError(/same-item group/)
+    expect(() => decodeResultsFile(file({ requirements: [{ kind: 'weapon', upgrade: {} }] })))
+      .toThrowError(/upgrade/)
+  })
+
+  it('rejects wrong-typed query fields instead of coercing or dropping them', () => {
+    expect(() => decodeResultsFile(file({ requirements: [{ item: 'sword' }], max_depth: '12' })))
+      .toThrowError(/max_depth/)
+    expect(() => decodeResultsFile(file({ requirements: [{ item: 42 }] })))
+      .toThrowError(/item/)
+    expect(() => decodeResultsFile(file({ requirements: [{ item: 'sword' }], challenges: 'barren_land' })))
+      .toThrowError(/challenges/)
+    expect(() => decodeResultsFile(file({ requirements: [{ item: 'sword', upgrade: true }] })))
+      .toThrowError(/upgrade/)
+    expect(() => decodeResultsFile(file({ requirements: [{ item: 'sword', uncursed: 'yes' }] })))
+      .toThrowError(/uncursed/)
+  })
+
+  it('rejects non-canonical seed codes so files behave the same on every platform', () => {
+    for (const seed of ['aaa-aaa-aab', 'AAAAAAAAB', 'AAA AAA AAB', ' AAA-AAA-AAB']) {
+      expect(() => decodeResultsFile(file({ requirements: [{ item: 'sword' }] }, [{ seed }])), seed)
+        .toThrowError(/Result 1/)
+    }
+    expect(() => decodeResultsFile(file({ requirements: [{ item: 'sword' }] }, [{ seed: 'AAA-AAA-AAB' }, { seed: 'AAA-AAA-AA0' }])))
+      .toThrowError(/Result 2/)
+  })
+
+  it('round-trips a minimal query with no results', () => {
+    const query: QueryState = { ...defaultQueryState(), requirements: [{ kind: 'wand', tier: { mode: 'any', value: 3 }, upgrade: { mode: 'any', value: 1 }, uncursed: false }] }
+    const decoded = decodeResultsFile(encodeResultsFile(toQueryDocument(query), [], '3.3.8'))
+    expect(decoded.query).toEqual(query)
     expect(decoded.seeds).toEqual([])
   })
 })

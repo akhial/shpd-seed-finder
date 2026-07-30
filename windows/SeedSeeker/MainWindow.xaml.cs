@@ -29,6 +29,12 @@ public sealed partial class MainWindow : Window
     private List<QueryPreset> userPresets = [];
     private NativeSearch? search;
     private bool restoring = true;
+    private bool searchRunning;
+    /// <summary>
+    /// The query that produced the current results, snapshotted at search
+    /// start (or import) so an export never reflects later editor changes.
+    /// </summary>
+    private QuerySettings? searchedQuery;
     private const int ResultCap = 1024;
     private static readonly string SettingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Seed Seeker", "query.json");
     private static readonly string PresetsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Seed Seeker", "presets.json");
@@ -56,7 +62,8 @@ public sealed partial class MainWindow : Window
         _ = ItemAtlas.GetAsync();
         ResultsList.ItemsSource = results; ScoutButton.IsEnabled = false;
         FloorSlider.Value = 1; FloorSlider.Minimum = 1; FloorSlider.Maximum = 24;
-        LoadSettings(); LoadPresets(); RefreshPresets(); RefreshQuery();
+        results.CollectionChanged += (_, _) => UpdateTransferButtons();
+        LoadSettings(); LoadPresets(); RefreshPresets(); RefreshQuery(); UpdateTransferButtons();
         Closed += (_, _) => { search?.Cancel(); search?.Dispose(); };
         // ContentDialog needs a live XamlRoot, which only exists once the root
         // element has loaded; Activated can fire before that.
@@ -465,6 +472,9 @@ public sealed partial class MainWindow : Window
     private async void Start_Click(object sender, RoutedEventArgs e)
     {
         if (search is not null) { search.Cancel(); StartButton.IsEnabled = false; return; } results.Clear(); SearchStatus.Text = "Starting search…"; SetStartButton(running: true);
+        // Snapshot the query so an export always describes the query that
+        // actually produced the listed results, even after later edits.
+        searchedQuery = query.Clone();
         try { search = await Task.Run(() => engine.Start(query)); await RunSearch(search); } catch (Exception ex) { SearchStatus.Text = $"Failed: {ex.Message}"; }
         finally { search?.Dispose(); search = null; SetStartButton(running: false); StartButton.IsEnabled = query.Requirements.Count != 0; }
     }
@@ -476,18 +486,23 @@ public sealed partial class MainWindow : Window
         SavePresetButton.IsEnabled = !running;
         DeletePresetButton.IsEnabled = !running
             && PresetPicker.SelectedItem is QueryPreset { IsBuiltIn: false };
-        ImportResultsButton.IsEnabled = !running;
-        ExportResultsButton.IsEnabled = !running;
+        searchRunning = running;
+        UpdateTransferButtons();
+    }
+
+    private void UpdateTransferButtons()
+    {
+        ImportResultsButton.IsEnabled = !searchRunning;
+        ExportResultsButton.IsEnabled = !searchRunning && results.Count > 0 && searchedQuery is not null;
     }
 
     private async void ExportResults_Click(object sender, RoutedEventArgs e)
     {
-        if (search is not null) return;
-        if (results.Count == 0 || query.Requirements.Count == 0)
-        {
-            await ShowTransferMessage("Run a search first — there are no results to export yet.");
-            return;
-        }
+        // Export the query snapshot captured when the results were produced
+        // (at search start or import), never the live editor state.
+        if (search is not null || searchedQuery is null || results.Count == 0) return;
+        var exportQuery = searchedQuery.Clone();
+        var seeds = results.Select(x => x.Seed).ToList();
         var picker = new Windows.Storage.Pickers.FileSavePicker
         {
             SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary,
@@ -502,7 +517,8 @@ public sealed partial class MainWindow : Window
         {
             var version = typeof(MainWindow).Assembly.GetName().Version;
             var appVersion = version is null ? "dev" : $"{version.Major}.{version.Minor}.{version.Build}";
-            await FileIO.WriteTextAsync(file, ResultsExport.Encode(query, results.Select(x => x.Seed), appVersion));
+            var contents = ResultsExport.Encode(exportQuery, seeds, appVersion);
+            await FileIO.WriteTextAsync(file, contents);
         }
         catch (Exception ex)
         {
@@ -523,12 +539,35 @@ public sealed partial class MainWindow : Window
         if (file is null) return;
         try
         {
-            var imported = ResultsExport.Decode(await FileIO.ReadTextAsync(file));
+            var properties = await file.GetBasicPropertiesAsync();
+            if (properties.Size > ResultsExport.MaxFileBytes)
+            {
+                await ShowTransferMessage("This file is too large to be a Seed Seeker results file (2 MiB limit).");
+                return;
+            }
+            var text = await FileIO.ReadTextAsync(file);
+            // Parse the untrusted file off the UI thread.
+            var imported = await Task.Run(() => ResultsExport.Decode(text));
+            // A search may have started while the picker or reads were pending.
+            if (search is not null)
+            {
+                await ShowTransferMessage("Stop the search before importing results.");
+                return;
+            }
             ApplyQuery(imported.Query);
+            searchedQuery = imported.Query.Clone();
             results.Clear();
+            // Deduplicate then cap, the shared import rule on every platform.
             foreach (var seed in imported.Seeds.Distinct())
                 if (results.Count < ResultCap) results.Add(new(seed, results.Count + 1));
-            SearchStatus.Text = $"Imported {results.Count} seed{(results.Count == 1 ? "" : "s")} from file.";
+            var dropped = imported.Seeds.Count - results.Count;
+            var status = $"Imported {results.Count} seed{(results.Count == 1 ? "" : "s")} from file.";
+            if (dropped > 0)
+                status += $"\n{dropped} duplicate or over-limit entr{(dropped == 1 ? "y" : "ies")} dropped.";
+            if (imported.FileShpdVersion is string fileVersion && fileVersion != ResultsExport.ShpdVersion)
+                status += $"\nMade for Shattered Pixel Dungeon v{fileVersion}; this app targets v{ResultsExport.ShpdVersion}, so seeds may generate differently.";
+            SearchStatus.Text = status;
+            UpdateTransferButtons();
         }
         catch (ResultsExportException ex)
         {

@@ -17,41 +17,22 @@ final class ResultsExportTests: XCTestCase {
             challenges: Challenge.noHerbalism.rawValue)
     }
 
-    /// The canonical version-1 fixture, schema-identical to
-    /// crates/seedfinder-core/tests/fixtures/results-export-v1.json. Files
-    /// exported today must always stay readable; never edit this fixture.
-    private let version1Fixture = """
-        {
-          "format": "seed-seeker-results",
-          "format_version": 1,
-          "app_version": "0.6.1",
-          "shpd_version": "3.3.8",
-          "query": {
-            "requirements": [
-              {
-                "kind": "ring",
-                "item": "ring_tenacity",
-                "upgrade": 4,
-                "source": "imp_reward"
-              },
-              {
-                "kind": "wand",
-                "upgrade": { "at_least": 2 },
-                "uncursed": true,
-                "identity_group": 1,
-                "max_depth": 9
-              }
-            ],
-            "max_depth": 12,
-            "require_blacksmith": true,
-            "challenges": ["barren_land"]
-          },
-          "results": [
-            { "seed": "AAA-AAA-BUH" },
-            { "seed": "ABC-DEF-GHI" }
-          ]
-        }
-        """
+    /// The canonical frozen version-1 fixture, read straight from the Rust
+    /// core's test data so this codec can never silently drift from it.
+    /// Files exported today must always stay readable; never edit the
+    /// fixture.
+    private static let version1Fixture: String = {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent() // ResultsExportTests.swift -> SeedSeekerKitTests
+            .deletingLastPathComponent() // -> Tests
+            .deletingLastPathComponent() // -> SeedSeeker
+            .deletingLastPathComponent() // -> macos
+            .deletingLastPathComponent() // -> repository root
+        let fixture = repoRoot.appendingPathComponent(
+            "crates/seedfinder-core/tests/fixtures/results-export-v1.json")
+        return (try? String(contentsOf: fixture, encoding: .utf8)) ?? ""
+    }()
+    private var version1Fixture: String { Self.version1Fixture }
 
     func testEncodeThenDecodeRoundTripsQueryAndSeeds() throws {
         let query = try loadedQuery()
@@ -99,14 +80,59 @@ final class ResultsExportTests: XCTestCase {
     }
 
     func testVersionOneFixtureAlwaysDecodes() throws {
+        XCTAssertFalse(version1Fixture.isEmpty, "canonical fixture file not found")
         let imported = try ResultsExport.decode(version1Fixture)
         XCTAssertEqual(imported.seeds, ["AAA-AAA-BUH", "ABC-DEF-GHI"])
+        XCTAssertEqual(imported.shpdVersion, "3.3.8")
         XCTAssertEqual(imported.query.maximumDepth, 12)
         XCTAssertEqual(imported.query.challenges, Challenge.noHerbalism.rawValue)
         XCTAssertEqual(imported.query.requirements[0].item?.id, "ring_tenacity")
         XCTAssertEqual(imported.query.requirements[1].kind, .wand)
         XCTAssertEqual(imported.query.requirements[1].upgradeMatch, .atLeast)
         XCTAssertNotNil(imported.query.validated())
+    }
+
+    func testFormatVersionMustBeAPositiveInteger() {
+        for version in ["0", "1.5", "true", "\"1\"", "-1"] {
+            XCTAssertThrowsError(try ResultsExport.decode("""
+                {"format":"seed-seeker-results","format_version":\(version),
+                 "query":{"requirements":[{"item":"sword"}]},"results":[]}
+                """)) { error in
+                let message = (error as? ResultsExportError)?.message ?? ""
+                XCTAssertTrue(message.contains("format version"), "\(version): \(message)")
+            }
+        }
+    }
+
+    func testWrongTypedQueryFieldsAreRejectedNotCoerced() {
+        let payloads = [
+            #"{"requirements":[{"item":"sword"}],"max_depth":"12"}"#,
+            #"{"requirements":[{"item":"sword"}],"max_depth":99}"#,
+            #"{"requirements":[{"item":42}]}"#,
+            #"{"requirements":[{"item":"sword"}],"challenges":"barren_land"}"#,
+            #"{"requirements":[{"item":"sword","upgrade":true}]}"#,
+            #"{"requirements":[{"item":"sword","uncursed":"yes"}]}"#,
+            #"{"requirements":[{"kind":"RING"}]}"#,
+        ]
+        for query in payloads {
+            XCTAssertThrowsError(try ResultsExport.decode("""
+                {"format":"seed-seeker-results","format_version":1,
+                 "query":\(query),"results":[]}
+                """), query)
+        }
+    }
+
+    func testOnlyCanonicalSeedCodesAreAccepted() {
+        for seed in ["aaa-aaa-aab", "AAAAAAAAB", "AAA AAA AAB", " AAA-AAA-AAB"] {
+            XCTAssertThrowsError(try ResultsExport.decode("""
+                {"format":"seed-seeker-results","format_version":1,
+                 "query":{"requirements":[{"item":"sword"}]},
+                 "results":[{"seed":"\(seed)"}]}
+                """)) { error in
+                let message = (error as? ResultsExportError)?.message ?? ""
+                XCTAssertTrue(message.contains("Result 1"), "\(seed): \(message)")
+            }
+        }
     }
 
     func testUnknownEnvelopeAndResultFieldsAreIgnored() throws {
@@ -194,14 +220,25 @@ final class ResultsExportTests: XCTestCase {
     }
 
     @MainActor
-    func testControllerLoadImportedReplacesAndDeduplicatesResults() {
+    func testControllerLoadImportedDeduplicatesCapsAndSnapshotsTheQuery() throws {
         let controller = SearchController()
-        controller.loadImported(seeds: ["AAA-AAA-AAB", "AAA-AAA-AAC", "AAA-AAA-AAB"],
-                                matchedRequirements: 2)
+        let query = try loadedQuery()
+        controller.loadImported(seeds: ["AAA-AAA-AAB", "AAA-AAA-AAC", "AAA-AAA-AAB"], query: query)
         XCTAssertEqual(controller.results.map(\.seed), ["AAA-AAA-AAB", "AAA-AAA-AAC"])
         XCTAssertEqual(controller.results[0].matchedRequirements, 2)
+        XCTAssertEqual(controller.importedDropped, 1)
+        XCTAssertEqual(controller.exportQuery?.maximumDepth, query.maximumDepth)
         XCTAssertTrue(controller.isImported)
         XCTAssertNil(controller.state)
         XCTAssertFalse(controller.isImpossibleQuery)
+
+        let many = (0..<1_500).map { value -> String in
+            // Distinct synthetic canonical codes.
+            let letters = Array("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+            return "AAA-AAB-\(letters[value / 676])\(letters[(value / 26) % 26])\(letters[value % 26])"
+        }
+        controller.loadImported(seeds: many, query: query)
+        XCTAssertEqual(controller.results.count, SearchController.importCap)
+        XCTAssertEqual(controller.importedDropped, 1_500 - SearchController.importCap)
     }
 }

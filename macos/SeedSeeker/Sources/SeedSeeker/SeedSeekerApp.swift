@@ -102,8 +102,9 @@ private struct ContentView: View {
                             } label: {
                                 Label("Export Results…", systemImage: "square.and.arrow.up")
                             }
-                            .help("Export the results and their query to a file")
-                            .disabled(controller.isRunning || controller.results.isEmpty || requirements.isEmpty)
+                            .help("Export the results and the query that produced them to a file")
+                            .disabled(controller.isRunning || controller.results.isEmpty
+                                || controller.exportQuery == nil)
                         }
                     }
             } detail: {
@@ -192,10 +193,10 @@ private struct ContentView: View {
     }
 
     private func beginExport() {
-        let query = SavedQuery(requirements: requirements, maximumDepth: maximumDepth,
-                               requireBlacksmith: requireBlacksmith,
-                               excludeBlacksmithRewards: excludeBlacksmithRewards,
-                               fastMode: fastMode, challenges: challenges)
+        // Export the query snapshot captured when the results were produced
+        // (at search start or import), never the live editor state.
+        guard !controller.isRunning, let query = controller.exportQuery,
+              !controller.results.isEmpty else { return }
         let appVersion = Bundle.main
             .object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
         exportDocument = ResultsFileDocument(
@@ -204,17 +205,47 @@ private struct ContentView: View {
     }
 
     private func importResults(from url: URL) {
-        let accessing = url.startAccessingSecurityScopedResource()
-        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
-        do {
-            let text = try String(contentsOf: url, encoding: .utf8)
-            let imported = try ResultsExport.decode(text)
-            apply(imported.query)
-            controller.loadImported(seeds: imported.seeds,
-                                    matchedRequirements: imported.query.requirements.count)
-        } catch {
-            transferError = (error as? LocalizedError)?.errorDescription
-                ?? "The results file could not be imported."
+        guard !controller.isRunning else {
+            transferError = "Stop the search before importing results."
+            return
+        }
+        Task {
+            // Read and parse the untrusted file off the main actor.
+            let outcome: Result<ResultsExport.Imported, any Error> = await Task.detached {
+                do {
+                    let accessing = url.startAccessingSecurityScopedResource()
+                    defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                    let data = try Data(contentsOf: url)
+                    guard data.count <= ResultsExport.maxFileBytes else {
+                        throw ResultsExportError(
+                            "This file is too large to be a Seed Seeker results file (2 MiB limit).")
+                    }
+                    guard let text = String(data: data, encoding: .utf8) else {
+                        throw ResultsExportError("This is not a Seed Seeker results file (not UTF-8 text).")
+                    }
+                    return .success(try ResultsExport.decode(text))
+                } catch {
+                    return .failure(error)
+                }
+            }.value
+            switch outcome {
+            case .success(let imported):
+                // A search may have started while the file was being read.
+                guard !controller.isRunning else {
+                    transferError = "Stop the search before importing results."
+                    return
+                }
+                apply(imported.query)
+                controller.loadImported(seeds: imported.seeds, query: imported.query)
+                if let fileVersion = imported.shpdVersion, fileVersion != ResultsExport.shpdVersion {
+                    transferError = "Imported \(controller.results.count) seeds. Note: this file was " +
+                        "made for Shattered Pixel Dungeon v\(fileVersion); this app targets " +
+                        "v\(ResultsExport.shpdVersion), so the seeds may generate differently."
+                }
+            case .failure(let error):
+                transferError = (error as? LocalizedError)?.errorDescription
+                    ?? "The results file could not be imported."
+            }
         }
     }
 
@@ -752,8 +783,7 @@ private struct ResultsView: View {
                 Text("Imported").font(.caption.bold())
                     .padding(.horizontal, 10).padding(.vertical, 4)
                     .background(.quaternary, in: Capsule())
-                Text("\(controller.results.count) seed\(controller.results.count == 1 ? "" : "s") loaded from file")
-                    .font(.caption).foregroundStyle(.secondary)
+                Text(importedCaption).font(.caption).foregroundStyle(.secondary)
             }
         }
         else if controller.state == nil { Text("Add requirements, then press Start Search.").foregroundStyle(.secondary) }
@@ -780,6 +810,17 @@ private struct ResultsView: View {
             Text(state == .failed ? "Failed (error \(controller.errorCode))" : state == .completed ? "Completed" : "Cancelled")
                 .font(.caption.bold()).padding(.horizontal, 10).padding(.vertical, 4).background(.quaternary, in: Capsule())
         }
+    }
+    private var importedCaption: String {
+        let count = controller.results.count
+        var caption = count == 0
+            ? "the imported file contained no seeds"
+            : "\(count) seed\(count == 1 ? "" : "s") loaded from file"
+        if controller.importedDropped > 0 {
+            caption += " · \(controller.importedDropped) duplicate or over-limit "
+                + "entr\(controller.importedDropped == 1 ? "y" : "ies") dropped"
+        }
+        return caption
     }
     private func copy(_ seed: String) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(seed, forType: .string) }
 }
