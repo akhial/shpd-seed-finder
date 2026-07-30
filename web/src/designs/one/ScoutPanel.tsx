@@ -5,6 +5,7 @@ import { formatSeedInput } from '../../lib/format'
 import { itemGlow } from '../../lib/glow'
 import { CheckIcon, CopyIcon, FlagIcon, ForkIcon } from '../../lib/icons'
 import { regionForDepth } from '../../lib/region'
+import type { ResultPosition } from '../../lib/scout-nav'
 import { queryStore } from '../../lib/store'
 import type { ScoutItem, ScoutResult } from '../../lib/wasm/types'
 import { Sprite } from './parts'
@@ -28,6 +29,8 @@ export function ScoutPanel({
   loading,
   error,
   result,
+  nav,
+  onNavigate,
 }: {
   input: string
   onInput: (value: string) => void
@@ -35,6 +38,9 @@ export function ScoutPanel({
   loading: boolean
   error?: string
   result?: ScoutResult
+  /** Position of the scouted seed within the search results, when it is one. */
+  nav?: ResultPosition
+  onNavigate?: (delta: number) => void
 }) {
   const challengeCount = useStore(queryStore, (state) => state.challenges.length)
   const [copied, setCopied] = useState(false)
@@ -93,6 +99,36 @@ export function ScoutPanel({
         </button>
       </div>
       {error && <p className="d1-inline-error d1-scout-error" role="alert">{error}</p>}
+
+      {nav && (
+        <div className="d1-scout-nav" role="navigation" aria-label="Search result navigation">
+          <button
+            type="button"
+            className="d1-scout-nav-btn"
+            disabled={nav.index === 0}
+            onClick={() => onNavigate?.(-1)}
+            aria-label="Previous result"
+            title="Previous result (K)"
+          >
+            ‹
+          </button>
+          <span className="d1-scout-nav-pos" aria-live="polite">
+            result <b className="d1-mono">{nav.index + 1} / {nav.total}</b>
+          </span>
+          <button
+            type="button"
+            className="d1-scout-nav-btn"
+            disabled={nav.index + 1 >= nav.total}
+            onClick={() => onNavigate?.(1)}
+            aria-label="Next result"
+            title="Next result (J)"
+          >
+            ›
+          </button>
+          <span className="d1-scout-nav-hint d1-scout-nav-hint-keys" aria-hidden="true">J next · K prev</span>
+          <span className="d1-scout-nav-hint d1-scout-nav-hint-swipe" aria-hidden="true">swipe to browse</span>
+        </div>
+      )}
 
       <div className="d1-pane-body">
         {!result && !loading && (

@@ -156,6 +156,44 @@ impl ResultsPane {
         self.active.borrow().is_some()
     }
 
+    /// 0-based position of `seed` among the found seeds with the total count,
+    /// or `None` when it is not a search result.
+    pub fn position_of(&self, seed: &str) -> Option<(usize, usize)> {
+        let seeds = self.seeds.borrow();
+        seeds
+            .iter()
+            .position(|code| code == seed)
+            .map(|index| (index, seeds.len()))
+    }
+
+    /// Moves the selection `delta` rows from the row holding `seed`, clamped
+    /// to the list; selecting a row scouts it through the select handler.
+    /// Returns whether the selection moved.
+    pub fn select_step(&self, seed: &str, delta: i64) -> bool {
+        let target = {
+            let seeds = self.seeds.borrow();
+            let Some(index) = seeds.iter().position(|code| code == seed) else {
+                return false;
+            };
+            let (Ok(index), Ok(len)) = (i64::try_from(index), i64::try_from(seeds.len())) else {
+                return false;
+            };
+            let target = (index + delta).clamp(0, len - 1);
+            if target == index {
+                return false;
+            }
+            target
+        };
+        let Some(row) = self.list.row_at_index(i32::try_from(target).unwrap_or(i32::MAX)) else {
+            return false;
+        };
+        self.list.select_row(Some(&row));
+        // Keeps the selected result in view without disturbing an entry's
+        // focus: J/K only fire while no editable widget is focused.
+        row.grab_focus();
+        true
+    }
+
     pub fn cancel(&self) {
         if let Some(active) = self.active.borrow().as_ref() {
             active.session.cancel();

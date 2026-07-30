@@ -67,6 +67,7 @@ private struct ContentView: View {
     @State private var controller = SearchController()
     @State private var scout = ScoutViewModel()
     @State private var showingAbout = false
+    @State private var resultKeyMonitor: Any?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -86,7 +87,8 @@ private struct ContentView: View {
                     .navigationSplitViewColumnWidth(min: 340, ideal: 420)
             } detail: {
                 SeedDetailView(model: scout, requirements: requirements, maximumDepth: maximumDepth,
-                               excludeBlacksmithRewards: excludeBlacksmithRewards, challenges: challenges)
+                               excludeBlacksmithRewards: excludeBlacksmithRewards, challenges: challenges,
+                               resultPosition: resultPosition, onNavigateResult: { _ = navigateResult($0) })
                     .navigationSplitViewColumnWidth(min: 360, ideal: 450)
             }
             Divider()
@@ -104,6 +106,7 @@ private struct ContentView: View {
         .sheet(isPresented: $showingAbout) { AboutView() }
         .frame(minWidth: 1_020, minHeight: 640)
         .onAppear {
+            installResultKeyNavigation()
             guard !restored else { return }; restored = true
             let saved = QueryPersistence.decode(savedQueryJSON)
             requirements = saved.requirements; maximumDepth = saved.maximumDepth
@@ -111,6 +114,9 @@ private struct ContentView: View {
             excludeBlacksmithRewards = saved.excludeBlacksmithRewards
             fastMode = saved.fastMode
             userPresets = PresetPersistence.decode(savedPresetsJSON)
+        }
+        .onDisappear {
+            if let monitor = resultKeyMonitor { NSEvent.removeMonitor(monitor); resultKeyMonitor = nil }
         }
         .onChange(of: requirements) { save() }
         .onChange(of: maximumDepth) { save() }
@@ -120,6 +126,41 @@ private struct ContentView: View {
         .onChange(of: challenges) { save() }
         .onChange(of: controller.selectedSeed) { _, seed in
             if let seed { scout.scout(seed, challenges: challenges) }
+        }
+    }
+
+    /// Where the scouted seed sits in the search results, or nil when it did
+    /// not come from one (hand-entered seed, or no search yet).
+    private var resultPosition: ResultPosition? {
+        let seeds = controller.results.map(\.seed)
+        guard let index = ResultNavigation.position(of: scout.world?.seed ?? scout.input, in: seeds) else { return nil }
+        return ResultPosition(index: index, total: seeds.count)
+    }
+
+    /// Scouts the search result `offset` steps from the current one by moving
+    /// the results-table selection, which feeds the scout pane. Returns
+    /// whether navigation moved.
+    private func navigateResult(_ offset: Int) -> Bool {
+        let anchor = scout.world?.seed ?? scout.input
+        guard let next = ResultNavigation.seed(from: anchor, in: controller.results.map(\.seed),
+                                               offset: offset) else { return false }
+        controller.selectedSeed = next
+        return true
+    }
+
+    /// J (next) and K (previous) walk the search results while scouting.
+    /// A plain-key `.keyboardShortcut` would steal the letters from text
+    /// fields, so a local monitor passes the event through whenever a text
+    /// view is typing or navigation has nowhere to go.
+    private func installResultKeyNavigation() {
+        guard resultKeyMonitor == nil else { return }
+        resultKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
+                  let key = event.charactersIgnoringModifiers?.lowercased(), key == "j" || key == "k",
+                  !(event.window?.firstResponder is NSText),
+                  !(event.window?.firstResponder is NSTextView)
+            else { return event }
+            return navigateResult(key == "j" ? 1 : -1) ? nil : event
         }
     }
 
@@ -704,12 +745,20 @@ private struct ResultsView: View {
     }
 }
 
+/// Position of the scouted seed within the ordered search results.
+private struct ResultPosition {
+    let index: Int
+    let total: Int
+}
+
 private struct SeedDetailView: View {
     @Bindable var model: ScoutViewModel
     let requirements: [ItemRequirement]
     let maximumDepth: Int
     let excludeBlacksmithRewards: Bool
     let challenges: Int
+    let resultPosition: ResultPosition?
+    let onNavigateResult: (Int) -> Void
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -737,6 +786,19 @@ private struct SeedDetailView: View {
                 if model.loading { ProgressView().controlSize(.small) }
             }
             if let error = model.error { Text(error).foregroundStyle(.red).font(.caption) }
+            if let position = resultPosition {
+                HStack(spacing: 6) {
+                    Button { onNavigateResult(-1) } label: { Image(systemName: "chevron.left") }
+                        .buttonStyle(.borderless).disabled(position.index == 0)
+                        .help("Scout the previous search result (K)")
+                    Text("Result \(position.index + 1) of \(position.total)")
+                        .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                    Button { onNavigateResult(1) } label: { Image(systemName: "chevron.right") }
+                        .buttonStyle(.borderless).disabled(position.index + 1 >= position.total)
+                        .help("Scout the next search result (J)")
+                    Text("J / K").font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
         }.padding([.horizontal, .top]).padding(.bottom, 8)
     }
 

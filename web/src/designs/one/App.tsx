@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '@tanstack/react-store'
 import { formatSeedInput } from '../../lib/format'
 import { toQueryDocument, toQueryJson, validateQuery } from '../../lib/query'
+import { resultPosition, stepResult } from '../../lib/scout-nav'
 import { SearchCoordinator, scoutSeed, searchStore } from '../../lib/search/coordinator'
 import { queryStore, workerCountStore } from '../../lib/store'
 import { analyzeQuery, getEngineInfo, parseSeedCode } from '../../lib/wasm'
@@ -109,6 +110,9 @@ export default function App() {
 
   // Scout state, lifted so results can populate the detail pane.
   const [scoutInput, setScoutInput] = useState('')
+  // The last seed a scout was requested for; anchors result navigation even
+  // while the previous manifest is still on screen.
+  const [scoutedSeed, setScoutedSeed] = useState<string | undefined>(undefined)
   const [scout, setScout] = useState<{ loading: boolean; error?: string; result?: ScoutResult }>({ loading: false })
   const scoutRequest = useRef(0)
   const runScout = useCallback((seed: string) => {
@@ -119,6 +123,7 @@ export default function App() {
       setScout((current) => ({ loading: false, result: current.result, error: 'Seed must use XXX-XXX-XXX format' }))
       return
     }
+    setScoutedSeed(input)
     const requestId = ++scoutRequest.current
     setScout((current) => ({ loading: true, result: current.result }))
     void (async () => {
@@ -145,6 +150,55 @@ export default function App() {
       }
     })()
   }, [])
+
+  // Result-to-result navigation while scouting: J/K on desktop, swipe on touch.
+  // The joined-string selector keeps referential stability across progress
+  // updates that do not add seeds.
+  const matchCodesKey = useStore(searchStore, (state) => state.matches.map((match) => match.code).join(' '))
+  const resultSeeds = useMemo(() => (matchCodesKey ? matchCodesKey.split(' ') : []), [matchCodesKey])
+  const scoutNav = useMemo(() => resultPosition(resultSeeds, scoutedSeed), [resultSeeds, scoutedSeed])
+  const navigateResults = useCallback(
+    (delta: number): boolean => {
+      const next = stepResult(resultSeeds, scoutedSeed, delta)
+      if (!next) return false
+      runScout(next)
+      return true
+    },
+    [resultSeeds, scoutedSeed, runScout],
+  )
+
+  // J (next) / K (previous) walk the search results while scouting, unless the
+  // user is typing into a field.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+      const key = event.key.toLowerCase()
+      if (key !== 'j' && key !== 'k') return
+      const target = event.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return
+      if (navigateResults(key === 'j' ? 1 : -1)) event.preventDefault()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [navigateResults])
+
+  // Horizontal swipes over the scout pane step through the results on touch
+  // devices; mostly-vertical gestures stay scrolls.
+  const swipeStart = useRef<{ x: number; y: number } | undefined>(undefined)
+  const onScoutTouchStart = (event: React.TouchEvent) => {
+    const touch = event.touches[0]
+    swipeStart.current = touch && event.touches.length === 1 ? { x: touch.clientX, y: touch.clientY } : undefined
+  }
+  const onScoutTouchEnd = (event: React.TouchEvent) => {
+    const start = swipeStart.current
+    swipeStart.current = undefined
+    const touch = event.changedTouches[0]
+    if (!start || !touch) return
+    const deltaX = touch.clientX - start.x
+    const deltaY = touch.clientY - start.y
+    if (Math.abs(deltaX) < 60 || Math.abs(deltaX) < 1.5 * Math.abs(deltaY)) return
+    navigateResults(deltaX < 0 ? 1 : -1)
+  }
 
   const paneClass = (tab: Tab) => `d1-pane d1-pane-${tab}${activeTab === tab ? ' d1-pane-active' : ''}`
   const running = searchState === 'running'
@@ -213,7 +267,12 @@ export default function App() {
             activeSeed={scout.result?.seed.code}
           />
         </section>
-        <section className={paneClass('scout')} aria-label="Seed scout">
+        <section
+          className={paneClass('scout')}
+          aria-label="Seed scout"
+          onTouchStart={onScoutTouchStart}
+          onTouchEnd={onScoutTouchEnd}
+        >
           <ScoutPanel
             input={scoutInput}
             onInput={setScoutInput}
@@ -221,6 +280,8 @@ export default function App() {
             loading={scout.loading}
             error={scout.error}
             result={scout.result}
+            nav={scoutNav}
+            onNavigate={navigateResults}
           />
         </section>
       </main>

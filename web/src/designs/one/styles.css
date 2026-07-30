@@ -1142,6 +1142,64 @@ input[type='range']::-moz-range-thumb {
   margin: 0;
 }
 
+/* Result-to-result navigation while scouting a search result. */
+.d1-scout-nav {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--d1-border);
+  font-size: 12.5px;
+  color: var(--d1-text-3);
+}
+
+.d1-scout-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  padding: 0 0 2px;
+  font: inherit;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--d1-text-2);
+  background: var(--d1-raised);
+  border: 1px solid var(--d1-border-strong);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.d1-scout-nav-btn:hover:not(:disabled) {
+  color: var(--d1-amber-bright);
+  border-color: var(--d1-amber);
+}
+
+.d1-scout-nav-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.d1-scout-nav-pos b {
+  font-weight: 600;
+  color: var(--d1-text-2);
+}
+
+.d1-scout-nav-hint {
+  margin-left: auto;
+  font-size: 11.5px;
+  letter-spacing: 0.03em;
+}
+
+/* Keyboard hint on pointer layouts, swipe hint on the tabbed touch layout. */
+.d1-scout-nav-hint-swipe { display: none; }
+@media (max-width: 999px) {
+  .d1-scout-nav-hint-keys { display: none; }
+  .d1-scout-nav-hint-swipe { display: inline; }
+}
+
 .d1-scout-empty {
   padding: 44px 24px;
   text-align: center;
