@@ -111,6 +111,44 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertEqual(requirement.title, "Any Tier 4+ armor")
     }
 
+    func testQueryCodecMeleeAndThrownKindsUseWireIdsFourAndFive() throws {
+        let melee = try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .meleeWeapon,
+            upgradeMatch: .any)
+        XCTAssertEqual(try QueryCodec.encode(SearchRequest(requirements: [melee]))[10], 4)
+        XCTAssertEqual(melee.title, "Any melee weapon")
+
+        let shuriken = try XCTUnwrap(ItemCatalog.findById("shuriken"))
+        let thrown = try ItemRequirement(key: 2, item: shuriken, upgrade: 0, kind: .thrownWeapon,
+            upgradeMatch: .any)
+        XCTAssertEqual(try QueryCodec.encode(SearchRequest(requirements: [thrown]))[10], 5)
+    }
+
+    func testWeaponClassificationAndNarrowedKindValidation() throws {
+        XCTAssertEqual(ItemCatalog.meleeWeapons.count, 31)
+        XCTAssertEqual(ItemCatalog.thrownWeapons.count, 27)
+        XCTAssertEqual(ItemCatalog.weapons, ItemCatalog.meleeWeapons + ItemCatalog.thrownWeapons)
+        XCTAssertEqual(ItemCatalog.weaponClass(of: "crossbow"), .melee)
+        XCTAssertEqual(ItemCatalog.weaponClass(of: "shuriken"), .thrown)
+        XCTAssertEqual(ItemCatalog.weaponClass(of: "poison_dart"), .thrown)
+        XCTAssertNil(ItemCatalog.weaponClass(of: "plate_armor"))
+        XCTAssertEqual(ItemCatalog.forKind(.meleeWeapon), ItemCatalog.meleeWeapons)
+        XCTAssertEqual(ItemCatalog.forKind(.thrownWeapon), ItemCatalog.thrownWeapons)
+        XCTAssertEqual(ItemCatalog.modifiersFor(.thrownWeapon), ItemCatalog.modifiersFor(.weapon))
+        XCTAssertEqual(ItemCatalog.cursesFor(.meleeWeapon), ItemCatalog.cursesFor(.weapon))
+
+        // A narrowed kind accepts only items of its class; the broad kind takes both.
+        let sword = try XCTUnwrap(ItemCatalog.findById("sword"))
+        let shuriken = try XCTUnwrap(ItemCatalog.findById("shuriken"))
+        XCTAssertNoThrow(try ItemRequirement(key: 1, item: sword, upgrade: 1, kind: .meleeWeapon))
+        XCTAssertNoThrow(try ItemRequirement(key: 1, item: shuriken, upgrade: 1, kind: .thrownWeapon))
+        XCTAssertNoThrow(try ItemRequirement(key: 1, item: shuriken, upgrade: 1, kind: .weapon))
+        XCTAssertThrowsError(try ItemRequirement(key: 1, item: shuriken, upgrade: 1, kind: .meleeWeapon))
+        XCTAssertThrowsError(try ItemRequirement(key: 1, item: sword, upgrade: 1, kind: .thrownWeapon))
+        // Wildcard narrowed kinds keep tier filters and enchantments.
+        XCTAssertNoThrow(try ItemRequirement(key: 1, item: nil, upgrade: 0, modifier: "Projecting",
+            kind: .thrownWeapon, tier: 5, tierMatch: .exactly, upgradeMatch: .any))
+    }
+
     func testQueryCodecEncodesAtMostTierPredicate() throws {
         let requirement = try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .armor,
             tier: 4, tierMatch: .atMost, upgradeMatch: .any)

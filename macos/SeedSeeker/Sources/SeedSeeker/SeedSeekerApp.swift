@@ -205,7 +205,8 @@ private struct ChallengesSettingsView: View {
 extension ItemKind {
     var icon: String {
         switch self {
-        case .weapon: "hammer.fill"
+        case .weapon, .meleeWeapon: "hammer.fill"
+        case .thrownWeapon: "scope"
         case .armor: "shield.fill"
         case .wand: "wand.and.stars"
         case .ring: "circle.circle.fill"
@@ -213,7 +214,7 @@ extension ItemKind {
     }
     var tint: Color {
         switch self {
-        case .weapon: .orange
+        case .weapon, .meleeWeapon, .thrownWeapon: .orange
         case .armor: .blue
         case .wand: .purple
         case .ring: .yellow
@@ -474,20 +475,32 @@ private struct RequirementEditor: View {
                 .font(.headline).padding(.top, 14).padding(.bottom, 4)
             Form {
                 Section("Item") {
-                    Picker("Category", selection: $kind) {
-                        ForEach(ItemKind.allCases, id: \.self) { Text($0.label).tag($0) }
+                    Picker("Category", selection: Binding(get: { kind.family }, set: { kind = $0 })) {
+                        ForEach([ItemKind.weapon, .armor, .wand, .ring], id: \.self) { Text($0.label).tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    .onChange(of: kind) { _, _ in
-                        itemID = ""; tierMatch = .any; tier = 2; modifier = ""; normalizeUpgrade()
+                    .onChange(of: kind) { previous, value in
+                        if previous.family != value.family {
+                            itemID = ""; tierMatch = .any; tier = 2; modifier = ""; normalizeUpgrade()
+                        } else if let item = ItemCatalog.findById(itemID), !value.accepts(item) {
+                            itemID = ""
+                        }
+                    }
+                    if kind.family == .weapon {
+                        Picker("Weapon type", selection: $kind) {
+                            Text("Any").tag(ItemKind.weapon)
+                            Text("Melee").tag(ItemKind.meleeWeapon)
+                            Text("Thrown").tag(ItemKind.thrownWeapon)
+                        }
+                        .pickerStyle(.segmented)
                     }
                     Picker("Item", selection: $itemID) {
                         Text("Any \(kind.singularLabel)").tag("")
-                        if kind == .weapon {
-                            // Tier-1 melee weapons are starting gear and never spawn in the dungeon.
+                        if kind.family == .weapon {
+                            // Tier-1 weapons are starting gear and never spawn in the dungeon.
                             ForEach(2...5, id: \.self) { tier in
                                 Section("Tier \(tier)") {
-                                    ForEach(ItemCatalog.weapons.filter { $0.tier == tier }) { item in
+                                    ForEach(ItemCatalog.forKind(kind).filter { $0.tier == tier }) { item in
                                         Label { Text(item.name) } icon: {
                                             ItemSpriteIcon(spriteIndex: item.spriteIndex)
                                         }.tag(item.id)
@@ -503,7 +516,7 @@ private struct RequirementEditor: View {
                         }
                     }
                     .onChange(of: itemID) { _, value in if !value.isEmpty { tierMatch = .any } }
-                    if itemID.isEmpty && (kind == .weapon || kind == .armor) {
+                    if itemID.isEmpty && (kind.family == .weapon || kind.family == .armor) {
                         Picker("Tier", selection: $tierMatch) {
                             ForEach(TierMatch.allCases, id: \.self) { Text($0.label).tag($0) }
                         }
@@ -570,8 +583,8 @@ private struct RequirementEditor: View {
                     if kind.modifierLabel != nil {
                         Picker(kind.modifierLabel!, selection: $modifier) {
                             Section { Text("None").tag("") }
-                            Section(kind == .weapon ? "Enchantments" : "Glyphs") {
-                                ForEach(kind == .weapon ? ItemCatalog.enchantments : ItemCatalog.glyphs, id: \.self) { Text($0).tag($0) }
+                            Section(kind.family == .weapon ? "Enchantments" : "Glyphs") {
+                                ForEach(kind.family == .weapon ? ItemCatalog.enchantments : ItemCatalog.glyphs, id: \.self) { Text($0).tag($0) }
                             }
                             if !requireUncursed {
                                 Section("Curses") { ForEach(ItemCatalog.cursesFor(kind), id: \.self) { Text($0).tag($0) } }

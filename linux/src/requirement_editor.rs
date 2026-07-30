@@ -12,7 +12,8 @@ use shpd_seedfinder_core::catalog::{
 use shpd_seedfinder_core::query::{TierRequirement, UpgradeRequirement};
 
 use crate::state::{
-    ALL_KINDS, ALL_SOURCES, UiRequirement, kind_label, kind_singular, source_label,
+    ALL_KIND_CHOICES, ALL_SOURCES, KindChoice, UiRequirement, kind_choice_label,
+    kind_choice_singular, source_label,
 };
 
 struct Editor {
@@ -103,9 +104,9 @@ fn build(requirement: &UiRequirement) -> Editor {
             .build(),
         category: combo_row(
             "Category",
-            &ALL_KINDS
+            &ALL_KIND_CHOICES
                 .iter()
-                .map(|kind| kind_label(*kind))
+                .map(|choice| kind_choice_label(*choice))
                 .collect::<Vec<_>>(),
         ),
         item_row: searchable_combo_row("Item"),
@@ -239,9 +240,9 @@ fn hook<W>(editor: Rc<Editor>, handler: fn(&Rc<Editor>)) -> impl Fn(&W) {
 
 fn restore(editor: &Rc<Editor>, requirement: &UiRequirement) {
     editor.updating.set(true);
-    let kind_index = ALL_KINDS
+    let kind_index = ALL_KIND_CHOICES
         .iter()
-        .position(|kind| *kind == requirement.kind)
+        .position(|choice| *choice == requirement.kind_choice())
         .unwrap_or(0);
     editor
         .category
@@ -298,7 +299,7 @@ fn restore(editor: &Rc<Editor>, requirement: &UiRequirement) {
 }
 
 fn collect(editor: &Rc<Editor>) -> UiRequirement {
-    let kind = selected_kind(editor);
+    let (kind, weapon_category) = selected_choice(editor);
     let item = selected_item(editor);
     let tier_eligible = item.is_none() && matches!(kind, ItemKind::Weapon | ItemKind::Armor);
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -354,6 +355,7 @@ fn collect(editor: &Rc<Editor>) -> UiRequirement {
     UiRequirement {
         key: editor.key,
         kind,
+        weapon_category,
         item,
         tier,
         upgrade,
@@ -365,11 +367,15 @@ fn collect(editor: &Rc<Editor>) -> UiRequirement {
     }
 }
 
-fn selected_kind(editor: &Rc<Editor>) -> ItemKind {
-    ALL_KINDS
+fn selected_choice(editor: &Rc<Editor>) -> KindChoice {
+    ALL_KIND_CHOICES
         .get(editor.category.selected() as usize)
         .copied()
-        .unwrap_or(ItemKind::Weapon)
+        .unwrap_or((ItemKind::Weapon, None))
+}
+
+fn selected_kind(editor: &Rc<Editor>) -> ItemKind {
+    selected_choice(editor).0
 }
 
 fn selected_item(editor: &Rc<Editor>) -> Option<ItemId> {
@@ -397,12 +403,18 @@ fn set_tier_value(editor: &Rc<Editor>, tier: u8) {
         .set_selected(u32::from(tier.clamp(3, 4) - 3));
 }
 
-/// Items offered for one family. Tier-1 equipment is starting gear and never
-/// spawns in the dungeon, so it is not searchable.
-fn searchable_items(kind: ItemKind) -> Vec<&'static ItemDefinition> {
+/// Items offered for one category choice. Tier-1 equipment is starting gear
+/// and never spawns in the dungeon, so it is not searchable.
+fn searchable_items(choice: KindChoice) -> Vec<&'static ItemDefinition> {
+    let (kind, weapon_category) = choice;
     let mut items: Vec<_> = ITEMS
         .iter()
-        .filter(|definition| definition.kind == kind && definition.tier != Some(1))
+        .filter(|definition| {
+            definition.kind == kind
+                && definition.tier != Some(1)
+                && weapon_category
+                    .is_none_or(|category| definition.weapon_category() == Some(category))
+        })
         .collect();
     if matches!(kind, ItemKind::Weapon | ItemKind::Armor) {
         items.sort_by_key(|definition| definition.tier);
@@ -411,10 +423,10 @@ fn searchable_items(kind: ItemKind) -> Vec<&'static ItemDefinition> {
 }
 
 fn populate_items(editor: &Rc<Editor>, selection: Option<ItemId>) {
-    let kind = selected_kind(editor);
+    let choice = selected_choice(editor);
     let mut ids = vec![None];
-    let mut labels = vec![format!("Any {}", kind_singular(kind))];
-    for definition in searchable_items(kind) {
+    let mut labels = vec![format!("Any {}", kind_choice_singular(choice))];
+    for definition in searchable_items(choice) {
         ids.push(Some(definition.id));
         labels.push(match definition.tier {
             Some(tier) => format!("{} · Tier {tier}", definition.name),

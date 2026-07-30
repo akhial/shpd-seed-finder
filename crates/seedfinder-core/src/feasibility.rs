@@ -414,6 +414,7 @@ mod tests {
     fn requirement(kind: ItemKind, upgrade: UpgradeRequirement) -> Requirement {
         Requirement {
             kind,
+            weapon_category: None,
             item: None,
             tier: TierRequirement::Any,
             upgrade,

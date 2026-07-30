@@ -461,6 +461,7 @@ mod tests {
     fn gated_search_agrees_with_brute_force_matching() {
         let wildcard = |kind, upgrade| Requirement {
             kind,
+            weapon_category: None,
             item: None,
             tier: TierRequirement::Any,
             upgrade,
@@ -546,6 +547,7 @@ mod tests {
         let query = SearchQuery {
             requirements: vec![Requirement {
                 kind: ItemKind::Armor,
+                weapon_category: None,
                 item: None,
                 tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Exact(3),
@@ -663,6 +665,7 @@ mod tests {
         let query = SearchQuery {
             requirements: vec![Requirement {
                 kind: ItemKind::Ring,
+                weapon_category: None,
                 item: Some(ItemId::RingSharpshooting),
                 tier: TierRequirement::Any,
                 upgrade: crate::query::UpgradeRequirement::Exact(4),

@@ -286,6 +286,7 @@ fn generate(count: u64) -> Vec<GeneratedWorld> {
 fn base(kind: ItemKind) -> Requirement {
     Requirement {
         kind,
+        weapon_category: None,
         item: None,
         tier: TierRequirement::Any,
         upgrade: UpgradeRequirement::Any,
