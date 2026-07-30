@@ -5,20 +5,28 @@ use std::fmt;
 use crate::catalog::{Effect, ItemKind, item, item_by_stable_id};
 use crate::challenges::Challenges;
 use crate::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
-use crate::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
+use crate::query::{
+    EffectRequirement, EffectSet, Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
+    UpgradeSum,
+};
 use crate::seed::DungeonSeed;
 
-const REQUEST_MAGIC: &[u8; 4] = b"SSF7";
+const REQUEST_MAGIC: &[u8; 4] = b"SSF8";
 const SCOUT_REQUEST_MAGIC_V2: &[u8; 4] = b"SSQ2";
 const RESULT_MAGIC: &[u8; 4] = b"SSR1";
 const SCOUT_RESULT_MAGIC: &[u8; 4] = b"SSC1";
 const MAX_REQUIREMENTS: usize = 64;
+/// Effect-list ceiling; both effect families define 21 modifiers.
+const MAX_EFFECTS: usize = 32;
 
-/// Decodes an `SSF7` search request. The flags byte uses bit 0 for required
+/// Decodes an `SSF8` search request. The flags byte uses bit 0 for required
 /// blacksmith availability, bit 1 for the lossy fast search mode described on
 /// [`SearchQuery::fast_mode`], and bit 2 to prevent Blacksmith "Smith" rewards
-/// from satisfying item requirements. Each requirement ends with a flags byte;
-/// its bit 0 requires the matching item to be uncursed.
+/// from satisfying item requirements. Each requirement carries an effect
+/// predicate (mode byte 0 for any, or 1 followed by a count and that many
+/// wire names), an alternative-group byte, a combined-upgrade group byte and
+/// total, and ends with a flags byte whose bit 0 requires the matching item
+/// to be uncursed.
 ///
 /// # Errors
 ///
@@ -37,7 +45,7 @@ pub fn decode_query(packet: &[u8]) -> Result<SearchQuery, WireError> {
     Ok(query)
 }
 
-/// Encodes a validated query using the uncursed-aware `SSF7` request schema.
+/// Encodes a validated query using the `SSF8` request schema.
 ///
 /// # Errors
 ///
@@ -81,10 +89,20 @@ pub fn encode_query(query: &SearchQuery) -> Result<Vec<u8>, WireError> {
             UpgradeRequirement::AtLeast(value) => (2, value),
         };
         output.extend_from_slice(&[upgrade_mode, upgrade_value]);
-        push_utf8_u16(
-            &mut output,
-            requirement.effect.map_or("", Effect::wire_name),
-        )?;
+        match requirement.effect {
+            EffectRequirement::Any => output.push(0),
+            EffectRequirement::OneOf(set) => {
+                output.push(1);
+                let members = u8::try_from(set.len()).map_err(|_| WireError::InvalidEffectSet)?;
+                if members == 0 || usize::from(members) > MAX_EFFECTS {
+                    return Err(WireError::InvalidEffectSet);
+                }
+                output.push(members);
+                for effect in set.effects() {
+                    push_utf8_u16(&mut output, effect.wire_name())?;
+                }
+            }
+        }
         output.push(
             requirement
                 .source
@@ -92,6 +110,11 @@ pub fn encode_query(query: &SearchQuery) -> Result<Vec<u8>, WireError> {
         );
         output.push(requirement.identity_group.unwrap_or(0));
         output.push(requirement.max_depth.unwrap_or(0));
+        output.push(requirement.alternative_group.unwrap_or(0));
+        let (sum_group, sum_total) = requirement
+            .upgrade_sum
+            .map_or((0, 0), |sum| (sum.group, sum.minimum_total));
+        output.extend_from_slice(&[sum_group, sum_total]);
         output.push(u8::from(requirement.require_uncursed));
     }
     Ok(output)
@@ -110,67 +133,7 @@ fn decode_query_payload(input: &mut Input<'_>) -> Result<SearchQuery, WireError>
     }
     let mut requirements = Vec::with_capacity(count);
     for _ in 0..count {
-        let kind = item_kind_from_wire_id(input.u8()?).ok_or(WireError::UnknownItemKind)?;
-        let stable_id = input.utf8_u16()?;
-        let item = if stable_id.is_empty() {
-            None
-        } else {
-            Some(
-                item_by_stable_id(stable_id)
-                    .ok_or(WireError::UnknownItem)?
-                    .id,
-            )
-        };
-        let tier_mode = input.u8()?;
-        let tier_value = input.u8()?;
-        let tier = match tier_mode {
-            0 if tier_value == 0 => TierRequirement::Any,
-            1 => TierRequirement::Exact(tier_value),
-            2 => TierRequirement::AtLeast(tier_value),
-            3 => TierRequirement::AtMost(tier_value),
-            _ => return Err(WireError::InvalidTierMode),
-        };
-        let upgrade_mode = input.u8()?;
-        let upgrade_value = input.u8()?;
-        let upgrade = match upgrade_mode {
-            0 if upgrade_value == 0 => UpgradeRequirement::Any,
-            1 => UpgradeRequirement::Exact(upgrade_value),
-            2 => UpgradeRequirement::AtLeast(upgrade_value),
-            _ => return Err(WireError::InvalidUpgradeMode),
-        };
-        let modifier = input.utf8_u16()?;
-        let effect = if modifier.is_empty() {
-            None
-        } else {
-            Some(Effect::from_wire_name(kind, modifier).ok_or(WireError::UnknownModifier)?)
-        };
-        let source = match input.u8()? {
-            0 => None,
-            value => Some(source_from_wire_id(value - 1).ok_or(WireError::UnknownItemSource)?),
-        };
-        let identity_group = match input.u8()? {
-            0 => None,
-            value => Some(value),
-        };
-        let requirement_max_depth = match input.u8()? {
-            0 => None,
-            value => Some(value),
-        };
-        let requirement_flags = input.u8()?;
-        if requirement_flags & !1 != 0 {
-            return Err(WireError::InvalidFlags);
-        }
-        requirements.push(Requirement {
-            kind,
-            item,
-            tier,
-            upgrade,
-            effect,
-            require_uncursed: requirement_flags & 1 != 0,
-            source,
-            identity_group,
-            max_depth: requirement_max_depth,
-        });
+        requirements.push(decode_requirement(input)?);
     }
     Ok(SearchQuery {
         requirements,
@@ -179,6 +142,98 @@ fn decode_query_payload(input: &mut Input<'_>) -> Result<SearchQuery, WireError>
         require_blacksmith: flags & 1 != 0,
         exclude_blacksmith_rewards: flags & 0b100 != 0,
         fast_mode: flags & 0b10 != 0,
+    })
+}
+
+fn decode_requirement(input: &mut Input<'_>) -> Result<Requirement, WireError> {
+    let kind = item_kind_from_wire_id(input.u8()?).ok_or(WireError::UnknownItemKind)?;
+    let stable_id = input.utf8_u16()?;
+    let item = if stable_id.is_empty() {
+        None
+    } else {
+        Some(
+            item_by_stable_id(stable_id)
+                .ok_or(WireError::UnknownItem)?
+                .id,
+        )
+    };
+    let tier_mode = input.u8()?;
+    let tier_value = input.u8()?;
+    let tier = match tier_mode {
+        0 if tier_value == 0 => TierRequirement::Any,
+        1 => TierRequirement::Exact(tier_value),
+        2 => TierRequirement::AtLeast(tier_value),
+        3 => TierRequirement::AtMost(tier_value),
+        _ => return Err(WireError::InvalidTierMode),
+    };
+    let upgrade_mode = input.u8()?;
+    let upgrade_value = input.u8()?;
+    let upgrade = match upgrade_mode {
+        0 if upgrade_value == 0 => UpgradeRequirement::Any,
+        1 => UpgradeRequirement::Exact(upgrade_value),
+        2 => UpgradeRequirement::AtLeast(upgrade_value),
+        _ => return Err(WireError::InvalidUpgradeMode),
+    };
+    let effect = match input.u8()? {
+        0 => EffectRequirement::Any,
+        1 => {
+            let members = usize::from(input.u8()?);
+            if members == 0 || members > MAX_EFFECTS {
+                return Err(WireError::InvalidEffectSet);
+            }
+            let mut effects = Vec::with_capacity(members);
+            for _ in 0..members {
+                let name = input.utf8_u16()?;
+                effects.push(Effect::from_wire_name(kind, name).ok_or(WireError::UnknownModifier)?);
+            }
+            EffectRequirement::OneOf(
+                EffectSet::from_effects(effects).ok_or(WireError::InvalidEffectSet)?,
+            )
+        }
+        _ => return Err(WireError::InvalidEffectSet),
+    };
+    let source = match input.u8()? {
+        0 => None,
+        value => Some(source_from_wire_id(value - 1).ok_or(WireError::UnknownItemSource)?),
+    };
+    let identity_group = match input.u8()? {
+        0 => None,
+        value => Some(value),
+    };
+    let requirement_max_depth = match input.u8()? {
+        0 => None,
+        value => Some(value),
+    };
+    let alternative_group = match input.u8()? {
+        0 => None,
+        value => Some(value),
+    };
+    let sum_group = input.u8()?;
+    let sum_total = input.u8()?;
+    let upgrade_sum = match (sum_group, sum_total) {
+        (0, 0) => None,
+        (0, _) => return Err(WireError::InvalidUpgradeSum),
+        (group, minimum_total) => Some(UpgradeSum {
+            group,
+            minimum_total,
+        }),
+    };
+    let requirement_flags = input.u8()?;
+    if requirement_flags & !1 != 0 {
+        return Err(WireError::InvalidFlags);
+    }
+    Ok(Requirement {
+        kind,
+        item,
+        tier,
+        upgrade,
+        effect,
+        require_uncursed: requirement_flags & 1 != 0,
+        source,
+        identity_group,
+        max_depth: requirement_max_depth,
+        alternative_group,
+        upgrade_sum,
     })
 }
 
@@ -533,6 +588,8 @@ pub enum WireError {
     UnknownModifier,
     InvalidUpgradeMode,
     InvalidTierMode,
+    InvalidEffectSet,
+    InvalidUpgradeSum,
     InvalidQuery,
     TrailingData,
     TooManyResults,
@@ -559,6 +616,8 @@ impl fmt::Display for WireError {
             Self::UnknownModifier => "packet names an unknown enchantment or glyph",
             Self::InvalidUpgradeMode => "packet contains an invalid upgrade predicate",
             Self::InvalidTierMode => "packet contains an invalid tier predicate",
+            Self::InvalidEffectSet => "packet contains an invalid effect set",
+            Self::InvalidUpgradeSum => "packet contains an invalid combined-upgrade group",
             Self::InvalidQuery => "packet describes an inconsistent search query",
             Self::TrailingData => "packet has trailing bytes",
             Self::TooManyResults => "result batch exceeds the protocol limit",
@@ -583,7 +642,10 @@ mod tests {
     use crate::challenges::Challenges;
     use crate::main_world::CanonicalMainWorldGenerator;
     use crate::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
-    use crate::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
+    use crate::query::{
+        EffectRequirement, EffectSet, Requirement, SearchQuery, TierRequirement,
+        UpgradeRequirement, UpgradeSum,
+    };
     use crate::search::WorldGenerator;
     use crate::seed::DungeonSeed;
 
@@ -625,7 +687,7 @@ mod tests {
         tier: [u8; 2],
         upgrade: [u8; 2],
     ) -> Vec<u8> {
-        let mut packet = b"SSF7".to_vec();
+        let mut packet = b"SSF8".to_vec();
         packet.push(24);
         packet.push(flags);
         packet.extend_from_slice(&challenges.to_le_bytes());
@@ -634,13 +696,14 @@ mod tests {
         field(&mut packet, stable_id);
         packet.extend_from_slice(&tier);
         packet.extend_from_slice(&upgrade);
-        field(&mut packet, "");
-        packet.extend_from_slice(&[0, 0, 0, 0]);
+        // Wildcard effect, any source, no identity group, no floor limit, no
+        // alternative group, no combined-upgrade group, no flags.
+        packet.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0]);
         packet
     }
 
     #[test]
-    fn ssf7_round_trips_all_query_fields() {
+    fn ssf8_round_trips_all_query_fields() {
         let query = SearchQuery {
             requirements: vec![
                 Requirement {
@@ -648,33 +711,80 @@ mod tests {
                     item: None,
                     tier: TierRequirement::AtMost(4),
                     upgrade: UpgradeRequirement::AtLeast(1),
-                    effect: Some(Effect::Armor(ArmorEffect::Thorns)),
+                    effect: EffectRequirement::OneOf(EffectSet::single(Effect::Armor(
+                        ArmorEffect::Thorns,
+                    ))),
                     require_uncursed: true,
                     source: Some(ItemSource::Chest),
                     identity_group: Some(2),
                     max_depth: Some(14),
+                    alternative_group: None,
+                    upgrade_sum: None,
                 },
                 Requirement {
                     kind: ItemKind::Weapon,
                     item: None,
                     tier: TierRequirement::Exact(3),
                     upgrade: UpgradeRequirement::Any,
-                    effect: None,
+                    effect: EffectRequirement::OneOf(
+                        EffectSet::from_effects([
+                            Effect::Weapon(WeaponEffect::Blocking),
+                            Effect::Weapon(WeaponEffect::Projecting),
+                            Effect::Weapon(WeaponEffect::Vampiric),
+                        ])
+                        .unwrap(),
+                    ),
                     require_uncursed: false,
                     source: None,
                     identity_group: None,
                     max_depth: None,
+                    alternative_group: Some(1),
+                    upgrade_sum: None,
                 },
                 Requirement {
-                    kind: ItemKind::Armor,
-                    item: None,
-                    tier: TierRequirement::AtLeast(4),
-                    upgrade: UpgradeRequirement::Exact(2),
-                    effect: None,
+                    kind: ItemKind::Weapon,
+                    item: Some(ItemId::Sword),
+                    tier: TierRequirement::Any,
+                    upgrade: UpgradeRequirement::Exact(1),
+                    effect: EffectRequirement::Any,
                     require_uncursed: false,
                     source: None,
                     identity_group: None,
                     max_depth: None,
+                    alternative_group: Some(1),
+                    upgrade_sum: None,
+                },
+                Requirement {
+                    kind: ItemKind::Ring,
+                    item: Some(ItemId::RingMight),
+                    tier: TierRequirement::Any,
+                    upgrade: UpgradeRequirement::Any,
+                    effect: EffectRequirement::Any,
+                    require_uncursed: false,
+                    source: None,
+                    identity_group: Some(3),
+                    max_depth: None,
+                    alternative_group: None,
+                    upgrade_sum: Some(UpgradeSum {
+                        group: 1,
+                        minimum_total: 2,
+                    }),
+                },
+                Requirement {
+                    kind: ItemKind::Ring,
+                    item: Some(ItemId::RingMight),
+                    tier: TierRequirement::Any,
+                    upgrade: UpgradeRequirement::Any,
+                    effect: EffectRequirement::Any,
+                    require_uncursed: false,
+                    source: None,
+                    identity_group: Some(3),
+                    max_depth: None,
+                    alternative_group: None,
+                    upgrade_sum: Some(UpgradeSum {
+                        group: 1,
+                        minimum_total: 2,
+                    }),
                 },
             ],
             max_depth: 20,
@@ -685,12 +795,12 @@ mod tests {
         };
 
         let packet = encode_query(&query).unwrap();
-        assert_eq!(&packet[..4], b"SSF7");
+        assert_eq!(&packet[..4], b"SSF8");
         assert_eq!(decode_query(&packet), Ok(query));
     }
 
     #[test]
-    fn ssf7_decodes_uncursed_requirement_flag() {
+    fn ssf8_decodes_uncursed_requirement_flag() {
         let mut packet = query_packet(0, 0, 0, "sword", [0, 0], [1, 2]);
         *packet.last_mut().unwrap() = 1;
         assert!(decode_query(&packet).unwrap().requirements[0].require_uncursed);
@@ -708,6 +818,73 @@ mod tests {
 
         let sword = query_packet(0, 0, 0, "sword", [0, 0], [1, 4]);
         assert_eq!(decode_query(&sword), Err(WireError::InvalidQuery));
+    }
+
+    #[test]
+    fn ssf8_effect_sets_have_fixed_bytes_and_reject_malformed_lists() {
+        // A one-of effect list encodes as mode 1, member count, then names.
+        let mut packet = b"SSF8".to_vec();
+        packet.push(24);
+        packet.push(0);
+        packet.extend_from_slice(&0_u16.to_le_bytes());
+        packet.extend_from_slice(&1_u16.to_be_bytes());
+        packet.push(0); // weapon
+        field(&mut packet, "sword");
+        packet.extend_from_slice(&[0, 0, 0, 0]); // any tier, any upgrade
+        packet.push(1); // one-of
+        packet.push(2);
+        field(&mut packet, "Blocking");
+        field(&mut packet, "Vampiric");
+        packet.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0]);
+        let decoded = decode_query(&packet).unwrap();
+        assert_eq!(
+            decoded.requirements[0].effect,
+            EffectRequirement::OneOf(
+                EffectSet::from_effects([
+                    Effect::Weapon(WeaponEffect::Blocking),
+                    Effect::Weapon(WeaponEffect::Vampiric),
+                ])
+                .unwrap()
+            )
+        );
+        assert_eq!(encode_query(&decoded).unwrap(), packet);
+
+        // Zero members, an unknown mode, and a foreign-family name all fail.
+        let mut zero_members = packet.clone();
+        // Locate the member count byte: header 10, kind 1, id field 7, four
+        // predicate bytes, mode byte.
+        let count_index = 10 + 1 + 7 + 4 + 1;
+        zero_members[count_index] = 0;
+        assert_eq!(
+            decode_query(&zero_members),
+            Err(WireError::InvalidEffectSet)
+        );
+
+        let mut bad_mode = packet.clone();
+        bad_mode[count_index - 1] = 9;
+        assert_eq!(decode_query(&bad_mode), Err(WireError::InvalidEffectSet));
+
+        let mut foreign = packet;
+        // Replace "Blocking" (8 bytes) with "Obfuscation" is longer; use the
+        // armor glyph "Potential" against a weapon instead, rebuilt fully.
+        foreign.truncate(count_index + 1);
+        field(&mut foreign, "Potential");
+        field(&mut foreign, "Vampiric");
+        foreign.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(decode_query(&foreign), Err(WireError::UnknownModifier));
+    }
+
+    #[test]
+    fn ssf8_rejects_a_combined_total_without_a_group() {
+        let mut packet = query_packet(0, 0, 3, "ring_might", [0, 0], [0, 0]);
+        let length = packet.len();
+        packet[length - 2] = 3; // total without a group
+        assert_eq!(decode_query(&packet), Err(WireError::InvalidUpgradeSum));
+
+        // A group with a zero total is rejected by query validation.
+        packet[length - 3] = 1;
+        packet[length - 2] = 0;
+        assert_eq!(decode_query(&packet), Err(WireError::InvalidQuery));
     }
 
     #[test]

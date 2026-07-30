@@ -25,7 +25,9 @@ use shpd_seedfinder_core::main_world::CanonicalMainWorldGenerator;
 use shpd_seedfinder_core::model::{GeneratedWorld, ItemSource};
 use shpd_seedfinder_core::probability::estimate_match_probability;
 use shpd_seedfinder_core::probability_tables::is_missile;
-use shpd_seedfinder_core::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
+use shpd_seedfinder_core::query::{
+    EffectRequirement, EffectSet, Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
+};
 use shpd_seedfinder_core::search::WorldGenerator;
 use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
 
@@ -289,11 +291,13 @@ fn base(kind: ItemKind) -> Requirement {
         item: None,
         tier: TierRequirement::Any,
         upgrade: UpgradeRequirement::Any,
-        effect: None,
+        effect: EffectRequirement::Any,
         require_uncursed: false,
         source: None,
         identity_group: None,
         max_depth: None,
+        alternative_group: None,
+        upgrade_sum: None,
     }
 }
 
@@ -375,7 +379,7 @@ fn modifier_queries() -> Vec<(String, SearchQuery)> {
         "a blazing weapon".to_owned(),
         query(
             vec![Requirement {
-                effect: Some(Effect::Weapon(WeaponEffect::Blazing)),
+                effect: EffectRequirement::OneOf(EffectSet::single(Effect::Weapon(WeaponEffect::Blazing))),
                 ..base(ItemKind::Weapon)
             }],
             24,
@@ -385,7 +389,7 @@ fn modifier_queries() -> Vec<(String, SearchQuery)> {
         "a viscous armor".to_owned(),
         query(
             vec![Requirement {
-                effect: Some(Effect::Armor(ArmorEffect::Viscosity)),
+                effect: EffectRequirement::OneOf(EffectSet::single(Effect::Armor(ArmorEffect::Viscosity))),
                 ..base(ItemKind::Armor)
             }],
             24,
@@ -395,7 +399,7 @@ fn modifier_queries() -> Vec<(String, SearchQuery)> {
         "a cursed weapon".to_owned(),
         query(
             vec![Requirement {
-                effect: Some(Effect::Weapon(WeaponEffect::Annoying)),
+                effect: EffectRequirement::OneOf(EffectSet::single(Effect::Weapon(WeaponEffect::Annoying))),
                 ..base(ItemKind::Weapon)
             }],
             24,
@@ -540,10 +544,10 @@ fn describe(query: &SearchQuery) -> String {
                 UpgradeRequirement::Exact(upgrade) => format!(" +{upgrade}"),
                 UpgradeRequirement::AtLeast(upgrade) => format!(" >=+{upgrade}"),
             },
-            requirement
-                .effect
-                .map(|value| format!(" {value:?}"))
-                .unwrap_or_default(),
+            match requirement.effect {
+                EffectRequirement::Any => String::new(),
+                EffectRequirement::OneOf(set) => format!(" {:?}", set.effects().collect::<Vec<_>>()),
+            },
             if requirement.require_uncursed {
                 " uncursed"
             } else {
@@ -651,7 +655,7 @@ impl QueryGenerator {
         }
         if self.chance(18) {
             let curse = self.chance(25);
-            requirement.effect = match kind {
+            let effect = match kind {
                 ItemKind::Weapon if curse => Some(Effect::Weapon(
                     WEAPON_CURSES[self.pick(WEAPON_CURSES.len())],
                 )),
@@ -666,8 +670,15 @@ impl QueryGenerator {
                 }
                 ItemKind::Wand | ItemKind::Ring => None,
             };
+            requirement.effect = effect.map_or(EffectRequirement::Any, |effect| {
+                EffectRequirement::OneOf(EffectSet::single(effect))
+            });
         }
-        if self.chance(20) && !requirement.effect.is_some_and(Effect::is_curse) {
+        let curses_only = match requirement.effect {
+            EffectRequirement::OneOf(set) => set.is_curses_only(),
+            EffectRequirement::Any => false,
+        };
+        if self.chance(20) && !curses_only {
             requirement.require_uncursed = true;
         }
         if self.chance(10) {

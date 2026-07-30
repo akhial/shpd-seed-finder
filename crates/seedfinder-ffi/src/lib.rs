@@ -162,10 +162,13 @@ mod tests {
     use super::*;
 
     fn query_packet() -> Vec<u8> {
-        let mut packet = b"SSF7".to_vec();
+        let mut packet = b"SSF8".to_vec();
         packet.extend_from_slice(&[24, 0, 0, 0, 0, 1, 2, 0, 10]);
         packet.extend_from_slice(b"wand_frost");
-        packet.extend_from_slice(&[0, 0, 1, 2, 0, 0, 0, 0, 0, 0]);
+        // Tier, upgrade +2 exactly, wildcard effect, any source, no identity
+        // group, no floor limit, no alternative group, no combined-upgrade
+        // group, no flags.
+        packet.extend_from_slice(&[0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0]);
         packet
     }
 

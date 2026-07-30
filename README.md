@@ -99,6 +99,12 @@ cargo run --release -p shpd-seedfinder-cli -- -i requirements.json -b 1000 --wor
   ] = [],
 
   "requirements": [
+    // Each entry is a requirement, or an "any_of" group that is satisfied
+    // when any single member matches:
+    //   { "any_of": [ { "item": "spear", "upgrade": 3 },
+    //                 { "item": "shuriken", "upgrade": 2 },
+    //                 { "item": "sword", "upgrade": 1 } ] }
+    // Members use the requirement schema below, except "upgrade_sum".
     {
       // Supply "item", "kind", or both; when both are present they must agree.
       "kind"?: "weapon" | "armor" | "wand" | "ring",
@@ -143,8 +149,10 @@ cargo run --release -p shpd-seedfinder-cli -- -i requirements.json -b 1000 --wor
         { "at_least": 0..3 | 4 }
         = "any",
 
-      // The effect must belong to the selected weapon or armor kind.
-      "effect"?:
+      // The effect must belong to the selected weapon or armor kind. A list
+      // matches any one of its entries, and "any_enchantment" is shorthand
+      // for every non-curse enchantment or glyph of the item's family.
+      "effect"?: <name> | [<name>, ...] | "any_enchantment", where <name> is
         // Weapon enchantments
         "Blazing" | "Chilling" | "Kinetic" | "Shocking" | "Blocking" | "Blooming" |
         "Elastic" | "Lucky" | "Projecting" | "Unstable" | "Corrupting" | "Grim" |
@@ -160,7 +168,7 @@ cargo run --release -p shpd-seedfinder-cli -- -i requirements.json -b 1000 --wor
         "Anti-Entropy" | "Corrosion" | "Displacement" | "Metabolism" | "Multiplicity" |
         "Stench" | "Overgrowth" | "Bulk",
 
-      // true cannot be combined with a curse effect.
+      // true cannot be combined with a curses-only effect list.
       "uncursed"?: true | false = false,
       "source"?:
         "heap" | "chest" | "locked_chest" | "crystal_chest" | "tomb" | "skeleton" |
@@ -169,7 +177,15 @@ cargo run --release -p shpd-seedfinder-cli -- -i requirements.json -b 1000 --wor
         "blacksmith_reward" | "imp_reward",
       // Equal groups must resolve to the same kind and item ID.
       "identity_group"?: 1..255,
-      "max_depth"?: 1..24 = query.max_depth
+      "max_depth"?: 1..24 = query.max_depth,
+      // Requirements sharing a group must be matched by distinct items whose
+      // upgrade levels total at least "at_least", on top of each member's own
+      // upgrade filter. Combine with "identity_group" for e.g. two rings of
+      // one type totalling +2:
+      //   { "item": "ring_might", "identity_group": 1,
+      //     "upgrade_sum": { "group": 1, "at_least": 2 } }
+      // All members of one group must agree on "at_least".
+      "upgrade_sum"?: { "group": 1..255, "at_least": 1..255 }
     },
     ...
   ]

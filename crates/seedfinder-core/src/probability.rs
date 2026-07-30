@@ -47,19 +47,26 @@ use crate::probability_tables::{
     appears_once, kind_index, line_of, missile_tier, missile_tier_items, source_index,
     spread_index, supply_for, tipped_index,
 };
-use crate::query::{Requirement, SearchQuery, UpgradeRequirement};
+use crate::query::{EffectRequirement, Requirement, SearchQuery, UpgradeRequirement};
 
 /// Estimates the fraction of seeds satisfying a query.
 ///
 /// The result is fixed for a search: observed results never feed back into it.
+///
+/// Alternative groups are approximated by their most plentiful member — a
+/// pessimistic simplification, since any member can satisfy the group.
+/// Combined-upgrade totals tighten each member's upgrade predicate by what
+/// the other members could carry at most, which is exact for two-member
+/// groups whose partners hit their cap and optimistic otherwise.
 #[must_use]
 pub fn estimate_match_probability(query: &SearchQuery) -> f64 {
+    let requirements = effective_requirements(query);
     let mut linked: BTreeMap<u8, Vec<Requirement>> = BTreeMap::new();
     let mut independent: Vec<Requirement> = Vec::new();
-    for requirement in &query.requirements {
+    for requirement in requirements {
         match requirement.identity_group {
-            Some(group) => linked.entry(group).or_default().push(*requirement),
-            None => independent.push(*requirement),
+            Some(group) => linked.entry(group).or_default().push(requirement),
+            None => independent.push(requirement),
         }
     }
 
@@ -98,6 +105,66 @@ pub fn estimate_match_probability(query: &SearchQuery) -> f64 {
         0.0
     } else {
         probability.min(1.0)
+    }
+}
+
+/// Requirements reduced to the flat, independent form the supply tables can
+/// answer: each alternative group collapses to its most plentiful member, and
+/// combined-upgrade members absorb the minimum the rest of their group cannot
+/// cover.
+fn effective_requirements(query: &SearchQuery) -> Vec<Requirement> {
+    let mut sum_caps: BTreeMap<u8, u16> = BTreeMap::new();
+    for requirement in &query.requirements {
+        if let Some(sum) = requirement.upgrade_sum {
+            *sum_caps.entry(sum.group).or_insert(0) += u16::from(maximum_upgrade(requirement));
+        }
+    }
+
+    let mut alternatives: BTreeMap<u8, Requirement> = BTreeMap::new();
+    let mut flattened: Vec<Requirement> = Vec::new();
+    for requirement in &query.requirements {
+        let mut requirement = *requirement;
+        if let Some(sum) = requirement.upgrade_sum.take() {
+            let others = sum_caps
+                .get(&sum.group)
+                .copied()
+                .unwrap_or(0)
+                .saturating_sub(u16::from(maximum_upgrade(&requirement)));
+            let implied = u16::from(sum.minimum_total).saturating_sub(others);
+            let implied = u8::try_from(implied).unwrap_or(u8::MAX);
+            requirement.upgrade = match requirement.upgrade {
+                UpgradeRequirement::Any => UpgradeRequirement::AtLeast(implied),
+                UpgradeRequirement::AtLeast(minimum) => {
+                    UpgradeRequirement::AtLeast(minimum.max(implied))
+                }
+                exact @ UpgradeRequirement::Exact(_) => exact,
+            };
+        }
+        match requirement.alternative_group.take() {
+            None => flattened.push(requirement),
+            Some(group) => {
+                let candidate_slots =
+                    expected_slots(&Predicate::of(requirement, None).within(query, &requirement));
+                let replace = alternatives.get(&group).is_none_or(|kept| {
+                    candidate_slots > expected_slots(&Predicate::of(*kept, None).within(query, kept))
+                });
+                if replace {
+                    alternatives.insert(group, requirement);
+                }
+            }
+        }
+    }
+    flattened.extend(alternatives.into_values());
+    flattened
+}
+
+/// The highest upgrade an item satisfying `requirement` can carry.
+fn maximum_upgrade(requirement: &Requirement) -> u8 {
+    match requirement.upgrade {
+        UpgradeRequirement::Exact(wanted) => wanted,
+        UpgradeRequirement::Any | UpgradeRequirement::AtLeast(_) => {
+            requirement.kind.maximum_search_upgrade()
+        }
     }
 }
 
@@ -713,7 +780,7 @@ struct Predicate {
     item: Option<ItemId>,
     tiers: u8,
     upgrades: u8,
-    effect: Option<Effect>,
+    effect: EffectRequirement,
     require_uncursed: bool,
     source: Option<ItemSource>,
     max_depth: u8,
@@ -777,14 +844,19 @@ impl Predicate {
             (left, right) => left.or(right),
         };
         let effect = match (self.effect, other.effect) {
-            (Some(left), Some(right)) if left != right => return None,
-            (left, right) => left.or(right),
+            (EffectRequirement::OneOf(left), EffectRequirement::OneOf(right)) => {
+                EffectRequirement::OneOf(left.intersection(right)?)
+            }
+            (EffectRequirement::Any, other) | (other, EffectRequirement::Any) => other,
         };
         let tiers = self.tiers & other.tiers;
         let upgrades = self.upgrades & other.upgrades;
         let require_uncursed = self.require_uncursed || other.require_uncursed;
-        if tiers == 0 || upgrades == 0 || (require_uncursed && effect.is_some_and(Effect::is_curse))
-        {
+        let curses_only = match effect {
+            EffectRequirement::OneOf(set) => set.is_curses_only(),
+            EffectRequirement::Any => false,
+        };
+        if tiers == 0 || upgrades == 0 || (require_uncursed && curses_only) {
             return None;
         }
         Some(Self {
@@ -896,16 +968,33 @@ impl Predicate {
     }
 
     fn effect_probability(self, supply: &Supply) -> f64 {
-        match self.effect {
-            None => 1.0,
-            Some(effect) if effect.is_curse() => f64::from(supply.cursed) / f64::from(CURSE_COUNT),
-            Some(Effect::Weapon(effect)) => {
-                f64::from(supply.enchanted) * rarity_probability(effect as u8)
+        let EffectRequirement::OneOf(set) = self.effect else {
+            return 1.0;
+        };
+        // Uncursed items never carry curse effects, so those members of the
+        // set can never be the match.
+        let set = if self.require_uncursed {
+            match set.without_curses() {
+                Some(set) => set,
+                None => return 0.0,
             }
-            Some(Effect::Armor(effect)) => {
-                f64::from(supply.enchanted) * rarity_probability(effect as u8)
-            }
-        }
+        } else {
+            set
+        };
+        // Each member is a disjoint outcome for one item, so their chances add.
+        set.effects()
+            .map(|effect| {
+                if effect.is_curse() {
+                    f64::from(supply.cursed) / f64::from(CURSE_COUNT)
+                } else {
+                    let index = match effect {
+                        Effect::Weapon(effect) => effect as u8,
+                        Effect::Armor(effect) => effect as u8,
+                    };
+                    f64::from(supply.enchanted) * rarity_probability(index)
+                }
+            })
+            .sum()
     }
 
     fn uncursed_probability(self, supply: &Supply) -> f64 {
@@ -913,10 +1002,10 @@ impl Predicate {
             return 1.0;
         }
         match self.effect {
-            Some(effect) if effect.is_curse() => 0.0,
-            // Positive enchantments and glyphs are generated only on clean items.
-            Some(_) => 1.0,
-            None => 1.0 - f64::from(supply.cursed),
+            // Positive enchantments and glyphs are generated only on clean
+            // items, and `effect_probability` already dropped the curses.
+            EffectRequirement::OneOf(_) => 1.0,
+            EffectRequirement::Any => 1.0 - f64::from(supply.cursed),
         }
     }
 }
@@ -1088,7 +1177,10 @@ mod tests {
     use crate::catalog::{ArmorEffect, Effect, ItemId, ItemKind};
     use crate::challenges::Challenges;
     use crate::model::ItemSource;
-    use crate::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
+    use crate::query::{
+        EffectRequirement, EffectSet, Requirement, SearchQuery, TierRequirement,
+        UpgradeRequirement, UpgradeSum,
+    };
 
     use super::estimate_match_probability;
 
@@ -1098,11 +1190,13 @@ mod tests {
             item: None,
             tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Any,
-            effect: None,
+            effect: EffectRequirement::Any,
             require_uncursed: false,
             source: None,
             identity_group: None,
             max_depth: None,
+            alternative_group: None,
+            upgrade_sum: None,
         }
     }
 
@@ -1318,19 +1412,126 @@ mod tests {
     fn rarer_modifiers_are_rarer() {
         let common = query(
             vec![Requirement {
-                effect: Some(Effect::Armor(ArmorEffect::Viscosity)),
+                effect: EffectRequirement::OneOf(EffectSet::single(Effect::Armor(
+                    ArmorEffect::Viscosity,
+                ))),
                 ..requirement(ItemKind::Armor)
             }],
             24,
         );
         let rare = query(
             vec![Requirement {
-                effect: Some(Effect::Armor(ArmorEffect::Thorns)),
+                effect: EffectRequirement::OneOf(EffectSet::single(Effect::Armor(
+                    ArmorEffect::Thorns,
+                ))),
                 ..requirement(ItemKind::Armor)
             }],
             24,
         );
         assert!(estimate_match_probability(&rare) < estimate_match_probability(&common));
+    }
+
+    #[test]
+    fn broader_effect_sets_are_likelier_than_their_members() {
+        let single = |effect| {
+            query(
+                vec![Requirement {
+                    effect: EffectRequirement::OneOf(EffectSet::single(Effect::Armor(effect))),
+                    ..requirement(ItemKind::Armor)
+                }],
+                24,
+            )
+        };
+        let both = query(
+            vec![Requirement {
+                effect: EffectRequirement::OneOf(
+                    EffectSet::from_effects([
+                        Effect::Armor(ArmorEffect::Viscosity),
+                        Effect::Armor(ArmorEffect::Thorns),
+                    ])
+                    .unwrap(),
+                ),
+                ..requirement(ItemKind::Armor)
+            }],
+            24,
+        );
+        let any_glyph = query(
+            vec![Requirement {
+                effect: EffectRequirement::OneOf(
+                    EffectSet::enchantments(ItemKind::Armor).unwrap(),
+                ),
+                ..requirement(ItemKind::Armor)
+            }],
+            24,
+        );
+        let viscosity = estimate_match_probability(&single(ArmorEffect::Viscosity));
+        let thorns = estimate_match_probability(&single(ArmorEffect::Thorns));
+        let pair = estimate_match_probability(&both);
+        let any = estimate_match_probability(&any_glyph);
+        assert!(pair > viscosity && pair > thorns, "{pair:e}");
+        assert!(any > pair, "{any:e} vs {pair:e}");
+        assert!(any < estimate_match_probability(&query(vec![requirement(ItemKind::Armor)], 24)));
+    }
+
+    #[test]
+    fn alternatives_score_at_least_their_best_member() {
+        let spear_only = query(
+            vec![Requirement {
+                item: Some(ItemId::Spear),
+                upgrade: UpgradeRequirement::Exact(3),
+                ..requirement(ItemKind::Weapon)
+            }],
+            24,
+        );
+        let either = query(
+            vec![
+                Requirement {
+                    item: Some(ItemId::Spear),
+                    upgrade: UpgradeRequirement::Exact(3),
+                    alternative_group: Some(1),
+                    ..requirement(ItemKind::Weapon)
+                },
+                Requirement {
+                    item: Some(ItemId::Sword),
+                    upgrade: UpgradeRequirement::Exact(1),
+                    alternative_group: Some(1),
+                    ..requirement(ItemKind::Weapon)
+                },
+            ],
+            24,
+        );
+        let alone = estimate_match_probability(&spear_only);
+        let grouped = estimate_match_probability(&either);
+        assert!(grouped >= alone, "{grouped:e} vs {alone:e}");
+    }
+
+    #[test]
+    fn combined_upgrade_totals_cost_something() {
+        let pair = |upgrade_sum| {
+            query(
+                vec![
+                    Requirement {
+                        item: Some(ItemId::RingMight),
+                        identity_group: Some(1),
+                        upgrade_sum,
+                        ..requirement(ItemKind::Ring)
+                    };
+                    2
+                ],
+                24,
+            )
+        };
+        let plain = estimate_match_probability(&pair(None));
+        let modest = estimate_match_probability(&pair(Some(UpgradeSum {
+            group: 1,
+            minimum_total: 4,
+        })));
+        let steep = estimate_match_probability(&pair(Some(UpgradeSum {
+            group: 1,
+            minimum_total: 7,
+        })));
+        assert!(modest <= plain, "{modest:e} vs {plain:e}");
+        assert!(steep < plain, "{steep:e} vs {plain:e}");
     }
 
     #[test]

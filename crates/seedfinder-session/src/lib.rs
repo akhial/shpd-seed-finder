@@ -201,7 +201,7 @@ impl NativeSession {
         )
     }
 
-    /// Decodes an `SSF7` request and starts a canonical production search.
+    /// Decodes an `SSF8` request and starts a canonical production search.
     ///
     /// # Errors
     ///
@@ -372,7 +372,7 @@ mod tests {
     use shpd_seedfinder_core::catalog::{ItemId, ItemKind};
     use shpd_seedfinder_core::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
     use shpd_seedfinder_core::query::{
-        Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
+        EffectRequirement, Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
     };
     use shpd_seedfinder_core::search::{SearchOptions, WorldGenerator};
     use shpd_seedfinder_core::seed::DungeonSeed;
@@ -464,10 +464,12 @@ mod tests {
                 item: Some(ItemId::WandFrost),
                 tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Exact(2),
-                effect: None,
+                effect: EffectRequirement::Any,
                 source: None,
                 identity_group: None,
                 max_depth: None,
+                alternative_group: None,
+                upgrade_sum: None,
                 require_uncursed: false,
             }],
             max_depth: 24,

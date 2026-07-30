@@ -7,7 +7,9 @@ use std::fmt::Write as _;
 use shpd_seedfinder_core::catalog::{Effect, ItemId, ItemKind, item};
 use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::model::ItemSource;
-use shpd_seedfinder_core::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
+use shpd_seedfinder_core::query::{
+    EffectRequirement, EffectSet, Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
+};
 
 /// Every user-facing item source, in the wire order shared with the other
 /// frontends.
@@ -72,17 +74,22 @@ impl UiRequirement {
     }
 
     #[must_use]
-    pub const fn to_core(self) -> Requirement {
+    pub fn to_core(self) -> Requirement {
         Requirement {
             kind: self.kind,
             item: self.item,
             tier: self.tier,
             upgrade: self.upgrade,
-            effect: self.effect,
+            effect: match self.effect {
+                Some(effect) => EffectRequirement::OneOf(EffectSet::single(effect)),
+                None => EffectRequirement::Any,
+            },
             require_uncursed: self.require_uncursed,
             source: self.source,
             identity_group: self.identity_group,
             max_depth: self.max_depth,
+            alternative_group: None,
+            upgrade_sum: None,
         }
     }
 
