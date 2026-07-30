@@ -15,6 +15,7 @@ use shpd_seedfinder_session::{
 };
 
 use crate::format::{duration, estimate_duration, group_digits, probability_percent, seed_rate};
+use crate::result_navigation;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 const DRAIN_BATCH: usize = 256;
@@ -42,6 +43,7 @@ pub struct ResultsPane {
     toasts: adw::ToastOverlay,
     on_select: RefCell<Option<SelectHandler>>,
     on_finished: RefCell<Option<Box<dyn Fn()>>>,
+    on_results_changed: RefCell<Option<Box<dyn Fn()>>>,
 }
 
 type SelectHandler = Box<dyn Fn(&str)>;
@@ -125,6 +127,7 @@ impl ResultsPane {
             toasts: toasts.clone(),
             on_select: RefCell::new(None),
             on_finished: RefCell::new(None),
+            on_results_changed: RefCell::new(None),
         });
         pane.list.connect_row_selected({
             let pane = Rc::clone(&pane);
@@ -152,6 +155,18 @@ impl ResultsPane {
         self.on_finished.replace(Some(Box::new(handler)));
     }
 
+    /// Runs whenever the seed list changes (cleared by a new search, or grown
+    /// by streamed matches), so dependent views can refresh positions.
+    pub fn connect_results_changed(&self, handler: impl Fn() + 'static) {
+        self.on_results_changed.replace(Some(Box::new(handler)));
+    }
+
+    fn notify_results_changed(&self) {
+        if let Some(handler) = self.on_results_changed.borrow().as_ref() {
+            handler();
+        }
+    }
+
     pub fn is_running(&self) -> bool {
         self.active.borrow().is_some()
     }
@@ -159,30 +174,15 @@ impl ResultsPane {
     /// 0-based position of `seed` among the found seeds with the total count,
     /// or `None` when it is not a search result.
     pub fn position_of(&self, seed: &str) -> Option<(usize, usize)> {
-        let seeds = self.seeds.borrow();
-        seeds
-            .iter()
-            .position(|code| code == seed)
-            .map(|index| (index, seeds.len()))
+        result_navigation::position(&self.seeds.borrow(), seed)
     }
 
     /// Moves the selection `delta` rows from the row holding `seed`, clamped
     /// to the list; selecting a row scouts it through the select handler.
     /// Returns whether the selection moved.
     pub fn select_step(&self, seed: &str, delta: i64) -> bool {
-        let target = {
-            let seeds = self.seeds.borrow();
-            let Some(index) = seeds.iter().position(|code| code == seed) else {
-                return false;
-            };
-            let (Ok(index), Ok(len)) = (i64::try_from(index), i64::try_from(seeds.len())) else {
-                return false;
-            };
-            let target = (index + delta).clamp(0, len - 1);
-            if target == index {
-                return false;
-            }
-            target
+        let Some(target) = result_navigation::step(&self.seeds.borrow(), seed, delta) else {
+            return false;
         };
         let Some(row) = self.list.row_at_index(i32::try_from(target).unwrap_or(i32::MAX)) else {
             return false;
@@ -218,6 +218,7 @@ impl ResultsPane {
         };
         self.seeds.borrow_mut().clear();
         self.list.remove_all();
+        self.notify_results_changed();
         self.stack.set_visible_child_name("results");
         self.title.set_subtitle("Searching…");
         self.stats_line.set_label("Measuring search speed…");
@@ -397,6 +398,7 @@ impl ResultsPane {
     }
 
     fn drain_matches(self: &Rc<Self>, active: &mut ActiveSearch) {
+        let mut appended = false;
         loop {
             let worlds = active.session.drain_worlds(DRAIN_BATCH);
             if worlds.is_empty() {
@@ -409,6 +411,10 @@ impl ResultsPane {
                 seeds.push(code);
             }
             active.matches += worlds.len() as u64;
+            appended = true;
+        }
+        if appended {
+            self.notify_results_changed();
         }
     }
 

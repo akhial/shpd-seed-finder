@@ -196,14 +196,32 @@ pub fn present(app: &adw::Application) {
         }
     });
 
-    // J/K step the scouted seed through the search results whenever no
-    // editable widget has focus; row selection then drives the scout above.
+    // Keeps the seed pane's "Result N of M" indicator honest while a new
+    // search clears the list or a running one streams matches in.
+    results.connect_results_changed({
+        let detail = Rc::clone(&detail);
+        let results = Rc::clone(&results);
+        move || {
+            let position = detail
+                .current_seed()
+                .and_then(|seed| results.position_of(&seed));
+            detail.set_result_position(position);
+        }
+    });
+
+    // J/K step the scouted seed through the search results; row selection
+    // then drives the scout above. The keys stay inert while a dialog is
+    // presented, while an editable widget has focus, or while a collapsed
+    // split view is showing another page (navigating would flip pages the
+    // user is not on).
     let navigate_keys = gtk::EventControllerKey::new();
     navigate_keys.set_propagation_phase(gtk::PropagationPhase::Bubble);
     navigate_keys.connect_key_pressed({
         let window = window.clone();
         let results = Rc::clone(&results);
         let detail = Rc::clone(&detail);
+        let inner_split = inner_split.clone();
+        let outer_split = outer_split.clone();
         move |_, key, _, modifiers| {
             let delta = match key {
                 gdk::Key::j | gdk::Key::J => 1,
@@ -217,11 +235,22 @@ pub fn present(app: &adw::Application) {
             ) {
                 return glib::Propagation::Proceed;
             }
+            // Never navigate behind a modal (requirement editor, presets,
+            // challenges, shortcuts are all in-window adw::Dialogs).
+            if window.visible_dialog().is_some() {
+                return glib::Propagation::Proceed;
+            }
             // Bubble-phase keys rarely escape an editable widget, but a
             // focused entry must never lose typed letters to navigation.
             if GtkWindowExt::focus(&window)
                 .is_some_and(|focus| focus.is::<gtk::Text>() || focus.is::<gtk::TextView>())
             {
+                return glib::Propagation::Proceed;
+            }
+            // On collapsed layouts, act only while the seed page is visible.
+            let seed_page_visible = (!outer_split.is_collapsed() || outer_split.shows_content())
+                && (!inner_split.is_collapsed() || inner_split.shows_content());
+            if !seed_page_visible {
                 return glib::Propagation::Proceed;
             }
             let Some(seed) = detail.current_seed() else {

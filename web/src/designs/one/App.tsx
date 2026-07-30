@@ -110,9 +110,12 @@ export default function App() {
 
   // Scout state, lifted so results can populate the detail pane.
   const [scoutInput, setScoutInput] = useState('')
-  // The last seed a scout was requested for; anchors result navigation even
-  // while the previous manifest is still on screen.
+  // Anchor for result navigation: the seed of the most recent scout request,
+  // set synchronously so rapid steps chain even while a scout is in flight.
+  // A failed request falls back to the seed whose manifest is still rendered,
+  // keeping the indicator honest.
   const [scoutedSeed, setScoutedSeed] = useState<string | undefined>(undefined)
+  const renderedSeed = useRef<string | undefined>(undefined)
   const [scout, setScout] = useState<{ loading: boolean; error?: string; result?: ScoutResult }>({ loading: false })
   const scoutRequest = useRef(0)
   const runScout = useCallback((seed: string) => {
@@ -121,6 +124,7 @@ export default function App() {
     setActiveTab('scout')
     if (input.length !== 11) {
       setScout((current) => ({ loading: false, result: current.result, error: 'Seed must use XXX-XXX-XXX format' }))
+      setScoutedSeed(renderedSeed.current)
       return
     }
     setScoutedSeed(input)
@@ -138,6 +142,8 @@ export default function App() {
         if (requestId === scoutRequest.current) {
           setScout({ loading: false, result })
           setScoutInput(result.seed.code)
+          renderedSeed.current = result.seed.code
+          setScoutedSeed(result.seed.code)
         }
       } catch (error) {
         if (requestId === scoutRequest.current) {
@@ -146,6 +152,7 @@ export default function App() {
             result: current.result,
             error: error instanceof Error ? error.message : String(error),
           }))
+          setScoutedSeed(renderedSeed.current)
         }
       }
     })()
@@ -167,20 +174,28 @@ export default function App() {
     [resultSeeds, scoutedSeed, runScout],
   )
 
-  // J (next) / K (previous) walk the search results while scouting, unless the
-  // user is typing into a field.
+  // J (next) / K (previous) walk the search results while scouting. Inert
+  // while typing in a field, while a modal is open, when the tabbed layout is
+  // showing another pane (navigating would teleport the user to Scout), and
+  // on key repeat (each step scouts a seed; repeats would queue unbounded
+  // requests on the single scout worker).
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) return
+      if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return
+      // Match the letter (mnemonic) or the physical key, so the shortcut
+      // works on layouts without Latin letters.
       const key = event.key.toLowerCase()
-      if (key !== 'j' && key !== 'k') return
+      const delta = key === 'j' || event.code === 'KeyJ' ? 1 : key === 'k' || event.code === 'KeyK' ? -1 : 0
+      if (delta === 0) return
       const target = event.target as HTMLElement | null
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return
-      if (navigateResults(key === 'j' ? 1 : -1)) event.preventDefault()
+      if (document.querySelector('.d1-modal, dialog[open], [role="dialog"]')) return
+      if (window.matchMedia('(max-width: 999px)').matches && activeTab !== 'scout') return
+      if (navigateResults(delta)) event.preventDefault()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [navigateResults])
+  }, [navigateResults, activeTab])
 
   // Horizontal swipes over the scout pane step through the results on touch
   // devices; mostly-vertical gestures stay scrolls.

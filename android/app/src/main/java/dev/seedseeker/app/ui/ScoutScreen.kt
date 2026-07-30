@@ -51,6 +51,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -91,6 +92,7 @@ fun ScoutScreen(
     maximumDepth: Int,
     excludeBlacksmithRewards: Boolean,
     resultSeeds: List<String>,
+    scoutedSeed: String?,
     onScoutSeed: (String) -> Unit,
     onSeedChange: (String) -> Unit,
     onScout: () -> Unit,
@@ -100,10 +102,14 @@ fun ScoutScreen(
 ) {
     val seedIsReady = SeedCode.isCanonical(seedInput)
     // Position within the search results, when the scouted seed came from one.
-    val resultIndex = ScoutResultNavigation.position(resultSeeds, seedInput.takeIf { seedIsReady })
+    val resultIndex = ScoutResultNavigation.position(resultSeeds, scoutedSeed)
     val stepToResult: (Int) -> Unit = { delta ->
-        ScoutResultNavigation.step(resultSeeds, seedInput, delta)?.let(onScoutSeed)
+        ScoutResultNavigation.step(resultSeeds, scoutedSeed, delta)?.let(onScoutSeed)
     }
+    // The gesture coroutine must survive recomposition: search matches stream
+    // in every ~90 ms and restarting pointerInput on them would cancel any
+    // swipe in progress.
+    val currentStepToResult by rememberUpdatedState(stepToResult)
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -130,7 +136,7 @@ fun ScoutScreen(
                 .padding(scaffoldPadding)
                 // Horizontal swipes step through the search results; vertical
                 // drags stay with the list's own scrolling.
-                .pointerInput(resultSeeds, seedInput) {
+                .pointerInput(Unit) {
                     var dragTotal = 0f
                     val threshold = 64.dp.toPx()
                     detectHorizontalDragGestures(
@@ -138,7 +144,7 @@ fun ScoutScreen(
                         onDragCancel = { dragTotal = 0f },
                         onDragEnd = {
                             if (abs(dragTotal) >= threshold) {
-                                stepToResult(if (dragTotal < 0f) 1 else -1)
+                                currentStepToResult(if (dragTotal < 0f) 1 else -1)
                             }
                         },
                     ) { _, dragAmount -> dragTotal += dragAmount }

@@ -112,8 +112,12 @@ export function ScoutPanel({
           >
             ‹
           </button>
-          <span className="d1-scout-nav-pos" aria-live="polite">
-            result <b className="d1-mono">{nav.index + 1} / {nav.total}</b>
+          {/* Only the index is a live region: a running search grows the
+              total ~1,000 times and must not re-announce each change. */}
+          <span className="d1-scout-nav-pos">
+            <span aria-live="polite">Result <b className="d1-mono">{nav.index + 1}</b></span>
+            {' of '}
+            <b className="d1-mono">{nav.total}</b>
           </span>
           <button
             type="button"

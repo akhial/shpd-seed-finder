@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useStore } from '@tanstack/react-store'
 import { compactNumber, formatDuration, probabilityLabel } from '../../lib/format'
 import { CheckIcon, CopyIcon } from '../../lib/icons'
@@ -40,6 +40,12 @@ export function ResultsPanel({
 }) {
   const search = useStore(searchStore)
   const [copied, setCopied] = useState<string | undefined>(undefined)
+
+  // Keep the scouted seed's row in view while J/K/swipe move it.
+  const activeRow = useRef<HTMLLIElement | null>(null)
+  useEffect(() => {
+    activeRow.current?.scrollIntoView({ block: 'nearest' })
+  }, [activeSeed])
 
   const copySeed = (code: string) => {
     void navigator.clipboard.writeText(code).then(() => {
@@ -127,7 +133,11 @@ export function ResultsPanel({
         ) : (
           <ol className="d1-result-list">
             {search.matches.map((match, index) => (
-              <li key={match.code} className={activeSeed === match.code ? 'd1-result-active' : undefined}>
+              <li
+                key={match.code}
+                ref={activeSeed === match.code ? activeRow : undefined}
+                className={activeSeed === match.code ? 'd1-result-active' : undefined}
+              >
                 <button type="button" className="d1-result-main" onClick={() => onScout(match.code)} title="Scout this seed">
                   <span className="d1-result-index">{index + 1}</span>
                   <span className="d1-result-code d1-mono">{match.code}</span>
