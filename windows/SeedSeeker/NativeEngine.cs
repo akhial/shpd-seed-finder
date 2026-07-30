@@ -8,11 +8,14 @@ internal static partial class Native
 {
     private const string Library = "shpd_seedfinder_ffi";
     [LibraryImport(Library)] internal static partial long seedfinder_start_search(byte[] request, nuint length);
+    [LibraryImport(Library)] internal static partial long seedfinder_start_resumed_search(byte[] request, nuint length, ulong resumeFrom, ulong scanLength);
     [LibraryImport(Library)] internal static partial int seedfinder_poll(long handle, uint maximum, out nint packet, out nuint length);
     [LibraryImport(Library)] internal static partial int seedfinder_status(long handle, [Out] long[] status);
+    [LibraryImport(Library)] internal static partial int seedfinder_resume_hint(long handle, [Out] long[] hint);
     [LibraryImport(Library)] internal static partial void seedfinder_cancel(long handle);
     [LibraryImport(Library)] internal static partial void seedfinder_close(long handle);
     [LibraryImport(Library)] internal static partial int seedfinder_scout(byte[] request, nuint length, out nint packet, out nuint outputLength);
+    [LibraryImport(Library)] internal static partial int seedfinder_filter_seeds(byte[] request, nuint length, ulong[] seeds, nuint seedsLength, out nint packet, out nuint outputLength);
     [LibraryImport(Library)] internal static partial void seedfinder_buffer_free(nint packet, nuint length);
 }
 
@@ -49,11 +52,47 @@ public static partial class SeedCode
         var letters = new string(value.ToUpperInvariant().Where(c => c is >= 'A' and <= 'Z').Take(9).ToArray());
         return string.Join('-', Enumerable.Range(0, (letters.Length + 2) / 3).Select(i => letters.Substring(i * 3, Math.Min(3, letters.Length - i * 3))));
     }
+    /// <summary>The numeric seed a canonical code names: nine base-26 letters, A = 0, dashes ignored.</summary>
+    public static ulong Value(string value)
+    {
+        ulong result = 0; var letters = 0;
+        foreach (var c in value)
+        {
+            if (c == '-') continue;
+            if (c is < 'A' or > 'Z' || letters == 9) throw new ArgumentException($"Seed must use XXX-XXX-XXX format: {value}");
+            result = result * 26 + (ulong)(c - 'A'); letters++;
+        }
+        if (letters != 9) throw new ArgumentException($"Seed must use XXX-XXX-XXX format: {value}");
+        return result;
+    }
 }
 
 public sealed class NativeEngine
 {
     public NativeSearch Start(QuerySettings query)
+    {
+        var packet = EncodeQuery(query); var handle = Native.seedfinder_start_search(packet, (nuint)packet.Length);
+        if (handle == 0) throw new InvalidOperationException("The native engine rejected the query.");
+        return new NativeSearch(handle);
+    }
+
+    public NativeSearch StartResumed(QuerySettings query, long resumeFrom, long scanLength)
+    {
+        var packet = EncodeQuery(query); var handle = Native.seedfinder_start_resumed_search(packet, (nuint)packet.Length, (ulong)resumeFrom, (ulong)scanLength);
+        if (handle == 0) throw new InvalidOperationException("The native engine rejected the query.");
+        return new NativeSearch(handle);
+    }
+
+    public IReadOnlyList<string> FilterSeeds(QuerySettings query, IReadOnlyList<string> seeds)
+    {
+        if (seeds.Count == 0) return [];
+        var packet = EncodeQuery(query); var values = seeds.Select(SeedCode.Value).ToArray();
+        var code = Native.seedfinder_filter_seeds(packet, (nuint)packet.Length, values, (nuint)values.Length, out var ptr, out var len);
+        if (code != 0) throw new InvalidOperationException($"Native filter failed ({code}).");
+        return ReadSeedList(CopyAndFree(ptr, len));
+    }
+
+    private static byte[] EncodeQuery(QuerySettings query)
     {
         var w = new Writer(); w.Bytes("SSF7"u8.ToArray()); w.U8(query.MaximumDepth);
         w.U8((query.RequireBlacksmith ? 1 : 0) | (query.FastMode ? 2 : 0) | (query.ExcludeBlacksmithRewards ? 4 : 0));
@@ -64,9 +103,7 @@ public sealed class NativeEngine
             w.U8((int)r.UpgradeMatch); w.U8(r.Upgrade); w.Text(r.Modifier ?? "");
             w.U8(r.Source is null ? 0 : (int)r.Source + 1); w.U8(r.IdentityGroup ?? 0); w.U8(r.MaximumDepth ?? 0); w.U8(r.RequireUncursed ? 1 : 0);
         }
-        var packet = w.Finish(); var handle = Native.seedfinder_start_search(packet, (nuint)packet.Length);
-        if (handle == 0) throw new InvalidOperationException("The native engine rejected the query.");
-        return new NativeSearch(handle);
+        return w.Finish();
     }
 
     public ScoutWorld Scout(string seed, int challenges)
@@ -94,6 +131,13 @@ public sealed class NativeEngine
         try { var bytes = new byte[(int)len]; Marshal.Copy(ptr, bytes, 0, bytes.Length); return bytes; }
         finally { if (ptr != 0) Native.seedfinder_buffer_free(ptr, len); }
     }
+
+    internal static IReadOnlyList<string> ReadSeedList(byte[] bytes)
+    {
+        var r = new Reader(bytes); r.Magic("SSR1");
+        var result = new List<string>(); var count = r.U16(); for (var i = 0; i < count; i++) result.Add(r.Text(r.U8()));
+        return result;
+    }
 }
 
 public sealed class NativeSearch : IDisposable
@@ -104,14 +148,17 @@ public sealed class NativeSearch : IDisposable
     {
         var code = Native.seedfinder_poll(handle, (uint)maximum, out var ptr, out var len);
         if (code != 0) throw new InvalidOperationException($"Native poll failed ({code}).");
-        var r = new Reader(NativeEngine.CopyAndFree(ptr, len)); r.Magic("SSR1");
-        var result = new List<string>(); var count = r.U16(); for (var i = 0; i < count; i++) result.Add(r.Text(r.U8()));
-        return result;
+        return NativeEngine.ReadSeedList(NativeEngine.CopyAndFree(ptr, len));
     }
     public SearchStatus Status()
     {
         var raw = new long[5]; var code = Native.seedfinder_status(handle, raw); if (code != 0) throw new InvalidOperationException($"Native status failed ({code}).");
         return new((SearchState)raw[0], raw[1], raw[2], raw[3], BitConverter.Int64BitsToDouble(raw[4]));
+    }
+    public (long ResumeFrom, long Remaining) ResumeHint()
+    {
+        var hint = new long[2]; var code = Native.seedfinder_resume_hint(handle, hint); if (code != 0) throw new InvalidOperationException($"Native resume hint failed ({code}).");
+        return (hint[0], hint[1]);
     }
     public void Cancel() { if (handle != 0) Native.seedfinder_cancel(handle); }
     public void Dispose() { var old = Interlocked.Exchange(ref handle, 0); if (old != 0) Native.seedfinder_close(old); GC.SuppressFinalize(this); }

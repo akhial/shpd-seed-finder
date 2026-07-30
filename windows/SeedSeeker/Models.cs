@@ -108,6 +108,27 @@ public sealed class QuerySettings
     };
 }
 
+/// <summary>
+/// Decides whether one query narrows another: identical scope, and every baseline
+/// requirement still present (counting duplicates) alongside at least one new one.
+/// Only such queries can refine a finished run's results instead of rescanning.
+/// </summary>
+public static class QueryRefinement
+{
+    public static bool IsRefinement(QuerySettings candidate, QuerySettings baseline)
+    {
+        if (candidate.MaximumDepth != baseline.MaximumDepth || candidate.RequireBlacksmith != baseline.RequireBlacksmith
+            || candidate.ExcludeBlacksmithRewards != baseline.ExcludeBlacksmithRewards || candidate.FastMode != baseline.FastMode
+            || candidate.Challenges != baseline.Challenges) return false;
+        if (candidate.Requirements.Count <= baseline.Requirements.Count) return false;
+        var remaining = candidate.Requirements.Select(Signature).ToList();
+        return baseline.Requirements.All(r => remaining.Remove(Signature(r)));
+    }
+
+    private static string Signature(ItemRequirement r) =>
+        $"{r.Item?.Id}|{r.Upgrade}|{r.Modifier}|{r.Kind}|{r.Tier}|{r.TierMatch}|{r.UpgradeMatch}|{r.Source}|{r.IdentityGroup}|{r.MaximumDepth}|{r.RequireUncursed}";
+}
+
 public sealed class QueryPreset
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();

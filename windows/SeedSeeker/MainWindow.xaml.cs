@@ -28,6 +28,8 @@ public sealed partial class MainWindow : Window
     private QuerySettings query = new();
     private List<QueryPreset> userPresets = [];
     private NativeSearch? search;
+    /// <summary>The last finished run, kept so a strictly narrower query can refine it instead of rescanning.</summary>
+    private BaseRun? baseRun;
     private bool restoring = true;
     private const int ResultCap = 1024;
     private static readonly string SettingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Seed Seeker", "query.json");
@@ -64,6 +66,8 @@ public sealed partial class MainWindow : Window
     }
 
     private sealed class UpdateState { public string? SkippedVersion { get; set; } public DateTimeOffset LastChecked { get; set; } }
+
+    private sealed record BaseRun(QuerySettings Query, IReadOnlyList<string> Seeds, long ResumeFrom, long Remaining);
 
     private async Task CheckForUpdatesAsync()
     {
@@ -166,9 +170,10 @@ public sealed partial class MainWindow : Window
         RequirementList.ItemsSource = query.Requirements; NoRequirements.Visibility = query.Requirements.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         FloorLabel.Text = $"first {query.MaximumDepth} floor{(query.MaximumDepth == 1 ? "" : "s")}"; RequireBlacksmith.IsEnabled = query.MaximumDepth < 14; StartButton.IsEnabled = search is not null || query.Requirements.Count != 0;
         var count = BitOperations.PopCount((uint)query.Challenges); ChallengeSummary.Text = count == 0 ? "None" : $"{count} enabled";
+        UpdateRefineButton();
     }
     private void FloorSlider_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e) { if (restoring || FloorLabel is null) return; query.MaximumDepth = (int)e.NewValue; RefreshQuery(); SaveSettings(); }
-    private void SettingChanged(object sender, RoutedEventArgs e) { if (restoring) return; query.RequireBlacksmith = RequireBlacksmith.IsOn; query.ExcludeBlacksmithRewards = ExcludeRewards.IsOn; query.FastMode = FastMode.IsOn; SaveSettings(); }
+    private void SettingChanged(object sender, RoutedEventArgs e) { if (restoring) return; query.RequireBlacksmith = RequireBlacksmith.IsOn; query.ExcludeBlacksmithRewards = ExcludeRewards.IsOn; query.FastMode = FastMode.IsOn; SaveSettings(); UpdateRefineButton(); }
 
     private async void AddRequirement_Click(object sender, RoutedEventArgs e) { var r = new ItemRequirement { Kind = ItemKind.Weapon, UpgradeMatch = UpgradeMatch.Any }; if (await EditRequirement(r, true)) { query.Requirements.Add(r); RefreshQuery(); SaveSettings(); } }
     private async void Requirement_Click(object sender, RoutedEventArgs e)
@@ -465,8 +470,43 @@ public sealed partial class MainWindow : Window
     private async void Start_Click(object sender, RoutedEventArgs e)
     {
         if (search is not null) { search.Cancel(); StartButton.IsEnabled = false; return; } results.Clear(); SearchStatus.Text = "Starting search…"; SetStartButton(running: true);
-        try { search = await Task.Run(() => engine.Start(query)); await RunSearch(search); } catch (Exception ex) { SearchStatus.Text = $"Failed: {ex.Message}"; }
+        try { var snapshot = query.Clone(); search = await Task.Run(() => engine.Start(snapshot)); await RunSearch(search); await CaptureBaseRun(snapshot, search); } catch (Exception ex) { SearchStatus.Text = $"Failed: {ex.Message}"; baseRun = null; }
         finally { search?.Dispose(); search = null; SetStartButton(running: false); StartButton.IsEnabled = query.Requirements.Count != 0; }
+    }
+    private async void Refine_Click(object sender, RoutedEventArgs e)
+    {
+        if (search is not null || baseRun is null || !QueryRefinement.IsRefinement(query, baseRun.Query)) return;
+        var previous = baseRun; var snapshot = query.Clone(); results.Clear(); SearchStatus.Text = "Filtering previous results…"; SetStartButton(running: true); StartButton.IsEnabled = false;
+        try
+        {
+            var kept = await Task.Run(() => engine.FilterSeeds(snapshot, previous.Seeds));
+            foreach (var seed in kept) if (results.Count < ResultCap) results.Add(new(seed, results.Count + 1));
+            var prefix = $"Refined: kept {kept.Count} of {previous.Seeds.Count} previous seed{(previous.Seeds.Count == 1 ? "" : "s")}";
+            if (previous.Remaining > 0)
+            {
+                SearchStatus.Text = $"{prefix} — searching for more…";
+                search = await Task.Run(() => engine.StartResumed(snapshot, previous.ResumeFrom, previous.Remaining));
+                StartButton.IsEnabled = true;
+                await RunSearch(search, [.. kept], prefix); await CaptureBaseRun(snapshot, search);
+            }
+            else { SearchStatus.Text = $"{prefix}\nCompleted"; baseRun = new(snapshot, [.. kept], previous.ResumeFrom, 0); }
+        }
+        catch (Exception ex) { SearchStatus.Text = $"Failed: {ex.Message}"; baseRun = null; }
+        finally { search?.Dispose(); search = null; SetStartButton(running: false); StartButton.IsEnabled = query.Requirements.Count != 0; }
+    }
+    /// <summary>
+    /// Remembers the run a follow-up query could refine: the query as it ran, the
+    /// seeds shown, and where a resumed scan must pick up. Called after the poll
+    /// loop ends but before the session is disposed, since the hint is only exact
+    /// once the session has actually stopped.
+    /// </summary>
+    private async Task CaptureBaseRun(QuerySettings ranQuery, NativeSearch active)
+    {
+        var status = await Task.Run(active.Status);
+        while (status.State == SearchState.Running) { await Task.Delay(50); status = await Task.Run(active.Status); }
+        if (status.State == SearchState.Failed) { baseRun = null; return; }
+        var (resumeFrom, remaining) = await Task.Run(active.ResumeHint);
+        baseRun = new(ranQuery, results.Select(x => x.Seed).ToList(), resumeFrom, remaining);
     }
     private void SetStartButton(bool running)
     {
@@ -476,16 +516,21 @@ public sealed partial class MainWindow : Window
         SavePresetButton.IsEnabled = !running;
         DeletePresetButton.IsEnabled = !running
             && PresetPicker.SelectedItem is QueryPreset { IsBuiltIn: false };
+        if (running) RefineButton.Visibility = Visibility.Collapsed; else UpdateRefineButton();
     }
-    private async Task RunSearch(NativeSearch active)
+    private void UpdateRefineButton() => RefineButton.Visibility =
+        search is null && baseRun is not null && QueryRefinement.IsRefinement(query, baseRun.Query)
+            ? Visibility.Visible : Visibility.Collapsed;
+    private async Task RunSearch(NativeSearch active, HashSet<string>? existing = null, string? prefix = null)
     {
         var timer = Stopwatch.StartNew(); long lastScanned = 0; var lastTime = 0d;
         while (true)
         {
-            await Task.Delay(150); var pollCount = Math.Max(1, Math.Min(128, ResultCap - results.Count)); var batch = await Task.Run(() => active.Poll(pollCount)); foreach (var seed in batch) if (results.Count < ResultCap) results.Add(new(seed, results.Count + 1));
+            await Task.Delay(150); var pollCount = Math.Max(1, Math.Min(128, ResultCap - results.Count)); var batch = await Task.Run(() => active.Poll(pollCount)); foreach (var seed in batch) if (results.Count < ResultCap && (existing is null || existing.Add(seed))) results.Add(new(seed, results.Count + 1));
             var status = await Task.Run(active.Status); var seconds = timer.Elapsed.TotalSeconds; var rate = seconds > lastTime ? (status.Scanned - lastScanned) / (seconds - lastTime) : 0; lastScanned = status.Scanned; lastTime = seconds;
             var probability = status.Probability > 0 ? $"{status.Probability:P4}" : "calculating"; var tts = status.Probability > 0 && rate > 0 ? FormatDuration(1 / status.Probability / rate) : "calculating";
-            SearchStatus.Text = status.State == SearchState.Running ? $"Seed match probability: {probability}   •   TTS @ {rate:N0} seeds/s: {tts}\nTime elapsed: {FormatDuration(seconds)}" : status.State switch { SearchState.Completed => "Completed", SearchState.Cancelled => "Cancelled", _ => $"Failed (error {status.ErrorCode})" };
+            var line = status.State == SearchState.Running ? $"Seed match probability: {probability}   •   TTS @ {rate:N0} seeds/s: {tts}\nTime elapsed: {FormatDuration(seconds)}" : status.State switch { SearchState.Completed => "Completed", SearchState.Cancelled => "Cancelled", _ => $"Failed (error {status.ErrorCode})" };
+            SearchStatus.Text = prefix is null ? line : $"{prefix}\n{line}";
             if (results.Count >= ResultCap) { active.Cancel(); SearchStatus.Text += "\nResult limit reached (1,024 seeds)."; } if (status.State != SearchState.Running || results.Count >= ResultCap) break;
         }
     }
