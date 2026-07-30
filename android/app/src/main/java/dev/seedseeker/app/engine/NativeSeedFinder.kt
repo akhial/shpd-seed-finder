@@ -4,6 +4,7 @@ package dev.seedseeker.app.engine
 import dev.seedseeker.app.BuildConfig
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.Challenge
+import dev.seedseeker.app.model.ResumeHint
 import dev.seedseeker.app.model.SearchBatch
 import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.SearchState
@@ -26,12 +27,15 @@ import kotlin.math.min
 /** A deliberately small boundary shared by the Compose UI, demo engine, and Rust JNI adapter. */
 interface NativeSeedFinder {
     fun startSearch(request: SearchRequest): NativeSearchSession
+    fun startResumedSearch(request: SearchRequest, resumeFrom: Long, scanLen: Long): NativeSearchSession
+    fun filterSeeds(request: SearchRequest, seeds: List<String>): List<String>
     fun scoutSeed(seed: String, challenges: Int = 0): ScoutWorld
 }
 
 interface NativeSearchSession : AutoCloseable {
     fun poll(maxResults: Int = 32): SearchBatch
     fun status(): SearchStatus
+    fun resumeHint(): ResumeHint
     fun cancel()
     override fun close()
 }
@@ -50,6 +54,24 @@ object NativeSeedFinderFactory {
  */
 class DemoNativeSeedFinder : NativeSeedFinder {
     override fun startSearch(request: SearchRequest): NativeSearchSession = DemoSession(request)
+
+    override fun startResumedSearch(
+        request: SearchRequest,
+        resumeFrom: Long,
+        scanLen: Long,
+    ): NativeSearchSession {
+        require(resumeFrom >= 0 && scanLen > 0) { "Resume window must be non-empty" }
+        // Emit the odd-indexed samples so a refine visibly appends seeds the demo filter dropped.
+        return DemoSession(
+            request,
+            seeds = SAMPLE_SEEDS.filterIndexed { index, _ -> index % 2 == 1 },
+            durationMs = RESUMED_DEMO_DURATION_MS,
+            totalSeeds = scanLen,
+        )
+    }
+
+    override fun filterSeeds(request: SearchRequest, seeds: List<String>): List<String> =
+        seeds.filterIndexed { index, _ -> index % 2 == 0 }
 
     override fun scoutSeed(seed: String, challenges: Int): ScoutWorld {
         require(SeedCode.isCanonical(seed)) { "Seed must use XXX-XXX-XXX format" }
@@ -106,7 +128,12 @@ class DemoNativeSeedFinder : NativeSeedFinder {
         )
     }
 
-    private class DemoSession(private val request: SearchRequest) : NativeSearchSession {
+    private class DemoSession(
+        private val request: SearchRequest,
+        private val seeds: List<String> = SAMPLE_SEEDS,
+        private val durationMs: Long = DEMO_DURATION_MS,
+        private val totalSeeds: Long = TOTAL_SEEDS,
+    ) : NativeSearchSession {
         private val startedAt = System.nanoTime()
         private var emitted = 0
         private var cancelled = false
@@ -116,9 +143,9 @@ class DemoNativeSeedFinder : NativeSeedFinder {
             check(!closed) { "Search session is closed" }
             if (cancelled || maxResults <= 0) return SearchBatch(emptyList())
 
-            val available = min(SAMPLE_SEEDS.size, (elapsedMillis() / 620L).toInt())
+            val available = min(seeds.size, (elapsedMillis() / 620L).toInt())
             val end = min(available, emitted + maxResults)
-            val newResults = SAMPLE_SEEDS.subList(emitted, end).map { seed ->
+            val newResults = seeds.subList(emitted, end).map { seed ->
                 SeedResult(seed, request.requirements.size)
             }
             emitted = end
@@ -130,14 +157,23 @@ class DemoNativeSeedFinder : NativeSeedFinder {
             val elapsed = elapsedMillis()
             val state = when {
                 cancelled -> SearchState.CANCELLED
-                elapsed >= DEMO_DURATION_MS -> SearchState.COMPLETED
+                elapsed >= durationMs -> SearchState.COMPLETED
                 else -> SearchState.RUNNING
             }
             SearchStatus(
                 state = state,
-                scannedSeeds = min(TOTAL_SEEDS, elapsed * DEMO_SEEDS_PER_MS),
-                totalSeeds = TOTAL_SEEDS,
+                scannedSeeds = min(totalSeeds, elapsed * DEMO_SEEDS_PER_MS),
+                totalSeeds = totalSeeds,
                 matchProbability = DEMO_MATCH_PROBABILITY,
+            )
+        }
+
+        override fun resumeHint(): ResumeHint = synchronized(this) {
+            check(!closed) { "Search session is closed" }
+            // A cancelled demo run always claims a small leftover window so refine resumes.
+            ResumeHint(
+                position = DEMO_RESUME_POSITION,
+                remaining = if (cancelled) DEMO_RESUME_REMAINING else 0L,
             )
         }
 
@@ -155,8 +191,11 @@ class DemoNativeSeedFinder : NativeSeedFinder {
     private companion object {
         const val TOTAL_SEEDS = 5_429_503_678_976L // 26^9, rendered as XXX-XXX-XXX.
         const val DEMO_DURATION_MS = 4_250L
+        const val RESUMED_DEMO_DURATION_MS = 1_500L
         const val DEMO_SEEDS_PER_MS = 1_277_530_277L
         const val DEMO_MATCH_PROBABILITY = 7.857_777_777_777_78e-9
+        const val DEMO_RESUME_POSITION = 2_714_751_839_488L // Halfway through the seed space.
+        const val DEMO_RESUME_REMAINING = 250_000_000L
         val SAMPLE_SEEDS = listOf(
             "QHP-YZK-NGV",
             "WDX-KMF-RTA",
@@ -179,6 +218,12 @@ class DemoNativeSeedFinder : NativeSeedFinder {
  * 4. `cancel(handle)` is cooperative and safe to repeat.
  * 5. `close(handle)` joins/releases native resources and is safe after any terminal state.
  * 6. `scoutSeed(requestBytes) -> scoutBytes` generates one canonical seed through depth 24.
+ * 7. `startResumedSearch(requestBytes, resumeFrom, scanLen) -> handle` scans `scanLen` seeds
+ *    from `resumeFrom`, wrapping at 26^9, with the same lifecycle as `startSearch`.
+ * 8. `resumeHint(handle) -> long[2]` returns where and how much a follow-up traversal must
+ *    scan to finish this session's coverage; exact once the session has stopped.
+ * 9. `filterSeeds(requestBytes, seedValues) -> resultBytes` re-verifies numeric seed values
+ *    against the full query and returns the survivors, in input order, as a result packet.
  *
  * Search requests always use `SSF7`: magic, maxDepth:u8, flags:u8, challenges:u16 little-endian,
  * requirementCount:u16 big-endian, followed by repeated
@@ -214,6 +259,22 @@ class JniNativeSeedFinder(
         return JniSession(handle, request.requirements.size, bindings)
     }
 
+    override fun startResumedSearch(
+        request: SearchRequest,
+        resumeFrom: Long,
+        scanLen: Long,
+    ): NativeSearchSession {
+        val handle = bindings.startResumedSearch(QueryCodec.encode(request), resumeFrom, scanLen)
+        check(handle != 0L) { "Native seed finder returned an invalid handle" }
+        return JniSession(handle, request.requirements.size, bindings)
+    }
+
+    override fun filterSeeds(request: SearchRequest, seeds: List<String>): List<String> {
+        val values = LongArray(seeds.size) { SeedCode.value(seeds[it]) }
+        val packet = bindings.filterSeeds(QueryCodec.encode(request), values)
+        return ResultCodec.decode(packet, request.requirements.size).map { it.seed }
+    }
+
     private class JniSession(
         private val handle: Long,
         private val requirementCount: Int,
@@ -246,6 +307,16 @@ class JniNativeSeedFinder(
             )
         }
 
+        override fun resumeHint(): ResumeHint = synchronized(this) {
+            check(!closed) { "Search session is closed" }
+            val values = bindings.resumeHint(handle)
+            check(values.size == 2) { "Native resume hint must contain two values" }
+            ResumeHint(
+                position = values[0].coerceAtLeast(0),
+                remaining = values[1].coerceAtLeast(0),
+            )
+        }
+
         override fun cancel() = synchronized(this) {
             if (!closed) bindings.cancel(handle)
         }
@@ -261,11 +332,14 @@ class JniNativeSeedFinder(
 
 interface NativeBindings {
     fun startSearch(request: ByteArray): Long
+    fun startResumedSearch(request: ByteArray, resumeFrom: Long, scanLen: Long): Long
     fun poll(handle: Long, maxResults: Int): ByteArray
     fun status(handle: Long): LongArray
+    fun resumeHint(handle: Long): LongArray
     fun cancel(handle: Long)
     fun close(handle: Long)
     fun scoutSeed(request: ByteArray): ByteArray
+    fun filterSeeds(request: ByteArray, seeds: LongArray): ByteArray
 }
 
 /** Exact class and static method names are retained by ProGuard for Rust's exported JNI symbols. */
@@ -275,20 +349,28 @@ object JniBindings {
     }
 
     @JvmStatic external fun startSearch(request: ByteArray): Long
+    @JvmStatic external fun startResumedSearch(request: ByteArray, resumeFrom: Long, scanLen: Long): Long
     @JvmStatic external fun poll(handle: Long, maxResults: Int): ByteArray
     @JvmStatic external fun status(handle: Long): LongArray
+    @JvmStatic external fun resumeHint(handle: Long): LongArray
     @JvmStatic external fun cancel(handle: Long)
     @JvmStatic external fun close(handle: Long)
     @JvmStatic external fun scoutSeed(request: ByteArray): ByteArray
+    @JvmStatic external fun filterSeeds(request: ByteArray, seeds: LongArray): ByteArray
 }
 
 private object JniBindingsAdapter : NativeBindings {
     override fun startSearch(request: ByteArray) = JniBindings.startSearch(request)
+    override fun startResumedSearch(request: ByteArray, resumeFrom: Long, scanLen: Long) =
+        JniBindings.startResumedSearch(request, resumeFrom, scanLen)
     override fun poll(handle: Long, maxResults: Int) = JniBindings.poll(handle, maxResults)
     override fun status(handle: Long) = JniBindings.status(handle)
+    override fun resumeHint(handle: Long) = JniBindings.resumeHint(handle)
     override fun cancel(handle: Long) = JniBindings.cancel(handle)
     override fun close(handle: Long) = JniBindings.close(handle)
     override fun scoutSeed(request: ByteArray) = JniBindings.scoutSeed(request)
+    override fun filterSeeds(request: ByteArray, seeds: LongArray) =
+        JniBindings.filterSeeds(request, seeds)
 }
 
 object SeedCode {
@@ -304,6 +386,14 @@ object SeedCode {
     }
 
     fun isCanonical(seed: String): Boolean = PATTERN.matches(seed)
+
+    /** Numeric value of a canonical seed: nine base-26 letters, A = 0, dashes ignored. */
+    fun value(seed: String): Long {
+        require(isCanonical(seed)) { "Seed must use XXX-XXX-XXX format" }
+        return seed.asSequence()
+            .filter { it != '-' }
+            .fold(0L) { total, letter -> total * 26 + (letter - 'A') }
+    }
 }
 
 object QueryCodec {

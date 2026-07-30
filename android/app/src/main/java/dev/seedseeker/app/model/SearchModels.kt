@@ -138,6 +138,25 @@ data class SearchRequest(
     }
 }
 
+/**
+ * True when this request only narrows [base]: identical scope and a strict multiset superset of
+ * its requirements (ignoring UI list keys). Such a query can reuse the base run's results and
+ * finish by rescanning only the seeds the base run never reached.
+ */
+fun SearchRequest.isRefinementOf(base: SearchRequest): Boolean {
+    if (maximumDepth != base.maximumDepth ||
+        challenges != base.challenges ||
+        requireBlacksmith != base.requireBlacksmith ||
+        excludeBlacksmithRewards != base.excludeBlacksmithRewards ||
+        fastMode != base.fastMode
+    ) {
+        return false
+    }
+    if (requirements.size <= base.requirements.size) return false
+    val unmatched = requirements.mapTo(mutableListOf()) { it.copy(key = 0) }
+    return base.requirements.all { unmatched.remove(it.copy(key = 0)) }
+}
+
 enum class Challenge(
     val bit: Int,
     val displayName: String,
@@ -226,6 +245,12 @@ data class SearchStatus(
     val totalSeeds: Long,
     val errorCode: Long = 0,
     val matchProbability: Double = 0.0,
+)
+
+/** Where and how much a follow-up traversal must scan to finish a session's coverage. */
+data class ResumeHint(
+    val position: Long,
+    val remaining: Long,
 )
 
 data class SearchBatch(val results: List<SeedResult>)

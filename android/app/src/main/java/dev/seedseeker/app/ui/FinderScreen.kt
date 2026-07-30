@@ -32,6 +32,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -83,6 +84,8 @@ fun FinderScreen(
     seedsPerSecond: Double,
     elapsedSeconds: Long,
     isSearching: Boolean,
+    canRefine: Boolean,
+    isRefined: Boolean,
     error: String?,
     onAbout: () -> Unit,
     onChallenges: () -> Unit,
@@ -97,6 +100,7 @@ fun FinderScreen(
     onExcludeBlacksmithRewardsChange: (Boolean) -> Unit,
     onFastModeChange: (Boolean) -> Unit,
     onSearch: () -> Unit,
+    onRefine: () -> Unit,
     onCancel: () -> Unit,
     onScoutSeed: (String) -> Unit,
     bottomBar: @Composable () -> Unit,
@@ -131,7 +135,9 @@ fun FinderScreen(
                     seedsPerSecond = seedsPerSecond,
                     elapsedSeconds = elapsedSeconds,
                     isSearching = isSearching,
+                    canRefine = canRefine,
                     onSearch = onSearch,
+                    onRefine = onRefine,
                     onCancel = onCancel,
                 )
                 bottomBar()
@@ -160,6 +166,7 @@ fun FinderScreen(
                     results = results,
                     status = status,
                     isSearching = isSearching,
+                    isRefined = isRefined,
                     error = error,
                     onAdd = onAdd,
                     onEdit = onEdit,
@@ -238,6 +245,7 @@ private fun QueryHeader(
     results: List<SeedResult>,
     status: SearchStatus?,
     isSearching: Boolean,
+    isRefined: Boolean,
     error: String?,
     onAdd: () -> Unit,
     onEdit: (ItemRequirement) -> Unit,
@@ -299,7 +307,10 @@ private fun QueryHeader(
         )
         Text(
             when {
+                isSearching && isRefined -> "Results — ${results.size} · refining"
                 isSearching -> "Results — ${results.size} · live"
+                status?.state == SearchState.COMPLETED && isRefined ->
+                    "Results — ${results.size} · refined"
                 status?.state == SearchState.COMPLETED -> "Results — ${results.size} found"
                 status?.state == SearchState.CANCELLED -> "Results — ${results.size} · cancelled"
                 else -> "Results"
@@ -524,7 +535,9 @@ private fun SearchActionBar(
     seedsPerSecond: Double,
     elapsedSeconds: Long,
     isSearching: Boolean,
+    canRefine: Boolean,
     onSearch: () -> Unit,
+    onRefine: () -> Unit,
     onCancel: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
@@ -554,15 +567,31 @@ private fun SearchActionBar(
                     }
                 }
             } else {
-                Button(
-                    onClick = onSearch,
-                    enabled = requirementCount > 0,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
-                    shapes = ButtonDefaults.shapes(),
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Text("Search", style = MaterialTheme.typography.titleMedium)
+                    if (canRefine) {
+                        FilledTonalButton(
+                            onClick = onRefine,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            shapes = ButtonDefaults.shapes(),
+                        ) {
+                            Text("Refine", style = MaterialTheme.typography.titleMedium)
+                        }
+                    }
+                    Button(
+                        onClick = onSearch,
+                        enabled = requirementCount > 0,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                        shapes = ButtonDefaults.shapes(),
+                    ) {
+                        Text("Search", style = MaterialTheme.typography.titleMedium)
+                    }
                 }
             }
         }

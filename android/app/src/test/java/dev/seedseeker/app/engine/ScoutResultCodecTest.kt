@@ -245,9 +245,13 @@ class ScoutResultCodecTest {
         }
 
         override fun startSearch(request: ByteArray): Long = error("not used")
+        override fun startResumedSearch(request: ByteArray, resumeFrom: Long, scanLen: Long): Long =
+            error("not used")
         override fun poll(handle: Long, maxResults: Int): ByteArray = error("not used")
         override fun status(handle: Long): LongArray = error("not used")
+        override fun resumeHint(handle: Long): LongArray = error("not used")
         override fun cancel(handle: Long) = error("not used")
         override fun close(handle: Long) = error("not used")
+        override fun filterSeeds(request: ByteArray, seeds: LongArray): ByteArray = error("not used")
     }
 }

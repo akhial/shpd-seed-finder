@@ -49,6 +49,7 @@ import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.SearchState
 import dev.seedseeker.app.model.SearchStatus
 import dev.seedseeker.app.model.SeedResult
+import dev.seedseeker.app.model.isRefinementOf
 import dev.seedseeker.app.update.UpdateChecker
 import dev.seedseeker.app.update.UpdateInfo
 import kotlinx.coroutines.CancellationException
@@ -68,7 +69,23 @@ private const val UPDATE_SKIPPED_KEY = "update_skipped_version"
 private const val UPDATE_CHECK_INTERVAL_MILLIS = 24L * 60 * 60 * 1000
 
 private enum class Destination { FINDER, SCOUT, CHALLENGES, ABOUT }
-private data class SearchRun(val id: Long, val request: SearchRequest)
+private data class SearchRun(val id: Long, val request: SearchRequest, val refine: RefineSpec? = null)
+
+/** Resume window and previously shown seeds a refine run starts from. */
+private data class RefineSpec(
+    val resumeFrom: Long,
+    val remaining: Long,
+    val keepSeeds: List<SeedResult>,
+)
+
+/** A finished (completed or cancelled) run that a stricter follow-up query may refine. */
+private data class FinishedRun(
+    val request: SearchRequest,
+    val resumeFrom: Long,
+    val remaining: Long,
+    val results: List<SeedResult>,
+)
+
 private data class ScoutRun(val id: Long, val seed: String, val challenges: Int)
 
 @Composable
@@ -122,6 +139,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
     var activeSession by remember { mutableStateOf<NativeSearchSession?>(null) }
     var run by remember { mutableStateOf<SearchRun?>(null) }
     var nextRunId by remember { mutableLongStateOf(1L) }
+    var lastFinishedRun by remember { mutableStateOf<FinishedRun?>(null) }
     var isSearching by remember { mutableStateOf(false) }
     var searchError by remember { mutableStateOf<String?>(null) }
     var scoutInput by remember { mutableStateOf("") }
@@ -160,7 +178,6 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
         val currentRun = run ?: return@LaunchedEffect
         isSearching = true
         searchError = null
-        results = emptyList()
         searchStatus = null
         searchSeedsPerSecond = 0.0
         searchElapsedSeconds = 0L
@@ -171,18 +188,42 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
 
         var session: NativeSearchSession? = null
         try {
+            val refine = currentRun.refine
+            if (refine == null) {
+                results = emptyList()
+            } else {
+                // Re-verify the seeds already on screen against the narrowed query, then
+                // rescan only the window the base run never reached.
+                val kept = withContext(Dispatchers.Default) {
+                    engine.filterSeeds(currentRun.request, refine.keepSeeds.map { it.seed })
+                }
+                results = kept.map { SeedResult(it, currentRun.request.requirements.size) }
+                if (refine.remaining == 0L) {
+                    searchStatus = SearchStatus(SearchState.COMPLETED, 0, 0)
+                    lastFinishedRun = FinishedRun(currentRun.request, refine.resumeFrom, 0, results)
+                    return@LaunchedEffect
+                }
+            }
+
             val openedSession = withContext(Dispatchers.Default) {
-                engine.startSearch(currentRun.request)
+                if (refine == null) {
+                    engine.startSearch(currentRun.request)
+                } else {
+                    engine.startResumedSearch(currentRun.request, refine.resumeFrom, refine.remaining)
+                }
             }
             session = openedSession
             activeSession = openedSession
 
+            val seenSeeds = results.mapTo(mutableSetOf()) { it.seed }
             while (true) {
                 val (batch, status) = withContext(Dispatchers.Default) {
                     openedSession.poll(24) to openedSession.status()
                 }
-                if (batch.results.isNotEmpty()) {
-                    results = results + batch.results
+                // The results list keys a LazyColumn by seed, so drop seeds the filter kept.
+                val newResults = batch.results.filter { seenSeeds.add(it.seed) }
+                if (newResults.isNotEmpty()) {
+                    results = results + newResults
                 }
                 val statusTime = System.nanoTime()
                 searchElapsedSeconds = (statusTime - searchStartedAt) / 1_000_000_000L
@@ -203,8 +244,18 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                         2_001L -> "A native world-generation worker stopped unexpectedly."
                         else -> "The native search stopped with error ${status.errorCode}."
                     }
+                    lastFinishedRun = null
                 }
-                if (status.state != SearchState.RUNNING) break
+                if (status.state != SearchState.RUNNING) {
+                    if (status.state != SearchState.FAILED) {
+                        // The hint is only exact once the session has stopped, and it must be
+                        // read before the finally block closes the handle.
+                        val hint = withContext(Dispatchers.Default) { openedSession.resumeHint() }
+                        lastFinishedRun =
+                            FinishedRun(currentRun.request, hint.position, hint.remaining, results)
+                    }
+                    break
+                }
                 delay(90)
             }
         } catch (cancelled: CancellationException) {
@@ -212,6 +263,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
         } catch (failure: Throwable) {
             searchError = failure.message ?: "The native search engine could not start."
             searchStatus = SearchStatus(SearchState.FAILED, 0, 0, -1)
+            lastFinishedRun = null
         } finally {
             activeSession = null
             isSearching = false
@@ -249,6 +301,21 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
         }
     }
 
+    // Null while the query is not runnable (for example, no requirements yet).
+    val currentRequest = runCatching {
+        SearchRequest(
+            requirements = requirements,
+            maximumDepth = maximumDepth,
+            challenges = challenges,
+            requireBlacksmith = requireBlacksmith,
+            excludeBlacksmithRewards = excludeBlacksmithRewards,
+            fastMode = fastMode,
+        )
+    }.getOrNull()
+    val refineBase = lastFinishedRun
+    val canRefine = !isSearching && refineBase != null && currentRequest != null &&
+        currentRequest.isRefinementOf(refineBase.request)
+
     val navBar: @Composable () -> Unit = {
         SeedSeekerNavBar(
             current = destination,
@@ -276,6 +343,8 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                 seedsPerSecond = searchSeedsPerSecond,
                 elapsedSeconds = searchElapsedSeconds,
                 isSearching = isSearching,
+                canRefine = canRefine,
+                isRefined = run?.refine != null,
                 error = searchError,
                 onAbout = {
                     aboutReturnDestination = Destination.FINDER
@@ -345,6 +414,16 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                                 excludeBlacksmithRewards = excludeBlacksmithRewards,
                                 fastMode = fastMode,
                             ),
+                        )
+                    }
+                },
+                onRefine = {
+                    // canRefine already smart-casts refineBase and currentRequest to non-null.
+                    if (canRefine) {
+                        run = SearchRun(
+                            nextRunId++,
+                            currentRequest,
+                            RefineSpec(refineBase.resumeFrom, refineBase.remaining, refineBase.results),
                         )
                     }
                 },
