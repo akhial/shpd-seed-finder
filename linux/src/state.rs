@@ -644,7 +644,15 @@ mod tests {
 
     #[test]
     fn empty_boss_floor_limits_normalize_to_the_floor_below() {
-        for (limit, expected) in [(4, 4), (5, 4), (9, 9), (10, 9), (14, 14), (15, 14), (24, 24)] {
+        for (limit, expected) in [
+            (4, 4),
+            (5, 4),
+            (9, 9),
+            (10, 9),
+            (14, 14),
+            (15, 14),
+            (24, 24),
+        ] {
             assert_eq!(normalize_floor_limit(limit), expected);
         }
     }
