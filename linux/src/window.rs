@@ -84,18 +84,31 @@ pub fn present(app: &adw::Application) {
     // Actions and cross-pane wiring.
 
     let start_action = gio::SimpleAction::new("start-search", None);
+    let refine_action = gio::SimpleAction::new("refine-search", None);
     let refresh_all: Rc<dyn Fn()> = Rc::new({
         let state = Rc::clone(&state);
         let query = Rc::clone(&query);
         let detail = Rc::clone(&detail);
         let results = Rc::clone(&results);
         let start_action = start_action.clone();
+        let refine_action = refine_action.clone();
         move || {
             let snapshot = state.borrow();
             persist::save(&snapshot);
             query.refresh(&snapshot);
             detail.render(&snapshot);
             start_action.set_enabled(!snapshot.requirements.is_empty() || results.is_running());
+            // Refining is offered only while the edited query strictly
+            // extends the finished search: the found seeds then remain valid
+            // candidates and the scan can pick up where it stopped.
+            let refine_eligible = !results.is_running()
+                && results.refine_target().is_some_and(|base| {
+                    snapshot
+                        .to_query()
+                        .is_ok_and(|current| crate::state::extends_query(&current, &base))
+                });
+            refine_action.set_enabled(refine_eligible);
+            query.set_refine_offered(refine_eligible);
         }
     });
 
@@ -172,11 +185,12 @@ pub fn present(app: &adw::Application) {
     });
     results.connect_finished({
         let query = Rc::clone(&query);
-        let state = Rc::clone(&state);
-        let start_action = start_action.clone();
+        let refresh_all = Rc::clone(&refresh_all);
         move || {
             query.set_running(false);
-            start_action.set_enabled(!state.borrow().requirements.is_empty());
+            // Re-derives the enabled actions, including whether the finished
+            // search can now be refined.
+            refresh_all();
         }
     });
     detail.connect_scout({
@@ -192,6 +206,7 @@ pub fn present(app: &adw::Application) {
         let toasts = toasts.clone();
         let inner_split = inner_split.clone();
         let outer_split = outer_split.clone();
+        let refresh_all = Rc::clone(&refresh_all);
         move |_, _| {
             if results.is_running() {
                 results.cancel();
@@ -204,6 +219,7 @@ pub fn present(app: &adw::Application) {
                         query.set_running(true);
                         outer_split.set_show_content(true);
                         inner_split.set_show_content(false);
+                        refresh_all();
                     }
                 }
                 Err(message) => toasts.add_toast(adw::Toast::new(&message)),
@@ -211,6 +227,34 @@ pub fn present(app: &adw::Application) {
         }
     });
     window.add_action(&start_action);
+
+    refine_action.connect_activate({
+        let state = Rc::clone(&state);
+        let query = Rc::clone(&query);
+        let results = Rc::clone(&results);
+        let toasts = toasts.clone();
+        let inner_split = inner_split.clone();
+        let outer_split = outer_split.clone();
+        let refresh_all = Rc::clone(&refresh_all);
+        move |_, _| {
+            if results.is_running() {
+                return;
+            }
+            match state.borrow().to_query() {
+                Ok(search_query) => {
+                    results.refine(search_query);
+                    if results.is_running() {
+                        query.set_running(true);
+                        outer_split.set_show_content(true);
+                        inner_split.set_show_content(false);
+                        refresh_all();
+                    }
+                }
+                Err(message) => toasts.add_toast(adw::Toast::new(&message)),
+            }
+        }
+    });
+    window.add_action(&refine_action);
 
     let add_action = gio::SimpleAction::new("add-requirement", None);
     add_action.connect_activate({
@@ -293,6 +337,7 @@ fn present_shortcuts(window: &adw::ApplicationWindow) {
     for (title, accelerator) in [
         ("Add requirement", "<primary>n"),
         ("Start or stop the search", "<primary>Return"),
+        ("Refine the results", "<primary><shift>Return"),
         ("Enter a seed code", "<primary>l"),
         ("Challenges", "<primary>comma"),
         ("Keyboard shortcuts", "<primary>question"),

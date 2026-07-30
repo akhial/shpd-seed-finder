@@ -3,15 +3,20 @@
 //! Results pane: streaming search session, live statistics, and seed list.
 
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::rc::Rc;
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use adw::prelude::*;
 use gtk::glib;
+use shpd_seedfinder_core::model::GeneratedWorld;
 use shpd_seedfinder_core::query::SearchQuery;
+use shpd_seedfinder_core::search::SearchError;
+use shpd_seedfinder_core::seed::DungeonSeed;
 use shpd_seedfinder_session::{
     MAX_ACCEPTED_RESULTS, NativeSession, STATE_CANCELLED, STATE_COMPLETED, STATE_FAILED,
-    STATE_RUNNING,
+    STATE_RUNNING, filter_matching_seeds,
 };
 
 use crate::format::{duration, estimate_duration, group_digits, probability_percent, seed_rate};
@@ -21,11 +26,37 @@ const DRAIN_BATCH: usize = 256;
 
 struct ActiveSearch {
     session: Rc<NativeSession>,
+    query: SearchQuery,
     matches: u64,
     last_tested: u64,
     last_tick: Instant,
     started: Instant,
     seeds_per_second: f64,
+    /// Every seed already listed, so a resumed traversal's small re-scan
+    /// overlap never produces a duplicate row.
+    seen: HashSet<String>,
+    /// `(kept, previous)` when this search refines an earlier one.
+    refined: Option<(u64, u64)>,
+}
+
+/// Everything needed to refine a finished search: the query it ran and where
+/// its traversal stopped. The engine guarantees every match in the region
+/// before `resume_from` was delivered, so combining the filtered result list
+/// with a scan of the `remaining` seeds loses nothing.
+struct BaseRun {
+    query: SearchQuery,
+    resume_from: u64,
+    remaining: u64,
+}
+
+/// An in-flight re-verification of the previous results on a worker thread.
+struct PendingRefine {
+    receiver: mpsc::Receiver<Result<Vec<GeneratedWorld>, SearchError>>,
+    query: SearchQuery,
+    resume_from: u64,
+    remaining: u64,
+    previous_matches: u64,
+    started: Instant,
 }
 
 pub struct ResultsPane {
@@ -39,6 +70,8 @@ pub struct ResultsPane {
     list: gtk::ListBox,
     seeds: RefCell<Vec<String>>,
     active: RefCell<Option<ActiveSearch>>,
+    pending_refine: RefCell<Option<PendingRefine>>,
+    base: RefCell<Option<BaseRun>>,
     toasts: adw::ToastOverlay,
     on_select: RefCell<Option<SelectHandler>>,
     on_finished: RefCell<Option<Box<dyn Fn()>>>,
@@ -122,6 +155,8 @@ impl ResultsPane {
             list,
             seeds: RefCell::new(Vec::new()),
             active: RefCell::new(None),
+            pending_refine: RefCell::new(None),
+            base: RefCell::new(None),
             toasts: toasts.clone(),
             on_select: RefCell::new(None),
             on_finished: RefCell::new(None),
@@ -153,13 +188,40 @@ impl ResultsPane {
     }
 
     pub fn is_running(&self) -> bool {
-        self.active.borrow().is_some()
+        self.active.borrow().is_some() || self.pending_refine.borrow().is_some()
     }
 
-    pub fn cancel(&self) {
+    /// The query of the last finished search whose traversal can still be
+    /// refined, if any.
+    pub fn refine_target(&self) -> Option<SearchQuery> {
+        self.base.borrow().as_ref().map(|base| base.query.clone())
+    }
+
+    pub fn cancel(self: &Rc<Self>) {
         if let Some(active) = self.active.borrow().as_ref() {
             active.session.cancel();
+            return;
         }
+        // Abandoning the re-verification phase of a refine: its worker thread
+        // result is discarded by the poll loop finding the slot empty, and
+        // the previous results stay listed untouched.
+        if self.pending_refine.borrow_mut().take().is_some() {
+            self.progress_bar.set_visible(false);
+            self.progress_line.set_visible(false);
+            self.restore_count_subtitle();
+            self.stats_line
+                .set_label("Refine stopped · previous results unchanged");
+            self.finish();
+        }
+    }
+
+    fn restore_count_subtitle(&self) {
+        let count = self.seeds.borrow().len() as u64;
+        self.title.set_subtitle(&match count {
+            0 => String::new(),
+            1 => "1 seed".to_owned(),
+            count => format!("{} seeds", group_digits(count)),
+        });
     }
 
     /// Starts a full-range production search; a failure to spawn is reported
@@ -168,7 +230,8 @@ impl ResultsPane {
         if self.is_running() {
             return;
         }
-        let session = match NativeSession::production(query) {
+        self.base.replace(None);
+        let session = match NativeSession::production(query.clone()) {
             Ok(session) => Rc::new(session),
             Err(error) => {
                 self.toasts.add_toast(adw::Toast::new(&format!(
@@ -190,15 +253,199 @@ impl ResultsPane {
         let now = Instant::now();
         self.active.replace(Some(ActiveSearch {
             session,
+            query,
             matches: 0,
             last_tested: 0,
             last_tick: now,
             started: now,
             seeds_per_second: 0.0,
+            seen: HashSet::new(),
+            refined: None,
         }));
 
         let pane = Rc::clone(self);
         glib::timeout_add_local(POLL_INTERVAL, move || pane.tick());
+    }
+
+    /// Narrows the last finished search without discarding it: the listed
+    /// seeds are re-verified against `query` on a worker thread, and the scan
+    /// then resumes over exactly the seeds the previous traversal never
+    /// covered. The caller ensures `query` extends the finished search's
+    /// query (see [`crate::state::extends_query`]).
+    pub fn refine(self: &Rc<Self>, query: SearchQuery) {
+        if self.is_running() {
+            return;
+        }
+        let Some(base) = self.base.borrow().as_ref().map(|base| BaseRun {
+            query: base.query.clone(),
+            resume_from: base.resume_from,
+            remaining: base.remaining,
+        }) else {
+            return;
+        };
+        let seed_values: Vec<u64> = self
+            .seeds
+            .borrow()
+            .iter()
+            .filter_map(|code| DungeonSeed::from_code(code).ok())
+            .map(DungeonSeed::value)
+            .collect();
+        let previous_matches = seed_values.len() as u64;
+
+        let (sender, receiver) = mpsc::channel();
+        let filter_query = query.clone();
+        std::thread::spawn(move || {
+            let _ = sender.send(filter_matching_seeds(&filter_query, &seed_values));
+        });
+        self.pending_refine.replace(Some(PendingRefine {
+            receiver,
+            query,
+            resume_from: base.resume_from,
+            remaining: base.remaining,
+            previous_matches,
+            started: Instant::now(),
+        }));
+
+        self.stack.set_visible_child_name("results");
+        self.title.set_subtitle("Refining…");
+        self.stats_line.set_label(&format!(
+            "Re-checking {} found seed{} against the added requirements…",
+            group_digits(previous_matches),
+            if previous_matches == 1 { "" } else { "s" },
+        ));
+        self.progress_line.set_visible(false);
+        self.progress_bar.set_fraction(0.0);
+        self.progress_bar.set_visible(true);
+        let pane = Rc::clone(self);
+        glib::timeout_add_local(POLL_INTERVAL, move || pane.refine_tick());
+    }
+
+    fn refine_tick(self: &Rc<Self>) -> glib::ControlFlow {
+        let outcome = {
+            let pending_slot = self.pending_refine.borrow();
+            let Some(pending) = pending_slot.as_ref() else {
+                // Cancelled while filtering; the thread result is discarded.
+                return glib::ControlFlow::Break;
+            };
+            match pending.receiver.try_recv() {
+                Err(mpsc::TryRecvError::Empty) => {
+                    self.progress_bar.pulse();
+                    return glib::ControlFlow::Continue;
+                }
+                Ok(result) => result.map_err(|error| format!("{error:?}")),
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    Err("the verification thread stopped unexpectedly".to_owned())
+                }
+            }
+        };
+        let Some(pending) = self.pending_refine.borrow_mut().take() else {
+            return glib::ControlFlow::Break;
+        };
+
+        let kept_worlds = match outcome {
+            Ok(worlds) => worlds,
+            Err(message) => {
+                self.progress_bar.set_visible(false);
+                self.restore_count_subtitle();
+                self.stats_line
+                    .set_label("Refine failed · previous results unchanged");
+                self.toasts.add_toast(adw::Toast::new(&format!(
+                    "Could not re-verify the results: {message}"
+                )));
+                self.finish();
+                return glib::ControlFlow::Break;
+            }
+        };
+
+        // Replace the list with the surviving subset, in their original order.
+        self.seeds.borrow_mut().clear();
+        self.list.remove_all();
+        let mut seen = HashSet::new();
+        {
+            let mut seeds = self.seeds.borrow_mut();
+            for world in &kept_worlds {
+                let code = world.seed.to_code();
+                self.append_row(&code, seeds.len() + 1);
+                seen.insert(code.clone());
+                seeds.push(code);
+            }
+        }
+        let kept = kept_worlds.len() as u64;
+
+        if pending.remaining == 0 {
+            // The previous traversal already covered every seed; the filtered
+            // subset is the complete refined result.
+            self.base.replace(Some(BaseRun {
+                query: pending.query,
+                resume_from: pending.resume_from,
+                remaining: 0,
+            }));
+            self.conclude_refined_filter_only(kept, pending.previous_matches);
+            return glib::ControlFlow::Break;
+        }
+
+        let session = match NativeSession::production_resumed(
+            pending.query.clone(),
+            pending.resume_from,
+            pending.remaining,
+        ) {
+            Ok(session) => Rc::new(session),
+            Err(error) => {
+                self.progress_bar.set_visible(false);
+                self.restore_count_subtitle();
+                self.stats_line
+                    .set_label("Refine failed · kept seeds are listed");
+                self.toasts.add_toast(adw::Toast::new(&format!(
+                    "Could not resume the search: {error:?}"
+                )));
+                self.finish();
+                return glib::ControlFlow::Break;
+            }
+        };
+        self.title.set_subtitle("Searching…");
+        self.stats_line.set_label("Measuring search speed…");
+        self.progress_line.set_label("Resuming…");
+        self.progress_line.set_visible(true);
+        let now = Instant::now();
+        self.active.replace(Some(ActiveSearch {
+            session,
+            query: pending.query,
+            matches: kept,
+            last_tested: 0,
+            last_tick: now,
+            started: pending.started,
+            seeds_per_second: 0.0,
+            seen,
+            refined: Some((kept, pending.previous_matches)),
+        }));
+        let pane = Rc::clone(self);
+        glib::timeout_add_local(POLL_INTERVAL, move || pane.tick());
+        glib::ControlFlow::Break
+    }
+
+    fn conclude_refined_filter_only(&self, kept: u64, previous: u64) {
+        self.progress_bar.set_visible(false);
+        self.progress_line.set_visible(false);
+        self.restore_count_subtitle();
+        if kept == 0 {
+            self.show_message(
+                "edit-find-symbolic",
+                "No Seeds Left",
+                &format!(
+                    "None of the {} previous seeds satisfy the added requirements, \
+                     and the previous search had already covered every seed.",
+                    group_digits(previous)
+                ),
+            );
+        } else {
+            self.stats_line.set_label(&format!(
+                "Refined · kept {} of {} previous seed{} · every seed was already scanned",
+                group_digits(kept),
+                group_digits(previous),
+                if previous == 1 { "" } else { "s" },
+            ));
+        }
+        self.finish();
     }
 
     fn tick(self: &Rc<Self>) -> glib::ControlFlow {
@@ -259,6 +506,7 @@ impl ResultsPane {
         // Catch matches that raced the terminal state transition.
         Self::drain_matches(self, active);
         let matches = active.matches;
+        let refined = active.refined;
         let diagnostic = if search_state == STATE_FAILED {
             active
                 .session
@@ -267,14 +515,33 @@ impl ResultsPane {
         } else {
             String::new()
         };
+        // A completed or stopped traversal can be refined later: remember its
+        // query and the exact position a narrower follow-up scan resumes from.
+        let base =
+            (search_state == STATE_COMPLETED || search_state == STATE_CANCELLED).then(|| {
+                let [resume_from, remaining] = active.session.resume_hint();
+                BaseRun {
+                    query: active.query.clone(),
+                    resume_from: resume_from.max(0).unsigned_abs(),
+                    remaining: remaining.max(0).unsigned_abs(),
+                }
+            });
+        self.base.replace(base);
         *active_slot = None;
         drop(active_slot);
 
-        self.conclude(search_state, tested, matches, &diagnostic);
+        self.conclude(search_state, tested, matches, refined, &diagnostic);
         glib::ControlFlow::Break
     }
 
-    fn conclude(self: &Rc<Self>, search_state: i64, tested: u64, matches: u64, diagnostic: &str) {
+    fn conclude(
+        self: &Rc<Self>,
+        search_state: i64,
+        tested: u64,
+        matches: u64,
+        refined: Option<(u64, u64)>,
+        diagnostic: &str,
+    ) {
         self.progress_bar.set_visible(false);
         self.title.set_subtitle(&match matches {
             0 => String::new(),
@@ -333,8 +600,15 @@ impl ResultsPane {
                 } else {
                     ""
                 };
+                let refined_notice = refined.map_or(String::new(), |(kept, previous)| {
+                    format!(
+                        " · kept {} of {} previous",
+                        group_digits(kept),
+                        group_digits(previous)
+                    )
+                });
                 self.stats_line.set_label(&format!(
-                    "{summary} · tested {} · {} match{}{cap_notice}",
+                    "{summary} · tested {} · {} match{}{refined_notice}{cap_notice}",
                     group_digits(tested),
                     group_digits(matches),
                     if matches == 1 { "" } else { "es" },
@@ -367,10 +641,15 @@ impl ResultsPane {
             let mut seeds = self.seeds.borrow_mut();
             for world in &worlds {
                 let code = world.seed.to_code();
+                // A resumed traversal may re-test a small overlap around the
+                // previous stop position; keep each seed listed once.
+                if !active.seen.insert(code.clone()) {
+                    continue;
+                }
                 self.append_row(&code, seeds.len() + 1);
                 seeds.push(code);
+                active.matches += 1;
             }
-            active.matches += worlds.len() as u64;
         }
     }
 

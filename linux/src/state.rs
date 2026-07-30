@@ -186,6 +186,34 @@ impl AppState {
     }
 }
 
+/// Whether `candidate` refines `base`: identical scope and a strict multiset
+/// superset of the base requirements. Only then are the base search's matches
+/// guaranteed to contain every candidate match within the region it already
+/// scanned, which is what makes filter-and-resume refinement sound.
+#[must_use]
+pub fn extends_query(candidate: &SearchQuery, base: &SearchQuery) -> bool {
+    if candidate.max_depth != base.max_depth
+        || candidate.challenges != base.challenges
+        || candidate.require_blacksmith != base.require_blacksmith
+        || candidate.exclude_blacksmith_rewards != base.exclude_blacksmith_rewards
+        || candidate.fast_mode != base.fast_mode
+        || candidate.requirements.len() <= base.requirements.len()
+    {
+        return false;
+    }
+    // Multiset containment; the counts stay tiny (at most 64 requirements).
+    let mut unclaimed: Vec<&Requirement> = candidate.requirements.iter().collect();
+    base.requirements.iter().all(|needed| {
+        unclaimed
+            .iter()
+            .position(|available| *available == needed)
+            .is_some_and(|index| {
+                unclaimed.swap_remove(index);
+                true
+            })
+    })
+}
+
 pub const fn kind_label(kind: ItemKind) -> &'static str {
     match kind {
         ItemKind::Weapon => "Weapon",
@@ -314,10 +342,51 @@ pub const ALL_CHALLENGES: &[ChallengeInfo] = &[
 
 #[cfg(test)]
 mod tests {
-    use shpd_seedfinder_core::catalog::ItemId;
+    use shpd_seedfinder_core::catalog::{ItemId, ItemKind};
     use shpd_seedfinder_core::query::{TierRequirement, UpgradeRequirement};
 
-    use super::{AppState, UiRequirement};
+    use super::{AppState, UiRequirement, extends_query};
+
+    #[test]
+    fn refinement_requires_identical_scope_and_strictly_more_requirements() {
+        let mut base_state = AppState::default();
+        let mut first = UiRequirement::new(base_state.claim_key());
+        first.kind = ItemKind::Ring;
+        first.upgrade = UpgradeRequirement::AtLeast(2);
+        base_state.requirements.push(first);
+        let base = base_state.to_query().unwrap();
+
+        // Adding a requirement refines; row keys are irrelevant.
+        let mut extended_state = base_state.clone();
+        let mut added = UiRequirement::new(999);
+        added.kind = ItemKind::Weapon;
+        added.upgrade = UpgradeRequirement::Exact(3);
+        extended_state.requirements.push(added);
+        let extended = extended_state.to_query().unwrap();
+        assert!(extends_query(&extended, &base));
+
+        // An identical query, an edited base requirement, and any scope
+        // change all force a fresh search instead.
+        assert!(!extends_query(&base, &base));
+        let mut edited = extended.clone();
+        edited.requirements[0].upgrade = UpgradeRequirement::AtLeast(3);
+        assert!(!extends_query(&edited, &base));
+        let mut deeper = extended.clone();
+        deeper.max_depth = 9;
+        assert!(!extends_query(&deeper, &base));
+        let mut fast = extended.clone();
+        fast.fast_mode = true;
+        assert!(!extends_query(&fast, &base));
+
+        // Duplicates are counted as a multiset: two copies of the base
+        // requirement satisfy a two-copy base, one copy does not.
+        let mut doubled_base = base.clone();
+        doubled_base.requirements.push(base.requirements[0]);
+        let mut doubled_extended = doubled_base.clone();
+        doubled_extended.requirements.push(extended.requirements[1]);
+        assert!(extends_query(&doubled_extended, &doubled_base));
+        assert!(!extends_query(&extended, &doubled_base));
+    }
 
     #[test]
     fn labels_describe_wildcards_and_predicates() {
