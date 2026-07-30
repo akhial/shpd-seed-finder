@@ -114,6 +114,8 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
         )
     }
     var editingRequirement by remember { mutableStateOf<ItemRequirement?>(null) }
+    // Set while the sheet is adding an alternative to this requirement's group.
+    var alternativeSourceKey by remember { mutableStateOf<Long?>(null) }
     var showRequirementSheet by remember { mutableStateOf(false) }
     var results by remember { mutableStateOf(emptyList<SeedResult>()) }
     var searchStatus by remember { mutableStateOf<SearchStatus?>(null) }
@@ -320,14 +322,32 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                 },
                 onAdd = {
                     editingRequirement = null
+                    alternativeSourceKey = null
                     showRequirementSheet = true
                 },
                 onEdit = {
                     editingRequirement = it
+                    alternativeSourceKey = null
+                    showRequirementSheet = true
+                },
+                onAddAlternative = { requirement ->
+                    editingRequirement = null
+                    alternativeSourceKey = requirement.key
                     showRequirementSheet = true
                 },
                 onRemove = { requirement ->
-                    requirements = requirements.filterNot { it.key == requirement.key }
+                    val remaining = requirements.filterNot { it.key == requirement.key }
+                    val groupSizes =
+                        remaining.mapNotNull { it.alternativeGroup }.groupingBy { it }.eachCount()
+                    // A one-member "Any of" group is no group at all.
+                    requirements = remaining.map {
+                        val group = it.alternativeGroup
+                        if (group != null && groupSizes[group] == 1) {
+                            it.copy(alternativeGroup = null)
+                        } else {
+                            it
+                        }
+                    }
                 },
                 onMaximumDepthChange = { maximumDepth = it },
                 onRequireBlacksmithChange = { requireBlacksmith = it },
@@ -410,46 +430,86 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
         if (showRequirementSheet) {
             RequirementSheet(
                 editing = editingRequirement,
-                onDismiss = { showRequirementSheet = false },
-                onSave = { item, kind, tierMatch, tier, upgradeMatch, upgrade, modifier, source, identityGroup, itemMaximumDepth, requireUncursed ->
+                inAlternativeGroup = editingRequirement?.alternativeGroup != null ||
+                    alternativeSourceKey != null,
+                onDismiss = {
+                    showRequirementSheet = false
+                    alternativeSourceKey = null
+                },
+                onSave = { draft ->
                     val existing = editingRequirement
+                    var updated = requirements
+                    val saved: ItemRequirement
                     if (existing == null) {
-                        requirements = requirements + ItemRequirement(
+                        // An added alternative joins the source row's group,
+                        // allocating a fresh group when the row had none.
+                        var alternativeGroup: Int? = null
+                        val sourceIndex = alternativeSourceKey
+                            ?.let { key -> updated.indexOfFirst { it.key == key } }
+                            ?.takeIf { it >= 0 }
+                        if (sourceIndex != null) {
+                            val sourceRow = updated[sourceIndex]
+                            alternativeGroup = sourceRow.alternativeGroup
+                                ?: ((updated.mapNotNull { it.alternativeGroup }.maxOrNull() ?: 0) + 1)
+                            if (sourceRow.alternativeGroup == null) {
+                                updated = updated.toMutableList().also {
+                                    it[sourceIndex] = sourceRow.copy(
+                                        alternativeGroup = alternativeGroup,
+                                        upgradeSumGroup = null,
+                                        upgradeSumTotal = null,
+                                    )
+                                }
+                            }
+                        }
+                        saved = ItemRequirement(
                             key = nextRequirementKey++,
-                            item = item,
-                            upgrade = upgrade,
-                            modifier = modifier,
-                            kind = kind,
-                            tier = tier,
-                            tierMatch = tierMatch,
-                            upgradeMatch = upgradeMatch,
-                            source = source,
-                            identityGroup = identityGroup,
-                            maximumDepth = itemMaximumDepth,
-                            requireUncursed = requireUncursed,
+                            item = draft.item,
+                            upgrade = draft.upgrade,
+                            effect = draft.effect,
+                            kind = draft.kind,
+                            tier = draft.tier,
+                            tierMatch = draft.tierMatch,
+                            upgradeMatch = draft.upgradeMatch,
+                            source = draft.source,
+                            identityGroup = draft.identityGroup,
+                            maximumDepth = draft.maximumDepth,
+                            requireUncursed = draft.requireUncursed,
+                            alternativeGroup = alternativeGroup,
+                            upgradeSumGroup = if (alternativeGroup == null) draft.upgradeSumGroup else null,
+                            upgradeSumTotal = if (alternativeGroup == null) draft.upgradeSumTotal else null,
                         )
+                        updated = updated + saved
                     } else {
-                        requirements = requirements.map {
-                            if (it.key == existing.key) {
-                                existing.copy(
-                                    item = item,
-                                    upgrade = upgrade,
-                                    modifier = modifier,
-                                    kind = kind,
-                                    tier = tier,
-                                    tierMatch = tierMatch,
-                                    upgradeMatch = upgradeMatch,
-                                    source = source,
-                                    identityGroup = identityGroup,
-                                    maximumDepth = itemMaximumDepth,
-                                    requireUncursed = requireUncursed,
-                                )
+                        saved = existing.copy(
+                            item = draft.item,
+                            upgrade = draft.upgrade,
+                            effect = draft.effect,
+                            kind = draft.kind,
+                            tier = draft.tier,
+                            tierMatch = draft.tierMatch,
+                            upgradeMatch = draft.upgradeMatch,
+                            source = draft.source,
+                            identityGroup = draft.identityGroup,
+                            maximumDepth = draft.maximumDepth,
+                            requireUncursed = draft.requireUncursed,
+                            upgradeSumGroup = draft.upgradeSumGroup,
+                            upgradeSumTotal = draft.upgradeSumTotal,
+                        )
+                        updated = updated.map { if (it.key == existing.key) saved else it }
+                    }
+                    // Members of one combined-upgrade group must agree on the total.
+                    saved.upgradeSumGroup?.let { sumGroup ->
+                        updated = updated.map {
+                            if (it.key != saved.key && it.upgradeSumGroup == sumGroup) {
+                                it.copy(upgradeSumTotal = saved.upgradeSumTotal)
                             } else {
                                 it
                             }
                         }
                     }
+                    requirements = updated
                     showRequirementSheet = false
+                    alternativeSourceKey = null
                 },
             )
         }

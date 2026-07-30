@@ -8,7 +8,7 @@ import {
   weaponEnchantments,
 } from '../../lib/catalog'
 import { validateRequirement } from '../../lib/query'
-import type { ItemCategory, ItemSource, RequirementState } from '../../lib/wasm/types'
+import type { EffectFilter, ItemCategory, ItemSource, RequirementState } from '../../lib/wasm/types'
 import { Field, Segmented, SliderRow, Sprite } from './parts'
 import { requirementSprite, requirementTitle } from './summary'
 
@@ -40,16 +40,24 @@ const GROUP_OPTIONS = [
   { value: 4, label: 'D' },
 ]
 
+type EffectMode = 'any' | 'any_enchantment' | 'one_of'
+
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
+
+const cloneEffect = (effect: EffectFilter | undefined): EffectFilter | undefined =>
+  effect === undefined ? undefined : effect.mode === 'one_of' ? { mode: 'one_of', names: [...effect.names] } : { mode: 'any_enchantment' }
 
 export function RequirementEditor({
   requirement,
   isNew,
+  isAlternative = false,
   onSave,
   onCancel,
 }: {
   requirement: RequirementState
   isNew: boolean
+  /** Alternatives cannot join combined-upgrade groups, so hide that control. */
+  isAlternative?: boolean
   onSave: (requirement: RequirementState) => void
   onCancel: () => void
 }) {
@@ -57,6 +65,8 @@ export function RequirementEditor({
     ...requirement,
     tier: { ...requirement.tier },
     upgrade: { ...requirement.upgrade },
+    effect: cloneEffect(requirement.effect),
+    upgradeSum: requirement.upgradeSum ? { ...requirement.upgradeSum } : undefined,
   }))
 
   const kind = draft.kind ?? 'weapon'
@@ -65,6 +75,30 @@ export function RequirementEditor({
   const enchantments = kind === 'weapon' ? weaponEnchantments : armorGlyphs
   const curses = kind === 'weapon' ? weaponCurses : armorCurses
   const errors = validateRequirement(draft)
+  const effectMode: EffectMode = draft.effect?.mode ?? 'any'
+  const selectedEffects = draft.effect?.mode === 'one_of' ? draft.effect.names : []
+
+  const setEffectMode = (mode: EffectMode) => {
+    setDraft((current) => ({
+      ...current,
+      effect:
+        mode === 'any'
+          ? undefined
+          : mode === 'any_enchantment'
+            ? { mode: 'any_enchantment' }
+            : { mode: 'one_of', names: [] },
+    }))
+  }
+
+  const toggleEffect = (name: string) => {
+    setDraft((current) => {
+      if (current.effect?.mode !== 'one_of') return current
+      const names = current.effect.names.includes(name)
+        ? current.effect.names.filter((value) => value !== name)
+        : [...current.effect.names, name]
+      return { ...current, effect: { mode: 'one_of', names } }
+    })
+  }
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -244,30 +278,52 @@ export function RequirementEditor({
           <section className="d1-modal-section">
             <h3>Details</h3>
             {(kind === 'weapon' || kind === 'armor') && (
-              <Field label={kind === 'weapon' ? 'Enchantment' : 'Glyph'}>
-                <select
-                  className="d1-select"
-                  value={draft.effect ?? ''}
-                  onChange={(event) => {
-                    const effect = event.currentTarget.value || undefined
-                    setDraft((current) => ({ ...current, effect }))
-                  }}
-                >
-                  <option value="">None</option>
-                  <optgroup label={kind === 'weapon' ? 'Enchantments' : 'Glyphs'}>
-                    {enchantments.map((name) => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
-                  </optgroup>
-                  {!draft.uncursed && (
-                    <optgroup label="Curses">
-                      {curses.map((name) => (
-                        <option key={name} value={name}>{name}</option>
+              <>
+                <Field label={kind === 'weapon' ? 'Enchantment' : 'Glyph'}>
+                  <Segmented
+                    value={effectMode}
+                    options={[
+                      { value: 'any' as EffectMode, label: 'Any' },
+                      { value: 'any_enchantment' as EffectMode, label: kind === 'weapon' ? 'Any enchantment' : 'Any glyph' },
+                      { value: 'one_of' as EffectMode, label: 'Specific…' },
+                    ]}
+                    onChange={setEffectMode}
+                    ariaLabel={kind === 'weapon' ? 'Enchantment filter' : 'Glyph filter'}
+                    fill
+                  />
+                </Field>
+                {effectMode === 'any_enchantment' && (
+                  <p className="d1-caption">
+                    Matches items carrying any {kind === 'weapon' ? 'enchantment' : 'glyph'}, but not plain or curse-only items.
+                  </p>
+                )}
+                {effectMode === 'one_of' && (
+                  <div className="d1-effect-picker">
+                    <p className="d1-caption">The item must carry one of the selected effects.</p>
+                    <div className="d1-effect-grid" role="group" aria-label="Effects">
+                      {enchantments.map((name) => (
+                        <label className="d1-check" key={name}>
+                          <input type="checkbox" checked={selectedEffects.includes(name)} onChange={() => toggleEffect(name)} />
+                          <span>{name}</span>
+                        </label>
                       ))}
-                    </optgroup>
-                  )}
-                </select>
-              </Field>
+                    </div>
+                    {!draft.uncursed && (
+                      <>
+                        <p className="d1-caption d1-effect-curse-head">Curses</p>
+                        <div className="d1-effect-grid" role="group" aria-label="Curses">
+                          {curses.map((name) => (
+                            <label className="d1-check" key={name}>
+                              <input type="checkbox" checked={selectedEffects.includes(name)} onChange={() => toggleEffect(name)} />
+                              <span>{name}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+              </>
             )}
             <label className="d1-check">
               <input
@@ -278,7 +334,10 @@ export function RequirementEditor({
                   setDraft((current) => ({
                     ...current,
                     uncursed,
-                    effect: uncursed && current.effect && curses.includes(current.effect) ? undefined : current.effect,
+                    effect:
+                      uncursed && current.effect?.mode === 'one_of'
+                        ? { mode: 'one_of', names: current.effect.names.filter((name) => !curses.includes(name)) }
+                        : current.effect,
                   }))
                 }}
               />
@@ -307,6 +366,44 @@ export function RequirementEditor({
                 ariaLabel="Same-item group"
               />
             </Field>
+            {!isAlternative && (
+              <>
+                <Field label="Combined upgrade group">
+                  <Segmented
+                    value={draft.upgradeSum?.group ?? 0}
+                    options={GROUP_OPTIONS}
+                    onChange={(group) =>
+                      setDraft((current) => ({
+                        ...current,
+                        upgradeSum: group === 0 ? undefined : { group, atLeast: current.upgradeSum?.atLeast ?? 2 },
+                      }))
+                    }
+                    ariaLabel="Combined upgrade group"
+                  />
+                </Field>
+                {draft.upgradeSum && (
+                  <>
+                    <SliderRow
+                      label="Total at least"
+                      valueLabel={`+${draft.upgradeSum.atLeast} combined`}
+                      min={1}
+                      max={8}
+                      value={draft.upgradeSum.atLeast}
+                      onChange={(atLeast) =>
+                        setDraft((current) => ({
+                          ...current,
+                          upgradeSum: current.upgradeSum ? { ...current.upgradeSum, atLeast } : undefined,
+                        }))
+                      }
+                    />
+                    <p className="d1-caption">
+                      Requirements sharing this group must be matched by distinct items whose upgrade levels add up to
+                      the total. Pair it with a same-item group for e.g. two rings of one type totalling +2.
+                    </p>
+                  </>
+                )}
+              </>
+            )}
             <label className="d1-check">
               <input
                 type="checkbox"

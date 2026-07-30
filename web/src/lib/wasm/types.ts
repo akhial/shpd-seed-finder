@@ -34,16 +34,30 @@ export interface TierFilter { mode: 'any' | 'exact' | 'at_least' | 'at_most'; va
 
 export interface UpgradeFilter { mode: 'any' | 'exact' | 'at_least'; value: number }
 
+/**
+ * Effect predicate: absent means any effect or none. `any_enchantment` wants
+ * some non-curse enchantment/glyph; `one_of` wants one of the named effects.
+ */
+export type EffectFilter =
+  | { mode: 'any_enchantment' }
+  | { mode: 'one_of'; names: string[] }
+
+/** Minimum combined upgrade total shared by requirements in one group. */
+export interface UpgradeSumFilter { group: number; atLeast: number }
+
 export interface RequirementState {
   kind?: ItemCategory
   item?: string
   tier: TierFilter
   upgrade: UpgradeFilter
-  effect?: string
+  effect?: EffectFilter
   uncursed: boolean
   source?: ItemSource
   identityGroup?: number
   maxDepth?: number
+  /** Requirements sharing a group are alternatives: any one match suffices. */
+  alternativeGroup?: number
+  upgradeSum?: UpgradeSumFilter
 }
 
 export interface QueryState {
@@ -63,15 +77,20 @@ export interface RequirementDocument {
   item?: string
   tier?: TierDocument
   upgrade?: UpgradeDocument
-  effect?: string
+  /** One name, a one-of list, or the "any_enchantment" shorthand. */
+  effect?: string | string[]
   uncursed?: true
   source?: ItemSource
   identity_group?: number
   max_depth?: number
+  upgrade_sum?: { group: number; at_least: number }
 }
 
+/** A plain requirement, or an any_of group satisfied by any single member. */
+export type RequirementEntryDocument = RequirementDocument | { any_of: RequirementDocument[] }
+
 export interface QueryDocument {
-  requirements: RequirementDocument[]
+  requirements: RequirementEntryDocument[]
   max_depth?: number
   require_blacksmith?: true
   exclude_blacksmith_rewards?: true

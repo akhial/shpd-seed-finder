@@ -24,11 +24,26 @@ data class CatalogItem(
     val typeIconIndex: Int? = null,
 )
 
+/**
+ * Effect predicate attached to one requirement. Only weapons and armor carry
+ * effects; wands and rings always use [Any].
+ */
+sealed interface EffectRequirement {
+    /** Wildcard: any effect, or none at all. */
+    data object Any : EffectRequirement
+
+    /** The item must carry some non-curse enchantment (weapons) or glyph (armor). */
+    data object AnyEnchantment : EffectRequirement
+
+    /** The item must carry one of these same-family effects. */
+    data class OneOf(val effects: List<String>) : EffectRequirement
+}
+
 data class ItemRequirement(
     val key: Long,
     val item: CatalogItem?,
     val upgrade: Int,
-    val modifier: String? = null,
+    val effect: EffectRequirement = EffectRequirement.Any,
     val kind: ItemKind = item?.kind ?: error("A wildcard requirement must specify its category"),
     val tier: Int = 0,
     val tierMatch: TierMatch = TierMatch.ANY,
@@ -37,6 +52,12 @@ data class ItemRequirement(
     val identityGroup: Int? = null,
     val maximumDepth: Int? = null,
     val requireUncursed: Boolean = false,
+    /** Requirements sharing a group are alternatives: one match satisfies the whole group. */
+    val alternativeGroup: Int? = null,
+    /** Combined-upgrade group label shared with other requirements (A..D as 1..4). */
+    val upgradeSumGroup: Int? = null,
+    /** Minimum combined upgrade total agreed on by every member of the sum group. */
+    val upgradeSumTotal: Int? = null,
 ) {
     init {
         require(item == null || item.kind == kind) { "Selected item must belong to its category" }
@@ -57,15 +78,72 @@ data class ItemRequirement(
         require(validUpgrade) {
             "Upgrade predicate is invalid for ${kind.label}"
         }
-        require(kind.modifierLabel != null || modifier == null) {
-            "${kind.label} cannot carry a modifier requirement"
+        require(kind.modifierLabel != null || effect == EffectRequirement.Any) {
+            "${kind.label} cannot carry an effect requirement"
         }
-        require(!requireUncursed || modifier !in ItemCatalog.cursesFor(kind)) {
-            "An uncursed item cannot have a curse"
+        if (effect is EffectRequirement.OneOf) {
+            require(effect.effects.isNotEmpty()) { "An effect set needs at least one member" }
+            require(effect.effects.toSet().size == effect.effects.size) {
+                "An effect set cannot repeat a member"
+            }
+            require(effect.effects.all { it in ItemCatalog.modifiersFor(kind) }) {
+                "Effects must belong to ${kind.label}"
+            }
+            require(!requireUncursed || !effect.effects.all { it in ItemCatalog.cursesFor(kind) }) {
+                "An uncursed item cannot be limited to curses"
+            }
         }
         require(identityGroup == null || identityGroup in 1..4) { "Same-item group must be A..D" }
         require(maximumDepth == null || maximumDepth in 1..24) { "Item floor limit must be 1..24" }
+        require(alternativeGroup == null || alternativeGroup in 1..255) {
+            "Alternative group must be 1..255"
+        }
+        require((upgradeSumGroup == null) == (upgradeSumTotal == null)) {
+            "A combined upgrade needs both a group and a total"
+        }
+        require(upgradeSumGroup == null || upgradeSumGroup in 1..4) {
+            "Combined upgrade group must be A..D"
+        }
+        require(upgradeSumTotal == null || upgradeSumTotal in 1..8) {
+            "Combined upgrade total must be 1..8"
+        }
+        require(alternativeGroup == null || upgradeSumGroup == null) {
+            "A combined upgrade group cannot include alternative requirements"
+        }
     }
+
+    /**
+     * Condensed effect phrase, or `null` when any effect is fine: a single
+     * name, up to four names joined with "or", "any of N enchantments" for
+     * larger sets, and "any enchantment"/"any glyph" for the full non-curse
+     * family.
+     */
+    val effectSummary: String?
+        get() {
+            val familyWord = when (kind) {
+                ItemKind.WEAPON -> "enchantment"
+                ItemKind.ARMOR -> "glyph"
+                ItemKind.WAND, ItemKind.RING -> return null
+            }
+            return when (val wanted = effect) {
+                EffectRequirement.Any -> null
+                EffectRequirement.AnyEnchantment -> "any $familyWord"
+                is EffectRequirement.OneOf -> {
+                    val nonCurse = ItemCatalog.modifiersFor(kind) - ItemCatalog.cursesFor(kind).toSet()
+                    when {
+                        wanted.effects.toSet() == nonCurse.toSet() -> "any $familyWord"
+                        wanted.effects.size == 1 -> wanted.effects.single()
+                        wanted.effects.size <= 4 ->
+                            wanted.effects.dropLast(1).joinToString(", ") + " or " + wanted.effects.last()
+                        else -> "any of ${wanted.effects.size} ${familyWord}s"
+                    }
+                }
+            }
+        }
+
+    /** The only wanted effect, if exactly one is named; drives the sprite glow. */
+    val singleEffect: String?
+        get() = (effect as? EffectRequirement.OneOf)?.effects?.singleOrNull()
 
     val description: String
         get() = buildString {
@@ -76,7 +154,7 @@ data class ItemRequirement(
                     UpgradeMatch.AT_LEAST -> "+$upgrade or higher"
                 },
             )
-            modifier?.let {
+            effectSummary?.let {
                 append(" • ")
                 append(it)
             }
@@ -88,6 +166,13 @@ data class ItemRequirement(
             identityGroup?.let {
                 append(" • same item group ")
                 append(('A'.code + it - 1).toChar())
+            }
+            upgradeSumTotal?.let {
+                append(" • combined +")
+                append(it)
+                append(" total (group ")
+                append(('A'.code + (upgradeSumGroup ?: 1) - 1).toChar())
+                append(")")
             }
             maximumDepth?.let {
                 append(" • by floor ")

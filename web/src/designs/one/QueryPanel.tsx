@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { useStore } from '@tanstack/react-store'
 import { challenges as challengeOptions, wildcardSprites } from '../../lib/catalog'
 import { probabilityLabel } from '../../lib/format'
-import { effectGlow } from '../../lib/glow'
-import { CommandIcon, PlusIcon, ReturnIcon, XIcon } from '../../lib/icons'
+import { effectFilterGlow } from '../../lib/glow'
+import { CommandIcon, ForkIcon, PlusIcon, ReturnIcon, XIcon } from '../../lib/icons'
 import { emptyRequirement, fromQueryJson, toQueryJson, validateRequirement } from '../../lib/query'
 import type { ValidationResult } from '../../lib/query'
 import { builtInPresets, loadPresets, maxWorkers, queryStore, savePresets, setWorkerCount, workerCountStore } from '../../lib/store'
@@ -19,7 +19,35 @@ const LEVEL_GEN_CHALLENGES = new Set<ChallengeName>(['barren_land', 'into_darkne
 const patchQuery = (patch: Partial<QueryState>) => queryStore.setState((state) => ({ ...state, ...patch }))
 const cloneQuery = (query: QueryState): QueryState => fromQueryJson(toQueryJson(query))
 
-interface EditorSession { index: number | null; requirement: RequirementState }
+interface EditorSession {
+  index: number | null
+  requirement: RequirementState
+  /** Index of the row this new requirement becomes an alternative to. */
+  attachTo?: number
+}
+
+/** Groups that shrink below two members stop being alternatives. */
+function normalizeAlternatives(requirements: RequirementState[]): RequirementState[] {
+  const members = new Map<number, number>()
+  for (const requirement of requirements) {
+    if (requirement.alternativeGroup !== undefined) {
+      members.set(requirement.alternativeGroup, (members.get(requirement.alternativeGroup) ?? 0) + 1)
+    }
+  }
+  return requirements.map((requirement) =>
+    requirement.alternativeGroup !== undefined && (members.get(requirement.alternativeGroup) ?? 0) < 2
+      ? { ...requirement, alternativeGroup: undefined }
+      : requirement,
+  )
+}
+
+function nextAlternativeGroup(requirements: RequirementState[]): number {
+  let highest = 0
+  for (const requirement of requirements) {
+    if (requirement.alternativeGroup !== undefined) highest = Math.max(highest, requirement.alternativeGroup)
+  }
+  return highest + 1
+}
 
 export function QueryPanel({
   analysis,
@@ -77,17 +105,61 @@ export function QueryPanel({
   const removeRequirement = (index: number) => {
     queryStore.setState((state) => ({
       ...state,
-      requirements: state.requirements.filter((_, i) => i !== index),
+      requirements: normalizeAlternatives(state.requirements.filter((_, i) => i !== index)),
     }))
   }
 
+  const addAlternative = (index: number) => {
+    const source = query.requirements[index]
+    if (!source) return
+    setEditor({ index: null, requirement: emptyRequirement(requirementKind(source) ?? 'weapon'), attachTo: index })
+  }
+
   const commitRequirement = (session: EditorSession, requirement: RequirementState) => {
-    queryStore.setState((state) => ({
-      ...state,
-      requirements: session.index === null
-        ? [...state.requirements, requirement]
-        : state.requirements.map((current, i) => (i === session.index ? requirement : current)),
-    }))
+    queryStore.setState((state) => {
+      let requirements = [...state.requirements]
+      const next = { ...requirement }
+      if (session.attachTo !== undefined) {
+        const source = requirements[session.attachTo]
+        if (source) {
+          let group = source.alternativeGroup
+          if (group === undefined) {
+            group = nextAlternativeGroup(requirements)
+            // Joining a group forfeits the source's combined-upgrade link.
+            requirements[session.attachTo] = { ...source, alternativeGroup: group, upgradeSum: undefined }
+          }
+          next.alternativeGroup = group
+          next.upgradeSum = undefined
+        }
+      }
+      if (session.index === null) {
+        if (next.alternativeGroup !== undefined) {
+          // Keep alternatives together, right after their group.
+          let insertAt = requirements.length
+          for (let i = requirements.length - 1; i >= 0; i -= 1) {
+            if (requirements[i].alternativeGroup === next.alternativeGroup) {
+              insertAt = i + 1
+              break
+            }
+          }
+          requirements.splice(insertAt, 0, next)
+        } else {
+          requirements.push(next)
+        }
+      } else {
+        requirements[session.index] = next
+      }
+      const sum = next.upgradeSum
+      if (sum) {
+        // Members of a combined-upgrade group always agree on one total.
+        requirements = requirements.map((current) =>
+          current.upgradeSum && current.upgradeSum.group === sum.group
+            ? { ...current, upgradeSum: { ...sum } }
+            : current,
+        )
+      }
+      return { ...state, requirements: normalizeAlternatives(requirements) }
+    })
     setEditor(null)
   }
 
@@ -99,11 +171,20 @@ export function QueryPanel({
   }
 
   const indexed = query.requirements.map((requirement, index) => ({ requirement, index }))
+  const plain = indexed.filter(({ requirement }) => requirement.alternativeGroup === undefined)
+  const alternativeGroups: { id: number; entries: typeof indexed }[] = []
+  for (const entry of indexed) {
+    const group = entry.requirement.alternativeGroup
+    if (group === undefined) continue
+    const existing = alternativeGroups.find((candidate) => candidate.id === group)
+    if (existing) existing.entries.push(entry)
+    else alternativeGroups.push({ id: group, entries: [entry] })
+  }
   const groups = KIND_ORDER.map((kind) => ({
     kind,
-    entries: indexed.filter(({ requirement }) => requirementKind(requirement) === kind),
+    entries: plain.filter(({ requirement }) => requirementKind(requirement) === kind),
   })).filter((group) => group.entries.length > 0)
-  const ungrouped = indexed.filter(({ requirement }) => requirementKind(requirement) === undefined)
+  const ungrouped = plain.filter(({ requirement }) => requirementKind(requirement) === undefined)
   const challengeCount = query.challenges.length
   const blacksmithCount = Number(query.requireBlacksmith) + Number(query.excludeBlacksmithRewards)
   const performanceCount = Number(query.fastMode)
@@ -214,10 +295,42 @@ export function QueryPanel({
               Add
             </button>
           </div>
-          {!hasRequirements && ungrouped.length === 0 ? (
+          {!hasRequirements ? (
             <p className="d1-empty">No requirements yet. Add one to describe the item you're hunting for.</p>
           ) : (
             <>
+              {alternativeGroups.map((group) => (
+                <div className="d1-req-group d1-req-alt" key={`alt-${group.id}`}>
+                  <div className="d1-req-group-head d1-req-alt-head">
+                    <ForkIcon size={14} />
+                    <span>Any of these</span>
+                  </div>
+                  <ul className="d1-req-list">
+                    {group.entries.map(({ requirement, index }, position) => (
+                      <Fragment key={index}>
+                        {position > 0 && (
+                          <li className="d1-req-or" aria-hidden="true">
+                            or
+                          </li>
+                        )}
+                        <RequirementRow
+                          requirement={requirement}
+                          onEdit={() => setEditor({ index, requirement })}
+                          onRemove={() => removeRequirement(index)}
+                        />
+                      </Fragment>
+                    ))}
+                  </ul>
+                  <button
+                    type="button"
+                    className="d1-btn d1-btn-sm d1-req-alt-add"
+                    onClick={() => addAlternative(group.entries[0].index)}
+                  >
+                    <PlusIcon size={13} />
+                    Add alternative
+                  </button>
+                </div>
+              ))}
               {groups.map((group) => (
                 <div className="d1-req-group" key={group.kind}>
                   <div className="d1-req-group-head" style={{ color: 'rgb(234, 234, 234)' }}>
@@ -231,6 +344,7 @@ export function QueryPanel({
                         requirement={requirement}
                         onEdit={() => setEditor({ index, requirement })}
                         onRemove={() => removeRequirement(index)}
+                        onAddAlternative={() => addAlternative(index)}
                       />
                     ))}
                   </ul>
@@ -404,6 +518,7 @@ export function QueryPanel({
           key={editor.index ?? 'new'}
           requirement={editor.requirement}
           isNew={editor.index === null}
+          isAlternative={editor.attachTo !== undefined || editor.requirement.alternativeGroup !== undefined}
           onSave={(requirement) => commitRequirement(editor, requirement)}
           onCancel={() => setEditor(null)}
         />
@@ -416,23 +531,36 @@ function RequirementRow({
   requirement,
   onEdit,
   onRemove,
+  onAddAlternative,
 }: {
   requirement: RequirementState
   onEdit: () => void
   onRemove: () => void
+  onAddAlternative?: () => void
 }) {
   const errors = validateRequirement(requirement)
   const details = requirementDetails(requirement)
   return (
     <li className="d1-req">
       <button type="button" className="d1-req-main" onClick={onEdit} title="Edit requirement">
-        <Sprite index={requirementSprite(requirement)} size={28} glow={effectGlow(requirement.effect)} />
+        <Sprite index={requirementSprite(requirement)} size={28} glow={effectFilterGlow(requirement.effect)} />
         <span className="d1-req-text">
           <span className="d1-req-title">{requirementTitle(requirement)}</span>
           <span className="d1-req-sub">{details.length > 0 ? details.join(' · ') : 'any upgrade · any source'}</span>
           {errors.length > 0 && <span className="d1-req-error">{errors[0]}</span>}
         </span>
       </button>
+      {onAddAlternative && (
+        <button
+          type="button"
+          className="d1-req-remove d1-req-fork"
+          aria-label="Add an alternative to this requirement"
+          title="Add alternative (either this or another item)"
+          onClick={onAddAlternative}
+        >
+          <ForkIcon size={15} />
+        </button>
+      )}
       <button type="button" className="d1-req-remove" aria-label="Remove requirement" title="Remove" onClick={onRemove}>
         <XIcon size={15} />
       </button>

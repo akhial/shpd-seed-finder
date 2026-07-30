@@ -70,7 +70,7 @@ public enum SeedCode {
 
 public enum QueryCodec {
     public static func encode(_ request: SearchRequest) throws -> Data {
-        var output = Writer(); output.bytes("SSF7".utf8); output.u8(request.maximumDepth)
+        var output = Writer(); output.bytes("SSF8".utf8); output.u8(request.maximumDepth)
         output.u8((request.requireBlacksmith ? 1 : 0)
             | (request.fastMode ? 2 : 0)
             | (request.excludeBlacksmithRewards ? 4 : 0))
@@ -80,10 +80,30 @@ public enum QueryCodec {
             output.u8(requirement.kind.rawValue); try output.text(requirement.item?.id ?? "")
             output.u8(requirement.tierMatch.rawValue); output.u8(requirement.tier)
             output.u8(requirement.upgradeMatch.rawValue); output.u8(requirement.upgrade)
-            try output.text(requirement.modifier ?? "")
+            // Effect predicate: mode 0 is the wildcard; mode 1 carries a
+            // member count and that many wire names. "Any enchantment" is the
+            // family's full non-curse set.
+            let effectNames: [String] = switch requirement.effect {
+            case .any: []
+            case .anyEnchantment:
+                requirement.kind == .weapon ? ItemCatalog.enchantments : ItemCatalog.glyphs
+            case .oneOf(let names): names
+            }
+            if effectNames.isEmpty {
+                output.u8(0)
+            } else {
+                guard effectNames.count <= 32 else {
+                    throw WireCodecError.invalidValue("Effect set must contain 1..32 effects")
+                }
+                output.u8(1); output.u8(effectNames.count)
+                for name in effectNames { try output.text(name) }
+            }
             output.u8(requirement.source.map { $0.rawValue + 1 } ?? 0)
             output.u8(requirement.identityGroup ?? 0)
             output.u8(requirement.maximumDepth ?? 0)
+            output.u8(requirement.alternativeGroup ?? 0)
+            output.u8(requirement.upgradeSumGroup ?? 0)
+            output.u8(requirement.upgradeSumTotal ?? 0)
             output.u8(requirement.requireUncursed ? 1 : 0)
         }
         return output.data

@@ -10,6 +10,7 @@ namespace SeedSeeker;
 public enum ItemKind { Weapon, Armor, Wand, Ring }
 public enum UpgradeMatch { Any, Exactly, AtLeast }
 public enum TierMatch { Any, Exactly, AtLeast, AtMost }
+public enum EffectMode { Any, AnyEnchantment, Specific }
 public enum SearchState { Running, Completed, Cancelled, Failed }
 
 public sealed record CatalogItem(string Id, string Name, ItemKind Kind, int SpriteIndex, int? Tier);
@@ -51,7 +52,15 @@ public sealed class ItemRequirement
     public long Key { get; set; } = Random.Shared.NextInt64(1, long.MaxValue);
     public CatalogItem? Item { get; set; }
     public int Upgrade { get; set; }
-    public string? Modifier { get; set; }
+    /// <summary>
+    /// Legacy pre-0.7 single-effect field. Never written any more (the getter is
+    /// always null and nulls are skipped); reading an old save maps it onto a
+    /// one-element specific effect set.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Modifier { get => null; set { if (value is not null) { EffectMode = EffectMode.Specific; Effects = [value]; } } }
+    public EffectMode EffectMode { get; set; }
+    public List<string> Effects { get; set; } = [];
     public ItemKind Kind { get; set; }
     public int Tier { get; set; }
     public TierMatch TierMatch { get; set; }
@@ -60,6 +69,12 @@ public sealed class ItemRequirement
     public int? IdentityGroup { get; set; }
     public int? MaximumDepth { get; set; }
     public bool RequireUncursed { get; set; }
+    /// <summary>Requirements sharing a non-zero group are alternatives: one match satisfies them all.</summary>
+    public int? AlternativeGroup { get; set; }
+    /// <summary>Combined-upgrade group label shared with other requirements, or null.</summary>
+    public int? UpgradeSumGroup { get; set; }
+    /// <summary>Minimum combined upgrade total agreed by every member of the sum group.</summary>
+    public int? UpgradeSumTotal { get; set; }
     [JsonIgnore] public string Glyph => KindStyle.Glyph(Kind);
     [JsonIgnore] public Brush Tint => KindStyle.Tint(Kind);
     /// <summary>Row-major index into the upstream item atlas, or -1 for a wildcard.</summary>
@@ -70,22 +85,60 @@ public sealed class ItemRequirement
     /// <summary>
     /// Glow for the pinned enchantment or curse, with the bare-effect-name semantics
     /// of the web's <c>effectGlow</c>: an unrecognised effect is a curse and glows
-    /// black. There is nothing to tint without a sprite, so wildcards never glow.
+    /// black. Only a single specific effect is unambiguous enough to glow as, and
+    /// there is nothing to tint without a sprite, so wildcards never glow.
     /// </summary>
-    [JsonIgnore] public Windows.UI.Color GlowColor => ItemGlow.ForEffect(Modifier)?.Color ?? default;
-    [JsonIgnore] public double GlowPeriod => Item is null ? 0 : ItemGlow.ForEffect(Modifier)?.Period ?? 0;
+    private string? GlowEffect => EffectMode == EffectMode.Specific && Effects.Count == 1 ? Effects[0] : null;
+    [JsonIgnore] public Windows.UI.Color GlowColor => ItemGlow.ForEffect(GlowEffect)?.Color ?? default;
+    [JsonIgnore] public double GlowPeriod => Item is null ? 0 : ItemGlow.ForEffect(GlowEffect)?.Period ?? 0;
     [JsonIgnore] public string Title => Item?.Name ?? (TierMatch switch { TierMatch.Exactly => $"Any Tier {Tier} {Labels.Singular(Kind)}", TierMatch.AtLeast => $"Any Tier {Tier}+ {Labels.Singular(Kind)}", TierMatch.AtMost => $"Any Tier {Tier} or lower {Labels.Singular(Kind)}", _ => $"Any {Labels.Singular(Kind)}" });
     [JsonIgnore] public string Description
     {
         get
         {
             var parts = new List<string> { UpgradeMatch switch { UpgradeMatch.Exactly => $"+{Upgrade} exactly", UpgradeMatch.AtLeast => $"+{Upgrade} or higher", _ => "Any upgrade" } };
-            if (Modifier is not null) parts.Add(Modifier); if (RequireUncursed) parts.Add("uncursed"); if (Source is not null) parts.Add(Labels.Source(Source.Value));
-            if (IdentityGroup is int g) parts.Add($"same item group {(char)(64 + g)}"); if (MaximumDepth is int d) parts.Add($"by floor {d}");
+            if (EffectSummary is string effect) parts.Add(effect); if (RequireUncursed) parts.Add("uncursed"); if (Source is not null) parts.Add(Labels.Source(Source.Value));
+            if (IdentityGroup is int g) parts.Add($"same item group {(char)(64 + g)}");
+            if (UpgradeSumGroup is int sumGroup && UpgradeSumTotal is int sumTotal) parts.Add($"combined +{sumTotal} total (group {(char)(64 + sumGroup)})");
+            if (MaximumDepth is int d) parts.Add($"by floor {d}");
             return string.Join(" • ", parts);
         }
     }
-    public ItemRequirement Clone() => (ItemRequirement)MemberwiseClone();
+    /// <summary>The effect predicate as row-subtitle text, or null for the wildcard.</summary>
+    [JsonIgnore] public string? EffectSummary
+    {
+        get
+        {
+            if (Kind is not (ItemKind.Weapon or ItemKind.Armor)) return null;
+            var family = Kind == ItemKind.Armor ? "glyph" : "enchantment";
+            if (EffectMode == EffectMode.AnyEnchantment) return $"any {family}";
+            if (EffectMode != EffectMode.Specific || Effects.Count == 0) return null;
+            var enchantments = ItemCatalog.NonCurse(Kind);
+            if (Effects.Count == enchantments.Length && enchantments.All(Effects.Contains)) return $"any {family}";
+            if (Effects.Count == 1) return Effects[0];
+            if (Effects.Count <= 4) return $"{string.Join(", ", Effects.Take(Effects.Count - 1))} or {Effects[^1]}";
+            return $"any of {Effects.Count} {family}s";
+        }
+    }
+    /// <summary>Whether a scouted item's effect (or lack of one) satisfies this requirement.</summary>
+    public bool EffectMatches(string? effect) => EffectMode switch
+    {
+        EffectMode.AnyEnchantment => effect is not null && !ItemCatalog.IsCurse(Kind, effect),
+        EffectMode.Specific when Effects.Count > 0 => effect is not null && Effects.Contains(effect),
+        _ => true,
+    };
+    /// <summary>Drops unknown or inconsistent values restored from a saved file.</summary>
+    public void Normalize()
+    {
+        Effects = Effects.Where(effect => ItemCatalog.Modifiers(Kind).Contains(effect)).Distinct().ToList();
+        if (Kind is ItemKind.Wand or ItemKind.Ring || (EffectMode == EffectMode.Specific && Effects.Count == 0)) EffectMode = EffectMode.Any;
+        if (EffectMode != EffectMode.Specific) Effects = [];
+        if (AlternativeGroup is < 1 or > 255) AlternativeGroup = null;
+        if (UpgradeSumGroup is < 1 or > 255) UpgradeSumGroup = null;
+        if (UpgradeSumTotal is < 1 or > 8) UpgradeSumTotal = null;
+        if (UpgradeSumGroup is null || UpgradeSumTotal is null || AlternativeGroup is not null) { UpgradeSumGroup = null; UpgradeSumTotal = null; }
+    }
+    public ItemRequirement Clone() { var copy = (ItemRequirement)MemberwiseClone(); copy.Effects = [.. Effects]; return copy; }
 }
 
 public sealed class QuerySettings
@@ -159,6 +212,15 @@ public sealed record SearchStatus(SearchState State, long Scanned, long Total, l
 
 public static class ScoutMatcher
 {
+    /// <summary>Highest upgrade any generated item can carry (+4 rings from the Imp).</summary>
+    private const int MaxItemUpgrade = 4;
+
+    /// <summary>
+    /// The client-side mirror of seedfinder-core's <c>best_match_indices</c>:
+    /// alternative groups collapse to one slot served by any single member,
+    /// every slot needs a distinct item, and combined-upgrade groups count (and
+    /// highlight) only when fully assigned at or above their total.
+    /// </summary>
     public static HashSet<int> SelectMatches(IReadOnlyList<ScoutItem> items,
         IEnumerable<ItemRequirement> requirements, int maximumDepth = 24,
         bool excludeBlacksmithRewards = false)
@@ -186,31 +248,61 @@ public static class ScoutMatcher
                 && requirement.Kind == item.Item.Kind
                 && (requirement.Item is null || requirement.Item.Id == item.Item.Id)
                 && tierMatches && upgradeMatches
-                && (requirement.Modifier is null || requirement.Modifier == item.Effect)
+                && requirement.EffectMatches(item.Effect)
                 && (!requirement.RequireUncursed || !item.Cursed)
                 && (requirement.Source is null || requirement.Source == item.Source);
         }
 
-        var candidates = requirements
-            .Select(requirement => (Requirement: requirement, Items: Enumerable.Range(0, items.Count)
-                .Where(index => Matches(items[index], requirement)).ToArray()))
-            .OrderBy(candidate => candidate.Items.Length).ToArray();
+        // Slots: an alternative group is one slot whose candidates are the
+        // union of every member's matches; each candidate remembers which
+        // member matched for identity/sum bookkeeping.
+        var slots = new List<List<(int Index, ItemRequirement Requirement)>>();
+        var slotOfGroup = new Dictionary<int, int>();
+        var sumGroups = new Dictionary<int, (int Members, int MinimumTotal)>();
+        foreach (var requirement in requirements)
+        {
+            int slot;
+            if (requirement.AlternativeGroup is int alternative)
+            {
+                if (!slotOfGroup.TryGetValue(alternative, out slot)) { slot = slots.Count; slots.Add([]); slotOfGroup[alternative] = slot; }
+            }
+            else { slot = slots.Count; slots.Add([]); }
+            if (requirement.UpgradeSumGroup is int label)
+            {
+                var group = sumGroups.TryGetValue(label, out var existing) ? existing : (0, requirement.UpgradeSumTotal ?? 0);
+                sumGroups[label] = (group.Item1 + 1, group.Item2);
+            }
+            for (var index = 0; index < items.Count; index++)
+                if (Matches(items[index], requirement)) slots[slot].Add((index, requirement));
+        }
+        // Fail early by assigning the most constrained slot first.
+        slots.Sort((left, right) => left.Count.CompareTo(right.Count));
+
         var used = new HashSet<int>();
-        var selected = new HashSet<int>();
+        var selected = new List<(int Index, int? SumGroup)>();
         var best = new HashSet<int>();
         var scenarios = new Dictionary<int, ulong>();
         var identities = new Dictionary<int, string>();
+        var sums = new Dictionary<int, (int Assigned, int Total)>();
 
         void Visit(int position)
         {
-            if (position == candidates.Length)
+            if (position == slots.Count)
             {
-                if (selected.Count > best.Count) best = [.. selected];
+                // Items serving an incomplete or short combined-upgrade group
+                // do not count and are not highlighted.
+                var failed = sums.Where(pair =>
+                {
+                    var group = sumGroups.GetValueOrDefault(pair.Key);
+                    return pair.Value.Assigned < group.Members || pair.Value.Total < group.MinimumTotal;
+                }).Select(pair => pair.Key).ToHashSet();
+                var counted = selected.Where(entry => entry.SumGroup is not int label || !failed.Contains(label))
+                    .Select(entry => entry.Index).ToList();
+                if (counted.Count > best.Count) best = [.. counted];
                 return;
             }
-            if (selected.Count + candidates.Length - position <= best.Count) return;
-            var (requirement, itemCandidates) = candidates[position];
-            foreach (var index in itemCandidates)
+            if (selected.Count + slots.Count - position <= best.Count) return;
+            foreach (var (index, requirement) in slots[position])
             {
                 if (used.Contains(index)) continue;
                 var item = items[index];
@@ -239,17 +331,41 @@ public static class ScoutMatcher
                     }
                     scenarios[value.Group] = compatible;
                 }
-                used.Add(index); selected.Add(index);
-                Visit(position + 1);
-                used.Remove(index); selected.Remove(index);
-                if (constraint is { } oldConstraint)
+                (int Assigned, int Total)? previousSum = null;
+                if (requirement.UpgradeSumGroup is int sumLabel)
                 {
-                    if (previousScenarios is ulong previous) scenarios[oldConstraint.Group] = previous;
-                    else scenarios.Remove(oldConstraint.Group);
+                    var group = sumGroups.GetValueOrDefault(sumLabel);
+                    if (sums.TryGetValue(sumLabel, out var current)) previousSum = current;
+                    var assigned = (previousSum?.Assigned ?? 0) + 1;
+                    var total = (previousSum?.Total ?? 0) + item.Upgrade;
+                    var remaining = Math.Max(0, group.Members - assigned);
+                    if (total + remaining * MaxItemUpgrade < group.MinimumTotal)
+                    {
+                        RestoreScenario(constraint, previousScenarios);
+                        RestoreIdentity(requirement, previousIdentity);
+                        continue;
+                    }
+                    sums[sumLabel] = (assigned, total);
                 }
+                used.Add(index); selected.Add((index, requirement.UpgradeSumGroup));
+                Visit(position + 1);
+                used.Remove(index); selected.RemoveAt(selected.Count - 1);
+                if (requirement.UpgradeSumGroup is int oldLabel)
+                {
+                    if (previousSum is { } previous) sums[oldLabel] = previous;
+                    else sums.Remove(oldLabel);
+                }
+                RestoreScenario(constraint, previousScenarios);
                 RestoreIdentity(requirement, previousIdentity);
             }
             Visit(position + 1);
+        }
+
+        void RestoreScenario((int Group, ulong Mask)? constraint, ulong? previous)
+        {
+            if (constraint is not { } value) return;
+            if (previous is ulong mask) scenarios[value.Group] = mask;
+            else scenarios.Remove(value.Group);
         }
 
         void RestoreIdentity(ItemRequirement requirement, string? previous)
@@ -280,5 +396,7 @@ public static class ItemCatalog
     public static IEnumerable<CatalogItem> For(ItemKind kind) => All.Where(x => x.Kind == kind && x.Tier != 1);
     public static CatalogItem? Find(string id) => All.FirstOrDefault(x => x.Id == id);
     public static IEnumerable<string> Modifiers(ItemKind kind) => kind switch { ItemKind.Weapon => Enchantments.Concat(WeaponCurses), ItemKind.Armor => Glyphs.Concat(ArmorCurses), _ => [] };
+    /// <summary>The family's 13 non-curse effect names ("Any enchantment" expands to these).</summary>
+    public static string[] NonCurse(ItemKind kind) => kind == ItemKind.Armor ? Glyphs : Enchantments;
     public static bool IsCurse(ItemKind kind, string effect) => (kind == ItemKind.Weapon ? WeaponCurses : ArmorCurses).Contains(effect);
 }

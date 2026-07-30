@@ -91,6 +91,7 @@ fun FinderScreen(
     onDeletePreset: (QueryPreset) -> Unit,
     onAdd: () -> Unit,
     onEdit: (ItemRequirement) -> Unit,
+    onAddAlternative: (ItemRequirement) -> Unit,
     onRemove: (ItemRequirement) -> Unit,
     onMaximumDepthChange: (Int) -> Unit,
     onRequireBlacksmithChange: (Boolean) -> Unit,
@@ -163,6 +164,7 @@ fun FinderScreen(
                     error = error,
                     onAdd = onAdd,
                     onEdit = onEdit,
+                    onAddAlternative = onAddAlternative,
                     onRemove = onRemove,
                     onMaximumDepthChange = onMaximumDepthChange,
                     onRequireBlacksmithChange = onRequireBlacksmithChange,
@@ -241,6 +243,7 @@ private fun QueryHeader(
     error: String?,
     onAdd: () -> Unit,
     onEdit: (ItemRequirement) -> Unit,
+    onAddAlternative: (ItemRequirement) -> Unit,
     onRemove: (ItemRequirement) -> Unit,
     onMaximumDepthChange: (Int) -> Unit,
     onRequireBlacksmithChange: (Boolean) -> Unit,
@@ -273,13 +276,31 @@ private fun QueryHeader(
                 modifier = Modifier.heightIn(max = 280.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                items(requirements, key = { it.key }) { requirement ->
-                    RequirementRow(
-                        requirement = requirement,
-                        enabled = !isSearching,
-                        onEdit = { onEdit(requirement) },
-                        onRemove = { onRemove(requirement) },
-                    )
+                items(
+                    requirementListEntries(requirements),
+                    key = { entry ->
+                        when (entry) {
+                            is RequirementListEntry.Single -> "requirement-${entry.requirement.key}"
+                            is RequirementListEntry.Group -> "alternatives-${entry.group}"
+                        }
+                    },
+                ) { entry ->
+                    when (entry) {
+                        is RequirementListEntry.Single -> RequirementRow(
+                            requirement = entry.requirement,
+                            enabled = !isSearching,
+                            onEdit = { onEdit(entry.requirement) },
+                            onAddAlternative = { onAddAlternative(entry.requirement) },
+                            onRemove = { onRemove(entry.requirement) },
+                        )
+                        is RequirementListEntry.Group -> AlternativeGroupCard(
+                            members = entry.members,
+                            enabled = !isSearching,
+                            onEdit = onEdit,
+                            onAddAlternative = onAddAlternative,
+                            onRemove = onRemove,
+                        )
+                    }
                 }
             }
         }
@@ -317,11 +338,62 @@ private fun QueryHeader(
     }
 }
 
+/** One list entry: a plain requirement, or a whole "Any of" alternative group. */
+internal sealed interface RequirementListEntry {
+    data class Single(val requirement: ItemRequirement) : RequirementListEntry
+    data class Group(val group: Int, val members: List<ItemRequirement>) : RequirementListEntry
+}
+
+/** Collapses each alternative group into one entry at its first member's position. */
+internal fun requirementListEntries(requirements: List<ItemRequirement>): List<RequirementListEntry> {
+    val entries = mutableListOf<RequirementListEntry>()
+    val groupPositions = mutableMapOf<Int, Int>()
+    for (requirement in requirements) {
+        val group = requirement.alternativeGroup
+        if (group == null) {
+            entries.add(RequirementListEntry.Single(requirement))
+        } else {
+            val position = groupPositions[group]
+            if (position == null) {
+                groupPositions[group] = entries.size
+                entries.add(RequirementListEntry.Group(group, listOf(requirement)))
+            } else {
+                val existing = entries[position] as RequirementListEntry.Group
+                entries[position] = existing.copy(members = existing.members + requirement)
+            }
+        }
+    }
+    return entries
+}
+
+@Composable
+private fun RequirementSummary(requirement: ItemRequirement, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text(
+            requirement.title,
+            style = MaterialTheme.typography.bodyLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        val detail = requirementDetailLine(requirement)
+        if (detail.isNotEmpty()) {
+            Text(
+                detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
 @Composable
 private fun RequirementRow(
     requirement: ItemRequirement,
     enabled: Boolean,
     onEdit: () -> Unit,
+    onAddAlternative: () -> Unit,
     onRemove: () -> Unit,
 ) {
     Surface(
@@ -337,27 +409,17 @@ private fun RequirementRow(
         ) {
             SpriteTile(
                 item = requirement.item,
-                glow = ItemGlows.forEffect(requirement.modifier),
+                glow = ItemGlows.forEffect(requirement.singleEffect),
                 tileSize = 40,
             )
             Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    requirement.title,
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+            RequirementSummary(requirement, Modifier.weight(1f))
+            IconButton(onClick = onAddAlternative, enabled = enabled) {
+                Icon(
+                    Icons.Filled.Add,
+                    contentDescription = "Add alternative",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                val detail = requirementDetailLine(requirement)
-                if (detail.isNotEmpty()) {
-                    Text(
-                        detail,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
             }
             IconButton(onClick = onRemove, enabled = enabled) {
                 Icon(
@@ -365,6 +427,66 @@ private fun RequirementRow(
                     contentDescription = "Remove requirement",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+    }
+}
+
+/** One slot in the query: any single member of the group can satisfy it. */
+@Composable
+private fun AlternativeGroupCard(
+    members: List<ItemRequirement>,
+    enabled: Boolean,
+    onEdit: (ItemRequirement) -> Unit,
+    onAddAlternative: (ItemRequirement) -> Unit,
+    onRemove: (ItemRequirement) -> Unit,
+) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(start = 10.dp, top = 8.dp, end = 2.dp, bottom = 2.dp)) {
+            Text(
+                "Any of",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            members.forEachIndexed { index, member ->
+                if (index > 0) {
+                    Text(
+                        "or",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(enabled = enabled) { onEdit(member) }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SpriteTile(
+                        item = member.item,
+                        glow = ItemGlows.forEffect(member.singleEffect),
+                        tileSize = 40,
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    RequirementSummary(member, Modifier.weight(1f))
+                    IconButton(onClick = { onRemove(member) }, enabled = enabled) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = "Remove alternative",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            TextButton(onClick = { onAddAlternative(members.first()) }, enabled = enabled) {
+                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Add alternative")
             }
         }
     }

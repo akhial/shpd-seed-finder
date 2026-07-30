@@ -9,10 +9,10 @@ use serde::{Deserialize, Serialize};
 use shpd_seedfinder_core::catalog::{Effect, ItemKind, item, item_by_stable_id};
 use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::model::ItemSource;
-use shpd_seedfinder_core::query::{TierRequirement, UpgradeRequirement};
+use shpd_seedfinder_core::query::{EffectSet, TierRequirement, UpgradeRequirement, UpgradeSum};
 
 use crate::config::APP_ID;
-use crate::state::{ALL_SOURCES, AppState, UiRequirement};
+use crate::state::{ALL_SOURCES, AppState, UiEffect, UiRequirement};
 
 #[derive(Default, Deserialize, Serialize)]
 struct SavedState {
@@ -47,12 +47,27 @@ struct SavedRequirement {
     item: Option<String>,
     tier: Option<SavedPredicate>,
     upgrade: Option<SavedPredicate>,
+    /// Legacy single-effect field, still written for one-element sets so
+    /// older builds keep reading new saves.
     effect: Option<String>,
+    /// `"any"`, `"any_enchantment"`, or `"one_of"`; absent falls back to the
+    /// legacy `effect` field.
+    #[serde(default)]
+    effect_mode: Option<String>,
+    /// Effect wire names for the `"one_of"` mode.
+    #[serde(default)]
+    effects: Option<Vec<String>>,
     #[serde(default)]
     require_uncursed: bool,
     source: Option<String>,
     identity_group: Option<u8>,
     max_depth: Option<u8>,
+    #[serde(default)]
+    alternative_group: Option<u8>,
+    #[serde(default)]
+    upgrade_sum_group: Option<u8>,
+    #[serde(default)]
+    upgrade_sum_total: Option<u8>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -151,6 +166,8 @@ fn restore_state(saved: SavedState) -> AppState {
             state.requirements.push(restored);
         }
     }
+    // Dropped rows may leave one-member alternative groups behind.
+    state.dissolve_lone_alternatives();
     state
 }
 
@@ -185,13 +202,33 @@ fn save_requirement(requirement: &UiRequirement) -> SavedRequirement {
         }),
         effect: requirement
             .effect
+            .single()
             .map(|effect| effect.wire_name().to_owned()),
+        effect_mode: Some(
+            match requirement.effect {
+                UiEffect::Any => "any",
+                UiEffect::AnyEnchantment => "any_enchantment",
+                UiEffect::OneOf(_) => "one_of",
+            }
+            .to_owned(),
+        ),
+        effects: match requirement.effect {
+            UiEffect::Any | UiEffect::AnyEnchantment => None,
+            UiEffect::OneOf(set) => Some(
+                set.effects()
+                    .map(|effect| effect.wire_name().to_owned())
+                    .collect(),
+            ),
+        },
         require_uncursed: requirement.require_uncursed,
         source: requirement
             .source
             .map(|source| source_key(source).to_owned()),
         identity_group: requirement.identity_group,
         max_depth: requirement.max_depth,
+        alternative_group: requirement.alternative_group,
+        upgrade_sum_group: requirement.upgrade_sum.map(|sum| sum.group),
+        upgrade_sum_total: requirement.upgrade_sum.map(|sum| sum.minimum_total),
     }
 }
 
@@ -215,13 +252,18 @@ fn restore_requirement(saved: &SavedRequirement, key: u64) -> Option<UiRequireme
         UpgradeRequirement::Exact,
         UpgradeRequirement::AtLeast,
     )?;
-    let effect = match &saved.effect {
-        None => None,
-        Some(name) => Some(Effect::from_wire_name(kind, name)?),
-    };
+    let effect = restore_effect(saved, kind)?;
     let source = match &saved.source {
         None => None,
         Some(name) => Some(source_from_key(name)?),
+    };
+    let upgrade_sum = match (saved.upgrade_sum_group, saved.upgrade_sum_total) {
+        (None, None) => None,
+        (Some(group), Some(minimum_total)) => Some(UpgradeSum {
+            group,
+            minimum_total,
+        }),
+        (None, Some(_)) | (Some(_), None) => return None,
     };
     Some(UiRequirement {
         key,
@@ -234,7 +276,33 @@ fn restore_requirement(saved: &SavedRequirement, key: u64) -> Option<UiRequireme
         source,
         identity_group: saved.identity_group,
         max_depth: saved.max_depth,
+        alternative_group: saved.alternative_group,
+        upgrade_sum,
     })
+}
+
+/// Decodes the effect predicate, preferring the mode field and falling back
+/// to the legacy single-name field; an unknown mode or name drops the row.
+fn restore_effect(saved: &SavedRequirement, kind: ItemKind) -> Option<UiEffect> {
+    match saved.effect_mode.as_deref() {
+        None => match &saved.effect {
+            None => Some(UiEffect::Any),
+            Some(name) => Some(UiEffect::OneOf(EffectSet::single(Effect::from_wire_name(
+                kind, name,
+            )?))),
+        },
+        Some("any") => Some(UiEffect::Any),
+        Some("any_enchantment") => Some(UiEffect::AnyEnchantment),
+        Some("one_of") => {
+            let names = saved.effects.as_ref()?;
+            let mut effects = Vec::with_capacity(names.len());
+            for name in names {
+                effects.push(Effect::from_wire_name(kind, name)?);
+            }
+            Some(UiEffect::OneOf(EffectSet::from_effects(effects)?))
+        }
+        Some(_) => None,
+    }
 }
 
 fn restore_tier_predicate(saved: Option<&SavedPredicate>) -> Option<TierRequirement> {
@@ -322,10 +390,12 @@ fn source_from_key(key: &str) -> Option<ItemSource> {
 mod tests {
     use shpd_seedfinder_core::catalog::{Effect, ItemId, ItemKind, WeaponEffect};
     use shpd_seedfinder_core::model::ItemSource;
-    use shpd_seedfinder_core::query::{TierRequirement, UpgradeRequirement};
+    use shpd_seedfinder_core::query::{
+        EffectSet, TierRequirement, UpgradeRequirement, UpgradeSum,
+    };
 
     use super::{SavedPreset, decode_presets, restore_requirement, save_requirement, save_state};
-    use crate::state::{AppState, UiRequirement};
+    use crate::state::{AppState, UiEffect, UiRequirement};
 
     #[test]
     fn requirements_round_trip() {
@@ -335,11 +405,13 @@ mod tests {
             item: Some(ItemId::Greatsword),
             tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::AtLeast(2),
-            effect: Some(Effect::Weapon(WeaponEffect::Blazing)),
+            effect: UiEffect::OneOf(EffectSet::single(Effect::Weapon(WeaponEffect::Blazing))),
             require_uncursed: true,
             source: Some(ItemSource::SacrificialFire),
             identity_group: Some(3),
             max_depth: Some(21),
+            alternative_group: Some(2),
+            upgrade_sum: None,
         };
         let restored = restore_requirement(&save_requirement(&requirement), 7).unwrap();
         assert_eq!(restored, requirement);
@@ -351,9 +423,61 @@ mod tests {
     }
 
     #[test]
+    fn effect_sets_and_upgrade_sums_round_trip() {
+        let mut requirement = UiRequirement::new(4);
+        requirement.effect = UiEffect::OneOf(
+            EffectSet::from_effects([
+                Effect::Weapon(WeaponEffect::Blocking),
+                Effect::Weapon(WeaponEffect::Vampiric),
+            ])
+            .unwrap(),
+        );
+        let saved = save_requirement(&requirement);
+        assert_eq!(saved.effect_mode.as_deref(), Some("one_of"));
+        // Two-element sets have no legacy single-effect spelling.
+        assert!(saved.effect.is_none());
+        assert_eq!(restore_requirement(&saved, 4).unwrap(), requirement);
+
+        requirement.effect = UiEffect::AnyEnchantment;
+        requirement.upgrade_sum = Some(UpgradeSum {
+            group: 1,
+            minimum_total: 2,
+        });
+        let restored = restore_requirement(&save_requirement(&requirement), 4).unwrap();
+        assert_eq!(restored, requirement);
+    }
+
+    #[test]
+    fn legacy_single_effect_saves_still_load() {
+        let mut saved = save_requirement(&UiRequirement::new(1));
+        saved.effect = Some("Blazing".to_owned());
+        saved.effect_mode = None;
+        saved.effects = None;
+        assert_eq!(
+            restore_requirement(&saved, 1).unwrap().effect,
+            UiEffect::OneOf(EffectSet::single(Effect::Weapon(WeaponEffect::Blazing)))
+        );
+
+        saved.effect = None;
+        assert_eq!(
+            restore_requirement(&saved, 1).unwrap().effect,
+            UiEffect::Any
+        );
+    }
+
+    #[test]
     fn unknown_names_are_dropped() {
         let mut saved = save_requirement(&UiRequirement::new(1));
         saved.kind = "trinket".to_owned();
+        assert!(restore_requirement(&saved, 1).is_none());
+
+        let mut saved = save_requirement(&UiRequirement::new(1));
+        saved.effect_mode = Some("someday".to_owned());
+        assert!(restore_requirement(&saved, 1).is_none());
+
+        // A sum total without its group is a decode error, matching the wire.
+        let mut saved = save_requirement(&UiRequirement::new(1));
+        saved.upgrade_sum_total = Some(2);
         assert!(restore_requirement(&saved, 1).is_none());
     }
 

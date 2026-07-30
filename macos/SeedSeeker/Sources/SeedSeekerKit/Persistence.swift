@@ -33,15 +33,16 @@ public struct SavedQuery: Codable, Sendable {
         guard (1...24).contains(maximumDepth), (0...511).contains(challenges) else { return nil }
         for requirement in requirements {
             if let item = requirement.item, ItemCatalog.findById(item.id) != item { return nil }
-            if let modifier = requirement.modifier,
-               !ItemCatalog.modifiersFor(requirement.kind).contains(modifier) { return nil }
             guard (try? ItemRequirement(key: requirement.key, item: requirement.item,
-                upgrade: requirement.upgrade, modifier: requirement.modifier, kind: requirement.kind,
+                upgrade: requirement.upgrade, effect: requirement.effect, kind: requirement.kind,
                 tier: requirement.tier, tierMatch: requirement.tierMatch,
                 upgradeMatch: requirement.upgradeMatch, source: requirement.source,
                 identityGroup: requirement.identityGroup,
                 maximumDepth: requirement.maximumDepth,
-                requireUncursed: requirement.requireUncursed)) != nil else { return nil }
+                requireUncursed: requirement.requireUncursed,
+                alternativeGroup: requirement.alternativeGroup,
+                upgradeSumGroup: requirement.upgradeSumGroup,
+                upgradeSumTotal: requirement.upgradeSumTotal)) != nil else { return nil }
         }
         return self
     }

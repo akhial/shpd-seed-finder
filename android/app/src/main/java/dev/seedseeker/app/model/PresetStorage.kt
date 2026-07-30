@@ -45,11 +45,24 @@ class PresetStorage(private val preferences: SharedPreferences) {
                     put("tierMatch", requirement.tierMatch.name)
                     put("upgrade", requirement.upgrade)
                     put("upgradeMatch", requirement.upgradeMatch.name)
-                    put("modifier", requirement.modifier ?: JSONObject.NULL)
+                    put(
+                        "effectMode",
+                        when (requirement.effect) {
+                            EffectRequirement.Any -> "ANY"
+                            EffectRequirement.AnyEnchantment -> "ANY_ENCHANTMENT"
+                            is EffectRequirement.OneOf -> "ONE_OF"
+                        },
+                    )
+                    (requirement.effect as? EffectRequirement.OneOf)?.let { effect ->
+                        put("effects", JSONArray(effect.effects))
+                    }
                     put("source", requirement.source?.name ?: JSONObject.NULL)
                     put("identityGroup", requirement.identityGroup ?: JSONObject.NULL)
                     put("maximumDepth", requirement.maximumDepth ?: JSONObject.NULL)
                     put("requireUncursed", requirement.requireUncursed)
+                    put("alternativeGroup", requirement.alternativeGroup ?: JSONObject.NULL)
+                    put("upgradeSumGroup", requirement.upgradeSumGroup ?: JSONObject.NULL)
+                    put("upgradeSumTotal", requirement.upgradeSumTotal ?: JSONObject.NULL)
                 })
             }
         })
@@ -77,7 +90,7 @@ class PresetStorage(private val preferences: SharedPreferences) {
                         key = index.toLong() + 1,
                         item = item,
                         upgrade = encoded.getInt("upgrade"),
-                        modifier = encoded.stringOrNull("modifier"),
+                        effect = decodeEffect(encoded),
                         kind = ItemKind.valueOf(encoded.getString("kind")),
                         tier = encoded.optInt("tier", 0),
                         tierMatch = TierMatch.valueOf(encoded.optString("tierMatch", TierMatch.ANY.name)),
@@ -86,6 +99,9 @@ class PresetStorage(private val preferences: SharedPreferences) {
                         identityGroup = encoded.optInt("identityGroup").takeIf { !encoded.isNull("identityGroup") },
                         maximumDepth = encoded.optInt("maximumDepth").takeIf { !encoded.isNull("maximumDepth") },
                         requireUncursed = encoded.optBoolean("requireUncursed", false),
+                        alternativeGroup = encoded.optInt("alternativeGroup").takeIf { !encoded.isNull("alternativeGroup") },
+                        upgradeSumGroup = encoded.optInt("upgradeSumGroup").takeIf { !encoded.isNull("upgradeSumGroup") },
+                        upgradeSumTotal = encoded.optInt("upgradeSumTotal").takeIf { !encoded.isNull("upgradeSumTotal") },
                     ),
                 )
             }
@@ -99,6 +115,20 @@ class PresetStorage(private val preferences: SharedPreferences) {
             challenges = challenges,
         )
     }
+
+    /** New saves carry `effectMode`; legacy saves carry a single `modifier` name. */
+    private fun decodeEffect(encoded: JSONObject): EffectRequirement =
+        when (encoded.optString("effectMode", "")) {
+            "ANY" -> EffectRequirement.Any
+            "ANY_ENCHANTMENT" -> EffectRequirement.AnyEnchantment
+            "ONE_OF" -> {
+                val names = encoded.getJSONArray("effects")
+                EffectRequirement.OneOf(List(names.length()) { names.getString(it) })
+            }
+            else -> encoded.stringOrNull("modifier")
+                ?.let { EffectRequirement.OneOf(listOf(it)) }
+                ?: EffectRequirement.Any
+        }
 
     private fun JSONObject.stringOrNull(key: String): String? =
         if (isNull(key)) null else getString(key).takeIf(String::isNotEmpty)

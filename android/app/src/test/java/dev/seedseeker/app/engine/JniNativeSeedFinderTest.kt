@@ -21,7 +21,6 @@ class JniNativeSeedFinderTest {
                     key = 1,
                     item = ItemCatalog.wands.first { it.id == "wand_frost" },
                     upgrade = 2,
-                    modifier = null,
                 ),
             ),
         )
@@ -51,7 +50,7 @@ class JniNativeSeedFinderTest {
         val bindings = RecordingBindings()
         val finder = JniNativeSeedFinder(bindings)
         val request = SearchRequest(
-            listOf(ItemRequirement(1, ItemCatalog.armor.first(), 1, null)),
+            listOf(ItemRequirement(1, ItemCatalog.armor.first(), 1)),
         )
         val expected = listOf(
             0L to SearchState.RUNNING,

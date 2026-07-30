@@ -99,26 +99,35 @@ pub fn present(app: &adw::Application) {
         }
     });
 
-    let edit_requirement: Rc<dyn Fn(UiRequirement, bool)> = Rc::new({
+    // Inserts or updates one edited requirement, then keeps every
+    // combined-upgrade group agreeing on the edited total.
+    let commit_requirement: Rc<dyn Fn(UiRequirement)> = Rc::new({
         let state = Rc::clone(&state);
         let refresh_all = Rc::clone(&refresh_all);
+        move |result| {
+            let mut state = state.borrow_mut();
+            if let Some(slot) = state
+                .requirements
+                .iter_mut()
+                .find(|other| other.key == result.key)
+            {
+                *slot = result;
+            } else {
+                state.requirements.push(result);
+            }
+            state.align_upgrade_sums(result.key);
+            drop(state);
+            refresh_all();
+        }
+    });
+
+    let edit_requirement: Rc<dyn Fn(UiRequirement, bool)> = Rc::new({
+        let commit_requirement = Rc::clone(&commit_requirement);
         let window = window.clone();
         move |requirement, is_new| {
-            let state = Rc::clone(&state);
-            let refresh_all = Rc::clone(&refresh_all);
+            let commit_requirement = Rc::clone(&commit_requirement);
             requirement_editor::present(&window, &requirement, is_new, move |result| {
-                let mut state = state.borrow_mut();
-                if let Some(slot) = state
-                    .requirements
-                    .iter_mut()
-                    .find(|other| other.key == result.key)
-                {
-                    *slot = result;
-                } else {
-                    state.requirements.push(result);
-                }
-                drop(state);
-                refresh_all();
+                commit_requirement(result);
             });
         }
     });
@@ -142,11 +151,57 @@ pub fn present(app: &adw::Application) {
         let state = Rc::clone(&state);
         let refresh_all = Rc::clone(&refresh_all);
         move |key| {
-            state
-                .borrow_mut()
+            let mut state_ref = state.borrow_mut();
+            state_ref
                 .requirements
                 .retain(|requirement| requirement.key != key);
+            // A group the removal shrank to one member is no group anymore.
+            state_ref.dissolve_lone_alternatives();
+            drop(state_ref);
             refresh_all();
+        }
+    });
+    query.connect_add_alternative({
+        let state = Rc::clone(&state);
+        let commit_requirement = Rc::clone(&commit_requirement);
+        let window = window.clone();
+        move |source_key| {
+            let mut state_ref = state.borrow_mut();
+            let Some(source) = state_ref
+                .requirements
+                .iter()
+                .find(|requirement| requirement.key == source_key)
+                .copied()
+            else {
+                return;
+            };
+            // Joining an alternative: reuse the source's group or open a new
+            // one. A combined-upgrade total cannot live inside a group.
+            let group = source
+                .alternative_group
+                .unwrap_or_else(|| state_ref.free_alternative_group());
+            let draft = UiRequirement {
+                kind: source.kind,
+                alternative_group: Some(group),
+                ..UiRequirement::new(state_ref.claim_key())
+            };
+            drop(state_ref);
+            let state = Rc::clone(&state);
+            let commit_requirement = Rc::clone(&commit_requirement);
+            requirement_editor::present(&window, &draft, true, move |result| {
+                // The source only joins the group once the new member is
+                // confirmed; cancelling leaves it untouched.
+                if let Some(source) = state
+                    .borrow_mut()
+                    .requirements
+                    .iter_mut()
+                    .find(|requirement| requirement.key == source_key)
+                {
+                    source.alternative_group = Some(group);
+                    source.upgrade_sum = None;
+                }
+                commit_requirement(result);
+            });
         }
     });
     query.connect_changed({

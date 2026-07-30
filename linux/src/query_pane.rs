@@ -3,6 +3,7 @@
 //! Query-builder sidebar: requirements, search scope, and the search action.
 
 use std::cell::{Cell, RefCell};
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use adw::prelude::*;
@@ -26,6 +27,7 @@ pub struct QueryPane {
     updating: Cell<bool>,
     on_edit: RefCell<Option<KeyHandler>>,
     on_remove: RefCell<Option<KeyHandler>>,
+    on_add_alternative: RefCell<Option<KeyHandler>>,
     on_changed: RefCell<Option<Box<dyn Fn()>>>,
 }
 
@@ -164,6 +166,7 @@ impl QueryPane {
             updating: Cell::new(false),
             on_edit: RefCell::new(None),
             on_remove: RefCell::new(None),
+            on_add_alternative: RefCell::new(None),
             on_changed: RefCell::new(None),
         });
 
@@ -195,6 +198,11 @@ impl QueryPane {
 
     pub fn connect_remove(&self, handler: impl Fn(u64) + 'static) {
         self.on_remove.replace(Some(Box::new(handler)));
+    }
+
+    /// Runs when the user asks for a new alternative to the given row.
+    pub fn connect_add_alternative(&self, handler: impl Fn(u64) + 'static) {
+        self.on_add_alternative.replace(Some(Box::new(handler)));
     }
 
     /// Runs after the user changes any scope or performance control.
@@ -242,40 +250,113 @@ impl QueryPane {
             self.list.append(&row);
             return;
         }
+        // An alternative group renders as one "Any of" card at the position
+        // of its first member; everything else stays an individual row.
+        let mut group_members: BTreeMap<u8, Vec<&UiRequirement>> = BTreeMap::new();
         for requirement in &state.requirements {
-            let remove_button = gtk::Button::builder()
-                .icon_name("user-trash-symbolic")
-                .css_classes(["flat"])
-                .valign(gtk::Align::Center)
-                .tooltip_text("Remove Requirement")
-                .build();
-            let row = adw::ActionRow::builder()
-                .title(gtk::glib::markup_escape_text(&requirement.title()))
-                .subtitle(gtk::glib::markup_escape_text(&requirement.subtitle()))
-                .activatable(true)
-                .build();
-            row.add_prefix(&requirement_prefix(requirement));
-            row.add_suffix(&remove_button);
-
-            let key = requirement.key;
-            row.connect_activated({
-                let pane = Rc::clone(self);
-                move |_| {
-                    if let Some(handler) = pane.on_edit.borrow().as_ref() {
-                        handler(key);
-                    }
-                }
-            });
-            remove_button.connect_clicked({
-                let pane = Rc::clone(self);
-                move |_| {
-                    if let Some(handler) = pane.on_remove.borrow().as_ref() {
-                        handler(key);
-                    }
-                }
-            });
-            self.list.append(&row);
+            if let Some(group) = requirement.alternative_group {
+                group_members.entry(group).or_default().push(requirement);
+            }
         }
+        let mut rendered_groups: Vec<u8> = Vec::new();
+        for requirement in &state.requirements {
+            match requirement.alternative_group {
+                None => self.list.append(&self.requirement_row(requirement)),
+                Some(group) if rendered_groups.contains(&group) => {}
+                Some(group) => {
+                    rendered_groups.push(group);
+                    self.list
+                        .append(&self.group_card(&group_members[&group]));
+                }
+            }
+        }
+    }
+
+    /// One requirement row with its edit, add-alternative, and remove
+    /// affordances, used both at the top level and inside group cards.
+    fn requirement_row(self: &Rc<Self>, requirement: &UiRequirement) -> adw::ActionRow {
+        let alternative_button = gtk::Button::builder()
+            .icon_name("list-add-symbolic")
+            .css_classes(["flat"])
+            .valign(gtk::Align::Center)
+            .tooltip_text("Add Alternative")
+            .build();
+        let remove_button = gtk::Button::builder()
+            .icon_name("user-trash-symbolic")
+            .css_classes(["flat"])
+            .valign(gtk::Align::Center)
+            .tooltip_text("Remove Requirement")
+            .build();
+        let row = adw::ActionRow::builder()
+            .title(gtk::glib::markup_escape_text(&requirement.title()))
+            .subtitle(gtk::glib::markup_escape_text(&requirement.subtitle()))
+            .activatable(true)
+            .build();
+        row.add_prefix(&requirement_prefix(requirement));
+        row.add_suffix(&alternative_button);
+        row.add_suffix(&remove_button);
+
+        let key = requirement.key;
+        row.connect_activated({
+            let pane = Rc::clone(self);
+            move |_| {
+                if let Some(handler) = pane.on_edit.borrow().as_ref() {
+                    handler(key);
+                }
+            }
+        });
+        alternative_button.connect_clicked({
+            let pane = Rc::clone(self);
+            move |_| {
+                if let Some(handler) = pane.on_add_alternative.borrow().as_ref() {
+                    handler(key);
+                }
+            }
+        });
+        remove_button.connect_clicked({
+            let pane = Rc::clone(self);
+            move |_| {
+                if let Some(handler) = pane.on_remove.borrow().as_ref() {
+                    handler(key);
+                }
+            }
+        });
+        row
+    }
+
+    /// One "Any of" card: the group's member rows in a nested list,
+    /// separated by "or".
+    fn group_card(self: &Rc<Self>, members: &[&UiRequirement]) -> gtk::ListBoxRow {
+        let nested = gtk::ListBox::builder()
+            .css_classes(["boxed-list"])
+            .selection_mode(gtk::SelectionMode::None)
+            .build();
+        for (index, member) in members.iter().enumerate() {
+            if index > 0 {
+                nested.append(&or_separator());
+            }
+            nested.append(&self.requirement_row(member));
+        }
+        let title = gtk::Label::builder()
+            .label("Any of")
+            .halign(gtk::Align::Start)
+            .css_classes(["heading"])
+            .build();
+        let card = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(6)
+            .margin_top(8)
+            .margin_bottom(8)
+            .margin_start(8)
+            .margin_end(8)
+            .build();
+        card.append(&title);
+        card.append(&nested);
+        gtk::ListBoxRow::builder()
+            .activatable(false)
+            .selectable(false)
+            .child(&card)
+            .build()
     }
 
     /// Flips the search action between its start and stop presentation.
@@ -296,15 +377,30 @@ impl QueryPane {
     }
 }
 
+/// The dim "or" divider between two members of an alternative group.
+fn or_separator() -> gtk::ListBoxRow {
+    let label = gtk::Label::builder()
+        .label("or")
+        .css_classes(["dim-label", "caption"])
+        .margin_top(2)
+        .margin_bottom(2)
+        .build();
+    gtk::ListBoxRow::builder()
+        .activatable(false)
+        .selectable(false)
+        .child(&label)
+        .build()
+}
+
 /// The row icon for one requirement: the item's real sprite once a concrete
-/// item is pinned, pulsing the enchantment or curse the requirement asks for,
-/// and otherwise the family's symbolic icon — a wildcard requirement depicts no
-/// particular item.
+/// item is pinned, pulsing the single enchantment or curse the requirement
+/// asks for, and otherwise the family's symbolic icon — a wildcard
+/// requirement depicts no particular item.
 fn requirement_prefix(requirement: &UiRequirement) -> gtk::Widget {
     match requirement.item {
         Some(item_id) => sprites::item_image(
             shpd_seedfinder_core::catalog::item(item_id),
-            glow::effect(requirement.effect),
+            glow::effect(requirement.effect.single()),
         ),
         None => gtk::Image::from_icon_name(kind_icon(requirement.kind)).upcast(),
     }

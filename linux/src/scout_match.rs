@@ -1,140 +1,50 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 //! Deterministic selection of jointly obtainable scouted items that satisfy
-//! the current requirements, mirroring the engine's search matcher.
+//! the current requirements, delegating to the engine's matcher.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 
-use shpd_seedfinder_core::catalog::ItemId;
-use shpd_seedfinder_core::model::{ItemSource, WorldItem};
+use shpd_seedfinder_core::challenges::Challenges;
+use shpd_seedfinder_core::model::{GeneratedWorld, WorldItem};
+use shpd_seedfinder_core::query::{SearchQuery, best_match_indices};
+use shpd_seedfinder_core::seed::DungeonSeed;
 
 use crate::state::UiRequirement;
 
-/// One requirement's identity group and its qualifying `(index, identity)`
-/// candidates in the scouted world.
-type RequirementCandidates = (Option<u8>, Vec<(usize, ItemId)>);
-
 /// Selects the largest set of scouted item indices where each item satisfies
-/// one distinct requirement and all choice or scenario groups stay compatible.
+/// one distinct requirement slot and all choice, scenario, alternative, and
+/// combined-upgrade groups stay compatible. The requirements need not form a
+/// valid query; the engine matches whatever it is given.
 pub fn scout_match_indices(
     items: &[WorldItem],
     requirements: &[UiRequirement],
     max_depth: u8,
     exclude_blacksmith_rewards: bool,
 ) -> HashSet<usize> {
-    let mut candidates: Vec<RequirementCandidates> = requirements
-        .iter()
-        .map(|requirement| {
-            let core = requirement.to_core();
-            (
-                requirement.identity_group,
-                items
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, candidate)| {
-                        candidate.depth <= max_depth
-                            && candidate.depth <= requirement.max_depth.unwrap_or(max_depth)
-                            && (!exclude_blacksmith_rewards
-                                || candidate.source != ItemSource::BlacksmithReward)
-                            && core.matches(candidate)
-                    })
-                    .map(|(index, candidate)| (index, candidate.item))
-                    .collect(),
-            )
-        })
-        .collect();
-    candidates.sort_by_key(|(_, values)| values.len());
-
-    let mut search = BestSubset {
-        candidates: &candidates,
-        items,
-        used: vec![false; items.len()],
-        selected: Vec::new(),
-        best: HashSet::new(),
-        scenarios: BTreeMap::new(),
-        identities: BTreeMap::new(),
+    let query = SearchQuery {
+        requirements: requirements
+            .iter()
+            .map(|requirement| requirement.to_core())
+            .collect(),
+        max_depth,
+        challenges: Challenges::NONE,
+        require_blacksmith: false,
+        exclude_blacksmith_rewards,
+        fast_mode: false,
     };
-    search.visit(0);
-    search.best
-}
-
-struct BestSubset<'a> {
-    candidates: &'a [RequirementCandidates],
-    items: &'a [WorldItem],
-    used: Vec<bool>,
-    selected: Vec<usize>,
-    best: HashSet<usize>,
-    scenarios: BTreeMap<u16, u64>,
-    identities: BTreeMap<u8, ItemId>,
-}
-
-impl BestSubset<'_> {
-    fn visit(&mut self, position: usize) {
-        if position == self.candidates.len() {
-            if self.selected.len() > self.best.len() {
-                self.best = self.selected.iter().copied().collect();
-            }
-            return;
-        }
-        // Even satisfying every remaining requirement cannot beat the best.
-        if self.selected.len() + (self.candidates.len() - position) <= self.best.len() {
-            return;
-        }
-
-        let (identity_group, requirement_candidates) = &self.candidates[position];
-        for &(index, identity) in requirement_candidates {
-            if self.used[index] {
-                continue;
-            }
-            let mut previous_identity = None;
-            if let Some(group) = identity_group {
-                if self
-                    .identities
-                    .get(group)
-                    .is_some_and(|wanted| *wanted != identity)
-                {
-                    continue;
-                }
-                previous_identity = Some((*group, self.identities.insert(*group, identity)));
-            }
-            let mut previous_scenarios = None;
-            if let Some((group, mask)) = self.items[index].accessibility.scenario_constraint() {
-                let compatible = self.scenarios.get(&group).copied().unwrap_or(u64::MAX) & mask;
-                if compatible == 0 {
-                    Self::rewind(&mut self.identities, previous_identity);
-                    continue;
-                }
-                previous_scenarios = Some((group, self.scenarios.insert(group, compatible)));
-            }
-
-            self.used[index] = true;
-            self.selected.push(index);
-            self.visit(position + 1);
-            self.selected.pop();
-            self.used[index] = false;
-            Self::rewind(&mut self.scenarios, previous_scenarios);
-            Self::rewind(&mut self.identities, previous_identity);
-        }
-        // Also consider leaving this requirement unsatisfied.
-        self.visit(position + 1);
-    }
-
-    fn rewind<K: Ord, V>(map: &mut BTreeMap<K, V>, previous: Option<(K, Option<V>)>) {
-        if let Some((key, previous)) = previous {
-            if let Some(previous) = previous {
-                map.insert(key, previous);
-            } else {
-                map.remove(&key);
-            }
-        }
-    }
+    let world = GeneratedWorld {
+        seed: DungeonSeed::MIN,
+        items: items.to_vec(),
+    };
+    best_match_indices(&query, &world).into_iter().collect()
 }
 
 #[cfg(test)]
 mod tests {
     use shpd_seedfinder_core::catalog::{ItemId, ItemKind};
     use shpd_seedfinder_core::model::{Accessibility, ItemSource, WorldItem};
-    use shpd_seedfinder_core::query::UpgradeRequirement;
+    use shpd_seedfinder_core::query::{UpgradeRequirement, UpgradeSum};
 
     use super::scout_match_indices;
     use crate::state::UiRequirement;
@@ -246,5 +156,78 @@ mod tests {
             1
         );
         assert!(scout_match_indices(&items, &requirements, 24, true).is_empty());
+    }
+
+    #[test]
+    fn an_alternative_group_is_satisfied_by_one_member() {
+        let alternative = |key, item| UiRequirement {
+            alternative_group: Some(1),
+            ..requirement(key, ItemKind::Weapon, Some(item))
+        };
+        let requirements = [
+            alternative(1, ItemId::Spear),
+            alternative(2, ItemId::Sword),
+        ];
+        let items = [world_item(ItemId::Sword, 3, Accessibility::Independent)];
+        assert_eq!(
+            scout_match_indices(&items, &requirements, 24, false),
+            [0].into()
+        );
+    }
+
+    #[test]
+    fn sum_groups_count_only_when_the_total_is_met() {
+        let ring = |key| UiRequirement {
+            identity_group: Some(1),
+            upgrade_sum: Some(UpgradeSum {
+                group: 1,
+                minimum_total: 2,
+            }),
+            upgrade: UpgradeRequirement::Any,
+            ..requirement(key, ItemKind::Ring, Some(ItemId::RingMight))
+        };
+        let make = |upgrade| WorldItem {
+            upgrade,
+            ..world_item(ItemId::RingMight, 3, Accessibility::Independent)
+        };
+        let pair = [ring(1), ring(2)];
+        // +0 and +2 total the wanted +2, as do two +1 rings.
+        assert_eq!(
+            scout_match_indices(&[make(0), make(2)], &pair, 24, false),
+            [0, 1].into()
+        );
+        assert_eq!(
+            scout_match_indices(&[make(1), make(1)], &pair, 24, false),
+            [0, 1].into()
+        );
+        // Two +0 rings fall short and neither is highlighted.
+        assert!(scout_match_indices(&[make(0), make(0)], &pair, 24, false).is_empty());
+    }
+
+    #[test]
+    fn a_failed_sum_pair_leaves_independent_matches_highlighted() {
+        let ring = |key| UiRequirement {
+            identity_group: Some(1),
+            upgrade_sum: Some(UpgradeSum {
+                group: 1,
+                minimum_total: 6,
+            }),
+            upgrade: UpgradeRequirement::Any,
+            ..requirement(key, ItemKind::Ring, Some(ItemId::RingMight))
+        };
+        let requirements = [
+            ring(1),
+            ring(2),
+            requirement(3, ItemKind::Weapon, Some(ItemId::Sword)),
+        ];
+        let items = [
+            world_item(ItemId::RingMight, 2, Accessibility::Independent),
+            world_item(ItemId::RingMight, 4, Accessibility::Independent),
+            world_item(ItemId::Sword, 3, Accessibility::Independent),
+        ];
+        assert_eq!(
+            scout_match_indices(&items, &requirements, 24, false),
+            [2].into()
+        );
     }
 }

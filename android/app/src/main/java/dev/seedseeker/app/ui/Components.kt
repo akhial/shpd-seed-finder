@@ -27,7 +27,9 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.seedseeker.app.R
+import dev.seedseeker.app.catalog.ItemCatalog
 import dev.seedseeker.app.model.CatalogItem
+import dev.seedseeker.app.model.EffectRequirement
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.ScoutAccessibility
 import dev.seedseeker.app.model.ScoutItem
@@ -243,10 +245,13 @@ fun requirementDetailLine(requirement: ItemRequirement): String = buildList {
         UpgradeMatch.EXACT -> add("+${requirement.upgrade}")
         UpgradeMatch.AT_LEAST -> add("≥+${requirement.upgrade}")
     }
-    requirement.modifier?.let { add(it) }
+    requirement.effectSummary?.let { add(it) }
     if (requirement.requireUncursed) add("uncursed")
     requirement.source?.let { add(it.label) }
     requirement.identityGroup?.let { add("grp ${('A' + it - 1)}") }
+    requirement.upgradeSumTotal?.let {
+        add("combined +$it total (group ${('A' + (requirement.upgradeSumGroup ?: 1) - 1)})")
+    }
     requirement.maximumDepth?.let { add("≤ floor $it") }
 }.joinToString(" · ")
 
@@ -287,13 +292,32 @@ fun floorRegionColor(depth: Int): Color = when {
     else -> RegionHalls
 }
 
-/** Selects one distinct, jointly obtainable scout item per matched requirement. */
+/** Highest upgrade any generated item can carry (+4 rings from the Imp). */
+private const val MAX_ITEM_UPGRADE = 4
+
+/**
+ * Selects the distinct, jointly obtainable scout items that satisfy as many
+ * query slots as possible, mirroring the engine's `best_match_indices`: an
+ * alternative group is one slot served by any single member, and a
+ * combined-upgrade group only counts — and is only highlighted — when every
+ * member is assigned and the upgrade total is met.
+ */
 internal fun scoutMatchIndices(
     items: List<ScoutItem>,
     requirements: List<ItemRequirement>,
     maximumDepth: Int = 24,
     excludeBlacksmithRewards: Boolean = false,
 ): Set<Int> {
+    if (requirements.isEmpty()) return emptySet()
+
+    fun matchesEffect(item: ScoutItem, requirement: ItemRequirement): Boolean =
+        when (val wanted = requirement.effect) {
+            EffectRequirement.Any -> true
+            EffectRequirement.AnyEnchantment ->
+                item.effect != null && item.effect !in ItemCatalog.cursesFor(requirement.kind)
+            is EffectRequirement.OneOf -> item.effect in wanted.effects
+        }
+
     fun matches(item: ScoutItem, requirement: ItemRequirement): Boolean =
         item.depth <= maximumDepth &&
             item.depth <= (requirement.maximumDepth ?: maximumDepth) &&
@@ -313,33 +337,71 @@ internal fun scoutMatchIndices(
                 UpgradeMatch.EXACT -> item.upgrade == requirement.upgrade
                 UpgradeMatch.AT_LEAST -> item.upgrade >= requirement.upgrade
             } &&
-            (requirement.modifier == null || requirement.modifier == item.effect) &&
+            matchesEffect(item, requirement) &&
             (!requirement.requireUncursed || !item.cursed) &&
             (requirement.source == null || requirement.source == item.source)
 
-    val candidates = requirements
-        .map { requirement -> requirement to items.indices.filter { matches(items[it], requirement) } }
-        .sortedBy { it.second.size }
-    val used = mutableSetOf<Int>()
-    val selected = mutableSetOf<Int>()
+    // One slot per alternative group (candidates from all members) or plain requirement.
+    val slotOfGroup = mutableMapOf<Int, Int>()
+    val slots = mutableListOf<MutableList<Pair<Int, ItemRequirement>>>()
+    val sumGroupSizes = mutableMapOf<Int, Int>()
+    val sumGroupTotals = mutableMapOf<Int, Int>()
+    for (requirement in requirements) {
+        val slot = requirement.alternativeGroup?.let { group ->
+            slotOfGroup.getOrPut(group) {
+                slots.add(mutableListOf())
+                slots.lastIndex
+            }
+        } ?: run {
+            slots.add(mutableListOf())
+            slots.lastIndex
+        }
+        requirement.upgradeSumGroup?.let { group ->
+            sumGroupSizes[group] = (sumGroupSizes[group] ?: 0) + 1
+            sumGroupTotals[group] = requirement.upgradeSumTotal ?: 0
+        }
+        items.indices
+            .filter { matches(items[it], requirement) }
+            .forEach { slots[slot].add(it to requirement) }
+    }
+    // Fail early by assigning the most constrained slot first.
+    slots.sortBy { it.size }
+
+    val used = BooleanArray(items.size)
+    val selected = mutableListOf<Pair<Int, Int?>>() // item index, sum group served
     var best = emptySet<Int>()
     val scenarios = mutableMapOf<Int, ULong>()
     val identities = mutableMapOf<Int, String>()
+    val sums = mutableMapOf<Int, Pair<Int, Int>>() // assigned member count, upgrade total
 
-    fun visit(position: Int) {
-        if (position == candidates.size) {
-            if (selected.size > best.size) best = selected.toSet()
+    fun visit(slot: Int) {
+        if (slot == slots.size) {
+            // Items serving an incomplete or short combined-upgrade group do
+            // not count and are not highlighted.
+            val failed = sums.filterKeys { group ->
+                val (assigned, total) = sums.getValue(group)
+                assigned < (sumGroupSizes[group] ?: 0) || total < (sumGroupTotals[group] ?: 0)
+            }.keys
+            val counted = selected
+                .filter { (_, sumGroup) -> sumGroup == null || sumGroup !in failed }
+                .map { it.first }
+            if (counted.size > best.size) best = counted.toSet()
             return
         }
-        if (selected.size + candidates.size - position <= best.size) return
-        val (requirement, itemCandidates) = candidates[position]
-        for (index in itemCandidates) {
-            if (index in used) continue
+        if (selected.size + slots.size - slot <= best.size) return
+        for ((index, requirement) in slots[slot]) {
+            if (used[index]) continue
             val item = items[index]
             val identityGroup = requirement.identityGroup
             val previousIdentity = identityGroup?.let { identities[it] }
             if (identityGroup != null && previousIdentity != null && previousIdentity != item.item.id) continue
             if (identityGroup != null) identities[identityGroup] = item.item.id
+            fun undoIdentity() {
+                if (identityGroup != null) {
+                    if (previousIdentity == null) identities.remove(identityGroup)
+                    else identities[identityGroup] = previousIdentity
+                }
+            }
 
             val constraint = when (val accessibility = item.accessibility) {
                 ScoutAccessibility.Independent -> null
@@ -350,29 +412,45 @@ internal fun scoutMatchIndices(
             if (constraint != null) {
                 val compatible = (previousScenarios ?: ULong.MAX_VALUE) and constraint.second
                 if (compatible == 0UL) {
-                    if (identityGroup != null) {
-                        if (previousIdentity == null) identities.remove(identityGroup)
-                        else identities[identityGroup] = previousIdentity
-                    }
+                    undoIdentity()
                     continue
                 }
                 scenarios[constraint.first] = compatible
             }
-            used += index
-            selected += index
-            visit(position + 1)
-            used -= index
-            selected -= index
-            if (constraint != null) {
-                if (previousScenarios == null) scenarios.remove(constraint.first)
-                else scenarios[constraint.first] = previousScenarios
+            fun undoScenario() {
+                if (constraint != null) {
+                    if (previousScenarios == null) scenarios.remove(constraint.first)
+                    else scenarios[constraint.first] = previousScenarios
+                }
             }
-            if (identityGroup != null) {
-                if (previousIdentity == null) identities.remove(identityGroup)
-                else identities[identityGroup] = previousIdentity
+
+            val sumGroup = requirement.upgradeSumGroup
+            val previousSum = sumGroup?.let { sums[it] }
+            if (sumGroup != null) {
+                val assigned = (previousSum?.first ?: 0) + 1
+                val total = (previousSum?.second ?: 0) + item.upgrade
+                val remaining = ((sumGroupSizes[sumGroup] ?: 0) - assigned).coerceAtLeast(0)
+                if (total + remaining * MAX_ITEM_UPGRADE < (sumGroupTotals[sumGroup] ?: 0)) {
+                    undoScenario()
+                    undoIdentity()
+                    continue
+                }
+                sums[sumGroup] = assigned to total
             }
+
+            used[index] = true
+            selected += index to sumGroup
+            visit(slot + 1)
+            selected.removeAt(selected.lastIndex)
+            used[index] = false
+            if (sumGroup != null) {
+                if (previousSum == null) sums.remove(sumGroup)
+                else sums[sumGroup] = previousSum
+            }
+            undoScenario()
+            undoIdentity()
         }
-        visit(position + 1)
+        visit(slot + 1)
     }
     visit(0)
     return best

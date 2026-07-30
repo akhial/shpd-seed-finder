@@ -1,5 +1,5 @@
 import { displayItemName, getItem, sourceLabel, wildcardSprites } from '../../lib/catalog'
-import type { ItemCategory, RequirementState } from '../../lib/wasm/types'
+import type { EffectFilter, ItemCategory, RequirementState } from '../../lib/wasm/types'
 
 export const categoryLabel: Record<ItemCategory, string> = {
   weapon: 'Weapon',
@@ -44,14 +44,26 @@ export function requirementTitle(requirement: RequirementState): string {
   return `Any ${kind}`
 }
 
+export function effectSummary(effect: EffectFilter, kind: ItemCategory | undefined): string {
+  if (effect.mode === 'any_enchantment') return kind === 'armor' ? 'any glyph' : 'any enchantment'
+  const names = effect.names
+  if (names.length === 0) return 'no effect chosen'
+  if (names.length === 1) return names[0]
+  if (names.length <= 4) return `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}`
+  return `any of ${names.length} effects`
+}
+
 export function requirementDetails(requirement: RequirementState): string[] {
   const parts: string[] = []
   if (requirement.upgrade.mode === 'exact') parts.push(`exactly +${requirement.upgrade.value}`)
   if (requirement.upgrade.mode === 'at_least') parts.push(`+${requirement.upgrade.value} or higher`)
-  if (requirement.effect) parts.push(requirement.effect)
+  if (requirement.effect) parts.push(effectSummary(requirement.effect, requirementKind(requirement)))
   if (requirement.uncursed) parts.push('uncursed')
   if (requirement.source) parts.push(sourceLabel(requirement.source))
   if (requirement.identityGroup) parts.push(`group ${'ABCD'[requirement.identityGroup - 1] ?? requirement.identityGroup}`)
+  if (requirement.upgradeSum) {
+    parts.push(`combined +${requirement.upgradeSum.atLeast} total (group ${'ABCD'[requirement.upgradeSum.group - 1] ?? requirement.upgradeSum.group})`)
+  }
   if (requirement.maxDepth !== undefined) parts.push(`floors 1–${requirement.maxDepth}`)
   return parts
 }

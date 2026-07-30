@@ -2,6 +2,7 @@
 package dev.seedseeker.app.engine
 
 import dev.seedseeker.app.BuildConfig
+import dev.seedseeker.app.model.EffectRequirement
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.Challenge
 import dev.seedseeker.app.model.SearchBatch
@@ -180,12 +181,15 @@ class DemoNativeSeedFinder : NativeSeedFinder {
  * 5. `close(handle)` joins/releases native resources and is safe after any terminal state.
  * 6. `scoutSeed(requestBytes) -> scoutBytes` generates one canonical seed through depth 24.
  *
- * Search requests always use `SSF7`: magic, maxDepth:u8, flags:u8, challenges:u16 little-endian,
+ * Search requests always use `SSF8`: magic, maxDepth:u8, flags:u8, challenges:u16 little-endian,
  * requirementCount:u16 big-endian, followed by repeated
  * kind:u8, optionalItemId:utf8_u16, tierMode:u8, tierValue:u8, upgradeMode:u8,
- * upgradeValue:u8, modifier:utf8_u16,
+ * upgradeValue:u8, then the effect predicate: effectMode:u8 (0 any — nothing follows;
+ * 1 one-of), and for mode 1 a count:u8 (1..32) followed by that many utf8_u16 effect names
+ * ("Any enchantment" is sent as the family's 13 non-curse names in catalog order); then
  * optionalSource:u8, sameItemGroup:u8, requirementMaxDepth:u8 (0 uses the request limit),
- * requirementFlags:u8 (bit 0 requires an uncursed item).
+ * alternativeGroup:u8 (0 = none), combinedUpgradeGroup:u8 and combinedUpgradeTotal:u8
+ * (0,0 = none), requirementFlags:u8 (bit 0 requires an uncursed item).
  * Flag bit 0 requires an accessible blacksmith; bit 1 enables the lossy fast search mode
  * (quest-only +3 weapon/armor sources); flag bit 2
  * prevents Blacksmith "Smith" rewards from satisfying item requirements.
@@ -309,7 +313,7 @@ object SeedCode {
 object QueryCodec {
     fun encode(request: SearchRequest): ByteArray = ByteArrayOutputStream().use { bytes ->
         DataOutputStream(bytes).use { output ->
-            output.write("SSF7".toByteArray(StandardCharsets.US_ASCII))
+            output.write("SSF8".toByteArray(StandardCharsets.US_ASCII))
             output.writeByte(request.maximumDepth)
             output.writeByte(
                 (if (request.requireBlacksmith) 1 else 0) or
@@ -331,11 +335,32 @@ object QueryCodec {
         output.writeByte(requirement.tier)
         output.writeByte(requirement.upgradeMatch.ordinal)
         output.writeByte(requirement.upgrade)
-        writeUtf8(output, requirement.modifier.orEmpty())
+        writeEffect(output, requirement)
         output.writeByte(requirement.source?.let { it.ordinal + 1 } ?: 0)
         output.writeByte(requirement.identityGroup ?: 0)
         output.writeByte(requirement.maximumDepth ?: 0)
+        output.writeByte(requirement.alternativeGroup ?: 0)
+        output.writeByte(requirement.upgradeSumGroup ?: 0)
+        output.writeByte(requirement.upgradeSumTotal ?: 0)
         output.writeByte(if (requirement.requireUncursed) 1 else 0)
+    }
+
+    private fun writeEffect(output: DataOutputStream, requirement: ItemRequirement) {
+        val names = when (val effect = requirement.effect) {
+            EffectRequirement.Any -> {
+                output.writeByte(0)
+                return
+            }
+            // "Any enchantment" travels as the family's full non-curse set.
+            EffectRequirement.AnyEnchantment ->
+                ItemCatalog.modifiersFor(requirement.kind) -
+                    ItemCatalog.cursesFor(requirement.kind).toSet()
+            is EffectRequirement.OneOf -> effect.effects
+        }
+        require(names.size in 1..32) { "An effect set must name 1..32 effects" }
+        output.writeByte(1)
+        output.writeByte(names.size)
+        names.forEach { writeUtf8(output, it) }
     }
 
     private fun writeUtf8(output: DataOutputStream, text: String) {

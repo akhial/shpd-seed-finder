@@ -226,7 +226,14 @@ extension ItemKind {
 private struct EditorSession: Identifiable {
     let requirement: ItemRequirement
     let isNew: Bool
+    /// When adding an alternative to a previously ungrouped row, that row only
+    /// joins the new group once the new requirement is actually saved.
+    var joinSourceKey: Int64?
     var id: Int64 { requirement.key }
+
+    init(requirement: ItemRequirement, isNew: Bool, joinSourceKey: Int64? = nil) {
+        self.requirement = requirement; self.isNew = isNew; self.joinSourceKey = joinSourceKey
+    }
 }
 
 private struct QueryView: View {
@@ -348,6 +355,25 @@ private struct QueryView: View {
                     } else if let index = requirements.firstIndex(where: { $0.key == result.key }) {
                         requirements[index] = result
                     }
+                    // A previously ungrouped source row joins the new
+                    // alternative group only once the alternative is saved.
+                    if let sourceKey = session.joinSourceKey, let group = result.alternativeGroup,
+                       let index = requirements.firstIndex(where: { $0.key == sourceKey }) {
+                        requirements[index].alternativeGroup = group
+                        // The engine rejects combined-upgrade members inside
+                        // alternative groups.
+                        requirements[index].upgradeSumGroup = nil
+                        requirements[index].upgradeSumTotal = nil
+                    }
+                    // Members of a combined-upgrade group must agree on the
+                    // total; the freshly saved requirement's total wins.
+                    if let group = result.upgradeSumGroup, let total = result.upgradeSumTotal {
+                        for index in requirements.indices
+                        where requirements[index].upgradeSumGroup == group {
+                            requirements[index].upgradeSumTotal = total
+                        }
+                    }
+                    dissolveSingletonAlternativeGroups()
                 }
                 editor = nil
             }
@@ -369,22 +395,69 @@ private struct QueryView: View {
                     .font(.callout).foregroundStyle(.secondary)
             }
         } else {
+            // Ungrouped rows keep their per-category sections; each
+            // alternative group renders as one "Any of" card in its own
+            // section, since a group may span categories.
             ForEach(ItemKind.allCases, id: \.self) { kind in
-                let group = requirements.filter { $0.kind == kind }
+                let group = requirements.filter { $0.kind == kind && $0.alternativeGroup == nil }
                 if !group.isEmpty {
                     Section {
-                        ForEach(group) { requirement in
-                            RequirementRow(requirement: requirement) {
-                                editor = EditorSession(requirement: requirement, isNew: false)
-                            } onRemove: {
-                                requirements.removeAll { $0.key == requirement.key }
-                            }
-                        }
+                        ForEach(group) { requirement in row(requirement) }
                     } header: {
                         Label(kind.label, systemImage: kind.icon)
                     }
                 }
             }
+            ForEach(alternativeGroupIDs, id: \.self) { groupID in
+                Section {
+                    alternativeGroupCard(groupID)
+                } header: {
+                    Label("Any of", systemImage: "arrow.triangle.branch")
+                }
+            }
+        }
+    }
+
+    /// Alternative group labels in order of first appearance.
+    private var alternativeGroupIDs: [Int] {
+        var seen: [Int] = []
+        for requirement in requirements {
+            if let group = requirement.alternativeGroup, !seen.contains(group) { seen.append(group) }
+        }
+        return seen
+    }
+
+    private func alternativeGroupCard(_ groupID: Int) -> some View {
+        let members = requirements.filter { $0.alternativeGroup == groupID }
+        return VStack(alignment: .leading, spacing: 4) {
+            ForEach(Array(members.enumerated()), id: \.element.key) { position, requirement in
+                if position > 0 {
+                    Text("or").font(.caption.smallCaps().bold()).foregroundStyle(.tertiary)
+                        .padding(.leading, 32)
+                }
+                row(requirement)
+            }
+            Button {
+                addAlternative(to: members[0])
+            } label: {
+                Label("Add alternative", systemImage: "plus.circle")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 2)
+        }
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 8).strokeBorder(.quaternary))
+    }
+
+    private func row(_ requirement: ItemRequirement) -> RequirementRow {
+        RequirementRow(requirement: requirement) {
+            editor = EditorSession(requirement: requirement, isNew: false)
+        } onRemove: {
+            requirements.removeAll { $0.key == requirement.key }
+            dissolveSingletonAlternativeGroups()
+        } onAddAlternative: {
+            addAlternative(to: requirement)
         }
     }
 
@@ -394,23 +467,51 @@ private struct QueryView: View {
             editor = EditorSession(requirement: value, isNew: true)
         }
     }
+
+    /// Opens the editor for a new requirement joining `source`'s alternative
+    /// group, allocating a fresh group when the source row has none yet.
+    private func addAlternative(to source: ItemRequirement) {
+        let group = source.alternativeGroup ?? nextFreeAlternativeGroup()
+        if let value = try? ItemRequirement(key: Int64.random(in: 1...Int64.max), item: nil,
+            upgrade: 0, kind: source.kind, upgradeMatch: .any, alternativeGroup: group) {
+            editor = EditorSession(requirement: value, isNew: true,
+                                   joinSourceKey: source.alternativeGroup == nil ? source.key : nil)
+        }
+    }
+
+    private func nextFreeAlternativeGroup() -> Int {
+        let taken = Set(requirements.compactMap(\.alternativeGroup))
+        return (1...255).first { !taken.contains($0) } ?? 255
+    }
+
+    /// A group that shrinks to one member stops being an alternative.
+    private func dissolveSingletonAlternativeGroups() {
+        let counts = Dictionary(grouping: requirements.compactMap(\.alternativeGroup)) { $0 }
+            .mapValues(\.count)
+        for index in requirements.indices {
+            if let group = requirements[index].alternativeGroup, counts[group, default: 0] < 2 {
+                requirements[index].alternativeGroup = nil
+            }
+        }
+    }
 }
 
 private struct RequirementRow: View {
     let requirement: ItemRequirement
     let onEdit: () -> Void
     let onRemove: () -> Void
+    let onAddAlternative: () -> Void
 
     var body: some View {
         HStack(spacing: 6) {
             Button(action: onEdit) {
                 HStack(spacing: 8) {
                     // A pinned item shows its own sprite; a wildcard keeps the
-                    // category symbol. Either way an enchantment or curse
-                    // requirement pulses in the game's glow colour.
+                    // category symbol. A single wanted enchantment or curse
+                    // pulses in the game's glow colour.
                     ItemSpriteView(spriteIndex: requirement.item?.spriteIndex,
                                    kind: requirement.kind,
-                                   glow: effectGlow(requirement.modifier),
+                                   glow: effectGlow(requirement.primaryEffectName),
                                    pointSize: 24, label: requirement.title)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(requirement.title).foregroundStyle(.primary)
@@ -425,12 +526,17 @@ private struct RequirementRow: View {
         }
         .contextMenu {
             Button("Edit…") { onEdit() }
+            Button("Add Alternative…") { onAddAlternative() }
             Button("Remove", role: .destructive) { onRemove() }
         }
     }
 }
 
 // MARK: - Requirement editor
+
+private enum EffectMode: Hashable {
+    case any, anyEnchantment, specific
+}
 
 private struct RequirementEditor: View {
     let original: ItemRequirement
@@ -442,9 +548,12 @@ private struct RequirementEditor: View {
     @State private var tier: Int
     @State private var match: UpgradeMatch
     @State private var upgrade: Int
-    @State private var modifier: String
+    @State private var effectMode: EffectMode
+    @State private var selectedEffects: Set<String>
     @State private var sourceRaw: Int
     @State private var group: Int
+    @State private var sumGroup: Int
+    @State private var sumTotal: Int
     @State private var maximumDepth: Int
     @State private var requireUncursed: Bool
 
@@ -461,9 +570,21 @@ private struct RequirementEditor: View {
         case .atLeast: max(1, min(requirement.upgrade, maximumUpgrade - 1))
         }
         _upgrade = State(initialValue: initialUpgrade)
-        _modifier = State(initialValue: requirement.modifier ?? "")
+        switch requirement.effect {
+        case .any:
+            _effectMode = State(initialValue: .any)
+            _selectedEffects = State(initialValue: [])
+        case .anyEnchantment:
+            _effectMode = State(initialValue: .anyEnchantment)
+            _selectedEffects = State(initialValue: [])
+        case .oneOf(let names):
+            _effectMode = State(initialValue: .specific)
+            _selectedEffects = State(initialValue: Set(names))
+        }
         _sourceRaw = State(initialValue: requirement.source.map { $0.rawValue + 1 } ?? 0)
         _group = State(initialValue: requirement.identityGroup ?? 0)
+        _sumGroup = State(initialValue: requirement.upgradeSumGroup ?? 0)
+        _sumTotal = State(initialValue: requirement.upgradeSumTotal ?? 2)
         _maximumDepth = State(initialValue: requirement.maximumDepth ?? 0)
         _requireUncursed = State(initialValue: requirement.requireUncursed)
     }
@@ -479,7 +600,9 @@ private struct RequirementEditor: View {
                     }
                     .pickerStyle(.segmented)
                     .onChange(of: kind) { _, _ in
-                        itemID = ""; tierMatch = .any; tier = 2; modifier = ""; normalizeUpgrade()
+                        itemID = ""; tierMatch = .any; tier = 2
+                        effectMode = .any; selectedEffects = []
+                        normalizeUpgrade()
                     }
                     Picker("Item", selection: $itemID) {
                         Text("Any \(kind.singularLabel)").tag("")
@@ -568,21 +691,22 @@ private struct RequirementEditor: View {
                 }
                 Section {
                     if kind.modifierLabel != nil {
-                        Picker(kind.modifierLabel!, selection: $modifier) {
-                            Section { Text("None").tag("") }
-                            Section(kind == .weapon ? "Enchantments" : "Glyphs") {
-                                ForEach(kind == .weapon ? ItemCatalog.enchantments : ItemCatalog.glyphs, id: \.self) { Text($0).tag($0) }
-                            }
-                            if !requireUncursed {
-                                Section("Curses") { ForEach(ItemCatalog.cursesFor(kind), id: \.self) { Text($0).tag($0) } }
-                            }
+                        Picker(kind.modifierLabel!, selection: $effectMode) {
+                            Text("Any").tag(EffectMode.any)
+                            Text(kind == .weapon ? "Any enchantment" : "Any glyph")
+                                .tag(EffectMode.anyEnchantment)
+                            Text("Specific…").tag(EffectMode.specific)
+                        }
+                        .pickerStyle(.segmented)
+                        if effectMode == .specific {
+                            effectChecklist
                         }
                     }
                     Toggle("Require uncursed", isOn: $requireUncursed)
                         .toggleStyle(.checkbox)
                         .onChange(of: requireUncursed) { _, value in
-                            if value && ItemCatalog.cursesFor(kind).contains(modifier) {
-                                modifier = ""
+                            if value {
+                                selectedEffects.subtract(ItemCatalog.cursesFor(kind))
                             }
                         }
                     Picker("Source", selection: $sourceRaw) {
@@ -603,6 +727,24 @@ private struct RequirementEditor: View {
                         Slider(value: intBinding($maximumDepth), in: 1...24, step: 1)
                     }
                 }
+                // An alternative-group member cannot join a combined-upgrade
+                // group; the engine rejects the combination.
+                if original.alternativeGroup == nil {
+                    Section("Combined upgrade") {
+                        Picker("Group", selection: $sumGroup) {
+                            Text("None").tag(0); Text("A").tag(1); Text("B").tag(2); Text("C").tag(3); Text("D").tag(4)
+                        }.pickerStyle(.segmented)
+                        if sumGroup != 0 {
+                            Stepper(value: $sumTotal, in: 1...8) {
+                                LabeledContent("Total at least") {
+                                    Text("+\(sumTotal)").monospacedDigit().foregroundStyle(.secondary)
+                                }
+                            }
+                            Text("Distinct items matching this group's requirements must have upgrades totalling at least +\(sumTotal).")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
             }
             .formStyle(.grouped)
             Divider()
@@ -613,7 +755,45 @@ private struct RequirementEditor: View {
                     .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
             }.padding(12)
         }
-        .frame(width: 460, height: kind.modifierLabel == nil ? 470 : 500)
+        .frame(width: 460, height: sheetHeight)
+    }
+
+    private var sheetHeight: CGFloat {
+        var height: CGFloat = 470
+        if kind.modifierLabel != nil { height += 40 }
+        if kind.modifierLabel != nil && effectMode == .specific { height += 170 }
+        if original.alternativeGroup == nil { height += sumGroup == 0 ? 70 : 130 }
+        return height
+    }
+
+    /// Multi-select checklist for the "Specific…" effect mode: the family's
+    /// enchantments/glyphs, plus its curses while "require uncursed" is off.
+    private var effectChecklist: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(kind == .weapon ? ItemCatalog.enchantments : ItemCatalog.glyphs,
+                        id: \.self) { name in
+                    Toggle(name, isOn: effectBinding(name)).toggleStyle(.checkbox)
+                }
+                if !requireUncursed {
+                    Divider().padding(.vertical, 2)
+                    ForEach(ItemCatalog.cursesFor(kind), id: \.self) { name in
+                        Toggle(name, isOn: effectBinding(name)).toggleStyle(.checkbox)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 2)
+        }
+        .frame(height: 160)
+    }
+
+    private func effectBinding(_ name: String) -> Binding<Bool> {
+        Binding {
+            selectedEffects.contains(name)
+        } set: { enabled in
+            if enabled { selectedEffects.insert(name) } else { selectedEffects.remove(name) }
+        }
     }
 
     private func normalizeUpgrade() {
@@ -628,13 +808,25 @@ private struct RequirementEditor: View {
     }
     private func save() {
         let item = itemID.isEmpty ? nil : ItemCatalog.findById(itemID)
+        // Keep the specific set in catalog order; an empty selection falls
+        // back to the wildcard.
+        let orderedSelection = ItemCatalog.modifiersFor(kind).filter(selectedEffects.contains)
+        let effect: EffectPredicate = switch effectMode {
+        case .any: .any
+        case .anyEnchantment: kind.modifierLabel == nil ? .any : .anyEnchantment
+        case .specific: orderedSelection.isEmpty ? .any : .oneOf(orderedSelection)
+        }
+        let inAlternative = original.alternativeGroup != nil
         guard let value = try? ItemRequirement(key: original.key, item: item, upgrade: upgrade,
-            modifier: modifier.isEmpty ? nil : modifier, kind: kind,
+            effect: effect, kind: kind,
             tier: tierMatch == .any ? 0 : tier, tierMatch: tierMatch, upgradeMatch: match,
             source: sourceRaw == 0 ? nil : ScoutItemSource(rawValue: sourceRaw - 1),
             identityGroup: group == 0 ? nil : group,
             maximumDepth: maximumDepth == 0 ? nil : maximumDepth,
-            requireUncursed: requireUncursed) else { return }
+            requireUncursed: requireUncursed,
+            alternativeGroup: original.alternativeGroup,
+            upgradeSumGroup: inAlternative || sumGroup == 0 ? nil : sumGroup,
+            upgradeSumTotal: inAlternative || sumGroup == 0 ? nil : sumTotal) else { return }
         onFinish(value)
     }
 }

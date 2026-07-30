@@ -1,8 +1,10 @@
 import { getItem, isCurseForCategory } from './catalog'
 import type {
+  EffectFilter,
   QueryDocument,
   QueryState,
   RequirementDocument,
+  RequirementEntryDocument,
   RequirementState,
   TierFilter,
   UpgradeFilter,
@@ -27,6 +29,11 @@ export const defaultQueryState = (): QueryState => ({
   challenges: [],
 })
 
+function effectToDocument(effect: EffectFilter): string | string[] {
+  if (effect.mode === 'any_enchantment') return 'any_enchantment'
+  return effect.names.length === 1 ? effect.names[0] : [...effect.names]
+}
+
 function requirementToDocument(requirement: RequirementState): RequirementDocument {
   const output: RequirementDocument = {}
   if (requirement.kind) output.kind = requirement.kind
@@ -36,16 +43,35 @@ function requirementToDocument(requirement: RequirementState): RequirementDocume
   }
   if (requirement.upgrade.mode === 'exact') output.upgrade = requirement.upgrade.value
   if (requirement.upgrade.mode === 'at_least') output.upgrade = { at_least: requirement.upgrade.value }
-  if (requirement.effect) output.effect = requirement.effect
+  if (requirement.effect) output.effect = effectToDocument(requirement.effect)
   if (requirement.uncursed) output.uncursed = true
   if (requirement.source) output.source = requirement.source
   if (requirement.identityGroup) output.identity_group = requirement.identityGroup
   if (requirement.maxDepth !== undefined) output.max_depth = requirement.maxDepth
+  if (requirement.upgradeSum) {
+    output.upgrade_sum = { group: requirement.upgradeSum.group, at_least: requirement.upgradeSum.atLeast }
+  }
   return output
 }
 
 export function toQueryDocument(state: QueryState): QueryDocument {
-  const output: QueryDocument = { requirements: state.requirements.map(requirementToDocument) }
+  // Alternative groups serialize as one any_of entry at the first member's
+  // position, holding every member in requirement order.
+  const entries: RequirementEntryDocument[] = []
+  const emittedGroups = new Set<number>()
+  for (const requirement of state.requirements) {
+    const group = requirement.alternativeGroup
+    if (group === undefined) {
+      entries.push(requirementToDocument(requirement))
+      continue
+    }
+    if (emittedGroups.has(group)) continue
+    emittedGroups.add(group)
+    const members = state.requirements.filter((candidate) => candidate.alternativeGroup === group)
+    if (members.length === 1) entries.push(requirementToDocument(requirement))
+    else entries.push({ any_of: members.map(requirementToDocument) })
+  }
+  const output: QueryDocument = { requirements: entries }
   if (state.maxDepth !== 24) output.max_depth = state.maxDepth
   if (state.requireBlacksmith) output.require_blacksmith = true
   if (state.excludeBlacksmithRewards) output.exclude_blacksmith_rewards = true
@@ -56,6 +82,12 @@ export function toQueryDocument(state: QueryState): QueryDocument {
 
 export function toQueryJson(state: QueryState): string {
   return JSON.stringify(toQueryDocument(state))
+}
+
+function effectFromDocument(value: string | string[]): EffectFilter {
+  if (Array.isArray(value)) return { mode: 'one_of', names: [...value] }
+  if (value.toLowerCase() === 'any_enchantment') return { mode: 'any_enchantment' }
+  return { mode: 'one_of', names: [value] }
 }
 
 function requirementFromDocument(value: RequirementDocument): RequirementState {
@@ -71,18 +103,33 @@ function requirementFromDocument(value: RequirementDocument): RequirementState {
     item: value.item,
     tier,
     upgrade,
-    effect: value.effect,
+    effect: value.effect === undefined ? undefined : effectFromDocument(value.effect),
     uncursed: value.uncursed ?? false,
     source: value.source,
     identityGroup: value.identity_group,
     maxDepth: value.max_depth,
+    upgradeSum: value.upgrade_sum
+      ? { group: value.upgrade_sum.group, atLeast: value.upgrade_sum.at_least }
+      : undefined,
   }
 }
 
 export function fromQueryJson(json: string): QueryState {
   const document = JSON.parse(json) as QueryDocument
+  const requirements: RequirementState[] = []
+  let nextGroup = 0
+  for (const entry of document.requirements) {
+    if ('any_of' in entry) {
+      nextGroup += 1
+      for (const member of entry.any_of) {
+        requirements.push({ ...requirementFromDocument(member), alternativeGroup: nextGroup })
+      }
+    } else {
+      requirements.push(requirementFromDocument(entry))
+    }
+  }
   return {
-    requirements: document.requirements.map(requirementFromDocument),
+    requirements,
     maxDepth: document.max_depth ?? 24,
     requireBlacksmith: document.require_blacksmith ?? false,
     excludeBlacksmithRewards: document.exclude_blacksmith_rewards ?? false,
@@ -111,9 +158,23 @@ export function validateRequirement(requirement: RequirementState): string[] {
     if (requirement.upgrade.value < minimum || requirement.upgrade.value > maximum) errors.push(`Upgrade must be ${minimum} through +${maximum}.`)
   }
   if (requirement.maxDepth !== undefined && (requirement.maxDepth < 1 || requirement.maxDepth > 24)) errors.push('Requirement floor must be 1 through 24.')
-  if (requirement.effect && kind !== 'weapon' && kind !== 'armor') errors.push('Effects require a weapon or armor category.')
-  if (requirement.effect && kind && !isCurseForCategory(kind, requirement.effect) && !getEffectNames(kind).includes(requirement.effect)) errors.push('The effect does not belong to this category.')
-  if (requirement.uncursed && requirement.effect && kind && isCurseForCategory(kind, requirement.effect)) errors.push('An uncursed item cannot have a curse effect.')
+  if (requirement.effect) {
+    if (kind !== 'weapon' && kind !== 'armor') {
+      errors.push('Effects require a weapon or armor category.')
+    } else if (requirement.effect.mode === 'one_of') {
+      const names = requirement.effect.names
+      if (names.length === 0) errors.push('Choose at least one effect.')
+      const known = getEffectNames(kind)
+      if (names.some((name) => !known.includes(name))) errors.push('The effect does not belong to this category.')
+      if (requirement.uncursed && names.length > 0 && names.every((name) => isCurseForCategory(kind, name))) {
+        errors.push('An uncursed item cannot be limited to curses.')
+      }
+    }
+  }
+  if (requirement.upgradeSum) {
+    if (requirement.upgradeSum.atLeast < 1) errors.push('The combined upgrade total must be at least +1.')
+    if (requirement.alternativeGroup !== undefined) errors.push('A combined upgrade total cannot apply to an alternative.')
+  }
   return errors
 }
 
@@ -125,6 +186,13 @@ function getEffectNames(kind: string): string[] {
 // Kept indirect so validation remains straightforward to mock in component tests.
 import { effectNamesForCategory } from './catalog'
 const catalogHelpers = { effectNamesForCategory }
+
+/** The highest upgrade an item satisfying the requirement can carry. */
+function maximumUpgrade(requirement: RequirementState): number {
+  if (requirement.upgrade.mode === 'exact') return requirement.upgrade.value
+  const kind = requirement.kind ?? (requirement.item ? getItem(requirement.item)?.type : undefined)
+  return kind === 'ring' ? 4 : 3
+}
 
 export function validateQuery(state: QueryState): ValidationResult {
   const errors: string[] = []
@@ -142,6 +210,24 @@ export function validateQuery(state: QueryState): ValidationResult {
       errors.push(`Identity group ${requirement.identityGroup} has incompatible category or item requirements.`)
     } else if (!previous || (!previous.item && current.item)) {
       groups.set(requirement.identityGroup, current)
+    }
+  })
+  const sums = new Map<number, { atLeast: number; reachable: number }>()
+  state.requirements.forEach((requirement) => {
+    if (!requirement.upgradeSum) return
+    const { group, atLeast } = requirement.upgradeSum
+    const entry = sums.get(group)
+    if (entry && entry.atLeast !== atLeast) {
+      errors.push(`Combined upgrade group ${'ABCD'[group - 1] ?? group} must agree on one total.`)
+    }
+    sums.set(group, {
+      atLeast,
+      reachable: (entry?.reachable ?? 0) + maximumUpgrade(requirement),
+    })
+  })
+  sums.forEach((entry, group) => {
+    if (entry.atLeast > entry.reachable) {
+      errors.push(`Combined upgrade group ${'ABCD'[group - 1] ?? group} asks for more than its items can carry.`)
     }
   })
   return { valid: errors.length === 0, errors }

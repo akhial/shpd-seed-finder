@@ -47,27 +47,53 @@
               <ItemsRepeater.Layout><StackLayout Spacing="4"/></ItemsRepeater.Layout>
               <ItemsRepeater.ItemTemplate>
                 <DataTemplate>
-                  <Button Style="{StaticResource CardButton}" Click="Requirement_Click">
-                    <Grid ColumnSpacing="12">
-                      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                      <!-- The real item sprite when one is pinned; the generic
-                           Fluent glyph only for wildcard requirements. -->
-                      <Grid Width="24" Height="24" VerticalAlignment="Center">
-                        <FontIcon Glyph="{Binding Glyph}" Foreground="{Binding Tint}" FontSize="16"
-                                  Visibility="{Binding FallbackVisibility}"/>
-                        <local:SpriteView SpriteIndex="{Binding SpriteIndex}" SpriteSize="24"
-                                          GlowColor="{Binding GlowColor}" GlowPeriod="{Binding GlowPeriod}"
-                                          Visibility="{Binding SpriteVisibility}"/>
-                      </Grid>
-                      <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding Title}" TextWrapping="Wrap"/>
-                        <TextBlock Text="{Binding Description}" Style="{StaticResource Caption}"/>
-                      </StackPanel>
-                      <Button Grid.Column="2" Style="{StaticResource SubtleIconButton}" Tag="{Binding}" Click="RemoveRequirement_Click" ToolTipService.ToolTip="Remove requirement" VerticalAlignment="Center" Margin="0,0,-6,0">
-                        <FontIcon Glyph="&#xE711;" FontSize="12"/>
-                      </Button>
-                    </Grid>
-                  </Button>
+                  <!-- One card per requirement, or one shared "Any of" card
+                       wrapping every member of an alternative group. Ungrouped
+                       cards keep the chrome invisible so they render exactly as
+                       the flat rows they always were. -->
+                  <Border Background="{Binding CardBackground}" BorderBrush="{Binding CardBorderBrush}"
+                          BorderThickness="{Binding CardBorderThickness}" Padding="{Binding CardPadding}"
+                          CornerRadius="{StaticResource ControlCornerRadius}">
+                    <StackPanel Spacing="4">
+                      <TextBlock Text="Any of" Style="{StaticResource Caption}" Visibility="{Binding HeaderVisibility}" Margin="2,0,0,2"/>
+                      <ItemsRepeater ItemsSource="{Binding Members}">
+                        <ItemsRepeater.Layout><StackLayout Spacing="4"/></ItemsRepeater.Layout>
+                        <ItemsRepeater.ItemTemplate>
+                          <DataTemplate>
+                            <StackPanel Spacing="4">
+                              <TextBlock Text="or" Style="{StaticResource Caption}" Visibility="{Binding SeparatorVisibility}" HorizontalAlignment="Center"/>
+                              <Button Style="{StaticResource CardButton}" Click="Requirement_Click">
+                                <Grid ColumnSpacing="12">
+                                  <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                  <!-- The real item sprite when one is pinned; the generic
+                                       Fluent glyph only for wildcard requirements. -->
+                                  <Grid Width="24" Height="24" VerticalAlignment="Center">
+                                    <FontIcon Glyph="{Binding Requirement.Glyph}" Foreground="{Binding Requirement.Tint}" FontSize="16"
+                                              Visibility="{Binding Requirement.FallbackVisibility}"/>
+                                    <local:SpriteView SpriteIndex="{Binding Requirement.SpriteIndex}" SpriteSize="24"
+                                                      GlowColor="{Binding Requirement.GlowColor}" GlowPeriod="{Binding Requirement.GlowPeriod}"
+                                                      Visibility="{Binding Requirement.SpriteVisibility}"/>
+                                  </Grid>
+                                  <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Requirement.Title}" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding Requirement.Description}" Style="{StaticResource Caption}"/>
+                                  </StackPanel>
+                                  <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,-6,0">
+                                    <Button Style="{StaticResource SubtleIconButton}" Tag="{Binding Requirement}" Click="AddAlternative_Click" ToolTipService.ToolTip="Add alternative (any of these satisfies one slot)">
+                                      <FontIcon Glyph="&#xE710;" FontSize="12"/>
+                                    </Button>
+                                    <Button Style="{StaticResource SubtleIconButton}" Tag="{Binding Requirement}" Click="RemoveRequirement_Click" ToolTipService.ToolTip="Remove requirement">
+                                      <FontIcon Glyph="&#xE711;" FontSize="12"/>
+                                    </Button>
+                                  </StackPanel>
+                                </Grid>
+                              </Button>
+                            </StackPanel>
+                          </DataTemplate>
+                        </ItemsRepeater.ItemTemplate>
+                      </ItemsRepeater>
+                    </StackPanel>
+                  </Border>
                 </DataTemplate>
               </ItemsRepeater.ItemTemplate>
             </ItemsRepeater>

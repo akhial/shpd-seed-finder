@@ -111,6 +111,7 @@ public sealed partial class MainWindow : Window
     {
         restoring = true;
         try { if (File.Exists(SettingsPath)) query = JsonSerializer.Deserialize<QuerySettings>(File.ReadAllText(SettingsPath)) ?? new(); } catch { query = new(); }
+        foreach (var r in query.Requirements) r.Normalize();
         FloorSlider.Value = query.MaximumDepth; RequireBlacksmith.IsOn = query.RequireBlacksmith; ExcludeRewards.IsOn = query.ExcludeBlacksmithRewards; FastMode.IsOn = query.FastMode; restoring = false;
     }
     private void SaveSettings() { if (restoring) return; Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!); File.WriteAllText(SettingsPath, JsonSerializer.Serialize(query, new JsonSerializerOptions { WriteIndented = true })); }
@@ -121,6 +122,7 @@ public sealed partial class MainWindow : Window
             if (File.Exists(PresetsPath))
                 userPresets = (JsonSerializer.Deserialize<List<QueryPreset>>(File.ReadAllText(PresetsPath)) ?? [])
                     .Where(x => !string.IsNullOrWhiteSpace(x.Name) && x.Query is not null).ToList();
+            foreach (var r in userPresets.SelectMany(x => x.Query.Requirements)) r.Normalize();
         }
         catch { userPresets = []; }
     }
@@ -163,20 +165,65 @@ public sealed partial class MainWindow : Window
     }
     private void RefreshQuery()
     {
-        RequirementList.ItemsSource = query.Requirements; NoRequirements.Visibility = query.Requirements.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        // A group that shrank to one member is no longer an alternative.
+        foreach (var lone in query.Requirements.Where(r => r.AlternativeGroup is not null)
+            .GroupBy(r => r.AlternativeGroup).Where(g => g.Count() == 1).SelectMany(g => g).ToList())
+            lone.AlternativeGroup = null;
+        RequirementList.ItemsSource = BuildRequirementCards(); NoRequirements.Visibility = query.Requirements.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         FloorLabel.Text = $"first {query.MaximumDepth} floor{(query.MaximumDepth == 1 ? "" : "s")}"; RequireBlacksmith.IsEnabled = query.MaximumDepth < 14; StartButton.IsEnabled = search is not null || query.Requirements.Count != 0;
         var count = BitOperations.PopCount((uint)query.Challenges); ChallengeSummary.Text = count == 0 ? "None" : $"{count} enabled";
     }
     private void FloorSlider_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e) { if (restoring || FloorLabel is null) return; query.MaximumDepth = (int)e.NewValue; RefreshQuery(); SaveSettings(); }
     private void SettingChanged(object sender, RoutedEventArgs e) { if (restoring) return; query.RequireBlacksmith = RequireBlacksmith.IsOn; query.ExcludeBlacksmithRewards = ExcludeRewards.IsOn; query.FastMode = FastMode.IsOn; SaveSettings(); }
 
-    private async void AddRequirement_Click(object sender, RoutedEventArgs e) { var r = new ItemRequirement { Kind = ItemKind.Weapon, UpgradeMatch = UpgradeMatch.Any }; if (await EditRequirement(r, true)) { query.Requirements.Add(r); RefreshQuery(); SaveSettings(); } }
+    private async void AddRequirement_Click(object sender, RoutedEventArgs e) { var r = new ItemRequirement { Kind = ItemKind.Weapon, UpgradeMatch = UpgradeMatch.Any }; if (await EditRequirement(r, true)) { query.Requirements.Add(r); PropagateUpgradeSum(r); RefreshQuery(); SaveSettings(); } }
     private async void Requirement_Click(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.DataContext is not ItemRequirement original) return; var copy = original.Clone();
-        if (await EditRequirement(copy, false)) { var index = query.Requirements.IndexOf(original); query.Requirements[index] = copy; RefreshQuery(); SaveSettings(); }
+        if ((sender as FrameworkElement)?.DataContext is not RequirementRow row) return; var original = row.Requirement; var copy = original.Clone();
+        if (await EditRequirement(copy, false)) { var index = query.Requirements.IndexOf(original); query.Requirements[index] = copy; PropagateUpgradeSum(copy); RefreshQuery(); SaveSettings(); }
     }
     private void RemoveRequirement_Click(object sender, RoutedEventArgs e) { if ((sender as Button)?.Tag is ItemRequirement r) { query.Requirements.Remove(r); RefreshQuery(); SaveSettings(); } }
+
+    /// <summary>
+    /// Opens the editor for a new requirement that joins the source row's
+    /// alternative group, creating the group when the row had none.
+    /// </summary>
+    private async void AddAlternative_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as Button)?.Tag is not ItemRequirement source) return;
+        var group = source.AlternativeGroup ?? NextAlternativeGroup();
+        var r = new ItemRequirement { Kind = source.Kind, UpgradeMatch = UpgradeMatch.Any, AlternativeGroup = group };
+        if (!await EditRequirement(r, true)) return;
+        source.AlternativeGroup = group;
+        var last = query.Requirements.IndexOf(source);
+        for (var i = 0; i < query.Requirements.Count; i++) if (query.Requirements[i].AlternativeGroup == group) last = i;
+        query.Requirements.Insert(last + 1, r);
+        RefreshQuery(); SaveSettings();
+    }
+    private int NextAlternativeGroup() => Enumerable.Range(1, 255).First(candidate => query.Requirements.All(r => r.AlternativeGroup != candidate));
+    /// <summary>Members of one combined-upgrade group must agree on the total.</summary>
+    private void PropagateUpgradeSum(ItemRequirement source)
+    {
+        if (source.UpgradeSumGroup is not int group) return;
+        foreach (var other in query.Requirements)
+            if (!ReferenceEquals(other, source) && other.UpgradeSumGroup == group) other.UpgradeSumTotal = source.UpgradeSumTotal;
+    }
+    /// <summary>The requirement list as cards: one per flat row, one per alternative group.</summary>
+    private List<RequirementCard> BuildRequirementCards()
+    {
+        var cards = new List<RequirementCard>();
+        var cardOfGroup = new Dictionary<int, RequirementCard>();
+        foreach (var r in query.Requirements)
+        {
+            if (r.AlternativeGroup is int group)
+            {
+                if (!cardOfGroup.TryGetValue(group, out var card)) { card = new RequirementCard { IsGroup = true }; cardOfGroup[group] = card; cards.Add(card); }
+                card.Members.Add(new RequirementRow { Requirement = r, SeparatorVisibility = card.Members.Count == 0 ? Visibility.Collapsed : Visibility.Visible });
+            }
+            else cards.Add(new RequirementCard { Members = { new RequirementRow { Requirement = r } } });
+        }
+        return cards;
+    }
 
     private async Task<bool> EditRequirement(ItemRequirement r, bool isNew)
     {
@@ -185,12 +232,18 @@ public sealed partial class MainWindow : Window
         var tierMatch = Combo(["Any tier", "Exactly", "At least", "At most"], (int)r.TierMatch); tierMatch.Header = "Tier predicate"; var selectedTier = r.Tier is >= 2 and <= 5 ? r.Tier : 2; var tier = Number("Tier", selectedTier, 2, 5); var tierBound = Combo(["Tier 3", "Tier 4"], Math.Clamp(selectedTier, 3, 4) - 3);
         var maximumUpgrade = r.Kind == ItemKind.Ring ? 4 : 3; var selectedMinimumUpgrade = Math.Clamp(r.Upgrade, 1, maximumUpgrade - 1);
         var upgradeMatch = Combo(["Any", "Exactly", "At least"], (int)r.UpgradeMatch); upgradeMatch.Header = "Upgrade predicate"; var upgrade = Number("Upgrade level", Math.Clamp(r.Upgrade, 1, maximumUpgrade), 1, maximumUpgrade); var upgradeBound = Combo(Enumerable.Range(1, maximumUpgrade - 1).Select(value => $"+{value} or higher"), selectedMinimumUpgrade - 1); upgradeBound.Header = "Minimum upgrade";
-        var modifier = new ComboBox { Header = "Enchantment or glyph", HorizontalAlignment = HorizontalAlignment.Stretch };
+        var effectMode = new ComboBox { Header = "Enchantment or glyph", HorizontalAlignment = HorizontalAlignment.Stretch };
+        var effectList = new ListView { SelectionMode = ListViewSelectionMode.Multiple, MaxHeight = 168 };
+        var effectListBorder = new Border { Child = effectList, BorderThickness = new Thickness(1), BorderBrush = ThemeBrush("CardStrokeColorDefaultBrush", Microsoft.UI.Colors.Gray), CornerRadius = new CornerRadius(4), Padding = new Thickness(0, 4, 0, 4) };
+        var selectedMode = (int)r.EffectMode; var selectedEffects = new List<string>(r.Effects); var updatingEffects = false;
         var uncursed = new CheckBox { Content = "Require uncursed", IsChecked = r.RequireUncursed };
         var source = Combo(new[] { "Any source" }.Concat(Enum.GetValues<ScoutItemSource>().Select(Labels.Source)), r.Source is null ? 0 : (int)r.Source + 1); source.Header = "Source";
         var group = Combo(["None", "A", "B", "C", "D"], r.IdentityGroup ?? 0); group.Header = "Same-item group";
+        var inAlternative = r.AlternativeGroup is not null;
+        var sumGroup = Combo(["None", "A", "B", "C", "D"], r.UpgradeSumGroup ?? 0); sumGroup.Header = "Combined upgrade group";
+        var sumTotal = Number("Total at least", r.UpgradeSumTotal ?? 2, 1, 8);
         var depthToggle = ToggleRow("Limit this item to a floor", r.MaximumDepth is not null, out var depthRow); var depth = Number("Within first floors", r.MaximumDepth ?? 5, 1, 24);
-        var content = new StackPanel { Spacing = 12, Padding = new Thickness(2, 4, 2, 4) }; foreach (var control in new UIElement[] { kind, item, tierMatch, tier, tierBound, upgradeMatch, upgrade, upgradeBound, modifier, uncursed, source, group, depthRow, depth }) content.Children.Add(control);
+        var content = new StackPanel { Spacing = 12, Padding = new Thickness(2, 4, 2, 4) }; foreach (var control in new UIElement[] { kind, item, tierMatch, tier, tierBound, upgradeMatch, upgrade, upgradeBound, effectMode, effectListBorder, uncursed, source, group, sumGroup, sumTotal, depthRow, depth }) content.Children.Add(control);
         void NormalizeTier()
         {
             var predicate = (TierMatch)Math.Max(0, tierMatch.SelectedIndex);
@@ -217,30 +270,58 @@ public sealed partial class MainWindow : Window
             upgrade.Maximum = atLeast ? maximumUpgrade - 1 : maximumUpgrade;
             upgrade.Value = Math.Clamp(double.IsNaN(upgrade.Value) ? 1 : upgrade.Value, 1, upgrade.Maximum);
         }
-        void PopulateModifiers(string? selection)
+        void SyncEffectList()
+        {
+            effectListBorder.Visibility = effectMode.Visibility == Visibility.Visible && effectMode.SelectedIndex == 2 ? Visibility.Visible : Visibility.Collapsed;
+        }
+        void PopulateEffects()
         {
             var k = (ItemKind)Math.Max(0, kind.SelectedIndex);
             var modifiers = ItemCatalog.Modifiers(k)
                 .Where(effect => uncursed.IsChecked != true || !ItemCatalog.IsCurse(k, effect))
                 .ToList();
-            modifier.Items.Clear(); modifier.Items.Add("None"); foreach (var value in modifiers) modifier.Items.Add(value);
-            modifier.SelectedIndex = selection is null ? 0 : Math.Max(0, modifiers.IndexOf(selection) + 1);
-            modifier.Visibility = k is ItemKind.Weapon or ItemKind.Armor ? Visibility.Visible : Visibility.Collapsed;
+            updatingEffects = true;
+            effectMode.Items.Clear();
+            effectMode.Items.Add("Any");
+            effectMode.Items.Add(k == ItemKind.Armor ? "Any glyph" : "Any enchantment");
+            effectMode.Items.Add("Specific…");
+            effectMode.SelectedIndex = Math.Clamp(selectedMode, 0, 2);
+            // Curses hidden while "Require uncursed" is on also leave the set.
+            selectedEffects = selectedEffects.Where(modifiers.Contains).ToList();
+            effectList.Items.Clear();
+            foreach (var value in modifiers) effectList.Items.Add(value);
+            foreach (var value in selectedEffects) effectList.SelectedItems.Add(value);
+            updatingEffects = false;
+            effectMode.Visibility = k is ItemKind.Weapon or ItemKind.Armor ? Visibility.Visible : Visibility.Collapsed;
+            SyncEffectList();
+        }
+        void SyncSum()
+        {
+            sumGroup.Visibility = inAlternative ? Visibility.Collapsed : Visibility.Visible;
+            sumTotal.Visibility = !inAlternative && sumGroup.SelectedIndex > 0 ? Visibility.Visible : Visibility.Collapsed;
         }
         void Populate()
         {
             var k = (ItemKind)Math.Max(0, kind.SelectedIndex); var oldId = r.Item?.Id; var items = ItemCatalog.For(k).ToList(); item.Items.Clear(); item.Items.Add($"Any {Labels.Singular(k)}"); foreach (var value in items) item.Items.Add(value.Name); item.SelectedIndex = Math.Max(0, items.FindIndex(x => x.Id == oldId) + 1);
-            PopulateModifiers(r.Modifier);
+            PopulateEffects();
             maximumUpgrade = k == ItemKind.Ring ? 4 : 3; NormalizeUpgrade();
             selectedMinimumUpgrade = Math.Clamp(selectedMinimumUpgrade, 1, maximumUpgrade - 1); upgradeBound.Items.Clear(); foreach (var value in Enumerable.Range(1, maximumUpgrade - 1)) upgradeBound.Items.Add($"+{value} or higher"); upgradeBound.SelectedIndex = selectedMinimumUpgrade - 1; SyncVisibility();
         }
-        kind.SelectionChanged += (_, _) => { r.Item = null; r.Modifier = null; Populate(); }; item.SelectionChanged += (_, _) => SyncVisibility(); tier.ValueChanged += (_, _) => { if (!double.IsNaN(tier.Value)) selectedTier = (int)tier.Value; }; tierBound.SelectionChanged += (_, _) => { if (tierBound.SelectedIndex >= 0) selectedTier = tierBound.SelectedIndex + 3; }; tierMatch.SelectionChanged += (_, _) => { NormalizeTier(); SyncVisibility(); }; upgradeMatch.SelectionChanged += (_, _) => { NormalizeUpgrade(); SyncVisibility(); }; upgradeBound.SelectionChanged += (_, _) => { if (upgradeBound.SelectedIndex >= 0) selectedMinimumUpgrade = upgradeBound.SelectedIndex + 1; }; uncursed.Checked += (_, _) => PopulateModifiers(modifier.SelectedItem is string effect && !ItemCatalog.IsCurse((ItemKind)Math.Max(0, kind.SelectedIndex), effect) ? effect : null); uncursed.Unchecked += (_, _) => PopulateModifiers(modifier.SelectedItem?.ToString()); depthToggle.Toggled += (_, _) => depth.Visibility = depthToggle.IsOn ? Visibility.Visible : Visibility.Collapsed;
-        Populate(); NormalizeTier(); SyncVisibility(); depth.Visibility = depthToggle.IsOn ? Visibility.Visible : Visibility.Collapsed;
+        kind.SelectionChanged += (_, _) => { r.Item = null; selectedEffects = []; Populate(); }; item.SelectionChanged += (_, _) => SyncVisibility(); tier.ValueChanged += (_, _) => { if (!double.IsNaN(tier.Value)) selectedTier = (int)tier.Value; }; tierBound.SelectionChanged += (_, _) => { if (tierBound.SelectedIndex >= 0) selectedTier = tierBound.SelectedIndex + 3; }; tierMatch.SelectionChanged += (_, _) => { NormalizeTier(); SyncVisibility(); }; upgradeMatch.SelectionChanged += (_, _) => { NormalizeUpgrade(); SyncVisibility(); }; upgradeBound.SelectionChanged += (_, _) => { if (upgradeBound.SelectedIndex >= 0) selectedMinimumUpgrade = upgradeBound.SelectedIndex + 1; }; uncursed.Checked += (_, _) => PopulateEffects(); uncursed.Unchecked += (_, _) => PopulateEffects(); depthToggle.Toggled += (_, _) => depth.Visibility = depthToggle.IsOn ? Visibility.Visible : Visibility.Collapsed;
+        effectMode.SelectionChanged += (_, _) => { if (!updatingEffects && effectMode.SelectedIndex >= 0) { selectedMode = effectMode.SelectedIndex; SyncEffectList(); } }; effectList.SelectionChanged += (_, _) => { if (!updatingEffects) selectedEffects = effectList.Items.Cast<string>().Where(effectList.SelectedItems.Contains).ToList(); }; sumGroup.SelectionChanged += (_, _) => SyncSum();
+        Populate(); NormalizeTier(); SyncVisibility(); SyncSum(); depth.Visibility = depthToggle.IsOn ? Visibility.Visible : Visibility.Collapsed;
         var dialog = new ContentDialog { XamlRoot = Content.XamlRoot, Title = isNew ? "New Requirement" : "Edit Requirement", PrimaryButtonText = isNew ? "Add" : "Save", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Primary, Content = VerticalScrollView(content, 510, 430) };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return false;
         r.Kind = (ItemKind)kind.SelectedIndex; r.Item = item.SelectedIndex > 0 ? ItemCatalog.For(r.Kind).ElementAt(item.SelectedIndex - 1) : null; r.TierMatch = r.Item is null && r.Kind is ItemKind.Weapon or ItemKind.Armor ? (TierMatch)tierMatch.SelectedIndex : TierMatch.Any; r.Tier = r.TierMatch == TierMatch.Any ? 0 : selectedTier;
-        r.UpgradeMatch = (UpgradeMatch)upgradeMatch.SelectedIndex; r.Upgrade = r.UpgradeMatch switch { UpgradeMatch.Any => 0, UpgradeMatch.Exactly => (int)upgrade.Value, UpgradeMatch.AtLeast when r.Kind == ItemKind.Ring => (int)upgrade.Value, UpgradeMatch.AtLeast => selectedMinimumUpgrade, _ => 0 }; r.Modifier = modifier.Visibility == Visibility.Visible && modifier.SelectedIndex > 0 ? modifier.SelectedItem?.ToString() : null;
-        r.RequireUncursed = uncursed.IsChecked == true; r.Source = source.SelectedIndex == 0 ? null : (ScoutItemSource)(source.SelectedIndex - 1); r.IdentityGroup = group.SelectedIndex == 0 ? null : group.SelectedIndex; r.MaximumDepth = depthToggle.IsOn ? (int)depth.Value : null; return true;
+        r.UpgradeMatch = (UpgradeMatch)upgradeMatch.SelectedIndex; r.Upgrade = r.UpgradeMatch switch { UpgradeMatch.Any => 0, UpgradeMatch.Exactly => (int)upgrade.Value, UpgradeMatch.AtLeast when r.Kind == ItemKind.Ring => (int)upgrade.Value, UpgradeMatch.AtLeast => selectedMinimumUpgrade, _ => 0 };
+        r.EffectMode = r.Kind is ItemKind.Weapon or ItemKind.Armor ? (EffectMode)Math.Clamp(selectedMode, 0, 2) : EffectMode.Any;
+        r.Effects = r.EffectMode == EffectMode.Specific ? [.. selectedEffects] : [];
+        // An empty specific set is meaningless; fall back to the wildcard.
+        if (r.EffectMode == EffectMode.Specific && r.Effects.Count == 0) r.EffectMode = EffectMode.Any;
+        r.RequireUncursed = uncursed.IsChecked == true; r.Source = source.SelectedIndex == 0 ? null : (ScoutItemSource)(source.SelectedIndex - 1); r.IdentityGroup = group.SelectedIndex == 0 ? null : group.SelectedIndex;
+        if (!inAlternative && sumGroup.SelectedIndex > 0) { r.UpgradeSumGroup = sumGroup.SelectedIndex; r.UpgradeSumTotal = (int)Math.Clamp(double.IsNaN(sumTotal.Value) ? 1 : sumTotal.Value, 1, 8); }
+        else { r.UpgradeSumGroup = null; r.UpgradeSumTotal = null; }
+        r.MaximumDepth = depthToggle.IsOn ? (int)depth.Value : null; return true;
     }
     private static ComboBox Combo(IEnumerable<string> values, int selected) { var c = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch }; foreach (var v in values) c.Items.Add(v); c.SelectedIndex = selected; return c; }
     private static NumberBox Number(string header, double value, double min, double max) => new() { Header = header, Value = value, Minimum = min, Maximum = max, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact };
@@ -521,6 +602,32 @@ public sealed partial class MainWindow : Window
     private static string Region(int depth) => depth switch { <= 5 => "Sewers", <= 10 => "Prison", <= 15 => "Caves", <= 20 => "Dwarven City", _ => "Demon Halls" };
     private void CopySeed_Click(object sender, RoutedEventArgs e) { if (SeedCode.IsCanonical(SeedInput.Text)) Copy(SeedInput.Text); }
     private static void Copy(string text) { var data = new DataPackage(); data.SetText(text); Clipboard.SetContent(data); }
+}
+
+/// <summary>
+/// One card in the requirement list: a plain requirement rendered without any
+/// chrome of its own, or an "Any of" alternative group boxing its members.
+/// </summary>
+public sealed class RequirementCard
+{
+    public bool IsGroup { get; init; }
+    public List<RequirementRow> Members { get; } = [];
+    public Visibility HeaderVisibility => IsGroup ? Visibility.Visible : Visibility.Collapsed;
+    public Thickness CardPadding => IsGroup ? new Thickness(8) : new Thickness(0);
+    public Thickness CardBorderThickness => IsGroup ? new Thickness(1) : new Thickness(0);
+    public Brush CardBackground => IsGroup
+        ? (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"]
+        : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+    public Brush CardBorderBrush => IsGroup
+        ? (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"]
+        : new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+}
+
+/// <summary>One requirement row inside a card, with its "or" divider state.</summary>
+public sealed class RequirementRow
+{
+    public ItemRequirement Requirement { get; init; } = new();
+    public Visibility SeparatorVisibility { get; init; } = Visibility.Collapsed;
 }
 
 public sealed class ScoutGroup : List<ScoutRow>

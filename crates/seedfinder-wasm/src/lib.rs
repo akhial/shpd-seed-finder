@@ -367,7 +367,18 @@ fn scout_impl(request_json: &str) -> Result<String, String> {
         |query| scout_matches(&world, query),
     );
     let matched_requirements = matched.iter().filter(|value| **value).count();
-    let total_requirements = query.as_ref().map_or(0, |query| query.requirements.len());
+    // An alternative group is one satisfiable slot however many members it has.
+    let total_requirements = query.as_ref().map_or(0, |query| {
+        let mut groups = std::collections::BTreeSet::new();
+        query
+            .requirements
+            .iter()
+            .filter(|requirement| match requirement.alternative_group {
+                None => true,
+                Some(group) => groups.insert(group),
+            })
+            .count()
+    });
     let items = world
         .items
         .iter()

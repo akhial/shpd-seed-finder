@@ -76,3 +76,14 @@ export function effectGlow(effect: string | undefined): Glow | null {
   if (!effect) return null
   return ENCHANT_GLOW[effect] ?? CURSE_GLOW
 }
+
+/**
+ * The pulse glow for a requirement's effect predicate. Only a single named
+ * effect glows; broader predicates have no one colour to pulse.
+ */
+export function effectFilterGlow(
+  effect: { mode: 'any_enchantment' } | { mode: 'one_of'; names: string[] } | undefined,
+): Glow | null {
+  if (effect?.mode === 'one_of' && effect.names.length === 1) return effectGlow(effect.names[0])
+  return null
+}

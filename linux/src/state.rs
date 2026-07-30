@@ -9,6 +9,7 @@ use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::model::ItemSource;
 use shpd_seedfinder_core::query::{
     EffectRequirement, EffectSet, Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
+    UpgradeSum,
 };
 
 /// Every user-facing item source, in the wire order shared with the other
@@ -41,6 +42,29 @@ pub const ALL_KINDS: &[ItemKind] = &[
     ItemKind::Ring,
 ];
 
+/// Effect predicate as edited in the interface. `AnyEnchantment` expands to
+/// the family's full non-curse set when building the engine query.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UiEffect {
+    /// Wildcard: enchanted or not.
+    Any,
+    /// Any non-curse enchantment or glyph of the requirement's family.
+    AnyEnchantment,
+    /// One of the chosen effects.
+    OneOf(EffectSet),
+}
+
+impl UiEffect {
+    /// The single pinned effect, when the predicate names exactly one.
+    #[must_use]
+    pub fn single(self) -> Option<Effect> {
+        match self {
+            Self::OneOf(set) if set.len() == 1 => set.effects().next(),
+            Self::Any | Self::AnyEnchantment | Self::OneOf(_) => None,
+        }
+    }
+}
+
 /// One item requirement as edited in the interface. All predicate fields
 /// mirror [`Requirement`]; `key` is a session-stable row identity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -50,11 +74,13 @@ pub struct UiRequirement {
     pub item: Option<ItemId>,
     pub tier: TierRequirement,
     pub upgrade: UpgradeRequirement,
-    pub effect: Option<Effect>,
+    pub effect: UiEffect,
     pub require_uncursed: bool,
     pub source: Option<ItemSource>,
     pub identity_group: Option<u8>,
     pub max_depth: Option<u8>,
+    pub alternative_group: Option<u8>,
+    pub upgrade_sum: Option<UpgradeSum>,
 }
 
 impl UiRequirement {
@@ -65,11 +91,13 @@ impl UiRequirement {
             item: None,
             tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Any,
-            effect: None,
+            effect: UiEffect::Any,
             require_uncursed: false,
             source: None,
             identity_group: None,
             max_depth: None,
+            alternative_group: None,
+            upgrade_sum: None,
         }
     }
 
@@ -81,15 +109,17 @@ impl UiRequirement {
             tier: self.tier,
             upgrade: self.upgrade,
             effect: match self.effect {
-                Some(effect) => EffectRequirement::OneOf(EffectSet::single(effect)),
-                None => EffectRequirement::Any,
+                UiEffect::Any => EffectRequirement::Any,
+                UiEffect::AnyEnchantment => EffectSet::enchantments(self.kind)
+                    .map_or(EffectRequirement::Any, EffectRequirement::OneOf),
+                UiEffect::OneOf(set) => EffectRequirement::OneOf(set),
             },
             require_uncursed: self.require_uncursed,
             source: self.source,
             identity_group: self.identity_group,
             max_depth: self.max_depth,
-            alternative_group: None,
-            upgrade_sum: None,
+            alternative_group: self.alternative_group,
+            upgrade_sum: self.upgrade_sum,
         }
     }
 
@@ -121,8 +151,8 @@ impl UiRequirement {
             UpgradeRequirement::Exact(upgrade) => format!("+{upgrade} exactly"),
             UpgradeRequirement::AtLeast(upgrade) => format!("+{upgrade} or higher"),
         };
-        if let Some(effect) = self.effect {
-            let _ = write!(text, " · {}", effect.wire_name());
+        if let Some(phrase) = effect_phrase(self.kind, self.effect) {
+            let _ = write!(text, " · {phrase}");
         }
         if self.require_uncursed {
             text.push_str(" · uncursed");
@@ -133,11 +163,47 @@ impl UiRequirement {
         if let Some(group) = self.identity_group {
             let _ = write!(text, " · same item group {}", group_letter(group));
         }
+        if let Some(sum) = self.upgrade_sum {
+            let _ = write!(
+                text,
+                " · combined +{} total (group {})",
+                sum.minimum_total,
+                group_letter(sum.group)
+            );
+        }
         if let Some(depth) = self.max_depth {
             let _ = write!(text, " · by floor {depth}");
         }
         text
     }
+}
+
+/// Subtitle fragment describing an effect predicate, or `None` for the
+/// wildcard: a single name, up to four names joined with "or", or a count.
+fn effect_phrase(kind: ItemKind, effect: UiEffect) -> Option<String> {
+    let family = if kind == ItemKind::Armor {
+        ("any glyph", "glyphs")
+    } else {
+        ("any enchantment", "enchantments")
+    };
+    let set = match effect {
+        UiEffect::Any => return None,
+        UiEffect::AnyEnchantment => return Some(family.0.to_owned()),
+        UiEffect::OneOf(set) => set,
+    };
+    if EffectSet::enchantments(set.family()) == Some(set) {
+        return Some(family.0.to_owned());
+    }
+    let names: Vec<&str> = set.effects().map(Effect::wire_name).collect();
+    Some(match names.as_slice() {
+        [] => return None,
+        [single] => (*single).to_owned(),
+        names if names.len() <= 4 => {
+            let (last, rest) = names.split_last()?;
+            format!("{} or {last}", rest.join(", "))
+        }
+        names => format!("any of {} {}", names.len(), family.1),
+    })
 }
 
 /// The whole persisted query state shared by all panes.
@@ -172,6 +238,65 @@ impl AppState {
         let key = self.next_key;
         self.next_key += 1;
         key
+    }
+
+    /// The smallest alternative-group label not yet in use.
+    #[must_use]
+    pub fn free_alternative_group(&self) -> u8 {
+        (1..=u8::MAX)
+            .find(|group| {
+                !self
+                    .requirements
+                    .iter()
+                    .any(|requirement| requirement.alternative_group == Some(*group))
+            })
+            .unwrap_or(u8::MAX)
+    }
+
+    /// Clears the alternative group of any requirement left alone in its
+    /// group, e.g. after the other members were removed.
+    pub fn dissolve_lone_alternatives(&mut self) {
+        let lone: Vec<u8> = self
+            .requirements
+            .iter()
+            .filter_map(|requirement| requirement.alternative_group)
+            .filter(|group| {
+                self.requirements
+                    .iter()
+                    .filter(|requirement| requirement.alternative_group == Some(*group))
+                    .count()
+                    == 1
+            })
+            .collect();
+        for requirement in &mut self.requirements {
+            if let Some(group) = requirement.alternative_group
+                && lone.contains(&group)
+            {
+                requirement.alternative_group = None;
+            }
+        }
+    }
+
+    /// Copies the combined-upgrade total of the requirement with `key` to
+    /// every other member of its sum group, keeping the group consistent.
+    pub fn align_upgrade_sums(&mut self, key: u64) {
+        let Some(sum) = self
+            .requirements
+            .iter()
+            .find(|requirement| requirement.key == key)
+            .and_then(|requirement| requirement.upgrade_sum)
+        else {
+            return;
+        };
+        for requirement in &mut self.requirements {
+            if requirement.key != key
+                && requirement
+                    .upgrade_sum
+                    .is_some_and(|other| other.group == sum.group)
+            {
+                requirement.upgrade_sum = Some(sum);
+            }
+        }
     }
 
     /// Builds the validated engine query for the current state.
@@ -321,10 +446,12 @@ pub const ALL_CHALLENGES: &[ChallengeInfo] = &[
 
 #[cfg(test)]
 mod tests {
-    use shpd_seedfinder_core::catalog::ItemId;
-    use shpd_seedfinder_core::query::{TierRequirement, UpgradeRequirement};
+    use shpd_seedfinder_core::catalog::{ArmorEffect, Effect, ItemId, ItemKind, WeaponEffect};
+    use shpd_seedfinder_core::query::{
+        EffectSet, TierRequirement, UpgradeRequirement, UpgradeSum,
+    };
 
-    use super::{AppState, UiRequirement};
+    use super::{AppState, UiEffect, UiRequirement};
 
     #[test]
     fn labels_describe_wildcards_and_predicates() {
@@ -348,6 +475,131 @@ mod tests {
 
         requirement.item = Some(ItemId::Greatsword);
         assert_eq!(requirement.title(), "Greatsword");
+    }
+
+    #[test]
+    fn subtitles_phrase_effect_sets_by_size_and_family() {
+        let mut requirement = UiRequirement::new(1);
+        requirement.effect = UiEffect::OneOf(EffectSet::single(Effect::Weapon(
+            WeaponEffect::Blazing,
+        )));
+        assert_eq!(requirement.subtitle(), "Any upgrade · Blazing");
+
+        requirement.effect = UiEffect::OneOf(
+            EffectSet::from_effects([
+                Effect::Weapon(WeaponEffect::Blocking),
+                Effect::Weapon(WeaponEffect::Projecting),
+                Effect::Weapon(WeaponEffect::Vampiric),
+            ])
+            .unwrap(),
+        );
+        assert_eq!(
+            requirement.subtitle(),
+            "Any upgrade · Blocking, Projecting or Vampiric"
+        );
+
+        requirement.effect = UiEffect::OneOf(
+            EffectSet::from_effects(
+                [
+                    WeaponEffect::Blazing,
+                    WeaponEffect::Chilling,
+                    WeaponEffect::Kinetic,
+                    WeaponEffect::Shocking,
+                    WeaponEffect::Blocking,
+                ]
+                .map(Effect::Weapon),
+            )
+            .unwrap(),
+        );
+        assert_eq!(requirement.subtitle(), "Any upgrade · any of 5 enchantments");
+
+        requirement.effect = UiEffect::AnyEnchantment;
+        assert_eq!(requirement.subtitle(), "Any upgrade · any enchantment");
+        requirement.effect =
+            UiEffect::OneOf(EffectSet::enchantments(ItemKind::Weapon).unwrap());
+        assert_eq!(requirement.subtitle(), "Any upgrade · any enchantment");
+
+        requirement.kind = ItemKind::Armor;
+        requirement.effect = UiEffect::AnyEnchantment;
+        assert_eq!(requirement.subtitle(), "Any upgrade · any glyph");
+        requirement.effect = UiEffect::OneOf(EffectSet::single(Effect::Armor(
+            ArmorEffect::Thorns,
+        )));
+        assert_eq!(requirement.subtitle(), "Any upgrade · Thorns");
+    }
+
+    #[test]
+    fn subtitles_include_combined_upgrade_totals() {
+        let mut requirement = UiRequirement::new(1);
+        requirement.kind = ItemKind::Ring;
+        requirement.upgrade_sum = Some(UpgradeSum {
+            group: 1,
+            minimum_total: 2,
+        });
+        assert_eq!(requirement.subtitle(), "Any upgrade · combined +2 total (group A)");
+    }
+
+    #[test]
+    fn group_helpers_allocate_dissolve_and_align() {
+        let mut state = AppState::default();
+        for (alternative_group, upgrade_sum) in [
+            (Some(1), None),
+            (Some(1), None),
+            (Some(3), None),
+            (
+                None,
+                Some(UpgradeSum {
+                    group: 2,
+                    minimum_total: 2,
+                }),
+            ),
+            (
+                None,
+                Some(UpgradeSum {
+                    group: 2,
+                    minimum_total: 5,
+                }),
+            ),
+        ] {
+            let key = state.claim_key();
+            state.requirements.push(UiRequirement {
+                alternative_group,
+                upgrade_sum,
+                ..UiRequirement::new(key)
+            });
+        }
+        assert_eq!(state.free_alternative_group(), 2);
+
+        state.dissolve_lone_alternatives();
+        assert_eq!(state.requirements[0].alternative_group, Some(1));
+        assert_eq!(state.requirements[1].alternative_group, Some(1));
+        assert_eq!(state.requirements[2].alternative_group, None);
+
+        state.align_upgrade_sums(4);
+        assert_eq!(
+            state.requirements[4].upgrade_sum,
+            Some(UpgradeSum {
+                group: 2,
+                minimum_total: 2,
+            })
+        );
+    }
+
+    #[test]
+    fn any_enchantment_expands_to_the_full_family_set() {
+        let mut requirement = UiRequirement::new(1);
+        requirement.effect = UiEffect::AnyEnchantment;
+        assert_eq!(
+            requirement.to_core().effect,
+            shpd_seedfinder_core::query::EffectRequirement::OneOf(
+                EffectSet::enchantments(ItemKind::Weapon).unwrap()
+            )
+        );
+        assert_eq!(
+            UiEffect::OneOf(EffectSet::single(Effect::Weapon(WeaponEffect::Lucky))).single(),
+            Some(Effect::Weapon(WeaponEffect::Lucky))
+        );
+        assert_eq!(UiEffect::AnyEnchantment.single(), None);
     }
 
     #[test]
