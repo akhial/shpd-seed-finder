@@ -184,7 +184,10 @@ impl ResultsPane {
         let Some(target) = result_navigation::step(&self.seeds.borrow(), seed, delta) else {
             return false;
         };
-        let Some(row) = self.list.row_at_index(i32::try_from(target).unwrap_or(i32::MAX)) else {
+        let Some(row) = self
+            .list
+            .row_at_index(i32::try_from(target).unwrap_or(i32::MAX))
+        else {
             return false;
         };
         self.list.select_row(Some(&row));
