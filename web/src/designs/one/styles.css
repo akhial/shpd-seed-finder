@@ -420,6 +420,19 @@ body {
 
 .d1-btn-danger.d1-btn-big kbd { background: rgba(255, 255, 255, 0.14); border-color: rgba(255, 255, 255, 0.2); }
 
+/* Refine keeps the accent role while the neighboring start button demotes to
+   the plain "New Search" look, making the recommended action obvious. */
+.d1-btn-refine {
+  color: var(--d1-accent-ink);
+  background: var(--d1-accent);
+  border-color: var(--d1-accent-border);
+}
+
+.d1-btn-refine:hover:not(:disabled) {
+  background: var(--d1-accent-hover);
+  border-color: var(--d1-accent-border);
+}
+
 .d1-select,
 .d1-input {
   font: inherit;

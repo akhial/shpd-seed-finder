@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-import init, { scout, SearchSession } from '../wasm/pkg/seedfinder.js'
+import init, { filter_seeds, scout, SearchSession } from '../wasm/pkg/seedfinder.js'
 import type { SearchAdvance } from '../wasm/types'
 import type { SearchWorkerRequest, SearchWorkerResponse } from './protocol'
 
@@ -73,6 +73,19 @@ context.addEventListener('message', (event: MessageEvent<SearchWorkerRequest>) =
         post({ type: 'scout:result', requestId: message.requestId, resultJson: scout(message.requestJson) })
       } catch (error) {
         post({ type: 'scout:error', requestId: message.requestId, error: error instanceof Error ? error.message : String(error) })
+      }
+    })
+  }
+  if (message.type === 'filter') {
+    void ready.then(() => {
+      try {
+        post({
+          type: 'filter:result',
+          requestId: message.requestId,
+          resultJson: filter_seeds(message.queryJson, new Float64Array(message.seeds)),
+        })
+      } catch (error) {
+        post({ type: 'filter:error', requestId: message.requestId, error: error instanceof Error ? error.message : String(error) })
       }
     })
   }

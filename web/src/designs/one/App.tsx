@@ -3,6 +3,7 @@ import { useStore } from '@tanstack/react-store'
 import { formatSeedInput } from '../../lib/format'
 import { toQueryDocument, toQueryJson, validateQuery } from '../../lib/query'
 import { SearchCoordinator, scoutSeed, searchStore } from '../../lib/search/coordinator'
+import { isRefinementOf } from '../../lib/search/refine'
 import { queryStore, workerCountStore } from '../../lib/store'
 import { analyzeQuery, getEngineInfo, parseSeedCode } from '../../lib/wasm'
 import type { AnalysisResult, EngineInfo, ScoutResult } from '../../lib/wasm/types'
@@ -30,6 +31,7 @@ export default function App() {
   const query = useStore(queryStore)
   const searchState = useStore(searchStore, (state) => state.state)
   const matchCount = useStore(searchStore, (state) => state.matches.length)
+  const baseQueryJson = useStore(searchStore, (state) => state.queryJson)
 
   const [engine, setEngine] = useState<EngineInfo | undefined>(undefined)
   const coordinator = useRef<SearchCoordinator | undefined>(undefined)
@@ -75,7 +77,7 @@ export default function App() {
   const toggleSearch = useCallback(() => {
     const controller = coordinator.current
     if (!controller) return
-    if (searchStore.state.state === 'running') {
+    if (searchStore.state.state === 'running' || searchStore.state.state === 'stopping') {
       controller.cancel()
       return
     }
@@ -84,6 +86,26 @@ export default function App() {
     controller.start(toQueryDocument(state), workerCountStore.state)
     setActiveTab('results')
   }, [])
+
+  // Refining is offered when the finished search's query has only gained
+  // requirements: the previous matches then stay valid candidates and the
+  // scan can continue where it left off instead of starting over.
+  const canRefine = useMemo(() => {
+    if (searchState !== 'completed' && searchState !== 'cancelled') return false
+    if (!baseQueryJson || !validation.valid) return false
+    try {
+      return isRefinementOf(toQueryDocument(query), JSON.parse(baseQueryJson))
+    } catch {
+      return false
+    }
+  }, [searchState, baseQueryJson, query, validation.valid])
+
+  const refineSearch = useCallback(() => {
+    const controller = coordinator.current
+    if (!controller || !canRefine) return
+    controller.refine(toQueryDocument(queryStore.state), workerCountStore.state)
+    setActiveTab('results')
+  }, [canRefine])
 
   // Ctrl/Cmd+Enter starts or cancels the search from anywhere.
   useEffect(() => {
@@ -99,7 +121,7 @@ export default function App() {
 
   // Warn before leaving the page while a search is running.
   useEffect(() => {
-    if (searchState !== 'running') return
+    if (searchState !== 'running' && searchState !== 'stopping') return
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault()
     }
@@ -147,7 +169,7 @@ export default function App() {
   }, [])
 
   const paneClass = (tab: Tab) => `d1-pane d1-pane-${tab}${activeTab === tab ? ' d1-pane-active' : ''}`
-  const running = searchState === 'running'
+  const running = searchState === 'running' || searchState === 'stopping'
 
   return (
     <div className="d1-app">
@@ -202,6 +224,8 @@ export default function App() {
             running={running}
             engineReady={engine !== undefined}
             onToggleSearch={toggleSearch}
+            canRefine={canRefine}
+            onRefine={refineSearch}
             isMac={isMac}
           />
         </section>

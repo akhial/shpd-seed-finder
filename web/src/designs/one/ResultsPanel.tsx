@@ -48,7 +48,7 @@ export function ResultsPanel({
     })
   }
 
-  const running = search.state === 'running'
+  const running = search.state === 'running' || search.state === 'stopping'
   const now = useTicker(running)
   const elapsed = running ? now - search.startedAt : search.elapsed
   const probability = analysis?.valid ? analysis.probability : null
@@ -97,7 +97,12 @@ export function ResultsPanel({
                 <span className="d1-stat-value d1-mono">{estimateDuration(timeToSeed)}</span>
               </div>
             </div>
-            <p className="d1-caption">{probabilityLabel(probability)}</p>
+            {search.refined && (
+              <p className="d1-caption">
+                Refining: kept {search.refined.kept.toLocaleString()} of {search.refined.of.toLocaleString()} previous seed{search.refined.of === 1 ? '' : 's'}, scanning the remaining range…
+              </p>
+            )}
+            <p className="d1-caption">{search.state === 'stopping' ? 'Stopping…' : probabilityLabel(probability)}</p>
           </>
         )}
 
@@ -112,6 +117,12 @@ export function ResultsPanel({
               {search.matches.length.toLocaleString()} seed{search.matches.length === 1 ? '' : 's'} · tested {compactNumber(search.tested)} in {formatDuration(search.elapsed)}
             </span>
           </div>
+        )}
+
+        {!running && search.refined && (
+          <p className="d1-caption">
+            Refined: kept {search.refined.kept.toLocaleString()} of {search.refined.of.toLocaleString()} previous seed{search.refined.of === 1 ? '' : 's'}.
+          </p>
         )}
 
         {search.capped && <p className="d1-caption d1-capped">Result limit reached (1,024 seeds).</p>}
