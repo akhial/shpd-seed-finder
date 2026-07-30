@@ -542,6 +542,48 @@ mod tests {
         assert!(total_matches > 0);
     }
 
+    /// Seed AAA-AAA-ACO (66) holds a +3 throwing hammer in a depth-24
+    /// special-room chest. A thrown +3 plan must not treat +3 as quest-only
+    /// outside fast mode, or this seed would be silently skipped.
+    #[test]
+    fn chest_prize_plus_three_thrown_seed_survives_the_gate() {
+        use crate::catalog::WeaponCategory;
+
+        let query = SearchQuery {
+            requirements: vec![Requirement {
+                kind: ItemKind::Weapon,
+                weapon_category: Some(WeaponCategory::Thrown),
+                item: None,
+                tier: TierRequirement::Any,
+                upgrade: UpgradeRequirement::Exact(3),
+                effect: None,
+                require_uncursed: false,
+                source: None,
+                identity_group: None,
+                max_depth: None,
+            }],
+            max_depth: 24,
+            challenges: crate::challenges::Challenges::NONE,
+            require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
+            fast_mode: false,
+        };
+        let plan = QueryPlan::analyze(&query);
+        assert!(!plan.is_unsatisfiable());
+        let seed = DungeonSeed::new(66).unwrap();
+        let world = generate_main_world(seed, 24).unwrap();
+        assert!(query.matches(&world), "the oracle seed lost its match");
+        let gated = CanonicalMainWorldGenerator.generate_batch_gated(
+            &[seed],
+            plan.generation_depth(),
+            &plan,
+        );
+        assert!(
+            gated[0].as_ref().is_some_and(|world| query.matches(world)),
+            "the gate abandoned a genuinely matching seed"
+        );
+    }
+
     #[test]
     fn fast_mode_finds_only_genuine_matches() {
         let query = SearchQuery {
