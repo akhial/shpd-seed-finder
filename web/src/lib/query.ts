@@ -201,16 +201,25 @@ export function validateQuery(state: QueryState): ValidationResult {
   state.requirements.forEach((requirement, index) => {
     for (const error of validateRequirement(requirement)) errors.push(`Requirement ${index + 1}: ${error}`)
   })
-  const groups = new Map<number, { kind?: string; item?: string }>()
+  const groups = new Map<number, { alternative?: number; kind?: string; item?: string }[]>()
   state.requirements.forEach((requirement) => {
     if (!requirement.identityGroup) return
-    const current = { kind: requirement.kind ?? getItem(requirement.item ?? '')?.type, item: requirement.item }
-    const previous = groups.get(requirement.identityGroup)
-    if (previous && (previous.kind !== current.kind || (previous.item && current.item && previous.item !== current.item))) {
-      errors.push(`Identity group ${requirement.identityGroup} has incompatible category or item requirements.`)
-    } else if (!previous || (!previous.item && current.item)) {
-      groups.set(requirement.identityGroup, current)
+    const current = {
+      alternative: requirement.alternativeGroup,
+      kind: requirement.kind ?? getItem(requirement.item ?? '')?.type,
+      item: requirement.item,
     }
+    const members = groups.get(requirement.identityGroup) ?? []
+    // Alternatives of one slot are never assigned together, so they may
+    // disagree; every other pair must agree on category and item.
+    const conflict = members.some(
+      (member) =>
+        !(member.alternative !== undefined && member.alternative === current.alternative) &&
+        (member.kind !== current.kind || (member.item && current.item && member.item !== current.item)),
+    )
+    if (conflict) errors.push(`Identity group ${requirement.identityGroup} has incompatible category or item requirements.`)
+    members.push(current)
+    groups.set(requirement.identityGroup, members)
   })
   const sums = new Map<number, { atLeast: number; reachable: number }>()
   state.requirements.forEach((requirement) => {

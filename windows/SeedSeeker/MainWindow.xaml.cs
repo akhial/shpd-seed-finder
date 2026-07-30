@@ -195,6 +195,9 @@ public sealed partial class MainWindow : Window
         var r = new ItemRequirement { Kind = source.Kind, UpgradeMatch = UpgradeMatch.Any, AlternativeGroup = group };
         if (!await EditRequirement(r, true)) return;
         source.AlternativeGroup = group;
+        // Alternative members cannot carry a combined-upgrade total.
+        source.UpgradeSumGroup = null;
+        source.UpgradeSumTotal = null;
         var last = query.Requirements.IndexOf(source);
         for (var i = 0; i < query.Requirements.Count; i++) if (query.Requirements[i].AlternativeGroup == group) last = i;
         query.Requirements.Insert(last + 1, r);
@@ -545,9 +548,27 @@ public sealed partial class MainWindow : Window
 
     private async void Start_Click(object sender, RoutedEventArgs e)
     {
-        if (search is not null) { search.Cancel(); StartButton.IsEnabled = false; return; } results.Clear(); SearchStatus.Text = "Starting search…"; SetStartButton(running: true);
+        if (search is not null) { search.Cancel(); StartButton.IsEnabled = false; return; }
+        if (UnattainableUpgradeSum() is string problem) { SearchStatus.Text = problem; return; }
+        results.Clear(); SearchStatus.Text = "Starting search…"; SetStartButton(running: true);
         try { search = await Task.Run(() => engine.Start(query)); await RunSearch(search); } catch (Exception ex) { SearchStatus.Text = $"Failed: {ex.Message}"; }
         finally { search?.Dispose(); search = null; SetStartButton(running: false); StartButton.IsEnabled = query.Requirements.Count != 0; }
+    }
+
+    /// <summary>
+    /// Mirrors the engine's attainability rule for combined-upgrade groups: the
+    /// members' reachable upgrades must be able to add up to the group total.
+    /// </summary>
+    private string? UnattainableUpgradeSum()
+    {
+        foreach (var group in query.Requirements.Where(r => r.UpgradeSumGroup is not null).GroupBy(r => r.UpgradeSumGroup!.Value))
+        {
+            var total = group.Select(r => r.UpgradeSumTotal ?? 0).Max();
+            var reachable = group.Sum(r => r.UpgradeMatch == UpgradeMatch.Exactly ? r.Upgrade : r.Kind == ItemKind.Ring ? 4 : 3);
+            if (total > reachable)
+                return $"Combined upgrade group {(char)(64 + group.Key)} asks for +{total} but its items can reach at most +{reachable} together.";
+        }
+        return null;
     }
     private void SetStartButton(bool running)
     {

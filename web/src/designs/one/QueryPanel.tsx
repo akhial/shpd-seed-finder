@@ -189,6 +189,13 @@ export function QueryPanel({
   const blacksmithCount = Number(query.requireBlacksmith) + Number(query.excludeBlacksmithRewards)
   const performanceCount = Number(query.fastMode)
   const hasRequirements = query.requirements.length > 0
+  // Count each alternative group as one requirement slot, matching the
+  // scout header's "N of M" denominator.
+  const slotCount = new Set(
+    query.requirements.map((requirement, index) =>
+      requirement.alternativeGroup === undefined ? `r${index}` : `g${requirement.alternativeGroup}`,
+    ),
+  ).size
   const impossible = Boolean(analysis?.valid && analysis.impossible)
   const startDisabled = !running && (!engineReady || !validation.valid || impossible)
 
@@ -197,7 +204,7 @@ export function QueryPanel({
       <div className="d1-pane-head">
         <span>Query</span>
         <span className="d1-pane-head-info">
-          {hasRequirements ? `${query.requirements.length} requirement${query.requirements.length === 1 ? '' : 's'}` : ''}
+          {hasRequirements ? `${slotCount} requirement${slotCount === 1 ? '' : 's'}` : ''}
         </span>
       </div>
       <div className="d1-pane-body">

@@ -221,6 +221,26 @@ data class SearchRequest(
         require(maximumDepth in 1..24) { "Maximum floor must be 1..24" }
         require(challenges in 0..Challenge.ALL_MASK) { "Challenge mask must be 0..${Challenge.ALL_MASK}" }
     }
+
+    /**
+     * Mirrors the engine's attainability rule for combined-upgrade groups:
+     * the members' reachable upgrades must be able to add up to the total.
+     * The engine would reject such a request with an unspecific error.
+     */
+    fun unattainableUpgradeSumMessage(): String? {
+        val groups = requirements.filter { it.upgradeSumGroup != null }.groupBy { it.upgradeSumGroup }
+        for ((group, members) in groups.toSortedMap(compareBy { it })) {
+            val total = members.mapNotNull { it.upgradeSumTotal }.max()
+            val reachable = members.sumOf {
+                if (it.upgradeMatch == UpgradeMatch.EXACT) it.upgrade else it.kind.maximumSearchUpgrade
+            }
+            if (total > reachable) {
+                val label = ('A'.code + (group ?: 1) - 1).toChar()
+                return "Combined upgrade group $label asks for +$total but its items can reach at most +$reachable together."
+            }
+        }
+        return null
+    }
 }
 
 enum class Challenge(

@@ -167,6 +167,12 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
         searchSeedsPerSecond = 0.0
         searchElapsedSeconds = 0L
 
+        currentRun.request.unattainableUpgradeSumMessage()?.let { problem ->
+            searchError = problem
+            isSearching = false
+            return@LaunchedEffect
+        }
+
         val searchStartedAt = System.nanoTime()
         var previousScannedSeeds = 0L
         var previousStatusTime = System.nanoTime()

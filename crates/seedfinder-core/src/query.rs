@@ -355,6 +355,10 @@ pub struct SearchQuery {
     pub fast_mode: bool,
 }
 
+/// One identity-group member seen during validation: its alternative group,
+/// category, and concrete item (when named).
+type IdentityMember = (Option<u8>, ItemKind, Option<ItemId>);
+
 impl SearchQuery {
     /// Validates bounds and every requirement.
     ///
@@ -369,27 +373,31 @@ impl SearchQuery {
         if !(1..=24).contains(&self.max_depth) {
             return Err(QueryError::InvalidDepth);
         }
-        let mut identity_groups: BTreeMap<u8, (ItemKind, Option<ItemId>)> = BTreeMap::new();
+        let mut identity_groups: BTreeMap<u8, Vec<IdentityMember>> = BTreeMap::new();
         let mut upgrade_sums: BTreeMap<u8, (u8, u16)> = BTreeMap::new();
         for requirement in &self.requirements {
             requirement.validate()?;
             if let Some(group) = requirement.identity_group {
-                let current = (requirement.kind, requirement.item);
-                if let Some(previous) = identity_groups.get(&group).copied() {
-                    if previous.0 != current.0
-                        || previous
-                            .1
-                            .zip(current.1)
+                let members = identity_groups.entry(group).or_default();
+                for &(alternative, kind, item) in members.iter() {
+                    // Alternatives of one slot are never assigned together,
+                    // so they may disagree; every other pair must agree.
+                    if alternative.is_some() && alternative == requirement.alternative_group {
+                        continue;
+                    }
+                    if kind != requirement.kind
+                        || item
+                            .zip(requirement.item)
                             .is_some_and(|(left, right)| left != right)
                     {
                         return Err(QueryError::InconsistentIdentityGroup);
                     }
-                    if previous.1.is_none() && current.1.is_some() {
-                        identity_groups.insert(group, current);
-                    }
-                } else {
-                    identity_groups.insert(group, current);
                 }
+                members.push((
+                    requirement.alternative_group,
+                    requirement.kind,
+                    requirement.item,
+                ));
             }
             if let Some(sum) = requirement.upgrade_sum {
                 let (minimum_total, reachable) = upgrade_sums.entry(sum.group).or_insert((
@@ -1142,6 +1150,43 @@ mod tests {
         );
         assert_eq!(
             inconsistent.validate(),
+            Err(QueryError::InconsistentIdentityGroup)
+        );
+    }
+
+    #[test]
+    fn identity_groups_may_disagree_across_alternatives_of_one_slot() {
+        let linked = |item, alternative_group| Requirement {
+            kind: ItemKind::Wand,
+            item,
+            upgrade: UpgradeRequirement::Any,
+            identity_group: Some(1),
+            alternative_group,
+            ..requirement(ItemId::WandFrost)
+        };
+        // Alternatives are never assigned together, so they may name
+        // different items while sharing an identity group.
+        let alternatives = query(
+            vec![
+                linked(Some(ItemId::WandFrost), Some(1)),
+                linked(Some(ItemId::WandLightning), Some(1)),
+                linked(None, None),
+            ],
+            24,
+        );
+        assert_eq!(alternatives.validate(), Ok(()));
+        // A concrete requirement outside the slot still has to agree with
+        // every member it could be assigned alongside.
+        let conflicting = query(
+            vec![
+                linked(Some(ItemId::WandFrost), Some(1)),
+                linked(Some(ItemId::WandLightning), Some(1)),
+                linked(Some(ItemId::WandCorruption), None),
+            ],
+            24,
+        );
+        assert_eq!(
+            conflicting.validate(),
             Err(QueryError::InconsistentIdentityGroup)
         );
     }

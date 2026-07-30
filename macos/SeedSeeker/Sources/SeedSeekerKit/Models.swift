@@ -343,6 +343,25 @@ public struct SearchRequest: Codable, Sendable {
         self.fastMode = fastMode
         self.challenges = challenges
     }
+
+    /// Mirrors the engine's attainability rule for combined-upgrade groups:
+    /// the members' reachable upgrades must be able to add up to the total.
+    /// The engine would reject such a request with an unspecific error.
+    public var unattainableUpgradeSumMessage: String? {
+        let groups = Dictionary(grouping: requirements.filter { $0.upgradeSumGroup != nil },
+                                by: { $0.upgradeSumGroup ?? 0 })
+        for (group, members) in groups.sorted(by: { $0.key < $1.key }) {
+            let total = members.compactMap(\.upgradeSumTotal).max() ?? 0
+            let reachable = members.reduce(0) { sum, member in
+                sum + (member.upgradeMatch == .exactly ? member.upgrade : member.kind.maximumSearchUpgrade)
+            }
+            if total > reachable {
+                let label = UnicodeScalar(64 + group).map { String(Character($0)) } ?? "\(group)"
+                return "Combined upgrade group \(label) asks for +\(total) but its items can reach at most +\(reachable) together."
+            }
+        }
+        return nil
+    }
 }
 
 public struct SeedResult: Hashable, Identifiable, Sendable {

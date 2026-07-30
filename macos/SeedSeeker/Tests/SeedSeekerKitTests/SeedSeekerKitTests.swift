@@ -189,6 +189,29 @@ final class SeedSeekerKitTests: XCTestCase {
         ])
     }
 
+    func testUnattainableUpgradeSumMessageMirrorsTheEngineRule() throws {
+        let wand = try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .wand,
+                                       upgradeMatch: .any, upgradeSumGroup: 1, upgradeSumTotal: 7)
+        let impossible = try SearchRequest(requirements: [wand, wand])
+        XCTAssertEqual(impossible.unattainableUpgradeSumMessage,
+                       "Combined upgrade group A asks for +7 but its items can reach at most +6 together.")
+        var attainable = impossible
+        attainable.requirements = attainable.requirements.map { requirement in
+            var member = requirement
+            member.upgradeSumTotal = 6
+            return member
+        }
+        XCTAssertNil(attainable.unattainableUpgradeSumMessage)
+        // Exact upgrades cap a member's contribution at the exact value.
+        let exact = try ItemRequirement(key: 2, item: nil, upgrade: 1, kind: .wand,
+                                        upgradeMatch: .exactly, upgradeSumGroup: 1, upgradeSumTotal: 5)
+        let wildcard = try ItemRequirement(key: 3, item: nil, upgrade: 0, kind: .wand,
+                                           upgradeMatch: .any, upgradeSumGroup: 1, upgradeSumTotal: 5)
+        let pinned = try SearchRequest(requirements: [exact, wildcard])
+        XCTAssertEqual(pinned.unattainableUpgradeSumMessage,
+                       "Combined upgrade group A asks for +5 but its items can reach at most +4 together.")
+    }
+
     func testQueryCodecFastModeSetsFlagBitOne() throws {
         let requirement = try ItemRequirement(key: 1, item: nil, upgrade: 3, kind: .armor,
                                               upgradeMatch: .exactly)

@@ -5,9 +5,10 @@
 //! The rules here mirror structural facts of the v3.3.8 generator:
 //!
 //! - Natural equipment rolls never exceed +2 ([`crate::equipment`]), so +3
-//!   weapons come only from the Sacrificial-fire room, the Ghost quest, or the
-//!   Blacksmith; +3 armor only from the Crypt, the Ghost, or the Blacksmith;
-//!   +3 wands only from the Wandmaker; and +3/+4 rings only from the Imp.
+//!   weapons come only from the Sacrificial-fire room, the Secret Maze's chest
+//!   prize, the Ghost quest, or the Blacksmith; +3 armor only from the Crypt,
+//!   the Secret Maze, the Ghost, or the Blacksmith; +3 wands only from the
+//!   Wandmaker; and +3/+4 rings only from the Imp.
 //! - Every quest resolves inside a fixed depth window (Ghost 2–4, Wandmaker
 //!   7–9, Blacksmith 12–14, Imp 17–19) and spawns at most once per run, with
 //!   the spawn forced on the window's final floor.
@@ -17,9 +18,9 @@
 //! Everything derived from these rules is exact: a rejected seed can never
 //! match, and a shortened generation depth can never hide a match. The one
 //! deliberately lossy refinement is [`SearchQuery::fast_mode`], which ignores
-//! the rare Crypt/Sacrificial-fire +3 prizes so that +3 weapon/armor
-//! requirements become quest-only and inherit the Blacksmith's depth-14
-//! deadline.
+//! the rare Crypt/Sacrificial-fire/Secret-Maze +3 prizes so that +3
+//! weapon/armor requirements become quest-only and inherit the Blacksmith's
+//! depth-14 deadline.
 //!
 //! The searchable catalog contains equipment only. `NO_SCROLLS` halves the
 //! scheduled Scroll of Upgrade drops, but no current requirement can target a
@@ -113,16 +114,18 @@ const fn source_profile(
     Some(match (source, kind) {
         // Plain drops and chest variants use the natural rolls, capped at +2,
         // as do crystal chests/mimics (which stock only wands and rings).
-        (S::Heap | S::Chest | S::LockedChest | S::Skeleton | S::Mimic, _)
-        | (S::CrystalChest | S::CrystalMimic, Wand | Ring) => (0, 2, Any),
+        (S::Heap | S::LockedChest | S::Skeleton | S::Mimic, _)
+        | (S::Chest | S::CrystalChest | S::CrystalMimic, Wand | Ring) => (0, 2, Any),
         // Golden mimics strip curse effects; statues force a good effect.
         // Neither exceeds the natural +2 cap.
         (S::GoldenMimic, _) | (S::Statue, Weapon) | (S::ArmoredStatue, Weapon | Armor) => {
             (0, 2, GoodOnly)
         }
-        // The Crypt bumps non-cursed armor to at most +3; in fast mode this
-        // exotic path is deliberately ignored so +3 armor becomes quest-only.
-        (S::Tomb, Armor) | (S::SacrificialFire, Weapon) => {
+        // The Crypt bumps non-cursed armor to at most +3, and the Secret
+        // Maze's chest prize (a weapon or armor) is re-upgraded one time in
+        // three; in fast mode these exotic paths are deliberately ignored so
+        // +3 weapons and armor become quest-only.
+        (S::Tomb, Armor) | (S::SacrificialFire, Weapon) | (S::Chest, Weapon | Armor) => {
             if fast_mode {
                 (0, 2, Any)
             } else {
@@ -640,6 +643,33 @@ mod tests {
         });
         assert!(!fast_mixed.is_unsatisfiable());
         assert_eq!(fast_mixed.generation_depth(), 14);
+    }
+
+    #[test]
+    fn secret_maze_chest_prizes_keep_pinned_plus_three_equipment_feasible() {
+        // The Secret Maze re-upgrades its chest prize one time in three, so a
+        // Chest-pinned +3 weapon or armor is reachable outside fast mode.
+        for kind in [ItemKind::Weapon, ItemKind::Armor] {
+            let pinned = Requirement {
+                source: Some(ItemSource::Chest),
+                ..requirement(kind, UpgradeRequirement::Exact(3))
+            };
+            let plan = QueryPlan::analyze(&query(vec![pinned], 24));
+            assert!(!plan.is_unsatisfiable(), "{kind:?} +3 from a chest");
+            // Pinning a source disables fast mode's lossy skip, so the pinned
+            // requirement stays feasible there too.
+            let fast = QueryPlan::analyze(&SearchQuery {
+                fast_mode: true,
+                ..query(vec![pinned], 24)
+            });
+            assert!(!fast.is_unsatisfiable(), "pinned sources stay exact");
+        }
+        // Wands and rings from chests still cap at +2.
+        let wand = Requirement {
+            source: Some(ItemSource::Chest),
+            ..requirement(ItemKind::Wand, UpgradeRequirement::Exact(3))
+        };
+        assert!(QueryPlan::analyze(&query(vec![wand], 24)).is_unsatisfiable());
     }
 
     #[test]

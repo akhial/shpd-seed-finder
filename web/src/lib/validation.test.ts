@@ -27,6 +27,15 @@ describe('query validation', () => {
   it('rejects mismatched identity groups', () => {
     expect(validateQuery(state(requirement({ identityGroup: 1 }), requirement({ kind: 'armor', identityGroup: 1 }))).errors.join(' ')).toMatch(/Identity group/)
   })
+  it('allows identity groups to disagree across alternatives of one slot', () => {
+    const alternatives = [
+      requirement({ item: 'sword', identityGroup: 1, alternativeGroup: 1 }),
+      requirement({ item: 'mace', identityGroup: 1, alternativeGroup: 1 }),
+    ]
+    expect(validateQuery(state(...alternatives)).valid).toBe(true)
+    // A requirement outside the slot must still agree with every member.
+    expect(validateQuery(state(...alternatives, requirement({ item: 'spear', identityGroup: 1 }))).errors.join(' ')).toMatch(/Identity group/)
+  })
   it('checks combined upgrade groups for agreement and attainability', () => {
     const ring = (patch: Partial<RequirementState> = {}) => requirement({ kind: 'ring', item: 'ring_might', ...patch })
     const sum = (atLeast: number) => ({ group: 1, atLeast })
