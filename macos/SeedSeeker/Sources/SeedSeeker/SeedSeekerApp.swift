@@ -325,19 +325,26 @@ private struct QueryView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal).padding(.top, 8)
             }
-            Button {
-                if controller.isRunning { controller.cancel() }
-                else if let request = try? SearchRequest(requirements: requirements,
-                    maximumDepth: maximumDepth, requireBlacksmith: requireBlacksmith,
-                    excludeBlacksmithRewards: excludeBlacksmithRewards,
-                    fastMode: fastMode, challenges: challenges) { controller.start(request) }
-            } label: {
-                Label(controller.isRunning ? "Cancel Search" : "Start Search",
-                      systemImage: controller.isRunning ? "stop.fill" : "play.fill")
-                    .frame(maxWidth: .infinity).padding(.vertical, 5)
-            }.buttonStyle(.borderedProminent).tint(controller.isRunning ? .red : .accentColor)
-                .disabled(requirements.isEmpty).keyboardShortcut(.return, modifiers: .command)
-                .padding()
+            VStack(spacing: 8) {
+                Button {
+                    if controller.isRunning { controller.cancel() }
+                    else if let request = builtRequest { controller.start(request) }
+                } label: {
+                    Label(controller.isRunning ? "Cancel Search" : "Start Search",
+                          systemImage: controller.isRunning ? "stop.fill" : "play.fill")
+                        .frame(maxWidth: .infinity).padding(.vertical, 5)
+                }.buttonStyle(.borderedProminent).tint(controller.isRunning ? .red : .accentColor)
+                    .disabled(requirements.isEmpty).keyboardShortcut(.return, modifiers: .command)
+                if let request = refinableRequest {
+                    Button { controller.refine(request) } label: {
+                        Label("Refine Last Search", systemImage: "line.3.horizontal.decrease.circle")
+                            .frame(maxWidth: .infinity).padding(.vertical, 5)
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Re-check the seeds already found against the added requirements, then finish scanning the rest of the seed space.")
+                }
+            }
+            .padding()
         }
         .navigationTitle("Query")
         .sheet(item: $editor) { session in
@@ -360,6 +367,21 @@ private struct QueryView: View {
         } message: {
             Text("Save the current requirements and search settings.")
         }
+    }
+
+    private var builtRequest: SearchRequest? {
+        try? SearchRequest(requirements: requirements, maximumDepth: maximumDepth,
+                           requireBlacksmith: requireBlacksmith,
+                           excludeBlacksmithRewards: excludeBlacksmithRewards,
+                           fastMode: fastMode, challenges: challenges)
+    }
+
+    /// The current query as a request, when it strictly narrows the last
+    /// finished run and can therefore be refined instead of rescanned.
+    private var refinableRequest: SearchRequest? {
+        guard !controller.isRunning, let request = builtRequest,
+              controller.canRefine(with: request) else { return nil }
+        return request
     }
 
     @ViewBuilder private var requirementSections: some View {
@@ -660,6 +682,15 @@ private struct ResultsView: View {
         }.navigationTitle("Results")
     }
     @ViewBuilder private var status: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            statusBody
+            if let kept = controller.refinedKept {
+                Text("Refined: kept \(kept) previous seed\(kept == 1 ? "" : "s")")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+    @ViewBuilder private var statusBody: some View {
         if controller.state == nil { Text("Add requirements, then press Start Search.").foregroundStyle(.secondary) }
         else if controller.isRunning {
             VStack(alignment: .leading, spacing: 2) {

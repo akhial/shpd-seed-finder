@@ -16,12 +16,15 @@ public enum SeedFinderEngineError: Error, LocalizedError, Sendable {
 public protocol SeedFinderSearchSession: Sendable {
     func poll(_ maximum: Int) async throws -> [SeedResult]
     func status() async throws -> SearchStatus
+    func resumeHint() async throws -> ResumeHint
     func cancel() async
     func close() async
 }
 
 public protocol SeedFinderEngine: Sendable {
     func startSearch(_ request: SearchRequest) async throws -> any SeedFinderSearchSession
+    func startResumedSearch(_ request: SearchRequest, resumeFrom: Int64, scanLen: Int64) async throws -> any SeedFinderSearchSession
+    func filterSeeds(_ request: SearchRequest, seeds: [String]) async throws -> [String]
     func scoutSeed(_ seed: String, challenges: Int) async throws -> ScoutWorld
 }
 
@@ -45,6 +48,41 @@ public struct ProductionSeedFinderEngine: SeedFinderEngine {
         }.value
         guard handle != 0 else { throw SeedFinderEngineError.invalidArgument }
         return NativeSearchSession(handle: handle, requirementCount: request.requirements.count)
+    }
+
+    public func startResumedSearch(_ request: SearchRequest, resumeFrom: Int64, scanLen: Int64) async throws -> any SeedFinderSearchSession {
+        let encoded = try QueryCodec.encode(request)
+        let handle: Int64 = await Task.detached {
+            encoded.withUnsafeBytes { bytes in
+                seedfinder_start_resumed_search(bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count,
+                                                UInt64(bitPattern: resumeFrom), UInt64(bitPattern: scanLen))
+            }
+        }.value
+        guard handle != 0 else { throw SeedFinderEngineError.invalidArgument }
+        return NativeSearchSession(handle: handle, requirementCount: request.requirements.count)
+    }
+
+    public func filterSeeds(_ request: SearchRequest, seeds: [String]) async throws -> [String] {
+        guard !seeds.isEmpty else { return [] }
+        let encoded = try QueryCodec.encode(request)
+        let values: [UInt64] = try seeds.map { seed in
+            guard let value = SeedCode.value(of: seed) else { throw SeedFinderEngineError.invalidArgument }
+            return UInt64(value)
+        }
+        let count = request.requirements.count
+        let packet: Data = try await Task.detached {
+            var pointer: UnsafeMutablePointer<UInt8>?
+            var length = 0
+            let code = encoded.withUnsafeBytes { requestBytes in
+                values.withUnsafeBufferPointer { seedValues in
+                    seedfinder_filter_seeds(requestBytes.bindMemory(to: UInt8.self).baseAddress, requestBytes.count,
+                                            seedValues.baseAddress, seedValues.count, &pointer, &length)
+                }
+            }
+            guard code == 0 else { throw ffiError(code) }
+            return try copiedPacket(pointer, length)
+        }.value
+        return try ResultCodec.decode(packet, requirementCount: count).map(\.seed)
     }
 
     public func scoutSeed(_ seed: String, challenges: Int = 0) async throws -> ScoutWorld {
@@ -102,6 +140,15 @@ private final class NativeSearchSession: SeedFinderSearchSession, @unchecked Sen
             let probability = Double(bitPattern: UInt64(bitPattern: values[4]))
             guard probability.isFinite, (0...1).contains(probability) else { throw SeedFinderEngineError.invalidResponse }
             return SearchStatus(state: state, scannedSeeds: max(0, values[1]), totalSeeds: max(0, values[2]), errorCode: values[3], matchProbability: probability)
+        }.value
+    }
+    func resumeHint() async throws -> ResumeHint {
+        let handle = try activeHandle()
+        return try await Task.detached {
+            var values = [Int64](repeating: 0, count: 2)
+            let code = seedfinder_resume_hint(handle, &values)
+            guard code == 0 else { throw ffiError(code) }
+            return ResumeHint(position: values[0], remaining: values[1])
         }.value
     }
     func cancel() async {

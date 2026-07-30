@@ -224,6 +224,48 @@ public struct SearchRequest: Codable, Sendable {
     }
 }
 
+extension SearchRequest {
+    /// Whether this request narrows `base`: identical scope (floor limit,
+    /// blacksmith settings, fast mode, and challenges) plus a strict multiset
+    /// superset of its requirements. Row identity (`key`) is ignored, so a
+    /// re-added requirement still counts as the same one.
+    public func isRefinement(of base: SearchRequest) -> Bool {
+        guard maximumDepth == base.maximumDepth,
+              requireBlacksmith == base.requireBlacksmith,
+              excludeBlacksmithRewards == base.excludeBlacksmithRewards,
+              fastMode == base.fastMode,
+              challenges == base.challenges,
+              requirements.count > base.requirements.count else { return false }
+        var counts: [ItemRequirement: Int] = [:]
+        for requirement in requirements { counts[requirement.normalized(), default: 0] += 1 }
+        for requirement in base.requirements {
+            let normalized = requirement.normalized()
+            guard let count = counts[normalized], count > 0 else { return false }
+            counts[normalized] = count - 1
+        }
+        return true
+    }
+}
+
+private extension ItemRequirement {
+    /// A copy with `key` cleared so refinement comparison ignores row identity.
+    func normalized() -> ItemRequirement {
+        var copy = self
+        copy.key = 0
+        return copy
+    }
+}
+
+/// Where a follow-up search must pick up to complete a stopped session's
+/// seed-space coverage: `remaining` seeds starting at numeric seed `position`.
+public struct ResumeHint: Sendable {
+    public let position: Int64
+    public let remaining: Int64
+    public init(position: Int64, remaining: Int64) {
+        self.position = position; self.remaining = remaining
+    }
+}
+
 public struct SeedResult: Hashable, Identifiable, Sendable {
     public let seed: String
     public let matchedRequirements: Int

@@ -210,6 +210,16 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertFalse(SeedCode.isCanonical("abc-def-ghi"))
     }
 
+    func testSeedCodeNumericValue() {
+        XCTAssertEqual(SeedCode.value(of: "AAA-AAA-AAA"), 0)
+        XCTAssertEqual(SeedCode.value(of: "AAA-AAA-AAB"), 1)
+        XCTAssertEqual(SeedCode.value(of: "AAA-AAA-ABA"), 26)
+        XCTAssertEqual(SeedCode.value(of: "ZZZ-ZZZ-ZZZ"), 5_429_503_678_975)
+        XCTAssertNil(SeedCode.value(of: "aaa-aaa-aaa"))
+        XCTAssertNil(SeedCode.value(of: "AAAAAAAAA"))
+        XCTAssertNil(SeedCode.value(of: ""))
+    }
+
     func testSearchEstimateFormatting() {
         XCTAssertEqual(NumberFormat.probabilityPercent(13.0 / 10_000_000.0), "1.3x10^-4%")
         XCTAssertEqual(NumberFormat.seedRate(4_600), "4.6k")
@@ -247,6 +257,35 @@ final class SeedSeekerKitTests: XCTestCase {
             kind: .weapon, tier: 1, tierMatch: .exactly))
     }
 
+    func testSearchRequestRefinementRules() throws {
+        func wand(key: Int64, upgrade: Int) throws -> ItemRequirement {
+            try ItemRequirement(key: key, item: nil, upgrade: upgrade, kind: .wand,
+                                upgradeMatch: upgrade == 0 ? .any : .exactly)
+        }
+        let base = try SearchRequest(requirements: [wand(key: 1, upgrade: 3)])
+        let added = try SearchRequest(requirements: [wand(key: 9, upgrade: 3), wand(key: 10, upgrade: 0)])
+        XCTAssertTrue(added.isRefinement(of: base))
+        // Identical requirements (even with different keys) are not a refinement.
+        XCTAssertFalse(try SearchRequest(requirements: [wand(key: 7, upgrade: 3)]).isRefinement(of: base))
+        // Removing or editing a base requirement breaks containment.
+        XCTAssertFalse(base.isRefinement(of: added))
+        XCTAssertFalse(try SearchRequest(requirements: [wand(key: 1, upgrade: 2), wand(key: 2, upgrade: 0)])
+            .isRefinement(of: base))
+        // Duplicates count as a multiset: the candidate must repeat them too.
+        let doubled = try SearchRequest(requirements: [wand(key: 1, upgrade: 3), wand(key: 2, upgrade: 3)])
+        XCTAssertTrue(try SearchRequest(requirements: [wand(key: 3, upgrade: 3), wand(key: 4, upgrade: 3),
+                                                       wand(key: 5, upgrade: 0)]).isRefinement(of: doubled))
+        XCTAssertFalse(try SearchRequest(requirements: [wand(key: 3, upgrade: 3), wand(key: 5, upgrade: 0)])
+            .isRefinement(of: doubled))
+        XCTAssertTrue(doubled.isRefinement(of: base))
+        // Any scope change makes refine ineligible.
+        XCTAssertFalse(try SearchRequest(requirements: added.requirements, maximumDepth: 12).isRefinement(of: base))
+        XCTAssertFalse(try SearchRequest(requirements: added.requirements, requireBlacksmith: true).isRefinement(of: base))
+        XCTAssertFalse(try SearchRequest(requirements: added.requirements, excludeBlacksmithRewards: true).isRefinement(of: base))
+        XCTAssertFalse(try SearchRequest(requirements: added.requirements, fastMode: true).isRefinement(of: base))
+        XCTAssertFalse(try SearchRequest(requirements: added.requirements, challenges: 32).isRefinement(of: base))
+    }
+
     func testRealFFIScout() async throws {
         let world = try await ProductionSeedFinderEngine().scoutSeed("AAA-AAA-AAA", challenges: 0)
         XCTAssertFalse(world.items.isEmpty)
@@ -268,6 +307,45 @@ final class SeedSeekerKitTests: XCTestCase {
         } while !terminal && ContinuousClock.now < deadline
         XCTAssertTrue(terminal, "cancelled native session should terminate promptly")
         await session.close(); await session.close()
+    }
+
+    func testRealFFIResumeHintResumedSearchAndFilter() async throws {
+        let requirement = try ItemRequirement(key: 1, item: ItemCatalog.findById("wand_frost"),
+            upgrade: 2, kind: .wand)
+        let request = try SearchRequest(requirements: [requirement])
+        let engine = ProductionSeedFinderEngine()
+
+        let session = try await engine.startSearch(request)
+        await session.cancel()
+        try await waitForTerminal(session)
+        let hint = try await session.resumeHint()
+        XCTAssertGreaterThanOrEqual(hint.position, 0)
+        XCTAssertGreaterThanOrEqual(hint.remaining, 0)
+        await session.close()
+
+        // A one-seed resumed scan finishes almost immediately.
+        let resumed = try await engine.startResumedSearch(request, resumeFrom: hint.position, scanLen: 1)
+        try await waitForTerminal(resumed)
+        let status = try await resumed.status()
+        XCTAssertEqual(status.state, .completed)
+        await resumed.close()
+
+        // The authoritative filter returns a subset of its input, in order.
+        let filtered = try await engine.filterSeeds(request, seeds: ["AAA-AAA-AAA", "AAA-AAA-AAB"])
+        XCTAssertTrue(Set(filtered).isSubset(of: ["AAA-AAA-AAA", "AAA-AAA-AAB"]))
+        let empty = try await engine.filterSeeds(request, seeds: [])
+        XCTAssertEqual(empty, [])
+    }
+
+    private func waitForTerminal(_ session: any SeedFinderSearchSession) async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        var terminal = false
+        repeat {
+            _ = try await session.poll(4)
+            terminal = try await session.status().state != .running
+            if !terminal { try await Task.sleep(for: .milliseconds(10)) }
+        } while !terminal && ContinuousClock.now < deadline
+        XCTAssertTrue(terminal, "native session should reach a terminal state promptly")
     }
 
     private func scoutPacket(depth: UInt8, flags: UInt8, effect: String, option: UInt8) -> Data {
