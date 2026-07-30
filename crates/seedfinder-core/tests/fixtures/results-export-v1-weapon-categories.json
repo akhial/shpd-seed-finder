@@ -1,0 +1,27 @@
+{
+  "format": "seed-seeker-results",
+  "format_version": 1,
+  "app_version": "0.6.1",
+  "shpd_version": "3.3.8",
+  "query": {
+    "requirements": [
+      {
+        "kind": "thrown_weapon",
+        "upgrade": { "at_least": 1 },
+        "effect": "Projecting"
+      },
+      {
+        "kind": "melee_weapon",
+        "item": "sword",
+        "upgrade": 2
+      },
+      {
+        "kind": "weapon"
+      }
+    ],
+    "max_depth": 20
+  },
+  "results": [
+    { "seed": "AAA-AAA-ACO" }
+  ]
+}

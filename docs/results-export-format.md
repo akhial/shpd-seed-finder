@@ -55,8 +55,12 @@ It is decoded by `crates/seedfinder-core/src/json_query.rs`:
 
 - `requirements` — non-empty array of requirement objects with the optional
   fields:
-  - `kind` — `"weapon" | "armor" | "wand" | "ring"` (required when `item` is
-    absent),
+  - `kind` — `"weapon" | "melee_weapon" | "thrown_weapon" | "armor" | "wand"
+    | "ring"` (required when `item` is absent). `"weapon"` matches melee and
+    thrown weapons alike; the two narrowed kinds were added alongside the
+    melee/thrown search filters as an **additive enum value within format
+    version 1** — a file that uses them simply fails to import on builds
+    older than both features, with the codec's unknown-category message,
   - `item` — catalog stable id such as `"ring_wealth"`,
   - `tier` — `"any"` (the default) or exactly one of `{"exact": n}`,
     `{"at_least": n}`, `{"at_most": n}`,
@@ -160,7 +164,10 @@ drift from the canonical schema. Windows has no test harness in this repo;
 its codec must be kept in sync by review.
 
 When evolving the format, never edit the version-1 fixture — add new fixtures
-for the new version and keep the old ones passing.
+for the new version and keep the old ones passing. Additive changes inside a
+version get their own fixture the same way:
+`results-export-v1-weapon-categories.json` pins the narrowed
+`melee_weapon`/`thrown_weapon` kinds on every tested platform.
 
 ## Import semantics
 

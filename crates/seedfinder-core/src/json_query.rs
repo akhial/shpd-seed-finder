@@ -392,7 +392,14 @@ pub fn encode(query: &SearchQuery) -> Value {
 
 fn encode_requirement(requirement: &Requirement) -> Value {
     let mut output = Map::new();
-    output.insert("kind".to_owned(), json!(kind_name(requirement.kind)));
+    // A weapon-category narrowing is part of the kind in this format;
+    // dropping it here would silently widen the requirement on re-import.
+    let kind = match (requirement.kind, requirement.weapon_category) {
+        (ItemKind::Weapon, Some(WeaponCategory::Melee)) => "melee_weapon",
+        (ItemKind::Weapon, Some(WeaponCategory::Thrown)) => "thrown_weapon",
+        (kind, _) => kind_name(kind),
+    };
+    output.insert("kind".to_owned(), json!(kind));
     if let Some(item_id) = requirement.item {
         output.insert("item".to_owned(), json!(item(item_id).stable_id));
     }
@@ -586,6 +593,7 @@ mod tests {
             requirements: vec![
                 Requirement {
                     kind: ItemKind::Weapon,
+                    weapon_category: None,
                     item: None,
                     tier: TierRequirement::AtLeast(4),
                     upgrade: UpgradeRequirement::Exact(2),
@@ -597,6 +605,7 @@ mod tests {
                 },
                 Requirement {
                     kind: ItemKind::Ring,
+                    weapon_category: None,
                     item: Some(ItemId::RingWealth),
                     tier: TierRequirement::Any,
                     upgrade: UpgradeRequirement::AtLeast(3),
@@ -645,6 +654,7 @@ mod tests {
         let query = SearchQuery {
             requirements: vec![Requirement {
                 kind: ItemKind::Wand,
+                weapon_category: None,
                 item: None,
                 tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Any,

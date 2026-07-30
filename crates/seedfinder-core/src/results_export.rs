@@ -193,6 +193,7 @@ mod tests {
             requirements: vec![
                 Requirement {
                     kind: ItemKind::Ring,
+                    weapon_category: None,
                     item: Some(ItemId::RingWealth),
                     tier: TierRequirement::Any,
                     upgrade: UpgradeRequirement::Exact(4),
@@ -204,6 +205,7 @@ mod tests {
                 },
                 Requirement {
                     kind: ItemKind::Wand,
+                    weapon_category: None,
                     item: None,
                     tier: TierRequirement::Any,
                     upgrade: UpgradeRequirement::AtLeast(2),
@@ -263,6 +265,38 @@ mod tests {
         );
         assert_eq!(decoded.query.requirements[1].kind, ItemKind::Wand);
         assert_eq!(decoded.seeds, seeds(&["AAA-AAA-BUH", "ABC-DEF-GHI"]));
+    }
+
+    /// Narrowed weapon kinds (`melee_weapon`/`thrown_weapon`) are an additive
+    /// enum value within format version 1; every importer must accept them.
+    const WEAPON_CATEGORIES_FIXTURE: &str =
+        include_str!("../tests/fixtures/results-export-v1-weapon-categories.json");
+
+    #[test]
+    fn weapon_category_fixture_decodes_and_round_trips() {
+        use crate::catalog::WeaponCategory;
+
+        let decoded = decode(WEAPON_CATEGORIES_FIXTURE).unwrap();
+        assert_eq!(decoded.format_version, 1);
+        assert_eq!(decoded.query.requirements.len(), 3);
+        assert_eq!(
+            decoded.query.requirements[0].weapon_category,
+            Some(WeaponCategory::Thrown)
+        );
+        assert_eq!(
+            decoded.query.requirements[1].weapon_category,
+            Some(WeaponCategory::Melee)
+        );
+        assert_eq!(decoded.query.requirements[1].item, Some(ItemId::Sword));
+        assert_eq!(decoded.query.requirements[2].weapon_category, None);
+        assert_eq!(decoded.seeds, seeds(&["AAA-AAA-ACO"]));
+
+        // Re-encoding must keep the narrowing: widening "thrown_weapon" back
+        // to "weapon" would silently change the query's meaning on import.
+        let encoded = encode(&decoded.query, &decoded.seeds, "test");
+        let round_tripped = decode(&encoded).unwrap();
+        assert_eq!(round_tripped.query, decoded.query);
+        assert_eq!(round_tripped.seeds, decoded.seeds);
     }
 
     #[test]

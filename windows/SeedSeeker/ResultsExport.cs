@@ -33,7 +33,9 @@ public static partial class ResultsExport
     public sealed record Imported(QuerySettings Query, IReadOnlyList<string> Seeds, string? FileShpdVersion);
 
     /// <summary>Stable document names, indexed by the matching enum value.</summary>
-    private static readonly string[] KindNames = ["weapon", "armor", "wand", "ring"];
+    // Indexed by the matching enum value; the narrowed weapon kinds are
+    // additive within format version 1.
+    private static readonly string[] KindNames = ["weapon", "armor", "wand", "ring", "melee_weapon", "thrown_weapon"];
     private static readonly string[] SourceNames = [
         "heap", "chest", "locked_chest", "crystal_chest", "tomb", "skeleton",
         "sacrificial_fire", "mimic", "golden_mimic", "crystal_mimic", "statue",
@@ -249,7 +251,7 @@ public static partial class ResultsExport
         {
             throw new ResultsExportException("a category is required when no item is set");
         }
-        if (item is not null && item.Kind != kind)
+        if (item is not null && !kind.Accepts(item))
             throw new ResultsExportException("the item does not belong to this category");
         var (tier, tierMatch) = DecodeTier(entry["tier"]);
         var (upgrade, upgradeMatch) = DecodeUpgrade(entry["upgrade"]);

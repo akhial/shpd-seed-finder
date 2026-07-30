@@ -37,7 +37,8 @@ public enum ResultsExport {
     }
 
     /// Stable document names, indexed by the matching enum raw value.
-    private static let kindNames = ["weapon", "armor", "wand", "ring"]
+    /// The narrowed weapon kinds are additive within format version 1.
+    private static let kindNames = ["weapon", "armor", "wand", "ring", "melee_weapon", "thrown_weapon"]
     private static let sourceNames = [
         "heap", "chest", "locked_chest", "crystal_chest", "tomb", "skeleton",
         "sacrificial_fire", "mimic", "golden_mimic", "crystal_mimic", "statue",

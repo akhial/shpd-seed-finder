@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 // The canonical frozen fixture, imported verbatim from the Rust core's test
 // data so this codec can never silently drift from it.
 import VERSION_1_FIXTURE from '../../../crates/seedfinder-core/tests/fixtures/results-export-v1.json?raw'
+import WEAPON_CATEGORIES_FIXTURE from '../../../crates/seedfinder-core/tests/fixtures/results-export-v1-weapon-categories.json?raw'
 import { defaultQueryState, toQueryDocument } from './query'
 import {
   RESULTS_FILE_VERSION,
@@ -84,6 +85,18 @@ describe('results file', () => {
     expect(decoded.shpdVersion).toBe('3.3.8')
     expect(decoded.query).toEqual(loadedQuery)
     expect(decoded.seeds).toEqual(['AAA-AAA-BUH', 'ABC-DEF-GHI'])
+  })
+
+  it('accepts the narrowed weapon kinds and keeps them through a round-trip', () => {
+    // "melee_weapon"/"thrown_weapon" are additive within format version 1;
+    // widening them to "weapon" on either side would silently change the query.
+    const decoded = decodeResultsFile(WEAPON_CATEGORIES_FIXTURE)
+    expect(decoded.query.requirements.map((requirement) => requirement.kind))
+      .toEqual(['thrown_weapon', 'melee_weapon', 'weapon'])
+    expect(decoded.query.requirements[1].item).toBe('sword')
+    expect(decoded.seeds).toEqual(['AAA-AAA-ACO'])
+    const reEncoded = decodeResultsFile(encodeResultsFile(decoded.queryDocument, decoded.seeds, '3.3.8'))
+    expect(reEncoded.query).toEqual(decoded.query)
   })
 
   it('ignores unknown envelope and per-result fields from future releases', () => {

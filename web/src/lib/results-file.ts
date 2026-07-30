@@ -17,7 +17,7 @@ export const MAX_RESULTS_FILE_BYTES = 2 * 1024 * 1024
 const SEED_CODE = /^[A-Z]{3}-[A-Z]{3}-[A-Z]{3}$/
 const QUERY_KEYS = new Set(['requirements', 'max_depth', 'require_blacksmith', 'exclude_blacksmith_rewards', 'fast_mode', 'challenges'])
 const REQUIREMENT_KEYS = new Set(['kind', 'item', 'tier', 'upgrade', 'effect', 'uncursed', 'source', 'identity_group', 'max_depth'])
-const KIND_NAMES = new Set(['weapon', 'armor', 'wand', 'ring'])
+const KIND_NAMES = new Set(['weapon', 'melee_weapon', 'thrown_weapon', 'armor', 'wand', 'ring'])
 const SOURCE_NAMES = new Set([
   'heap', 'chest', 'locked_chest', 'crystal_chest', 'tomb', 'skeleton', 'sacrificial_fire', 'mimic',
   'golden_mimic', 'crystal_mimic', 'statue', 'armored_statue', 'shop', 'ghost_reward',

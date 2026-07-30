@@ -92,6 +92,34 @@ final class ResultsExportTests: XCTestCase {
         XCTAssertNotNil(imported.query.validated())
     }
 
+    /// The narrowed weapon kinds are additive within format version 1;
+    /// widening them to "weapon" on either side would silently change the
+    /// query's meaning.
+    func testWeaponCategoryFixtureDecodesAndRoundTrips() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let fixture = repoRoot.appendingPathComponent(
+            "crates/seedfinder-core/tests/fixtures/results-export-v1-weapon-categories.json")
+        let contents = try String(contentsOf: fixture, encoding: .utf8)
+        let imported = try ResultsExport.decode(contents)
+        XCTAssertEqual(imported.query.requirements.map(\.kind),
+                       [.thrownWeapon, .meleeWeapon, .weapon])
+        XCTAssertEqual(imported.query.requirements[1].item?.id, "sword")
+        XCTAssertEqual(imported.seeds, ["AAA-AAA-ACO"])
+
+        let reImported = try ResultsExport.decode(
+            ResultsExport.encode(imported.query, seeds: imported.seeds, appVersion: "0.6.1"))
+        var expected = imported.query.requirements
+        var actual = reImported.query.requirements
+        for index in expected.indices { expected[index].key = 0 }
+        for index in actual.indices { actual[index].key = 0 }
+        XCTAssertEqual(expected, actual)
+    }
+
     func testFormatVersionMustBeAPositiveInteger() {
         for version in ["0", "1.5", "true", "\"1\"", "-1"] {
             XCTAssertThrowsError(try ResultsExport.decode("""

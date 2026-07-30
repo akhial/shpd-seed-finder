@@ -105,6 +105,36 @@ class ResultsExportTest {
         assertEquals(UpgradeMatch.AT_LEAST, imported.query.requirements[1].upgradeMatch)
     }
 
+    /** The narrowed weapon kinds are additive within format version 1. */
+    private val weaponCategoriesFixture: String by lazy {
+        val fixture = java.io.File(
+            "../../crates/seedfinder-core/tests/fixtures/results-export-v1-weapon-categories.json",
+        )
+        check(fixture.exists()) { "weapon-categories fixture not found at ${fixture.absolutePath}" }
+        fixture.readText()
+    }
+
+    @Test
+    fun weaponCategoryFixtureDecodesAndRoundTrips() {
+        val imported = ResultsExport.decode(weaponCategoriesFixture)
+        assertEquals(
+            listOf(ItemKind.THROWN_WEAPON, ItemKind.MELEE_WEAPON, ItemKind.WEAPON),
+            imported.query.requirements.map { it.kind },
+        )
+        assertEquals("sword", imported.query.requirements[1].item?.id)
+        assertEquals(listOf("AAA-AAA-ACO"), imported.seeds)
+
+        // Re-encoding must keep the narrowing: widening "thrown_weapon" back
+        // to "weapon" would silently change the query's meaning on import.
+        val reImported = ResultsExport.decode(
+            ResultsExport.encode(imported.query, imported.seeds, "0.6.1"),
+        )
+        assertEquals(
+            imported.query.requirements.map { it.copy(key = 0) },
+            reImported.query.requirements.map { it.copy(key = 0) },
+        )
+    }
+
     @Test
     fun unknownEnvelopeAndResultFieldsAreIgnored() {
         val imported = ResultsExport.decode(

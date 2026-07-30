@@ -203,6 +203,7 @@ impl AppState {
             state.requirements.push(UiRequirement {
                 key,
                 kind: requirement.kind,
+                weapon_category: requirement.weapon_category,
                 item: requirement.item,
                 tier: requirement.tier,
                 upgrade: requirement.upgrade,
