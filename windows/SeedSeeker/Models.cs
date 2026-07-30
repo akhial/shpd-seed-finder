@@ -7,12 +7,37 @@ using Microsoft.UI.Xaml.Media;
 
 namespace SeedSeeker;
 
-public enum ItemKind { Weapon, Armor, Wand, Ring }
+// MeleeWeapon and ThrownWeapon narrow a weapon requirement to one weapon
+// class; the enum value doubles as the SSF7 wire kind ID (0..=5), so they
+// must stay appended after the original four families.
+public enum ItemKind { Weapon, Armor, Wand, Ring, MeleeWeapon, ThrownWeapon }
+
+/// <summary>Melee/thrown classification of weapon catalog entries.</summary>
+public enum WeaponClass { Melee, Thrown }
+
+public static class ItemKindExtensions
+{
+    /// <summary>The broad item family; catalog items always carry the family.</summary>
+    public static ItemKind Family(this ItemKind kind) =>
+        kind is ItemKind.MeleeWeapon or ItemKind.ThrownWeapon ? ItemKind.Weapon : kind;
+
+    /// <summary>The weapon class this kind restricts to, or null when unrestricted.</summary>
+    public static WeaponClass? WeaponClass(this ItemKind kind) => kind switch
+    {
+        ItemKind.MeleeWeapon => SeedSeeker.WeaponClass.Melee,
+        ItemKind.ThrownWeapon => SeedSeeker.WeaponClass.Thrown,
+        _ => null,
+    };
+
+    /// <summary>Whether a catalog item can satisfy a requirement of this kind.</summary>
+    public static bool Accepts(this ItemKind kind, CatalogItem item) =>
+        item.Kind == kind.Family() && (kind.WeaponClass() is not { } weaponClass || item.Class == weaponClass);
+}
 public enum UpgradeMatch { Any, Exactly, AtLeast }
 public enum TierMatch { Any, Exactly, AtLeast, AtMost }
 public enum SearchState { Running, Completed, Cancelled, Failed }
 
-public sealed record CatalogItem(string Id, string Name, ItemKind Kind, int SpriteIndex, int? Tier);
+public sealed record CatalogItem(string Id, string Name, ItemKind Kind, int SpriteIndex, int? Tier, WeaponClass? Class = null);
 
 public enum ScoutItemSource
 {
@@ -27,13 +52,13 @@ public enum ScoutItemSource
 /// </summary>
 public static class KindStyle
 {
-    public static string Glyph(ItemKind kind) => kind switch { ItemKind.Weapon => "", ItemKind.Armor => "", ItemKind.Wand => "", _ => "" };
-    public static Brush Tint(ItemKind kind) => new SolidColorBrush(kind switch { ItemKind.Weapon => Colors.DarkOrange, ItemKind.Armor => Colors.DodgerBlue, ItemKind.Wand => Colors.MediumPurple, _ => Colors.Goldenrod });
+    public static string Glyph(ItemKind kind) => kind.Family() switch { ItemKind.Weapon => "", ItemKind.Armor => "", ItemKind.Wand => "", _ => "" };
+    public static Brush Tint(ItemKind kind) => new SolidColorBrush(kind.Family() switch { ItemKind.Weapon => Colors.DarkOrange, ItemKind.Armor => Colors.DodgerBlue, ItemKind.Wand => Colors.MediumPurple, _ => Colors.Goldenrod });
 }
 
 public static class Labels
 {
-    public static string Kind(ItemKind value) => value switch { ItemKind.Weapon => "Weapons", ItemKind.Armor => "Armor", ItemKind.Wand => "Wands", _ => "Rings" };
+    public static string Kind(ItemKind value) => value switch { ItemKind.Weapon => "Weapons", ItemKind.Armor => "Armor", ItemKind.Wand => "Wands", ItemKind.MeleeWeapon => "Melee weapons", ItemKind.ThrownWeapon => "Thrown weapons", _ => "Rings" };
     public static string Singular(ItemKind value) => Kind(value).TrimEnd('s').ToLowerInvariant();
     public static string Source(ScoutItemSource value) => value switch
     {
@@ -183,7 +208,7 @@ public static class ScoutMatcher
             return item.Depth <= maximumDepth
                 && item.Depth <= (requirement.MaximumDepth ?? maximumDepth)
                 && (!excludeBlacksmithRewards || item.Source != ScoutItemSource.BlacksmithReward)
-                && requirement.Kind == item.Item.Kind
+                && requirement.Kind.Accepts(item.Item)
                 && (requirement.Item is null || requirement.Item.Id == item.Item.Id)
                 && tierMatches && upgradeMatches
                 && (requirement.Modifier is null || requirement.Modifier == item.Effect)
@@ -266,7 +291,7 @@ public static class ScoutMatcher
 public static class ItemCatalog
 {
     private sealed class Root { public Entry[] Entries { get; set; } = []; }
-    private sealed class Entry { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string Type { get; set; } = ""; public int? Tier { get; set; } public int Sprite { get; set; } }
+    private sealed class Entry { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string Type { get; set; } = ""; public string? Class { get; set; } public int? Tier { get; set; } public int Sprite { get; set; } }
     public static IReadOnlyList<CatalogItem> All { get; } = Load();
     public static readonly string[] Enchantments = ["Blazing", "Blocking", "Blooming", "Chilling", "Corrupting", "Elastic", "Grim", "Kinetic", "Lucky", "Projecting", "Shocking", "Unstable", "Vampiric"];
     public static readonly string[] WeaponCurses = ["Annoying", "Dazzling", "Displacing", "Explosive", "Friendly", "Polarized", "Sacrificial", "Wayward"];
@@ -275,10 +300,11 @@ public static class ItemCatalog
     private static IReadOnlyList<CatalogItem> Load()
     {
         var root = JsonSerializer.Deserialize<Root>(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Assets", "catalog-v3.3.8.json")), new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
-        return root.Entries.Select(e => new CatalogItem(e.Id, e.Name, Enum.Parse<ItemKind>(e.Type, true), e.Sprite, e.Tier)).ToArray();
+        return root.Entries.Select(e => new CatalogItem(e.Id, e.Name, Enum.Parse<ItemKind>(e.Type, true), e.Sprite, e.Tier,
+            string.IsNullOrEmpty(e.Class) ? null : Enum.Parse<WeaponClass>(e.Class, true))).ToArray();
     }
-    public static IEnumerable<CatalogItem> For(ItemKind kind) => All.Where(x => x.Kind == kind && x.Tier != 1);
+    public static IEnumerable<CatalogItem> For(ItemKind kind) => All.Where(x => kind.Accepts(x) && x.Tier != 1);
     public static CatalogItem? Find(string id) => All.FirstOrDefault(x => x.Id == id);
-    public static IEnumerable<string> Modifiers(ItemKind kind) => kind switch { ItemKind.Weapon => Enchantments.Concat(WeaponCurses), ItemKind.Armor => Glyphs.Concat(ArmorCurses), _ => [] };
-    public static bool IsCurse(ItemKind kind, string effect) => (kind == ItemKind.Weapon ? WeaponCurses : ArmorCurses).Contains(effect);
+    public static IEnumerable<string> Modifiers(ItemKind kind) => kind.Family() switch { ItemKind.Weapon => Enchantments.Concat(WeaponCurses), ItemKind.Armor => Glyphs.Concat(ArmorCurses), _ => [] };
+    public static bool IsCurse(ItemKind kind, string effect) => (kind.Family() == ItemKind.Weapon ? WeaponCurses : ArmorCurses).Contains(effect);
 }

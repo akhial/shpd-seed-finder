@@ -327,7 +327,8 @@ fn glow_value(frame_time: i64, period: f64) -> f64 {
 #[must_use]
 pub fn item_image(definition: &ItemDefinition, glow: Option<Glow>) -> gtk::Widget {
     let Some(atlas) = atlas() else {
-        let image = gtk::Image::from_icon_name(kind_icon(definition.kind));
+        let image =
+            gtk::Image::from_icon_name(kind_icon(definition.kind, definition.weapon_category()));
         image.set_tooltip_text(Some(definition.name));
         return image.upcast();
     };
