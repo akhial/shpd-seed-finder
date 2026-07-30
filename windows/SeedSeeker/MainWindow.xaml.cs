@@ -30,6 +30,14 @@ public sealed partial class MainWindow : Window
     private NativeSearch? search;
     /// <summary>The last finished run, kept so a strictly narrower query can refine it instead of rescanning.</summary>
     private BaseRun? baseRun;
+    /// <summary>True for the whole span of a search or refine handler, including the
+    /// refine's filter phase where no native session exists yet; gates the start and
+    /// refine entry points so two handlers can never race one session slot.</summary>
+    private bool busy;
+    /// <summary>Every unique seed the current run has delivered, beyond the display cap;
+    /// this is the filter input a later refine must use to avoid losing matches.</summary>
+    private readonly List<string> collected = [];
+    private readonly HashSet<string> collectedSet = [];
     private bool restoring = true;
     private const int ResultCap = 1024;
     private static readonly string SettingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Seed Seeker", "query.json");
@@ -168,7 +176,7 @@ public sealed partial class MainWindow : Window
     private void RefreshQuery()
     {
         RequirementList.ItemsSource = query.Requirements; NoRequirements.Visibility = query.Requirements.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        FloorLabel.Text = $"first {query.MaximumDepth} floor{(query.MaximumDepth == 1 ? "" : "s")}"; RequireBlacksmith.IsEnabled = query.MaximumDepth < 14; StartButton.IsEnabled = search is not null || query.Requirements.Count != 0;
+        FloorLabel.Text = $"first {query.MaximumDepth} floor{(query.MaximumDepth == 1 ? "" : "s")}"; RequireBlacksmith.IsEnabled = query.MaximumDepth < 14; StartButton.IsEnabled = search is not null || (!busy && query.Requirements.Count != 0);
         var count = BitOperations.PopCount((uint)query.Challenges); ChallengeSummary.Text = count == 0 ? "None" : $"{count} enabled";
         UpdateRefineButton();
     }
@@ -469,44 +477,74 @@ public sealed partial class MainWindow : Window
 
     private async void Start_Click(object sender, RoutedEventArgs e)
     {
-        if (search is not null) { search.Cancel(); StartButton.IsEnabled = false; return; } results.Clear(); SearchStatus.Text = "Starting search…"; SetStartButton(running: true);
+        if (search is not null) { search.Cancel(); StartButton.IsEnabled = false; return; }
+        if (busy) return;
+        busy = true; collected.Clear(); collectedSet.Clear(); results.Clear(); SearchStatus.Text = "Starting search…"; SetStartButton(running: true);
         try { var snapshot = query.Clone(); search = await Task.Run(() => engine.Start(snapshot)); await RunSearch(search); await CaptureBaseRun(snapshot, search); } catch (Exception ex) { SearchStatus.Text = $"Failed: {ex.Message}"; baseRun = null; }
-        finally { search?.Dispose(); search = null; SetStartButton(running: false); StartButton.IsEnabled = query.Requirements.Count != 0; }
+        finally { busy = false; search?.Dispose(); search = null; SetStartButton(running: false); StartButton.IsEnabled = query.Requirements.Count != 0; }
     }
     private async void Refine_Click(object sender, RoutedEventArgs e)
     {
-        if (search is not null || baseRun is null || !QueryRefinement.IsRefinement(query, baseRun.Query)) return;
-        var previous = baseRun; var snapshot = query.Clone(); results.Clear(); SearchStatus.Text = "Filtering previous results…"; SetStartButton(running: true); StartButton.IsEnabled = false;
+        if (busy || search is not null || baseRun is null || !QueryRefinement.IsRefinement(query, baseRun.Query)) return;
+        busy = true;
+        var previous = baseRun; var snapshot = query.Clone(); SearchStatus.Text = "Verifying previous results…"; SetStartButton(running: true); StartButton.IsEnabled = false;
         try
         {
+            // Filter before touching the displayed results, so a failure here
+            // leaves the previous run (and its refinable base) fully intact.
             var kept = await Task.Run(() => engine.FilterSeeds(snapshot, previous.Seeds));
-            foreach (var seed in kept) if (results.Count < ResultCap) results.Add(new(seed, results.Count + 1));
+            results.Clear(); collected.Clear(); collectedSet.Clear();
+            Collect(kept);
             var prefix = $"Refined: kept {kept.Count} of {previous.Seeds.Count} previous seed{(previous.Seeds.Count == 1 ? "" : "s")}";
-            if (previous.Remaining > 0)
+            if (previous.Remaining > 0 && kept.Count < ResultCap)
             {
                 SearchStatus.Text = $"{prefix} — searching for more…";
                 search = await Task.Run(() => engine.StartResumed(snapshot, previous.ResumeFrom, previous.Remaining));
                 StartButton.IsEnabled = true;
-                await RunSearch(search, [.. kept], prefix); await CaptureBaseRun(snapshot, search);
+                await RunSearch(search, prefix); await CaptureBaseRun(snapshot, search);
             }
-            else { SearchStatus.Text = $"{prefix}\nCompleted"; baseRun = new(snapshot, [.. kept], previous.ResumeFrom, 0); }
+            else if (previous.Remaining > 0)
+            {
+                // The kept subset already fills the display, so a scan could
+                // surface nothing visible. Keep the unscanned window so a
+                // further refine continues from the same place.
+                SearchStatus.Text = $"{prefix}\nResult limit reached (1,024 seeds).";
+                baseRun = new(snapshot, [.. collected], previous.ResumeFrom, previous.Remaining);
+            }
+            else { SearchStatus.Text = $"{prefix}\nCompleted"; baseRun = new(snapshot, [.. collected], previous.ResumeFrom, 0); }
         }
-        catch (Exception ex) { SearchStatus.Text = $"Failed: {ex.Message}"; baseRun = null; }
-        finally { search?.Dispose(); search = null; SetStartButton(running: false); StartButton.IsEnabled = query.Requirements.Count != 0; }
+        // The previous base run stays valid on failure: nothing of its
+        // coverage was consumed, so the refine can simply be retried.
+        catch (Exception ex) { SearchStatus.Text = $"Refine failed: {ex.Message}"; }
+        finally { busy = false; search?.Dispose(); search = null; SetStartButton(running: false); StartButton.IsEnabled = query.Requirements.Count != 0; }
     }
     /// <summary>
-    /// Remembers the run a follow-up query could refine: the query as it ran, the
-    /// seeds shown, and where a resumed scan must pick up. Called after the poll
-    /// loop ends but before the session is disposed, since the hint is only exact
-    /// once the session has actually stopped.
+    /// Records every unique delivered seed; the visible list is capped while
+    /// the full set stays available as a later refine's filter input.
+    /// </summary>
+    private void Collect(IEnumerable<string> seeds)
+    {
+        foreach (var seed in seeds)
+        {
+            if (!collectedSet.Add(seed)) continue;
+            collected.Add(seed);
+            if (results.Count < ResultCap) results.Add(new(seed, results.Count + 1));
+        }
+    }
+    /// <summary>
+    /// Remembers the run a follow-up query could refine: the query as it ran,
+    /// every delivered seed (not just the displayed ones), and where a resumed
+    /// scan must pick up. Called after the poll loop ends but before the
+    /// session is disposed, since the hint is only exact once the session has
+    /// stopped. The engine keeps reporting Running until its queue is drained,
+    /// so a terminal status implies nothing is left undelivered.
     /// </summary>
     private async Task CaptureBaseRun(QuerySettings ranQuery, NativeSearch active)
     {
         var status = await Task.Run(active.Status);
-        while (status.State == SearchState.Running) { await Task.Delay(50); status = await Task.Run(active.Status); }
         if (status.State == SearchState.Failed) { baseRun = null; return; }
         var (resumeFrom, remaining) = await Task.Run(active.ResumeHint);
-        baseRun = new(ranQuery, results.Select(x => x.Seed).ToList(), resumeFrom, remaining);
+        baseRun = new(ranQuery, [.. collected], resumeFrom, remaining);
     }
     private void SetStartButton(bool running)
     {
@@ -519,19 +557,23 @@ public sealed partial class MainWindow : Window
         if (running) RefineButton.Visibility = Visibility.Collapsed; else UpdateRefineButton();
     }
     private void UpdateRefineButton() => RefineButton.Visibility =
-        search is null && baseRun is not null && QueryRefinement.IsRefinement(query, baseRun.Query)
+        search is null && !busy && baseRun is not null && QueryRefinement.IsRefinement(query, baseRun.Query)
             ? Visibility.Visible : Visibility.Collapsed;
-    private async Task RunSearch(NativeSearch active, HashSet<string>? existing = null, string? prefix = null)
+    private async Task RunSearch(NativeSearch active, string? prefix = null)
     {
         var timer = Stopwatch.StartNew(); long lastScanned = 0; var lastTime = 0d;
         while (true)
         {
-            await Task.Delay(150); var pollCount = Math.Max(1, Math.Min(128, ResultCap - results.Count)); var batch = await Task.Run(() => active.Poll(pollCount)); foreach (var seed in batch) if (results.Count < ResultCap && (existing is null || existing.Add(seed))) results.Add(new(seed, results.Count + 1));
+            await Task.Delay(150); var batch = await Task.Run(() => active.Poll(128)); Collect(batch);
             var status = await Task.Run(active.Status); var seconds = timer.Elapsed.TotalSeconds; var rate = seconds > lastTime ? (status.Scanned - lastScanned) / (seconds - lastTime) : 0; lastScanned = status.Scanned; lastTime = seconds;
             var probability = status.Probability > 0 ? $"{status.Probability:P4}" : "calculating"; var tts = status.Probability > 0 && rate > 0 ? FormatDuration(1 / status.Probability / rate) : "calculating";
             var line = status.State == SearchState.Running ? $"Seed match probability: {probability}   •   TTS @ {rate:N0} seeds/s: {tts}\nTime elapsed: {FormatDuration(seconds)}" : status.State switch { SearchState.Completed => "Completed", SearchState.Cancelled => "Cancelled", _ => $"Failed (error {status.ErrorCode})" };
             SearchStatus.Text = prefix is null ? line : $"{prefix}\n{line}";
-            if (results.Count >= ResultCap) { active.Cancel(); SearchStatus.Text += "\nResult limit reached (1,024 seeds)."; } if (status.State != SearchState.Running || results.Count >= ResultCap) break;
+            if (results.Count >= ResultCap) { active.Cancel(); SearchStatus.Text += "\nResult limit reached (1,024 seeds)."; }
+            // The engine reports a terminal state only once every queued match
+            // has been drained, so breaking here never leaves seeds behind —
+            // even right after the display-cap cancel above.
+            if (status.State != SearchState.Running) break;
         }
     }
     private static string FormatDuration(double seconds) => seconds switch { < 1 => "less than a second", < 60 => $"{seconds:N0}s", < 3600 => $"{seconds / 60:N1}m", < 86400 => $"{seconds / 3600:N1}h", _ => $"{seconds / 86400:N1}d" };

@@ -43,18 +43,30 @@ describe('isRefinementOf', () => {
 })
 
 describe('remainingSegments', () => {
-  it('drops each worker\'s scanned prefix across its ordered segments', () => {
+  it('drops each segment\'s own scanned prefix', () => {
     const segments: SeedRange[][] = [
       [{ startSeed: 90, endSeedExclusive: 100 }, { startSeed: 0, endSeedExclusive: 15 }],
       [{ startSeed: 15, endSeedExclusive: 40 }],
     ]
-    expect(remainingSegments(segments, { 0: 12, 1: 25 })).toEqual([{ startSeed: 2, endSeedExclusive: 15 }])
-    expect(remainingSegments(segments, { 0: 3 })).toEqual([
+    expect(remainingSegments(segments, { 0: [10, 2], 1: [25] })).toEqual([{ startSeed: 2, endSeedExclusive: 15 }])
+    expect(remainingSegments(segments, { 0: [3] })).toEqual([
       { startSeed: 93, endSeedExclusive: 100 },
       { startSeed: 0, endSeedExclusive: 15 },
       { startSeed: 15, endSeedExclusive: 40 },
     ])
-    expect(remainingSegments(segments, { 0: 25, 1: 25 })).toEqual([])
+    expect(remainingSegments(segments, { 0: [10, 15], 1: [25] })).toEqual([])
+  })
+
+  it('keeps the tail of a segment abandoned at the session result cap', () => {
+    // The first segment stopped early (its cooperative session hit the
+    // per-session accept cap) while the second segment still completed.
+    // A cumulative count would wrongly skip the first segment's tail.
+    const segments: SeedRange[][] = [
+      [{ startSeed: 900, endSeedExclusive: 1_000 }, { startSeed: 0, endSeedExclusive: 60 }],
+    ]
+    expect(remainingSegments(segments, { 0: [40, 60] })).toEqual([
+      { startSeed: 940, endSeedExclusive: 1_000 },
+    ])
   })
 })
 

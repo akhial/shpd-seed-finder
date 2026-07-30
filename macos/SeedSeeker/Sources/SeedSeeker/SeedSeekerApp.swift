@@ -337,7 +337,7 @@ private struct QueryView: View {
                     .disabled(requirements.isEmpty).keyboardShortcut(.return, modifiers: .command)
                 if let request = refinableRequest {
                     Button { controller.refine(request) } label: {
-                        Label("Refine Last Search", systemImage: "line.3.horizontal.decrease.circle")
+                        Label("Refine Results", systemImage: "line.3.horizontal.decrease.circle")
                             .frame(maxWidth: .infinity).padding(.vertical, 5)
                     }
                     .buttonStyle(.bordered)

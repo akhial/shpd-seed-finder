@@ -294,18 +294,20 @@ impl StreamingShared {
             StreamingSearchState::Failed
         } else if self.active_workers.load(Ordering::Acquire) != 0 {
             StreamingSearchState::Running
-        } else if self.cancelled.load(Ordering::Acquire) {
-            StreamingSearchState::Cancelled
         } else if !self
             .results
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .is_empty()
         {
-            // Android polls results before status and stops polling as soon as
-            // status becomes terminal. Keep the session observable as running
-            // until every match produced by the final worker has been drained.
+            // Frontends poll results and stop polling as soon as status
+            // becomes terminal. Keep the session observable as running until
+            // every produced match has been drained — for cancelled searches
+            // too, because those matches sit inside the consumed prefix a
+            // refined search will never revisit.
             StreamingSearchState::Running
+        } else if self.cancelled.load(Ordering::Acquire) {
+            StreamingSearchState::Cancelled
         } else {
             StreamingSearchState::Completed
         }
@@ -391,9 +393,11 @@ impl StreamingSearchHandle {
     ///
     /// Matches which were tested but discarded because `max_results` was
     /// already reached are *not* part of this prefix, so resuming a stopped
-    /// search from this position never loses a match. The value is exact once
-    /// the search is finished and conservative (never too large) while workers
-    /// are still running.
+    /// search from this position never loses a match. The value is only
+    /// meaningful once [`Self::is_finished`] is true: while workers are still
+    /// running it can transiently overshoot by up to one claimed-but-unstarted
+    /// chunk per worker, because a chunk is claimed from the cursor before the
+    /// worker marks it pending.
     #[must_use]
     pub fn scanned_prefix(&self) -> u64 {
         let claimed = self
@@ -420,7 +424,8 @@ impl StreamingSearchHandle {
     /// Absolute seed value where a follow-up traversal can resume so that,
     /// combined with the already-delivered matches, no seed outcome is lost.
     /// Re-testing a small overlap near the stop point is possible; resumed
-    /// consumers should deduplicate matches by seed.
+    /// consumers should deduplicate matches by seed. Like
+    /// [`Self::scanned_prefix`], read it only after the search has finished.
     #[must_use]
     pub fn resume_position(&self) -> u64 {
         let range_len = self.shared.end_seed_exclusive - self.shared.range_start;
@@ -1015,6 +1020,30 @@ mod tests {
     }
 
     #[test]
+    fn cancelled_search_stays_running_until_queued_results_are_drained() {
+        // Every seed matches, so cancelling after completion of the first
+        // chunk leaves undrained matches queued. Reporting Cancelled before
+        // they are drained would lose them: they are inside the consumed
+        // prefix and a resumed traversal never revisits it.
+        let options = SearchOptions {
+            start_seed: 0,
+            end_seed_exclusive: 4,
+            workers: NonZeroUsize::MIN,
+            chunk_size: NonZeroUsize::new(4).unwrap(),
+            max_results: NonZeroUsize::new(16).unwrap(),
+        };
+        let generator = Arc::new(ModuloGenerator(1));
+        let handle =
+            spawn_partial_streaming_search(&generator, wand_query(), options, 0, 4).unwrap();
+        finish(&handle);
+        handle.cancel();
+
+        assert_eq!(handle.state(), StreamingSearchState::Running);
+        assert_eq!(handle.drain_results(16).len(), 4);
+        assert_eq!(handle.state(), StreamingSearchState::Cancelled);
+    }
+
+    #[test]
     fn streaming_status_stays_running_until_terminal_results_are_drained() {
         let query = SearchQuery {
             requirements: vec![Requirement {
@@ -1186,7 +1215,13 @@ mod tests {
         let mut found = Vec::new();
         let mut resume_from = 0;
         let mut remaining = 10;
+        // A pass may legitimately consume zero seeds (a worker can abandon its
+        // first chunk when the cap fills), so bound the loop by iterations
+        // rather than asserting per-pass progress.
+        let mut passes = 0;
         while remaining > 0 {
+            passes += 1;
+            assert!(passes <= 100, "resumed passes must terminate");
             let handle = spawn_partial_streaming_search(
                 &generator,
                 wand_query(),
@@ -1202,7 +1237,6 @@ mod tests {
                     .into_iter()
                     .map(|world| world.seed.value()),
             );
-            assert!(handle.scanned_prefix() > 0, "each pass must make progress");
             resume_from = handle.resume_position();
             remaining = handle.remaining();
         }

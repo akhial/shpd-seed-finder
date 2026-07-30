@@ -76,9 +76,15 @@ public final class SearchController {
             let kept: [String]
             do {
                 kept = try await engine.filterSeeds(request, seeds: previousSeeds)
+            } catch is CancellationError {
+                // The user backed out before the filter finished; the base run
+                // was never consumed, so it stays refinable as-is.
+                self.state = .cancelled; self.refinedKept = nil; self.isRunning = false
+                return
             } catch {
+                // The base run is still intact — keep it so the user can retry.
                 self.state = .failed; self.message = error.localizedDescription
-                self.baseRun = nil; self.isRunning = false
+                self.refinedKept = nil; self.isRunning = false
                 return
             }
             self.results = kept.map { SeedResult(seed: $0, matchedRequirements: request.requirements.count) }
@@ -97,7 +103,13 @@ public final class SearchController {
 
     public func cancel() {
         guard isRunning else { return }
-        Task { await session?.cancel() }
+        if let session {
+            Task { await session.cancel() }
+        } else {
+            // No native session yet (refine's filter phase): cancel the
+            // controller task so the awaited filter throws CancellationError.
+            task?.cancel()
+        }
     }
 
     private func resetProgress() {

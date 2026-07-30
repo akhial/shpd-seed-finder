@@ -33,6 +33,8 @@ private final class FakeEngine: SeedFinderEngine, @unchecked Sendable {
     var startSessions: [FakeSearchSession] = []
     var resumedSessions: [FakeSearchSession] = []
     var filterResult: [String] = []
+    var filterError: Error?
+    var filterDelay: Duration?
     private(set) var filteredSeeds: [[String]] = []
     private(set) var resumedCalls: [(resumeFrom: Int64, scanLen: Int64)] = []
 
@@ -46,7 +48,9 @@ private final class FakeEngine: SeedFinderEngine, @unchecked Sendable {
         }
     }
     func filterSeeds(_ request: SearchRequest, seeds: [String]) async throws -> [String] {
-        lock.withLock {
+        if let filterDelay { try await Task.sleep(for: filterDelay) }
+        if let filterError { throw filterError }
+        return lock.withLock {
             filteredSeeds.append(seeds)
             return filterResult
         }
@@ -139,6 +143,76 @@ final class RefineSearchTests: XCTestCase {
         XCTAssertEqual(controller.baseRun?.remaining, 0)
         XCTAssertTrue(controller.canRefine(with: try wandRequest(count: 3)),
                       "a finished refine must itself be refinable")
+    }
+
+    /// Runs a base search then one successful refine, leaving the controller
+    /// idle with results ["AAA-AAA-AAA"], refinedKept == 1, and a chainable
+    /// base run at (600, 50) for the two-requirement request.
+    private func makeRefinedController(engine: FakeEngine) async throws -> SearchController {
+        let controller = SearchController(engine: engine)
+        engine.startSessions = [FakeSearchSession(
+            batches: [[result("AAA-AAA-AAA"), result("AAA-AAA-AAB")]],
+            hint: ResumeHint(position: 500, remaining: 100))]
+        controller.start(try wandRequest(count: 1))
+        try await waitUntilIdle(controller)
+
+        engine.filterResult = ["AAA-AAA-AAA"]
+        engine.resumedSessions = [FakeSearchSession(
+            batches: [], hint: ResumeHint(position: 600, remaining: 50))]
+        controller.refine(try wandRequest(count: 2))
+        try await waitUntilIdle(controller)
+        XCTAssertEqual(controller.results.map(\.seed), ["AAA-AAA-AAA"])
+        XCTAssertEqual(controller.refinedKept, 1)
+        XCTAssertEqual(controller.baseRun?.resumeFrom, 600)
+        return controller
+    }
+
+    func testCancelDuringFilterPhaseKeepsResultsAndBaseRun() async throws {
+        let engine = FakeEngine()
+        let controller = try await makeRefinedController(engine: engine)
+
+        engine.filterDelay = .seconds(60)
+        controller.refine(try wandRequest(count: 3))
+        XCTAssertTrue(controller.isRunning)
+        controller.cancel()
+        try await waitUntilIdle(controller)
+
+        XCTAssertEqual(controller.state, .cancelled)
+        XCTAssertNil(controller.message)
+        XCTAssertNil(controller.refinedKept, "a cancelled filter must clear the stale kept caption")
+        XCTAssertEqual(controller.results.map(\.seed), ["AAA-AAA-AAA"],
+                       "cancelling the filter phase must not touch the base results")
+        XCTAssertEqual(controller.baseRun?.resumeFrom, 600)
+        XCTAssertEqual(controller.baseRun?.remaining, 50)
+        XCTAssertTrue(controller.canRefine(with: try wandRequest(count: 3)),
+                      "the untouched base run must stay refinable")
+    }
+
+    func testFilterFailureKeepsBaseRunForRetry() async throws {
+        let engine = FakeEngine()
+        let controller = try await makeRefinedController(engine: engine)
+
+        engine.filterError = SeedFinderEngineError.invalidArgument
+        controller.refine(try wandRequest(count: 3))
+        try await waitUntilIdle(controller)
+
+        XCTAssertEqual(controller.state, .failed)
+        XCTAssertNotNil(controller.message)
+        XCTAssertNil(controller.refinedKept, "a failed filter must clear the stale kept caption")
+        XCTAssertEqual(controller.results.map(\.seed), ["AAA-AAA-AAA"])
+        XCTAssertEqual(controller.baseRun?.resumeFrom, 600)
+        XCTAssertEqual(controller.baseRun?.remaining, 50)
+        XCTAssertTrue(controller.canRefine(with: try wandRequest(count: 3)),
+                      "the intact base run must allow a retry")
+
+        engine.filterError = nil
+        engine.filterResult = ["AAA-AAA-AAA"]
+        engine.resumedSessions = [FakeSearchSession(
+            batches: [], hint: ResumeHint(position: 0, remaining: 0))]
+        controller.refine(try wandRequest(count: 3))
+        try await waitUntilIdle(controller)
+        XCTAssertEqual(controller.state, .completed)
+        XCTAssertEqual(controller.refinedKept, 1)
     }
 
     func testCancelledRunStillBecomesBaseAndFreshStartClearsRefinedKept() async throws {

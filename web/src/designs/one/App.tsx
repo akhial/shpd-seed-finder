@@ -89,16 +89,19 @@ export default function App() {
 
   // Refining is offered when the finished search's query has only gained
   // requirements: the previous matches then stay valid candidates and the
-  // scan can continue where it left off instead of starting over.
+  // scan can continue where it left off instead of starting over. A query
+  // the engine already proved impossible cannot make progress, so it is not
+  // offered a refine either.
+  const impossible = Boolean(hasRequirements && analysis?.valid && analysis.impossible)
   const canRefine = useMemo(() => {
     if (searchState !== 'completed' && searchState !== 'cancelled') return false
-    if (!baseQueryJson || !validation.valid) return false
+    if (!baseQueryJson || !validation.valid || impossible) return false
     try {
       return isRefinementOf(toQueryDocument(query), JSON.parse(baseQueryJson))
     } catch {
       return false
     }
-  }, [searchState, baseQueryJson, query, validation.valid])
+  }, [searchState, baseQueryJson, query, validation.valid, impossible])
 
   const refineSearch = useCallback(() => {
     const controller = coordinator.current

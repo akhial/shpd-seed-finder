@@ -1,7 +1,7 @@
 import type { ParsedSeed } from '../wasm/types'
 import type { SeedRange } from './traversal'
 
-export type SearchStatus = 'idle' | 'running' | 'stopping' | 'completed' | 'cancelled'
+export type SearchStatus = 'idle' | 'running' | 'stopping' | 'completed' | 'cancelled' | 'failed'
 export interface RateSample { at: number; tested: number }
 export interface RefineSummary { kept: number; of: number }
 export interface CoordinatorState {
@@ -11,9 +11,14 @@ export interface CoordinatorState {
   total: number
   rate: number
   elapsed: number
+  /** Every unique match delivered so far, sorted by seed value. Never
+   * truncated: matches beyond the display cap fall inside the scanned region
+   * and must survive into a refine's filter set. */
   matches: ParsedSeed[]
   capped: boolean
-  workerTested: Record<number, number>
+  /** Per-worker, per-segment scanned prefix lengths, aligned with
+   * `segments`. */
+  workerScanned: Record<number, number[]>
   completedWorkers: number
   workerCount: number
   startedAt: number
@@ -25,6 +30,9 @@ export interface CoordinatorState {
   queryJson: string
   /** Set while the current results came from refining a previous run. */
   refined?: RefineSummary
+  /** True while a refine is re-verifying the previous results and no worker
+   * has started scanning yet. */
+  filtering: boolean
   error?: string
 }
 
@@ -38,24 +46,28 @@ export const initialCoordinatorState = (total = 0): CoordinatorState => ({
   elapsed: 0,
   matches: [],
   capped: false,
-  workerTested: {},
+  workerScanned: {},
   completedWorkers: 0,
   workerCount: 0,
   startedAt: 0,
   rateSamples: [],
   segments: [],
   queryJson: '',
+  filtering: false,
 })
 
 export function mergeMatches(existing: ParsedSeed[], incoming: ParsedSeed[], cap = RESULT_CAP): { matches: ParsedSeed[]; capped: boolean } {
   // Deduplicate by seed value: a refined search may re-test a small overlap
   // around the previous stop position and rediscover a filtered survivor.
+  // Nothing is evicted at the cap — the workers of a capped session are told
+  // to stop, and every match they delivered belongs to the scanned region a
+  // refine relies on. Only the display is limited to `RESULT_CAP`.
   const byValue = new Map<number, ParsedSeed>()
   for (const match of [...existing, ...incoming]) {
     if (!byValue.has(match.value)) byValue.set(match.value, match)
   }
   const unique = [...byValue.values()].sort((left, right) => left.value - right.value)
-  return { matches: unique.slice(0, cap), capped: unique.length >= cap }
+  return { matches: unique, capped: unique.length >= cap }
 }
 
 export function calculateRate(samples: RateSample[]): number {
@@ -66,19 +78,22 @@ export function calculateRate(samples: RateSample[]): number {
   return seconds > 0 ? (last.tested - first.tested) / seconds : 0
 }
 
-export interface ProgressUpdate { sessionId: number; workerId: number; tested: number; matches: ParsedSeed[]; now: number }
+const sumScanned = (workerScanned: Record<number, number[]>): number =>
+  Object.values(workerScanned).reduce((sum, scanned) => sum + scanned.reduce((s, value) => s + value, 0), 0)
+
+export interface ProgressUpdate { sessionId: number; workerId: number; scanned: number[]; matches: ParsedSeed[]; now: number }
 
 export function applyProgress(state: CoordinatorState, update: ProgressUpdate): CoordinatorState {
   // Progress is also accepted while stopping: the final flush carries matches
   // and counts from the region recorded as scanned, which a refine relies on.
   if (update.sessionId !== state.sessionId || (state.state !== 'running' && state.state !== 'stopping')) return state
-  const workerTested = { ...state.workerTested, [update.workerId]: update.tested }
-  const tested = Object.values(workerTested).reduce((sum, value) => sum + value, 0)
+  const workerScanned = { ...state.workerScanned, [update.workerId]: update.scanned }
+  const tested = sumScanned(workerScanned)
   const merged = mergeMatches(state.matches, update.matches)
   const rateSamples = [...state.rateSamples, { at: update.now, tested }].filter((sample) => update.now - sample.at <= 5_000)
   return {
     ...state,
-    workerTested,
+    workerScanned,
     tested,
     matches: merged.matches,
     capped: merged.capped,
@@ -89,17 +104,17 @@ export function applyProgress(state: CoordinatorState, update: ProgressUpdate): 
   }
 }
 
-export interface WorkerTerminal { sessionId: number; workerId: number; tested: number; kind: 'done' | 'stopped'; now: number }
+export interface WorkerTerminal { sessionId: number; workerId: number; scanned: number[]; kind: 'done' | 'stopped'; now: number }
 
 export function markWorkerDone(state: CoordinatorState, update: WorkerTerminal): CoordinatorState {
   if (update.sessionId !== state.sessionId || (state.state !== 'running' && state.state !== 'stopping')) return state
-  const workerTested = { ...state.workerTested, [update.workerId]: update.tested }
+  const workerScanned = { ...state.workerScanned, [update.workerId]: update.scanned }
   const completedWorkers = state.completedWorkers + 1
   const finished = completedWorkers >= state.workerCount
   return {
     ...state,
-    workerTested,
-    tested: Object.values(workerTested).reduce((sum, value) => sum + value, 0),
+    workerScanned,
+    tested: sumScanned(workerScanned),
     completedWorkers,
     state: finished ? (state.state === 'stopping' ? 'cancelled' : 'completed') : state.state,
     elapsed: update.now - state.startedAt,

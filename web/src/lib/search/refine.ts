@@ -41,25 +41,22 @@ export function isRefinementOf(candidate: QueryDocument, base: QueryDocument): b
 }
 
 /**
- * The seed ranges a stopped search has not covered. Each worker scans its
- * ordered segments strictly front to back, so its scanned region is exactly
- * the first `workerTested[index]` seeds of its concatenated segments. Reported
+ * The seed ranges a stopped search has not covered. Workers report a scanned
+ * prefix length for each individual segment (never one cumulative count): a
+ * segment can be abandoned mid-way when its session hits the per-session
+ * result cap, and its untested tail must stay in the remainder. Reported
  * counts lag the true position slightly, which only makes the remainder
  * conservative — a resumed scan may re-test a few seeds, never skip one.
  */
-export function remainingSegments(segments: SeedRange[][], workerTested: Record<number, number>): SeedRange[] {
+export function remainingSegments(segments: SeedRange[][], workerScanned: Record<number, number[]>): SeedRange[] {
   const remainder: SeedRange[] = []
-  segments.forEach((workerSegments, index) => {
-    let toSkip = workerTested[index] ?? 0
-    for (const segment of workerSegments) {
-      const length = segment.endSeedExclusive - segment.startSeed
-      if (toSkip >= length) {
-        toSkip -= length
-        continue
+  segments.forEach((workerSegments, workerIndex) => {
+    workerSegments.forEach((segment, segmentIndex) => {
+      const scanned = workerScanned[workerIndex]?.[segmentIndex] ?? 0
+      if (segment.startSeed + scanned < segment.endSeedExclusive) {
+        remainder.push({ startSeed: segment.startSeed + scanned, endSeedExclusive: segment.endSeedExclusive })
       }
-      remainder.push({ startSeed: segment.startSeed + toSkip, endSeedExclusive: segment.endSeedExclusive })
-      toSkip = 0
-    }
+    })
   })
   return remainder
 }

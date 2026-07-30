@@ -32,6 +32,7 @@ import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.ScoutAccessibility
 import dev.seedseeker.app.model.ScoutItem
 import dev.seedseeker.app.model.ScoutItemSource
+import dev.seedseeker.app.model.SearchState
 import dev.seedseeker.app.model.SearchStatus
 import dev.seedseeker.app.model.TierMatch
 import dev.seedseeker.app.model.UpgradeMatch
@@ -384,6 +385,25 @@ fun compactCount(value: Long): String = when {
     value >= 1_000_000L -> String.format(Locale.US, "%.1fM", value / 1_000_000.0)
     value >= 1_000L -> String.format(Locale.US, "%.1fK", value / 1_000.0)
     else -> value.toString()
+}
+
+internal fun resultsHeaderText(
+    resultCount: Int,
+    state: SearchState?,
+    isSearching: Boolean,
+    isRefined: Boolean,
+    refineSummary: Pair<Int, Int>?,
+): String {
+    // (kept, of) counts from a refine's re-verification of the previous run's seeds.
+    val kept = refineSummary?.let { (keptCount, of) -> " · kept $keptCount of $of" }.orEmpty()
+    return when {
+        isSearching && isRefined -> "Results — $resultCount$kept · refining"
+        isSearching -> "Results — $resultCount · live"
+        state == SearchState.COMPLETED && refineSummary != null -> "Results — $resultCount$kept"
+        state == SearchState.COMPLETED -> "Results — $resultCount found"
+        state == SearchState.CANCELLED -> "Results — $resultCount$kept · cancelled"
+        else -> "Results"
+    }
 }
 
 internal fun searchEstimateText(status: SearchStatus?, seedsPerSecond: Double): String {

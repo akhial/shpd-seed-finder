@@ -140,6 +140,8 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
     var run by remember { mutableStateOf<SearchRun?>(null) }
     var nextRunId by remember { mutableLongStateOf(1L) }
     var lastFinishedRun by remember { mutableStateOf<FinishedRun?>(null) }
+    // (kept, of) counts from the latest refine's re-verification of on-screen seeds.
+    var refineSummary by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var isSearching by remember { mutableStateOf(false) }
     var searchError by remember { mutableStateOf<String?>(null) }
     var scoutInput by remember { mutableStateOf("") }
@@ -179,6 +181,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
         isSearching = true
         searchError = null
         searchStatus = null
+        refineSummary = null
         searchSeedsPerSecond = 0.0
         searchElapsedSeconds = 0L
 
@@ -198,6 +201,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                     engine.filterSeeds(currentRun.request, refine.keepSeeds.map { it.seed })
                 }
                 results = kept.map { SeedResult(it, currentRun.request.requirements.size) }
+                refineSummary = kept.size to refine.keepSeeds.size
                 if (refine.remaining == 0L) {
                     searchStatus = SearchStatus(SearchState.COMPLETED, 0, 0)
                     lastFinishedRun = FinishedRun(currentRun.request, refine.resumeFrom, 0, results)
@@ -345,6 +349,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                 isSearching = isSearching,
                 canRefine = canRefine,
                 isRefined = run?.refine != null,
+                refineSummary = refineSummary,
                 error = searchError,
                 onAbout = {
                     aboutReturnDestination = Destination.FINDER
@@ -431,6 +436,11 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                     val session = activeSession
                     if (session != null) {
                         scope.launch(Dispatchers.Default) { session.cancel() }
+                    } else if (isSearching) {
+                        // The refine filter phase has no native session yet, so cancel the
+                        // driver coroutine itself. The previous results and lastFinishedRun
+                        // are untouched, so the refine can be retried.
+                        run = null
                     }
                 },
                 onScoutSeed = ::scoutSeed,

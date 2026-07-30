@@ -283,6 +283,15 @@ impl ResultsPane {
         }) else {
             return;
         };
+        // Re-assert the superset invariant here rather than trusting the
+        // action's enabled flag: filter-and-resume is only sound when the
+        // refined query strictly extends the finished one.
+        if !crate::state::extends_query(&query, &base.query) {
+            self.toasts.add_toast(adw::Toast::new(
+                "Refining requires only added requirements; start a new search instead",
+            ));
+            return;
+        }
         let seed_values: Vec<u64> = self
             .seeds
             .borrow()

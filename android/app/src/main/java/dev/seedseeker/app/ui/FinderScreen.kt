@@ -86,6 +86,7 @@ fun FinderScreen(
     isSearching: Boolean,
     canRefine: Boolean,
     isRefined: Boolean,
+    refineSummary: Pair<Int, Int>?,
     error: String?,
     onAbout: () -> Unit,
     onChallenges: () -> Unit,
@@ -167,6 +168,7 @@ fun FinderScreen(
                     status = status,
                     isSearching = isSearching,
                     isRefined = isRefined,
+                    refineSummary = refineSummary,
                     error = error,
                     onAdd = onAdd,
                     onEdit = onEdit,
@@ -246,6 +248,7 @@ private fun QueryHeader(
     status: SearchStatus?,
     isSearching: Boolean,
     isRefined: Boolean,
+    refineSummary: Pair<Int, Int>?,
     error: String?,
     onAdd: () -> Unit,
     onEdit: (ItemRequirement) -> Unit,
@@ -306,15 +309,13 @@ private fun QueryHeader(
             onChallenges = onChallenges,
         )
         Text(
-            when {
-                isSearching && isRefined -> "Results — ${results.size} · refining"
-                isSearching -> "Results — ${results.size} · live"
-                status?.state == SearchState.COMPLETED && isRefined ->
-                    "Results — ${results.size} · refined"
-                status?.state == SearchState.COMPLETED -> "Results — ${results.size} found"
-                status?.state == SearchState.CANCELLED -> "Results — ${results.size} · cancelled"
-                else -> "Results"
-            },
+            resultsHeaderText(
+                resultCount = results.size,
+                state = status?.state,
+                isSearching = isSearching,
+                isRefined = isRefined,
+                refineSummary = refineSummary,
+            ),
             style = MaterialTheme.typography.titleSmall,
         )
         if (error != null) {
@@ -579,7 +580,7 @@ private fun SearchActionBar(
                                 .height(48.dp),
                             shapes = ButtonDefaults.shapes(),
                         ) {
-                            Text("Refine", style = MaterialTheme.typography.titleMedium)
+                            Text("Refine Results", style = MaterialTheme.typography.titleMedium)
                         }
                     }
                     Button(

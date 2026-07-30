@@ -1,11 +1,16 @@
 import { Store } from '@tanstack/store'
 import type { ParsedSeed, QueryDocument, ScoutRequest, ScoutResult } from '../wasm/types'
-import { applyProgress, initialCoordinatorState, markWorkerDone, type CoordinatorState } from './coordinator-state'
+import { applyProgress, initialCoordinatorState, markWorkerDone, RESULT_CAP, type CoordinatorState } from './coordinator-state'
 import type { SearchWorkerRequest, SearchWorkerResponse } from './protocol'
-import { distributeSegments, remainingSegments, segmentsLength } from './refine'
+import { distributeSegments, isRefinementOf, remainingSegments, segmentsLength } from './refine'
 import { advanceTraversalStart, partitionRotated, randomTraversalStart, type SeedRange } from './traversal'
 
 export const searchStore = new Store<CoordinatorState>(initialCoordinatorState())
+
+/** How long a cancel waits for every worker's acknowledgment before the
+ * coordinator force-finalizes the stop. Workers acknowledge within one chunk
+ * normally; the timeout only covers a worker that died or never started. */
+const STOP_ACK_TIMEOUT_MS = 2_000
 
 export class SearchCoordinator {
   private workers: Worker[] = []
@@ -13,6 +18,9 @@ export class SearchCoordinator {
   private totalSeeds = 0
   private nextTraversalStart: number | undefined
   private startedWorkers = 0
+  /** Present while a refine's filter phase runs: how to restore the previous
+   * finished state if the filter is cancelled or fails. */
+  private filterRestore: { sessionId: number; state: 'completed' | 'cancelled'; refined?: { kept: number; of: number } } | undefined
 
   constructor(totalSeeds: number) {
     this.totalSeeds = totalSeeds
@@ -36,6 +44,7 @@ export class SearchCoordinator {
     const startedAt = performance.now()
     const queryJson = JSON.stringify(query)
     const segments = partitionRotated(this.totalSeeds, workers.length, this.claimTraversalStart())
+    this.filterRestore = undefined
     searchStore.setState(() => ({
       ...initialCoordinatorState(this.totalSeeds),
       sessionId,
@@ -55,56 +64,116 @@ export class SearchCoordinator {
    * Narrows a finished (completed or cancelled) search without discarding it:
    * the existing matches are re-verified against the combined query, and the
    * scan continues over exactly the seed ranges the previous run never
-   * covered. `query` must extend the previous query (see `isRefinementOf`).
+   * covered. The previous run's matches, coverage, and query stay untouched
+   * in the store until the re-verification has succeeded, so a cancelled or
+   * failed filter phase falls back to the still-finished previous search.
    */
   refine(query: QueryDocument, workerCount = Math.max(1, navigator.hardwareConcurrency ?? 4)): void {
     const previous = searchStore.state
     if (previous.state !== 'completed' && previous.state !== 'cancelled') return
+    // Re-assert the superset invariant here rather than trusting the UI: the
+    // soundness of filter-and-resume depends on it.
+    try {
+      if (!isRefinementOf(query, JSON.parse(previous.queryJson) as QueryDocument)) return
+    } catch {
+      return
+    }
     const sessionId = ++this.sessionId
-    const startedAt = performance.now()
     const queryJson = JSON.stringify(query)
-    const remainder = remainingSegments(previous.segments, previous.workerTested)
     const previousMatches = previous.matches
     this.startedWorkers = 0
-    searchStore.setState(() => ({
-      ...initialCoordinatorState(segmentsLength(remainder)),
+    this.filterRestore = { sessionId, state: previous.state, refined: previous.refined }
+    searchStore.setState((state) => ({
+      ...state,
       sessionId,
       state: 'running',
-      startedAt,
-      queryJson,
+      filtering: true,
       refined: { kept: 0, of: previousMatches.length },
+      error: undefined,
     }))
     void filterSeeds(queryJson, previousMatches.map((match) => match.value))
       .then((kept) => {
-        if (searchStore.state.sessionId !== sessionId || searchStore.state.state !== 'running') return
-        searchStore.setState((state) => ({
-          ...state,
-          matches: kept,
-          refined: { kept: kept.length, of: previousMatches.length },
-        }))
-        this.resumeScan(queryJson, remainder, workerCount, sessionId)
+        if (this.filterRestore?.sessionId !== sessionId) return
+        this.filterRestore = undefined
+        const remainder = remainingSegments(searchStore.state.segments, searchStore.state.workerScanned)
+        this.beginResumedScan(queryJson, remainder, kept, previousMatches.length, workerCount, sessionId)
       })
       .catch((error: unknown) => {
-        if (searchStore.state.sessionId !== sessionId) return
-        searchStore.setState((state) => ({
-          ...state,
-          state: 'cancelled',
-          elapsed: performance.now() - state.startedAt,
-          error: error instanceof Error ? error.message : String(error),
-        }))
+        this.restoreAfterFilter(sessionId, error instanceof Error ? error.message : String(error))
       })
   }
 
-  private resumeScan(queryJson: string, remainder: SeedRange[], workerCount: number, sessionId: number): void {
-    if (segmentsLength(remainder) === 0) {
-      // The previous run already covered the whole traversal; the filtered
-      // subset is the complete refined result.
-      searchStore.setState((state) => ({ ...state, state: 'completed', elapsed: performance.now() - state.startedAt }))
+  /** Puts the store back into the previous finished state after a cancelled
+   * or failed filter phase. Matches and coverage were never touched. */
+  private restoreAfterFilter(sessionId: number, error?: string): void {
+    const restore = this.filterRestore
+    if (restore?.sessionId !== sessionId) return
+    this.filterRestore = undefined
+    searchStore.setState((state) => ({
+      ...state,
+      state: restore.state,
+      filtering: false,
+      refined: restore.refined,
+      error,
+    }))
+  }
+
+  private beginResumedScan(
+    queryJson: string,
+    remainder: SeedRange[],
+    kept: ParsedSeed[],
+    previousCount: number,
+    workerCount: number,
+    sessionId: number,
+  ): void {
+    const startedAt = performance.now()
+    const refined = { kept: kept.length, of: previousCount }
+    // A filtered subset that already fills the display cap cannot surface
+    // anything new; skip the scan but keep the coverage bookkeeping intact so
+    // a further refine can continue from the same remainder.
+    if (segmentsLength(remainder) === 0 || kept.length >= RESULT_CAP) {
+      searchStore.setState((state) => ({
+        ...state,
+        state: 'completed',
+        filtering: false,
+        matches: kept,
+        capped: kept.length >= RESULT_CAP,
+        queryJson,
+        refined,
+        startedAt,
+        elapsed: 0,
+        tested: 0,
+        total: segmentsLength(remainder),
+        rate: 0,
+        rateSamples: [],
+        completedWorkers: 0,
+        workerCount: 0,
+        segments: [remainder],
+        workerScanned: {},
+      }))
       return
     }
     const workers = this.ensureWorkers(workerCount)
     const segments = distributeSegments(remainder, workers.length)
-    searchStore.setState((state) => ({ ...state, workerCount: workers.length, segments }))
+    searchStore.setState((state) => ({
+      ...state,
+      state: 'running',
+      filtering: false,
+      matches: kept,
+      capped: false,
+      queryJson,
+      refined,
+      startedAt,
+      elapsed: 0,
+      tested: 0,
+      total: segmentsLength(remainder),
+      rate: 0,
+      rateSamples: [],
+      completedWorkers: 0,
+      workerCount: workers.length,
+      segments,
+      workerScanned: {},
+    }))
     this.startedWorkers = workers.length
     workers.forEach((worker, index) => {
       worker.postMessage({ type: 'search:start', queryJson, segments: segments[index], sessionId } satisfies SearchWorkerRequest)
@@ -121,16 +190,32 @@ export class SearchCoordinator {
 
   cancel(): void {
     const current = searchStore.state
-    if (current.state !== 'running') return
+    if (current.state !== 'running' && current.state !== 'stopping') return
+    if (current.filtering) {
+      // Still re-verifying for a refine: no worker owns this session yet, so
+      // fall straight back to the previous finished results.
+      this.restoreAfterFilter(current.sessionId)
+      return
+    }
     if (this.startedWorkers === 0) {
-      // Still filtering for a refine: no worker owns this session yet.
       searchStore.setState((state) => ({ ...state, state: 'cancelled', elapsed: performance.now() - state.startedAt }))
       return
     }
-    this.workers.forEach((worker) => worker.postMessage({ type: 'search:stop', sessionId: current.sessionId } satisfies SearchWorkerRequest))
+    const sessionId = current.sessionId
+    this.workers.forEach((worker) => worker.postMessage({ type: 'search:stop', sessionId } satisfies SearchWorkerRequest))
     // Workers acknowledge with search:stopped carrying their exact final
-    // position; the state turns cancelled once every worker has reported.
-    searchStore.setState((state) => ({ ...state, state: 'stopping', elapsed: performance.now() - state.startedAt }))
+    // positions; the state turns cancelled once every worker has reported.
+    // Cancel stays available while stopping (it re-broadcasts), and a
+    // watchdog finalizes the stop even if an acknowledgment never arrives.
+    if (current.state === 'running') {
+      searchStore.setState((state) => ({ ...state, state: 'stopping', elapsed: performance.now() - state.startedAt }))
+    }
+    window.setTimeout(() => {
+      const state = searchStore.state
+      if (state.sessionId === sessionId && state.state === 'stopping') {
+        searchStore.setState((stuck) => ({ ...stuck, state: 'cancelled' }))
+      }
+    }, STOP_ACK_TIMEOUT_MS)
   }
 
   private onMessage(workerId: number, message: SearchWorkerResponse): void {
@@ -141,13 +226,23 @@ export class SearchCoordinator {
     }
     if (message.type === 'search:done' || message.type === 'search:stopped') {
       const kind = message.type === 'search:done' ? 'done' : 'stopped'
-      searchStore.setState((state) => markWorkerDone(state, { sessionId: message.sessionId, workerId, tested: message.tested, kind, now: performance.now() }))
+      searchStore.setState((state) => markWorkerDone(state, { sessionId: message.sessionId, workerId, scanned: message.scanned, kind, now: performance.now() }))
     }
-    if (message.type === 'search:error') searchStore.setState((state) => ({ ...state, state: 'cancelled', error: message.error }))
+    if (message.type === 'search:error') {
+      // A failed run cannot become a refine base: its coverage is unknown.
+      this.workers.forEach((worker) => worker.postMessage({ type: 'search:stop', sessionId: message.sessionId } satisfies SearchWorkerRequest))
+      searchStore.setState((state) => ({
+        ...state,
+        state: 'failed',
+        error: message.error,
+        elapsed: performance.now() - state.startedAt,
+      }))
+    }
   }
 }
 
 let scoutWorker: Worker | undefined
+let filterWorker: Worker | undefined
 let nextRequestId = 0
 const scoutRequests = new Map<number, { resolve: (value: ScoutResult) => void; reject: (reason: Error) => void }>()
 const filterRequests = new Map<number, { resolve: (value: ParsedSeed[]) => void; reject: (reason: Error) => void }>()
@@ -157,14 +252,6 @@ function getScoutWorker(): Worker {
     scoutWorker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
     scoutWorker.addEventListener('message', (event: MessageEvent<SearchWorkerResponse>) => {
       const message = event.data
-      if (message.type === 'filter:result' || message.type === 'filter:error') {
-        const pending = filterRequests.get(message.requestId)
-        if (!pending) return
-        filterRequests.delete(message.requestId)
-        if (message.type === 'filter:error') pending.reject(new Error(message.error))
-        else pending.resolve(JSON.parse(message.resultJson) as ParsedSeed[])
-        return
-      }
       if (message.type !== 'scout:result' && message.type !== 'scout:error') return
       const pending = scoutRequests.get(message.requestId)
       if (!pending) return
@@ -176,6 +263,24 @@ function getScoutWorker(): Worker {
   return scoutWorker
 }
 
+// Filtering re-generates up to a thousand worlds and can take a while; it
+// gets its own worker so interactive scouting never queues behind it.
+function getFilterWorker(): Worker {
+  if (!filterWorker) {
+    filterWorker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
+    filterWorker.addEventListener('message', (event: MessageEvent<SearchWorkerResponse>) => {
+      const message = event.data
+      if (message.type !== 'filter:result' && message.type !== 'filter:error') return
+      const pending = filterRequests.get(message.requestId)
+      if (!pending) return
+      filterRequests.delete(message.requestId)
+      if (message.type === 'filter:error') pending.reject(new Error(message.error))
+      else pending.resolve(JSON.parse(message.resultJson) as ParsedSeed[])
+    })
+  }
+  return filterWorker
+}
+
 export function scoutSeed(request: ScoutRequest): Promise<ScoutResult> {
   const requestId = ++nextRequestId
   return new Promise((resolve, reject) => {
@@ -185,12 +290,12 @@ export function scoutSeed(request: ScoutRequest): Promise<ScoutResult> {
   })
 }
 
-/** Re-verifies specific seeds against a full query on the scout worker,
+/** Re-verifies specific seeds against a full query on a dedicated worker,
  * resolving with the matching seeds in input order. */
 export function filterSeeds(queryJson: string, seeds: number[]): Promise<ParsedSeed[]> {
   const requestId = ++nextRequestId
   return new Promise((resolve, reject) => {
     filterRequests.set(requestId, { resolve, reject })
-    getScoutWorker().postMessage({ type: 'filter', queryJson, seeds, requestId } satisfies SearchWorkerRequest)
+    getFilterWorker().postMessage({ type: 'filter', queryJson, seeds, requestId } satisfies SearchWorkerRequest)
   })
 }

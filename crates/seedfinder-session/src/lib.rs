@@ -183,7 +183,6 @@ pub fn filter_matching_seeds(
         .get()
         .min(seeds.len());
     let slice_len = seeds.len().div_ceil(workers);
-    let mut matched: Vec<Vec<GeneratedWorld>> = Vec::new();
     std::thread::scope(|scope| {
         let handles = seeds
             .chunks(slice_len)
@@ -200,12 +199,14 @@ pub fn filter_matching_seeds(
                 })
             })
             .collect::<Vec<_>>();
-        matched = handles
-            .into_iter()
-            .map(|handle| handle.join().unwrap_or_default())
-            .collect();
-    });
-    Ok(matched.into_iter().flatten().collect())
+        let mut matched = Vec::new();
+        for handle in handles {
+            // A generator panic must surface as an error: silently treating
+            // its slice as empty would drop genuine matches from the filter.
+            matched.extend(handle.join().map_err(|_| SearchError::WorkerPanicked)?);
+        }
+        Ok(matched)
+    })
 }
 
 /// Packet form of [`filter_matching_seeds`] for wire frontends: decodes an

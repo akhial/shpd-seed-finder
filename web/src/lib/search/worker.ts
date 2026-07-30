@@ -15,57 +15,58 @@ const post = (message: SearchWorkerResponse) => context.postMessage(message)
 const yieldToMessages = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
 
 async function runSearch(message: Extract<SearchWorkerRequest, { type: 'search:start' }>) {
+  // activeSession/stopRequested are assigned synchronously in the message
+  // handler, so a stop that arrives while the wasm module is still
+  // initializing is honored instead of dropped.
+  const sessionId = message.sessionId
   await ready
-  activeSession = message.sessionId
-  stopRequested = false
+  const scanned = message.segments.map(() => 0)
   let lastPosted = performance.now()
-  let testedBefore = 0
-  let latestTested = 0
   let pendingMatches: SearchAdvance['matches'] = []
+  const flush = () => {
+    post({ type: 'search:progress', sessionId, scanned: [...scanned], matches: pendingMatches })
+    pendingMatches = []
+  }
   try {
     for (const [segmentIndex, segment] of message.segments.entries()) {
-      const lastSegment = segmentIndex === message.segments.length - 1
+      if (stopRequested || activeSession !== sessionId) break
       const search = new SearchSession(message.queryJson, segment.startSeed, segment.endSeedExclusive)
       try {
-        while (!stopRequested && activeSession === message.sessionId) {
+        while (!stopRequested && activeSession === sessionId) {
           const advance = JSON.parse(search.advance(CHUNK)) as SearchAdvance
-          latestTested = testedBefore + advance.tested
+          scanned[segmentIndex] = advance.tested
           pendingMatches.push(...advance.matches)
           const now = performance.now()
-          if (now - lastPosted >= 100 || (advance.state === 'completed' && lastSegment)) {
-            post({ type: 'search:progress', sessionId: message.sessionId, tested: latestTested, matches: pendingMatches })
-            pendingMatches = []
+          if (now - lastPosted >= 100) {
+            flush()
             lastPosted = now
           }
-          if (advance.state === 'completed') {
-            if (lastSegment) {
-              post({ type: 'search:done', sessionId: message.sessionId, tested: latestTested })
-              return
-            }
-            testedBefore = latestTested
-            break
-          }
+          // "completed" also fires when the session hits its own result cap
+          // before reaching the end of the segment; the per-segment scanned
+          // count keeps the untested tail attributable either way.
+          if (advance.state === 'completed') break
           await yieldToMessages()
         }
       } finally {
         search.free()
       }
-      if (stopRequested || activeSession !== message.sessionId) break
     }
-    if (!message.segments.length) {
-      post({ type: 'search:done', sessionId: message.sessionId, tested: 0 })
-      return
-    }
-    if (pendingMatches.length) post({ type: 'search:progress', sessionId: message.sessionId, tested: latestTested, matches: pendingMatches })
-    post({ type: 'search:stopped', sessionId: message.sessionId, tested: latestTested })
+    if (activeSession !== sessionId) return
+    flush()
+    if (stopRequested) post({ type: 'search:stopped', sessionId, scanned })
+    else post({ type: 'search:done', sessionId, scanned })
   } catch (error) {
-    post({ type: 'search:error', sessionId: message.sessionId, error: error instanceof Error ? error.message : String(error) })
+    post({ type: 'search:error', sessionId, error: error instanceof Error ? error.message : String(error) })
   }
 }
 
 context.addEventListener('message', (event: MessageEvent<SearchWorkerRequest>) => {
   const message = event.data
-  if (message.type === 'search:start') void runSearch(message)
+  if (message.type === 'search:start') {
+    activeSession = message.sessionId
+    stopRequested = false
+    void runSearch(message)
+  }
   if (message.type === 'search:stop' && message.sessionId === activeSession) stopRequested = true
   if (message.type === 'scout') {
     void ready.then(() => {
