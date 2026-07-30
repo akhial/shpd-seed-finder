@@ -13,6 +13,9 @@ public final class SearchController {
     public private(set) var errorCode: Int64 = 0
     public private(set) var message: String?
     public private(set) var isRunning = false
+    /// Whether the current results were restored from an imported file
+    /// rather than produced by a search.
+    public private(set) var isImported = false
     public var selectedSeed: String?
 
     private let engine: any SeedFinderEngine
@@ -31,9 +34,20 @@ public final class SearchController {
         state == .completed && scannedSeeds == 0 && results.isEmpty
     }
 
+    /// Replaces the results with seeds restored from an imported results
+    /// file. Callers must ensure no search is running.
+    public func loadImported(seeds: [String], matchedRequirements: Int) {
+        var unique: [String] = []
+        var seen = Set<String>()
+        for seed in seeds where seen.insert(seed).inserted { unique.append(seed) }
+        results = unique.map { SeedResult(seed: $0, matchedRequirements: matchedRequirements) }
+        scannedSeeds = 0; totalSeeds = 0; matchProbability = nil; seedsPerSecond = 0; elapsed = 0
+        errorCode = 0; message = nil; state = nil; isImported = true; selectedSeed = nil
+    }
+
     public func start(_ request: SearchRequest) {
         task?.cancel(); results = []; scannedSeeds = 0; totalSeeds = 0; matchProbability = nil; seedsPerSecond = 0; elapsed = 0
-        errorCode = 0; message = nil; state = .running; isRunning = true
+        errorCode = 0; message = nil; state = .running; isRunning = true; isImported = false
         task = Task { [weak self] in
             guard let self else { return }
             let searchStart = ContinuousClock.now

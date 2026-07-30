@@ -1,6 +1,6 @@
 import type { ParsedSeed } from '../wasm/types'
 
-export type SearchStatus = 'idle' | 'running' | 'completed' | 'cancelled'
+export type SearchStatus = 'idle' | 'running' | 'completed' | 'cancelled' | 'imported'
 export interface RateSample { at: number; tested: number }
 export interface CoordinatorState {
   sessionId: number
@@ -47,6 +47,17 @@ export function calculateRate(samples: RateSample[]): number {
   const last = samples[samples.length - 1]
   const seconds = (last.at - first.at) / 1_000
   return seconds > 0 ? (last.tested - first.tested) / seconds : 0
+}
+
+/** Replaces the whole search state with results restored from a file. */
+export function importedResultsState(state: CoordinatorState, matches: ParsedSeed[]): CoordinatorState {
+  return {
+    ...initialCoordinatorState(state.total),
+    sessionId: state.sessionId,
+    state: 'imported',
+    matches: matches.slice(0, RESULT_CAP),
+    capped: matches.length > RESULT_CAP,
+  }
 }
 
 export interface ProgressUpdate { sessionId: number; workerId: number; tested: number; matches: ParsedSeed[]; now: number }

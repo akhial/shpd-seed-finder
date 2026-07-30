@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyProgress, calculateRate, initialCoordinatorState, mergeMatches } from './coordinator-state'
+import { applyProgress, calculateRate, importedResultsState, initialCoordinatorState, mergeMatches } from './coordinator-state'
 
 const match = (value: number) => ({ value, code: value.toString().padStart(9, 'A') })
 
@@ -19,5 +19,19 @@ describe('coordinator aggregation', () => {
     const state = { ...initialCoordinatorState(100), state: 'running' as const, sessionId: 3, workerCount: 1, startedAt: 1_000 }
     const updated = applyProgress(state, { sessionId: 2, workerId: 0, tested: 10, matches: [match(1)], now: 2_000 })
     expect(updated).toBe(state)
+  })
+  it('replaces state with imported results in file order', () => {
+    const previous = { ...initialCoordinatorState(100), state: 'completed' as const, sessionId: 5, tested: 42, matches: [match(9)] }
+    const imported = importedResultsState(previous, [match(3), match(1)])
+    expect(imported.state).toBe('imported')
+    expect(imported.sessionId).toBe(5)
+    expect(imported.tested).toBe(0)
+    expect(imported.matches.map((item) => item.value)).toEqual([3, 1])
+    expect(imported.capped).toBe(false)
+  })
+  it('caps imported results at 1024', () => {
+    const imported = importedResultsState(initialCoordinatorState(100), Array.from({ length: 1_030 }, (_, value) => match(value)))
+    expect(imported.matches).toHaveLength(1_024)
+    expect(imported.capped).toBe(true)
   })
 })

@@ -3,6 +3,7 @@ import Combine
 import SeedSeekerKit
 import Sparkle
 import SwiftUI
+import UniformTypeIdentifiers
 
 @main
 struct SeedSeekerApp: App {
@@ -67,6 +68,9 @@ private struct ContentView: View {
     @State private var controller = SearchController()
     @State private var scout = ScoutViewModel()
     @State private var showingAbout = false
+    @State private var exportDocument: ResultsFileDocument?
+    @State private var showingImporter = false
+    @State private var transferError: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -84,6 +88,24 @@ private struct ContentView: View {
             } content: {
                 ResultsView(controller: controller) { seed in scout.scout(seed, challenges: challenges) }
                     .navigationSplitViewColumnWidth(min: 340, ideal: 420)
+                    .toolbar {
+                        ToolbarItemGroup {
+                            Button {
+                                showingImporter = true
+                            } label: {
+                                Label("Import Results…", systemImage: "square.and.arrow.down")
+                            }
+                            .help("Import results and their query from a file")
+                            .disabled(controller.isRunning)
+                            Button {
+                                beginExport()
+                            } label: {
+                                Label("Export Results…", systemImage: "square.and.arrow.up")
+                            }
+                            .help("Export the results and their query to a file")
+                            .disabled(controller.isRunning || controller.results.isEmpty || requirements.isEmpty)
+                        }
+                    }
             } detail: {
                 SeedDetailView(model: scout, requirements: requirements, maximumDepth: maximumDepth,
                                excludeBlacksmithRewards: excludeBlacksmithRewards, challenges: challenges)
@@ -102,6 +124,29 @@ private struct ContentView: View {
             .help("Item artwork attribution and license")
         }
         .sheet(isPresented: $showingAbout) { AboutView() }
+        .fileExporter(
+            isPresented: Binding(
+                get: { exportDocument != nil },
+                set: { if !$0 { exportDocument = nil } }),
+            document: exportDocument,
+            contentType: .json,
+            defaultFilename: ResultsExport.suggestedFileName
+        ) { result in
+            if case .failure(let error) = result {
+                transferError = "Export failed: \(error.localizedDescription)"
+            }
+        }
+        .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.json]) { result in
+            if case .success(let url) = result { importResults(from: url) }
+        }
+        .alert("Results file", isPresented: Binding(
+            get: { transferError != nil },
+            set: { if !$0 { transferError = nil } })
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(transferError ?? "")
+        }
         .frame(minWidth: 1_020, minHeight: 640)
         .onAppear {
             guard !restored else { return }; restored = true
@@ -131,8 +176,9 @@ private struct ContentView: View {
             challenges: challenges)) ?? ""
     }
 
-    private func apply(_ preset: QueryPreset) {
-        let saved = preset.query
+    private func apply(_ preset: QueryPreset) { apply(preset.query) }
+
+    private func apply(_ saved: SavedQuery) {
         requirements = saved.requirements.map { requirement in
             var copy = requirement
             copy.key = Int64.random(in: 1...Int64.max)
@@ -143,6 +189,33 @@ private struct ContentView: View {
         excludeBlacksmithRewards = saved.excludeBlacksmithRewards
         fastMode = saved.fastMode
         challenges = saved.challenges
+    }
+
+    private func beginExport() {
+        let query = SavedQuery(requirements: requirements, maximumDepth: maximumDepth,
+                               requireBlacksmith: requireBlacksmith,
+                               excludeBlacksmithRewards: excludeBlacksmithRewards,
+                               fastMode: fastMode, challenges: challenges)
+        let appVersion = Bundle.main
+            .object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+        exportDocument = ResultsFileDocument(
+            text: ResultsExport.encode(query, seeds: controller.results.map(\.seed),
+                                       appVersion: appVersion))
+    }
+
+    private func importResults(from url: URL) {
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let text = try String(contentsOf: url, encoding: .utf8)
+            let imported = try ResultsExport.decode(text)
+            apply(imported.query)
+            controller.loadImported(seeds: imported.seeds,
+                                    matchedRequirements: imported.query.requirements.count)
+        } catch {
+            transferError = (error as? LocalizedError)?.errorDescription
+                ?? "The results file could not be imported."
+        }
     }
 
     private func savePreset(name: String) {
@@ -641,6 +714,20 @@ private struct RequirementEditor: View {
 
 // MARK: - Results
 
+/// Plain-text JSON payload handed to `fileExporter`.
+private struct ResultsFileDocument: FileDocument {
+    static let readableContentTypes: [UTType] = [.json]
+    var text: String
+
+    init(text: String) { self.text = text }
+    init(configuration: ReadConfiguration) throws {
+        text = String(data: configuration.file.regularFileContents ?? Data(), encoding: .utf8) ?? ""
+    }
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: Data(text.utf8))
+    }
+}
+
 private struct ResultsView: View {
     let controller: SearchController
     let scout: (String) -> Void
@@ -660,7 +747,16 @@ private struct ResultsView: View {
         }.navigationTitle("Results")
     }
     @ViewBuilder private var status: some View {
-        if controller.state == nil { Text("Add requirements, then press Start Search.").foregroundStyle(.secondary) }
+        if controller.isImported {
+            HStack(spacing: 8) {
+                Text("Imported").font(.caption.bold())
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(.quaternary, in: Capsule())
+                Text("\(controller.results.count) seed\(controller.results.count == 1 ? "" : "s") loaded from file")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        else if controller.state == nil { Text("Add requirements, then press Start Search.").foregroundStyle(.secondary) }
         else if controller.isRunning {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Seed match probability: \(NumberFormat.probabilityPercent(controller.matchProbability)) " +

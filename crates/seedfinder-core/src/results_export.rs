@@ -1,0 +1,296 @@
+//! Versioned results-export documents: search results plus the query that
+//! found them.
+//!
+//! This module is the canonical implementation of the format described in
+//! `docs/results-export-format.md`. Frontends that cannot link this crate
+//! re-implement the same schema and pin it with fixture tests.
+//!
+//! Compatibility contract:
+//!
+//! - The envelope carries `format` and an integer `format_version`.
+//! - Readers ignore unknown envelope and per-result fields, so version 1
+//!   readers keep working when a future release adds optional fields.
+//! - Files declaring a `format_version` greater than [`FORMAT_VERSION`] are
+//!   rejected with a clear "update the app" message rather than misread.
+//! - The embedded query reuses the [`crate::json_query`] document format and
+//!   is validated strictly: unknown query fields, items, effects, or
+//!   challenges fail the import instead of silently changing its meaning.
+
+use serde_json::{Map, Value, json};
+
+use crate::json_query;
+use crate::query::SearchQuery;
+use crate::seed::DungeonSeed;
+
+/// Identifies a Seed Seeker results file, whatever its version.
+pub const FILE_FORMAT: &str = "seed-seeker-results";
+
+/// The newest results-file version this build can read and the version it
+/// writes.
+pub const FORMAT_VERSION: u64 = 1;
+
+/// One decoded results file.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ResultsFile {
+    /// Version declared by the file, at most [`FORMAT_VERSION`].
+    pub format_version: u64,
+    /// App version that wrote the file, when declared. Informational.
+    pub app_version: Option<String>,
+    /// Upstream game version the exporting engine targeted. Informational.
+    pub shpd_version: Option<String>,
+    /// The validated query that produced the exported results.
+    pub query: SearchQuery,
+    /// The exported result seeds, in their exported order.
+    pub seeds: Vec<DungeonSeed>,
+}
+
+/// Encodes a validated query and its result seeds as a pretty-printed
+/// version-[`FORMAT_VERSION`] results document.
+#[must_use]
+pub fn encode(query: &SearchQuery, seeds: &[DungeonSeed], app_version: &str) -> String {
+    let document = json!({
+        "format": FILE_FORMAT,
+        "format_version": FORMAT_VERSION,
+        "app_version": app_version,
+        "shpd_version": crate::SHPD_VERSION,
+        "query": json_query::encode(query),
+        "results": seeds
+            .iter()
+            .map(|seed| json!({ "seed": seed.to_code() }))
+            .collect::<Vec<_>>(),
+    });
+    serde_json::to_string_pretty(&document).unwrap_or_default()
+}
+
+/// Decodes and validates a results document.
+///
+/// # Errors
+///
+/// Returns a human-readable message for files that are not Seed Seeker
+/// results documents, come from a newer format version, or contain an
+/// invalid query or seed code.
+pub fn decode(contents: &str) -> Result<ResultsFile, String> {
+    let document: Value = serde_json::from_str(contents)
+        .map_err(|error| format!("this is not a Seed Seeker results file: {error}"))?;
+    let document = document
+        .as_object()
+        .ok_or("this is not a Seed Seeker results file: expected a JSON object")?;
+    if document.get("format").and_then(Value::as_str) != Some(FILE_FORMAT) {
+        return Err(format!(
+            "this is not a Seed Seeker results file: missing \"format\": \"{FILE_FORMAT}\""
+        ));
+    }
+    let format_version = document
+        .get("format_version")
+        .and_then(Value::as_u64)
+        .ok_or("this results file is missing its \"format_version\" number")?;
+    if format_version == 0 || format_version > FORMAT_VERSION {
+        return Err(format!(
+            "this results file uses format version {format_version}, but this app understands \
+             up to version {FORMAT_VERSION}; update Seed Seeker to import it"
+        ));
+    }
+    let query_value = document
+        .get("query")
+        .filter(|value| value.is_object())
+        .ok_or("this results file is missing its \"query\" object")?;
+    let query = json_query::decode(&query_value.to_string())
+        .map_err(|error| format!("the query in this results file is not usable: {error}"))?;
+    let results = document
+        .get("results")
+        .and_then(Value::as_array)
+        .ok_or("this results file is missing its \"results\" list")?;
+    let seeds = results
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| decode_result_seed(index, entry))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(ResultsFile {
+        format_version,
+        app_version: field_string(document, "app_version"),
+        shpd_version: field_string(document, "shpd_version"),
+        query,
+        seeds,
+    })
+}
+
+fn decode_result_seed(index: usize, entry: &Value) -> Result<DungeonSeed, String> {
+    let code = entry
+        .get("seed")
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("result {}: missing \"seed\" code", index + 1))?;
+    DungeonSeed::from_code(code).map_err(|error| format!("result {}: {error}", index + 1))
+}
+
+fn field_string(document: &Map<String, Value>, key: &str) -> Option<String> {
+    document.get(key).and_then(Value::as_str).map(str::to_owned)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::catalog::{ItemId, ItemKind};
+    use crate::challenges::Challenges;
+    use crate::model::ItemSource;
+    use crate::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
+    use crate::seed::DungeonSeed;
+
+    use super::{FORMAT_VERSION, decode, encode};
+
+    fn sample_query() -> SearchQuery {
+        SearchQuery {
+            requirements: vec![
+                Requirement {
+                    kind: ItemKind::Ring,
+                    item: Some(ItemId::RingWealth),
+                    tier: TierRequirement::Any,
+                    upgrade: UpgradeRequirement::Exact(4),
+                    effect: None,
+                    require_uncursed: false,
+                    source: Some(ItemSource::ImpReward),
+                    identity_group: None,
+                    max_depth: None,
+                },
+                Requirement {
+                    kind: ItemKind::Wand,
+                    item: None,
+                    tier: TierRequirement::Any,
+                    upgrade: UpgradeRequirement::AtLeast(2),
+                    effect: None,
+                    require_uncursed: true,
+                    source: None,
+                    identity_group: Some(1),
+                    max_depth: Some(9),
+                },
+            ],
+            max_depth: 21,
+            challenges: Challenges::NO_HERBALISM | Challenges::DARKNESS,
+            require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
+            fast_mode: true,
+        }
+    }
+
+    fn seeds(codes: &[&str]) -> Vec<DungeonSeed> {
+        codes
+            .iter()
+            .map(|code| DungeonSeed::from_code(code).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn encode_then_decode_round_trips_query_seeds_and_versions() {
+        let query = sample_query();
+        let exported = seeds(&["AAA-AAA-AAB", "ZZZ-ZZZ-ZZZ", "SEE-DSE-EKR"]);
+        let contents = encode(&query, &exported, "0.6.1");
+        let decoded = decode(&contents).unwrap();
+        assert_eq!(decoded.format_version, FORMAT_VERSION);
+        assert_eq!(decoded.app_version.as_deref(), Some("0.6.1"));
+        assert_eq!(decoded.shpd_version.as_deref(), Some(crate::SHPD_VERSION));
+        assert_eq!(decoded.query, query);
+        assert_eq!(decoded.seeds, exported);
+    }
+
+    /// A version-1 document written by hand and frozen: files exported today
+    /// must always stay readable by future releases. Do not edit the fixture;
+    /// add new fixtures for new versions instead.
+    const VERSION_1_FIXTURE: &str = include_str!("../tests/fixtures/results-export-v1.json");
+
+    #[test]
+    fn version_one_fixture_always_decodes() {
+        let decoded = decode(VERSION_1_FIXTURE).unwrap();
+        assert_eq!(decoded.format_version, 1);
+        assert_eq!(decoded.app_version.as_deref(), Some("0.6.1"));
+        assert_eq!(decoded.shpd_version.as_deref(), Some("3.3.8"));
+        assert_eq!(decoded.query.max_depth, 12);
+        assert_eq!(decoded.query.challenges, Challenges::NO_HERBALISM);
+        assert!(decoded.query.require_blacksmith);
+        assert_eq!(decoded.query.requirements.len(), 2);
+        assert_eq!(
+            decoded.query.requirements[0].item,
+            Some(ItemId::RingTenacity)
+        );
+        assert_eq!(decoded.query.requirements[1].kind, ItemKind::Wand);
+        assert_eq!(decoded.seeds, seeds(&["AAA-AAA-BUH", "ABC-DEF-GHI"]));
+    }
+
+    #[test]
+    fn unknown_envelope_and_result_fields_are_ignored() {
+        let contents = r#"{
+            "format": "seed-seeker-results",
+            "format_version": 1,
+            "exported_at": "2031-01-01T00:00:00Z",
+            "future_minor_field": {"nested": true},
+            "query": {"requirements": [{"item": "sword"}]},
+            "results": [
+                {"seed": "AAA-AAA-AAB", "future_note": "still fine"}
+            ]
+        }"#;
+        let decoded = decode(contents).unwrap();
+        assert_eq!(decoded.seeds, seeds(&["AAA-AAA-AAB"]));
+        assert!(decoded.app_version.is_none());
+    }
+
+    #[test]
+    fn future_format_versions_fail_with_an_update_message() {
+        let contents = r#"{
+            "format": "seed-seeker-results",
+            "format_version": 2,
+            "query": {"requirements": [{"item": "sword"}]},
+            "results": []
+        }"#;
+        let error = decode(contents).unwrap_err();
+        assert!(error.contains("format version 2"), "{error}");
+        assert!(error.contains("update Seed Seeker"), "{error}");
+    }
+
+    #[test]
+    fn foreign_and_malformed_files_are_rejected_clearly() {
+        for contents in ["not json at all", "[]", "{}", r#"{"format":"other"}"#] {
+            let error = decode(contents).unwrap_err();
+            assert!(
+                error.contains("not a Seed Seeker results file"),
+                "{contents}: {error}"
+            );
+        }
+        let missing_version =
+            r#"{"format":"seed-seeker-results","query":{"requirements":[]},"results":[]}"#;
+        assert!(
+            decode(missing_version)
+                .unwrap_err()
+                .contains("format_version")
+        );
+    }
+
+    #[test]
+    fn unknown_query_content_fails_instead_of_changing_meaning() {
+        let unknown_item = r#"{
+            "format": "seed-seeker-results",
+            "format_version": 1,
+            "query": {"requirements": [{"item": "item_from_the_future"}]},
+            "results": []
+        }"#;
+        let error = decode(unknown_item).unwrap_err();
+        assert!(error.contains("query"), "{error}");
+        assert!(error.contains("item_from_the_future"), "{error}");
+
+        let unknown_field = r#"{
+            "format": "seed-seeker-results",
+            "format_version": 1,
+            "query": {"requirements": [{"item": "sword"}], "wished_luck": 7},
+            "results": []
+        }"#;
+        assert!(decode(unknown_field).is_err());
+    }
+
+    #[test]
+    fn invalid_seed_codes_name_the_offending_result() {
+        let contents = r#"{
+            "format": "seed-seeker-results",
+            "format_version": 1,
+            "query": {"requirements": [{"item": "sword"}]},
+            "results": [{"seed": "AAA-AAA-AAB"}, {"seed": "AAA-AAA-AA0"}]
+        }"#;
+        let error = decode(contents).unwrap_err();
+        assert!(error.starts_with("result 2:"), "{error}");
+    }
+}

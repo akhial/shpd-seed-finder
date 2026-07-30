@@ -8,6 +8,8 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Rect
 import androidx.activity.compose.PredictiveBackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Search
@@ -44,6 +46,7 @@ import dev.seedseeker.app.model.BuiltInPresets
 import dev.seedseeker.app.model.PresetQuery
 import dev.seedseeker.app.model.PresetStorage
 import dev.seedseeker.app.model.QueryPreset
+import dev.seedseeker.app.model.ResultsExport
 import dev.seedseeker.app.model.ScoutWorld
 import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.SearchState
@@ -131,6 +134,48 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
     var isScouting by remember { mutableStateOf(false) }
     var scoutError by remember { mutableStateOf<String?>(null) }
     var availableUpdate by remember { mutableStateOf<UpdateInfo?>(null) }
+    var pendingExport by remember { mutableStateOf<String?>(null) }
+    var transferError by remember { mutableStateOf<String?>(null) }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        val contents = pendingExport
+        pendingExport = null
+        if (uri != null && contents != null) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri, "wt")
+                    ?.use { it.write(contents.toByteArray()) }
+                    ?: error("Could not open the selected file.")
+            }.onFailure { failure ->
+                transferError = "Export failed: ${failure.message}"
+            }
+        }
+    }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching {
+            val text = context.contentResolver.openInputStream(uri)
+                ?.use { it.readBytes().decodeToString() }
+                ?: error("Could not read the selected file.")
+            val imported = ResultsExport.decode(text)
+            requirements = imported.query.requirements.map { it.copy(key = nextRequirementKey++) }
+            maximumDepth = imported.query.maximumDepth
+            requireBlacksmith = imported.query.requireBlacksmith
+            excludeBlacksmithRewards = imported.query.excludeBlacksmithRewards
+            fastMode = imported.query.fastMode
+            challenges = imported.query.challenges
+            preferences.edit().putInt(CHALLENGES_KEY, challenges).apply()
+            results = imported.seeds.distinct()
+                .map { SeedResult(it, imported.query.requirements.size) }
+            searchStatus = null
+            searchError = null
+        }.onFailure { failure ->
+            transferError = failure.message ?: "The results file could not be imported."
+        }
+    }
 
     LaunchedEffect(Unit) {
         val now = System.currentTimeMillis()
@@ -354,6 +399,29 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                         scope.launch(Dispatchers.Default) { session.cancel() }
                     }
                 },
+                onExportResults = {
+                    val query = PresetQuery(
+                        requirements = requirements,
+                        maximumDepth = maximumDepth,
+                        requireBlacksmith = requireBlacksmith,
+                        excludeBlacksmithRewards = excludeBlacksmithRewards,
+                        fastMode = fastMode,
+                        challenges = challenges,
+                    )
+                    runCatching {
+                        ResultsExport.encode(query, results.map { it.seed }, BuildConfig.VERSION_NAME)
+                    }.onSuccess { contents ->
+                        pendingExport = contents
+                        exportLauncher.launch(ResultsExport.SUGGESTED_FILE_NAME)
+                    }.onFailure { failure ->
+                        transferError = "Export failed: ${failure.message}"
+                    }
+                },
+                onImportResults = {
+                    importLauncher.launch(
+                        arrayOf("application/json", "text/plain", "application/octet-stream"),
+                    )
+                },
                 onScoutSeed = ::scoutSeed,
                 bottomBar = navBar,
             )
@@ -450,6 +518,17 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                         }
                     }
                     showRequirementSheet = false
+                },
+            )
+        }
+
+        transferError?.let { message ->
+            AlertDialog(
+                onDismissRequest = { transferError = null },
+                title = { Text("Results file") },
+                text = { Text(message) },
+                confirmButton = {
+                    TextButton(onClick = { transferError = null }) { Text("OK") }
                 },
             )
         }

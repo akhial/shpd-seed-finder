@@ -10,8 +10,11 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::gio;
 
+use shpd_seedfinder_core::results_export;
+use shpd_seedfinder_core::seed::DungeonSeed;
+
 use crate::config::APP_NAME;
-use crate::state::UiRequirement;
+use crate::state::{AppState, UiRequirement};
 use crate::{
     challenges_dialog, detail_pane, persist, presets_dialog, query_pane, requirement_editor,
     results_pane, update,
@@ -250,6 +253,103 @@ pub fn present(app: &adw::Application) {
     });
     window.add_action(&presets_action);
 
+    let export_action = gio::SimpleAction::new("export-results", None);
+    export_action.connect_activate({
+        let state = Rc::clone(&state);
+        let results = Rc::clone(&results);
+        let toasts = toasts.clone();
+        let window = window.clone();
+        move |_, _| {
+            let codes = results.seed_codes();
+            if codes.is_empty() {
+                toasts.add_toast(adw::Toast::new("No results to export yet"));
+                return;
+            }
+            let query = match state.borrow().to_query() {
+                Ok(query) => query,
+                Err(message) => {
+                    toasts.add_toast(adw::Toast::new(&format!("Cannot export: {message}")));
+                    return;
+                }
+            };
+            let seeds: Vec<DungeonSeed> = codes
+                .iter()
+                .filter_map(|code| DungeonSeed::from_code(code).ok())
+                .collect();
+            let contents = results_export::encode(&query, &seeds, env!("CARGO_PKG_VERSION"));
+            let dialog = gtk::FileDialog::builder()
+                .title("Export Results")
+                .initial_name("seed-seeker-results.json")
+                .build();
+            let toasts = toasts.clone();
+            dialog.save(Some(&window), gio::Cancellable::NONE, move |chosen| {
+                // Cancelling the dialog is not an error worth reporting.
+                let Ok(file) = chosen else { return };
+                match file.replace_contents(
+                    contents.as_bytes(),
+                    None,
+                    false,
+                    gio::FileCreateFlags::REPLACE_DESTINATION,
+                    gio::Cancellable::NONE,
+                ) {
+                    Ok(_) => toasts.add_toast(adw::Toast::new("Results exported")),
+                    Err(error) => {
+                        toasts.add_toast(adw::Toast::new(&format!("Export failed: {error}")));
+                    }
+                }
+            });
+        }
+    });
+    window.add_action(&export_action);
+
+    let import_action = gio::SimpleAction::new("import-results", None);
+    import_action.connect_activate({
+        let state = Rc::clone(&state);
+        let results = Rc::clone(&results);
+        let refresh_all = Rc::clone(&refresh_all);
+        let toasts = toasts.clone();
+        let window = window.clone();
+        move |_, _| {
+            if results.is_running() {
+                toasts.add_toast(adw::Toast::new("Stop the search before importing results"));
+                return;
+            }
+            let dialog = gtk::FileDialog::builder().title("Import Results").build();
+            let state = Rc::clone(&state);
+            let results = Rc::clone(&results);
+            let refresh_all = Rc::clone(&refresh_all);
+            let toasts = toasts.clone();
+            dialog.open(Some(&window), gio::Cancellable::NONE, move |chosen| {
+                let Ok(file) = chosen else { return };
+                let contents = match file.load_contents(gio::Cancellable::NONE) {
+                    Ok((bytes, _)) => bytes,
+                    Err(error) => {
+                        toasts.add_toast(adw::Toast::new(&format!("Import failed: {error}")));
+                        return;
+                    }
+                };
+                match results_export::decode(&String::from_utf8_lossy(&contents)) {
+                    Ok(imported) => {
+                        *state.borrow_mut() = AppState::from_query(&imported.query);
+                        let codes: Vec<String> =
+                            imported.seeds.iter().map(|seed| seed.to_code()).collect();
+                        results.load_imported(&codes);
+                        refresh_all();
+                        toasts.add_toast(adw::Toast::new(&format!(
+                            "Imported {} seed{}",
+                            codes.len(),
+                            if codes.len() == 1 { "" } else { "s" },
+                        )));
+                    }
+                    Err(message) => {
+                        toasts.add_toast(adw::Toast::new(&format!("Import failed: {message}")));
+                    }
+                }
+            });
+        }
+    });
+    window.add_action(&import_action);
+
     let focus_seed_action = gio::SimpleAction::new("focus-seed", None);
     focus_seed_action.connect_activate({
         let detail = Rc::clone(&detail);
@@ -281,6 +381,10 @@ fn build_menu() -> gio::Menu {
     query_section.append(Some("_Presets…"), Some("win.presets"));
     query_section.append(Some("_Challenges…"), Some("win.challenges"));
     menu.append_section(None, &query_section);
+    let results_section = gio::Menu::new();
+    results_section.append(Some("_Import Results…"), Some("win.import-results"));
+    results_section.append(Some("_Export Results…"), Some("win.export-results"));
+    menu.append_section(None, &results_section);
     let app_section = gio::Menu::new();
     app_section.append(Some("_Keyboard Shortcuts"), Some("win.shortcuts"));
     app_section.append(Some("_About Seed Seeker"), Some("app.about"));

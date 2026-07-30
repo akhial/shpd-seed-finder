@@ -211,6 +211,7 @@ export default function App() {
             hasRequirements={hasRequirements}
             onScout={runScout}
             activeSeed={scout.result?.seed.code}
+            shpdVersion={engine?.shpdVersion}
           />
         </section>
         <section className={paneClass('scout')} aria-label="Seed scout">

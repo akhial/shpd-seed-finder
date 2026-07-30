@@ -1,10 +1,20 @@
 import { Store } from '@tanstack/store'
 import type { QueryDocument, ScoutRequest, ScoutResult } from '../wasm/types'
-import { applyProgress, initialCoordinatorState, markWorkerDone, type CoordinatorState } from './coordinator-state'
+import { applyProgress, importedResultsState, initialCoordinatorState, markWorkerDone, type CoordinatorState } from './coordinator-state'
+import type { ParsedSeed } from '../wasm/types'
 import type { SearchWorkerRequest, SearchWorkerResponse } from './protocol'
 import { advanceTraversalStart, partitionRotated, randomTraversalStart } from './traversal'
 
 export const searchStore = new Store<CoordinatorState>(initialCoordinatorState())
+
+/**
+ * Replaces the results list with seeds restored from an imported results
+ * file. Callers must ensure no search is running; stale worker messages are
+ * ignored because progress only applies to a running session.
+ */
+export function loadImportedResults(matches: ParsedSeed[]): void {
+  searchStore.setState((state) => importedResultsState(state, matches))
+}
 
 export class SearchCoordinator {
   private workers: Worker[] = []

@@ -167,6 +167,37 @@ impl AppState {
         key
     }
 
+    /// Rebuilds editor state from a decoded engine query, assigning fresh
+    /// session row keys.
+    #[must_use]
+    pub fn from_query(query: &SearchQuery) -> Self {
+        let mut state = Self {
+            requirements: Vec::with_capacity(query.requirements.len()),
+            max_depth: query.max_depth,
+            require_blacksmith: query.require_blacksmith,
+            exclude_blacksmith_rewards: query.exclude_blacksmith_rewards,
+            fast_mode: query.fast_mode,
+            challenges: query.challenges,
+            next_key: 1,
+        };
+        for requirement in &query.requirements {
+            let key = state.claim_key();
+            state.requirements.push(UiRequirement {
+                key,
+                kind: requirement.kind,
+                item: requirement.item,
+                tier: requirement.tier,
+                upgrade: requirement.upgrade,
+                effect: requirement.effect,
+                require_uncursed: requirement.require_uncursed,
+                source: requirement.source,
+                identity_group: requirement.identity_group,
+                max_depth: requirement.max_depth,
+            });
+        }
+        state
+    }
+
     /// Builds the validated engine query for the current state.
     ///
     /// # Errors

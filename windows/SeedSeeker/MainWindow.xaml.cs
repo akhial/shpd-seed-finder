@@ -476,7 +476,76 @@ public sealed partial class MainWindow : Window
         SavePresetButton.IsEnabled = !running;
         DeletePresetButton.IsEnabled = !running
             && PresetPicker.SelectedItem is QueryPreset { IsBuiltIn: false };
+        ImportResultsButton.IsEnabled = !running;
+        ExportResultsButton.IsEnabled = !running;
     }
+
+    private async void ExportResults_Click(object sender, RoutedEventArgs e)
+    {
+        if (search is not null) return;
+        if (results.Count == 0 || query.Requirements.Count == 0)
+        {
+            await ShowTransferMessage("Run a search first — there are no results to export yet.");
+            return;
+        }
+        var picker = new Windows.Storage.Pickers.FileSavePicker
+        {
+            SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary,
+            SuggestedFileName = ResultsExport.SuggestedFileName,
+        };
+        picker.FileTypeChoices.Add("Seed Seeker results", [".json"]);
+        // Unpackaged apps must bind pickers to the window handle before use.
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+        var file = await picker.PickSaveFileAsync();
+        if (file is null) return;
+        try
+        {
+            var version = typeof(MainWindow).Assembly.GetName().Version;
+            var appVersion = version is null ? "dev" : $"{version.Major}.{version.Minor}.{version.Build}";
+            await FileIO.WriteTextAsync(file, ResultsExport.Encode(query, results.Select(x => x.Seed), appVersion));
+        }
+        catch (Exception ex)
+        {
+            await ShowTransferMessage($"Export failed: {ex.Message}");
+        }
+    }
+
+    private async void ImportResults_Click(object sender, RoutedEventArgs e)
+    {
+        if (search is not null) return;
+        var picker = new Windows.Storage.Pickers.FileOpenPicker
+        {
+            SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary,
+        };
+        picker.FileTypeFilter.Add(".json");
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+        var file = await picker.PickSingleFileAsync();
+        if (file is null) return;
+        try
+        {
+            var imported = ResultsExport.Decode(await FileIO.ReadTextAsync(file));
+            ApplyQuery(imported.Query);
+            results.Clear();
+            foreach (var seed in imported.Seeds.Distinct())
+                if (results.Count < ResultCap) results.Add(new(seed, results.Count + 1));
+            SearchStatus.Text = $"Imported {results.Count} seed{(results.Count == 1 ? "" : "s")} from file.";
+        }
+        catch (ResultsExportException ex)
+        {
+            await ShowTransferMessage(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            await ShowTransferMessage($"Import failed: {ex.Message}");
+        }
+    }
+
+    private async Task ShowTransferMessage(string message)
+    {
+        var dialog = new ContentDialog { XamlRoot = Content.XamlRoot, Title = "Results file", Content = message, CloseButtonText = "OK" };
+        await dialog.ShowAsync();
+    }
+
     private async Task RunSearch(NativeSearch active)
     {
         var timer = Stopwatch.StartNew(); long lastScanned = 0; var lastTime = 0d;
