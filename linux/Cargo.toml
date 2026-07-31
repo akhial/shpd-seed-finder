@@ -18,7 +18,7 @@ gtk = { package = "gtk4", version = "0.11.4", features = ["v4_22"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ureq = "2.12"
-shpd-seedfinder-core = { path = "../crates/seedfinder-core" }
+shpd-seedfinder-core = { path = "../crates/seedfinder-core", features = ["json-query"] }
 shpd-seedfinder-session = { path = "../crates/seedfinder-session" }
 
 [build-dependencies]

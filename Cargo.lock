@@ -987,6 +987,7 @@ version = "0.6.1"
 dependencies = [
  "serde",
  "serde_json",
+ "shpd-seedfinder-core",
 ]
 
 [[package]]

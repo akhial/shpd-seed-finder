@@ -13,7 +13,19 @@ public final class SearchController {
     public private(set) var errorCode: Int64 = 0
     public private(set) var message: String?
     public private(set) var isRunning = false
+    /// Whether the current results were restored from an imported file
+    /// rather than produced by a search.
+    public private(set) var isImported = false
+    /// Imported entries dropped as duplicates or beyond the result cap.
+    public private(set) var importedDropped = 0
+    /// The query that produced the current results, snapshotted at search
+    /// start (or import) so an export never reflects later editor changes.
+    public private(set) var exportQuery: SavedQuery?
     public var selectedSeed: String?
+
+    /// Shared import rule on every platform: results are deduplicated
+    /// (keeping first occurrences) and capped at the result limit.
+    public static let importCap = 1_024
 
     private let engine: any SeedFinderEngine
     private var session: (any SeedFinderSearchSession)?
@@ -31,13 +43,35 @@ public final class SearchController {
         state == .completed && scannedSeeds == 0 && results.isEmpty
     }
 
+    /// Replaces the results with seeds restored from an imported results
+    /// file, deduplicating and capping per the shared import rule and
+    /// remembering the query that produced them for later export. Callers
+    /// must ensure no search is running.
+    public func loadImported(seeds: [String], query: SavedQuery) {
+        var unique: [String] = []
+        var seen = Set<String>()
+        for seed in seeds where unique.count < Self.importCap && seen.insert(seed).inserted {
+            unique.append(seed)
+        }
+        results = unique.map { SeedResult(seed: $0, matchedRequirements: query.requirements.count) }
+        importedDropped = seeds.count - unique.count
+        exportQuery = query
+        scannedSeeds = 0; totalSeeds = 0; matchProbability = nil; seedsPerSecond = 0; elapsed = 0
+        errorCode = 0; message = nil; state = nil; isImported = true; selectedSeed = nil
+    }
+
     public func start(_ request: SearchRequest) {
         task?.cancel(); results = []; scannedSeeds = 0; totalSeeds = 0; matchProbability = nil; seedsPerSecond = 0; elapsed = 0
         if let problem = request.unattainableUpgradeSumMessage {
             errorCode = 0; state = .failed; message = problem; isRunning = false
             return
         }
-        errorCode = 0; message = nil; state = .running; isRunning = true
+        errorCode = 0; message = nil; state = .running; isRunning = true; isImported = false; importedDropped = 0
+        exportQuery = SavedQuery(
+            requirements: request.requirements, maximumDepth: request.maximumDepth,
+            requireBlacksmith: request.requireBlacksmith,
+            excludeBlacksmithRewards: request.excludeBlacksmithRewards,
+            fastMode: request.fastMode, challenges: request.challenges)
         task = Task { [weak self] in
             guard let self else { return }
             let searchStart = ContinuousClock.now

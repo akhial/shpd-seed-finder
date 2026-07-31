@@ -15,6 +15,7 @@ import dev.seedseeker.app.model.ScoutItemSource
 import dev.seedseeker.app.model.ScoutWorld
 import dev.seedseeker.app.model.SeedResult
 import dev.seedseeker.app.model.TierMatch
+import dev.seedseeker.app.model.slotCount
 import dev.seedseeker.app.catalog.ItemCatalog
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -120,7 +121,7 @@ class DemoNativeSeedFinder : NativeSeedFinder {
             val available = min(SAMPLE_SEEDS.size, (elapsedMillis() / 620L).toInt())
             val end = min(available, emitted + maxResults)
             val newResults = SAMPLE_SEEDS.subList(emitted, end).map { seed ->
-                SeedResult(seed, request.requirements.size)
+                SeedResult(seed, request.requirements.slotCount)
             }
             emitted = end
             SearchBatch(newResults)
@@ -215,7 +216,7 @@ class JniNativeSeedFinder(
     override fun startSearch(request: SearchRequest): NativeSearchSession {
         val handle = bindings.startSearch(QueryCodec.encode(request))
         check(handle != 0L) { "Native seed finder returned an invalid handle" }
-        return JniSession(handle, request.requirements.size, bindings)
+        return JniSession(handle, request.requirements.slotCount, bindings)
     }
 
     private class JniSession(

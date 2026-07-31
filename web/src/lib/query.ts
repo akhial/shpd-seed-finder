@@ -90,19 +90,46 @@ function effectFromDocument(value: string | string[]): EffectFilter {
   return { mode: 'one_of', names: [value] }
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+/** Decodes the wire tier forms: absent, "any", or a single-key filter object. */
+function tierFromDocument(value: unknown): TierFilter {
+  if (value === undefined) return defaultTier()
+  if (typeof value === 'string') {
+    if (value.toLowerCase() === 'any') return defaultTier()
+    throw new Error(`unknown tier mode "${value}"`)
+  }
+  if (isRecord(value) && Object.keys(value).length === 1) {
+    if (typeof value.exact === 'number') return { mode: 'exact', value: value.exact }
+    if (typeof value.at_least === 'number') return { mode: 'at_least', value: value.at_least }
+    if (typeof value.at_most === 'number') return { mode: 'at_most', value: value.at_most }
+  }
+  throw new Error('unrecognized tier filter')
+}
+
+/** Decodes the wire upgrade forms: absent, "any", a number, or a single-key filter object. */
+function upgradeFromDocument(value: unknown): UpgradeFilter {
+  if (value === undefined) return defaultUpgrade()
+  if (typeof value === 'number') return { mode: 'exact', value }
+  if (typeof value === 'string') {
+    if (value.toLowerCase() === 'any') return defaultUpgrade()
+    throw new Error(`unknown upgrade mode "${value}"`)
+  }
+  if (isRecord(value) && Object.keys(value).length === 1) {
+    if (typeof value.exact === 'number') return { mode: 'exact', value: value.exact }
+    if (typeof value.at_least === 'number') return { mode: 'at_least', value: value.at_least }
+  }
+  throw new Error('unrecognized upgrade filter')
+}
+
 function requirementFromDocument(value: RequirementDocument): RequirementState {
-  let tier = defaultTier()
-  if (value.tier && 'exact' in value.tier) tier = { mode: 'exact', value: value.tier.exact }
-  if (value.tier && 'at_least' in value.tier) tier = { mode: 'at_least', value: value.tier.at_least }
-  if (value.tier && 'at_most' in value.tier) tier = { mode: 'at_most', value: value.tier.at_most }
-  let upgrade = defaultUpgrade()
-  if (typeof value.upgrade === 'number') upgrade = { mode: 'exact', value: value.upgrade }
-  if (value.upgrade && typeof value.upgrade === 'object') upgrade = { mode: 'at_least', value: value.upgrade.at_least }
+  const raw = value as Record<string, unknown>
   return {
     kind: value.kind,
     item: value.item,
-    tier,
-    upgrade,
+    tier: tierFromDocument(raw.tier),
+    upgrade: upgradeFromDocument(raw.upgrade),
     effect: value.effect === undefined ? undefined : effectFromDocument(value.effect),
     uncursed: value.uncursed ?? false,
     source: value.source,
@@ -116,6 +143,8 @@ function requirementFromDocument(value: RequirementDocument): RequirementState {
 
 export function fromQueryJson(json: string): QueryState {
   const document = JSON.parse(json) as QueryDocument
+  if (!isRecord(document) || !Array.isArray(document.requirements)) throw new Error('a query needs a requirements list')
+  if (document.challenges !== undefined && !Array.isArray(document.challenges)) throw new Error('challenges must be a list of challenge names')
   const requirements: RequirementState[] = []
   let nextGroup = 0
   for (const entry of document.requirements) {

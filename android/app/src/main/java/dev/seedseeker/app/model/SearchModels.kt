@@ -291,6 +291,14 @@ enum class Challenge(
     }
 }
 
+/**
+ * Number of query slots: an alternative ("any of") group counts once, since
+ * any single member satisfies it, and every plain requirement counts once.
+ */
+val List<ItemRequirement>.slotCount: Int
+    get() = count { it.alternativeGroup == null } +
+        mapNotNull { it.alternativeGroup }.toSet().size
+
 data class SeedResult(
     val seed: String,
     val matchedRequirements: Int,

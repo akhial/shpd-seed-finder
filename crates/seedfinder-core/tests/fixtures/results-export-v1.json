@@ -1,0 +1,30 @@
+{
+  "format": "seed-seeker-results",
+  "format_version": 1,
+  "app_version": "0.6.1",
+  "shpd_version": "3.3.8",
+  "query": {
+    "requirements": [
+      {
+        "kind": "ring",
+        "item": "ring_tenacity",
+        "upgrade": 4,
+        "source": "imp_reward"
+      },
+      {
+        "kind": "wand",
+        "upgrade": { "at_least": 2 },
+        "uncursed": true,
+        "identity_group": 1,
+        "max_depth": 9
+      }
+    ],
+    "max_depth": 12,
+    "require_blacksmith": true,
+    "challenges": ["barren_land"]
+  },
+  "results": [
+    { "seed": "AAA-AAA-BUH" },
+    { "seed": "ABC-DEF-GHI" }
+  ]
+}

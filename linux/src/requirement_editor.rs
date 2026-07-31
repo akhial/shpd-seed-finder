@@ -337,9 +337,12 @@ fn restore(editor: &Rc<Editor>, requirement: &UiRequirement) {
     editor
         .source_row
         .set_selected(u32::try_from(source_index).unwrap_or(0));
+    // The combo offers None plus groups A..D; clamp instead of passing an
+    // out-of-range position, which GTK would treat as "no selection" and the
+    // next collect() would then silently drop the group constraint.
     editor
         .group_row
-        .set_selected(u32::from(requirement.identity_group.unwrap_or(0)));
+        .set_selected(u32::from(requirement.identity_group.unwrap_or(0).min(4)));
     if let Some(sum) = requirement.upgrade_sum {
         editor
             .sum_group_row
