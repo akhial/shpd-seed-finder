@@ -118,6 +118,9 @@ export default function App() {
   const renderedSeed = useRef<string | undefined>(undefined)
   const [scout, setScout] = useState<{ loading: boolean; error?: string; result?: ScoutResult }>({ loading: false })
   const scoutRequest = useRef(0)
+  // True while the newest scout request is still in flight. A held J/K uses
+  // this to pace itself to the scout worker instead of queueing on it.
+  const scoutBusy = useRef(false)
   const runScout = useCallback((seed: string) => {
     const input = formatSeedInput(seed)
     setScoutInput(input)
@@ -129,6 +132,7 @@ export default function App() {
     }
     setScoutedSeed(input)
     const requestId = ++scoutRequest.current
+    scoutBusy.current = true
     setScout((current) => ({ loading: true, result: current.result }))
     void (async () => {
       try {
@@ -154,6 +158,8 @@ export default function App() {
           }))
           setScoutedSeed(renderedSeed.current)
         }
+      } finally {
+        if (requestId === scoutRequest.current) scoutBusy.current = false
       }
     })()
   }, [])
@@ -174,28 +180,88 @@ export default function App() {
     [resultSeeds, scoutedSeed, runScout],
   )
 
-  // J (next) / K (previous) walk the search results while scouting. Inert
-  // while typing in a field, while a modal is open, when the tabbed layout is
-  // showing another pane (navigating would teleport the user to Scout), and
-  // on key repeat (each step scouts a seed; repeats would queue unbounded
-  // requests on the single scout worker).
+  // The key handler is installed once and reads the latest navigation state
+  // through refs: it owns hold timers that a re-subscribe would cancel, and
+  // every step changes `navigateResults`.
+  const navigateRef = useRef(navigateResults)
+  const activeTabRef = useRef(activeTab)
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return
-      // Match the letter (mnemonic) or the physical key, so the shortcut
-      // works on layouts without Latin letters.
+    navigateRef.current = navigateResults
+    activeTabRef.current = activeTab
+  }, [navigateResults, activeTab])
+
+  // J (next) / K (previous) walk the search results while scouting, and
+  // holding either key keeps walking. Inert while typing in a field, while a
+  // modal is open, and when the tabbed layout is showing another pane
+  // (navigating would teleport the user to Scout).
+  useEffect(() => {
+    // The OS repeat rate would queue scouts faster than the single scout
+    // worker drains them, so the hold runs on its own clock: a frame loop,
+    // which paces steps to what the pane can actually paint and stops on its
+    // own while the tab is hidden.
+    const HOLD_DELAY_MS = 300
+    const HOLD_INTERVAL_MS = 70
+    let holdDelta = 0
+    let frame: number | undefined
+    let dueAt = 0
+
+    const stopHold = () => {
+      if (frame !== undefined) cancelAnimationFrame(frame)
+      frame = undefined
+      holdDelta = 0
+    }
+
+    const step = (now: number) => {
+      frame = requestAnimationFrame(step)
+      if (now < dueAt) return
+      // Skip the frame rather than pile on: a slow scout simply slows the
+      // hold down instead of running the list away from the manifest.
+      if (scoutBusy.current) return
+      if (!navigateRef.current(holdDelta)) {
+        stopHold()
+        return
+      }
+      dueAt = now + HOLD_INTERVAL_MS
+    }
+
+    // Match the letter (mnemonic) or the physical key, so the shortcut works
+    // on layouts without Latin letters.
+    const deltaFor = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase()
-      const delta = key === 'j' || event.code === 'KeyJ' ? 1 : key === 'k' || event.code === 'KeyK' ? -1 : 0
+      return key === 'j' || event.code === 'KeyJ' ? 1 : key === 'k' || event.code === 'KeyK' ? -1 : 0
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return
+      const delta = deltaFor(event)
       if (delta === 0) return
       const target = event.target as HTMLElement | null
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return
       if (document.querySelector('.d1-modal, dialog[open], [role="dialog"]')) return
-      if (window.matchMedia('(max-width: 999px)').matches && activeTab !== 'scout') return
-      if (navigateResults(delta)) event.preventDefault()
+      if (window.matchMedia('(max-width: 999px)').matches && activeTabRef.current !== 'scout') return
+      if (!navigateRef.current(delta)) return
+      event.preventDefault()
+      stopHold()
+      holdDelta = delta
+      dueAt = performance.now() + HOLD_DELAY_MS
+      frame = requestAnimationFrame(step)
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [navigateResults, activeTab])
+
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (deltaFor(event) !== 0) stopHold()
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    // A key released while the page is unfocused never reports a keyup.
+    window.addEventListener('blur', stopHold)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', stopHold)
+      stopHold()
+    }
+  }, [])
 
   // Horizontal swipes over the scout pane step through the results on touch
   // devices; mostly-vertical gestures stay scrolls.

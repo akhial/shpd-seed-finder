@@ -473,6 +473,25 @@ body {
 
 .d1-btn-danger.d1-btn-big kbd { background: rgba(255, 255, 255, 0.14); border-color: rgba(255, 255, 255, 0.2); }
 
+/* Keycap for inline shortcut hints: a rounded rectangle whose doubled bottom
+   edge — an inset line plus a shadow under it — reads as slightly raised. */
+.d1-keycap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 19px;
+  padding: 1px 5px 2px;
+  font-family: var(--d1-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--d1-text-2);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--d1-border-strong);
+  border-radius: 5px;
+  box-shadow: inset 0 -1px 0 var(--d1-border-strong), 0 1px 0 rgba(0, 0, 0, 0.35);
+}
+
 .d1-select,
 .d1-input {
   font: inherit;
@@ -1251,6 +1270,15 @@ input[type='range']::-moz-range-thumb {
   font-size: 11.5px;
   letter-spacing: 0.03em;
 }
+
+.d1-scout-nav-hint-keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Breathing room between the two key/label pairs. */
+.d1-scout-nav-hint-keys span + .d1-keycap { margin-left: 5px; }
 
 /* Keyboard hint on pointer layouts, swipe hint on the tabbed touch layout. */
 .d1-scout-nav-hint-swipe { display: none; }

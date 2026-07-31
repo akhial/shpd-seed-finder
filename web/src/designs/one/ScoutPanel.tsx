@@ -129,7 +129,12 @@ export function ScoutPanel({
           >
             ›
           </button>
-          <span className="d1-scout-nav-hint d1-scout-nav-hint-keys" aria-hidden="true">J next · K prev</span>
+          <span className="d1-scout-nav-hint d1-scout-nav-hint-keys" aria-hidden="true">
+            <kbd className="d1-keycap">J</kbd>
+            <span>next</span>
+            <kbd className="d1-keycap">K</kbd>
+            <span>prev</span>
+          </span>
           <span className="d1-scout-nav-hint d1-scout-nav-hint-swipe" aria-hidden="true">swipe to browse</span>
         </div>
       )}
