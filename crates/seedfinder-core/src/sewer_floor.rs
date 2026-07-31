@@ -1379,6 +1379,7 @@ mod tests {
         let query = SearchQuery {
             requirements: vec![Requirement {
                 kind: crate::catalog::ItemKind::Armor,
+                weapon_category: None,
                 item: Some(ItemId::MailArmor),
                 tier: TierRequirement::Any,
                 upgrade: crate::query::UpgradeRequirement::Exact(2),

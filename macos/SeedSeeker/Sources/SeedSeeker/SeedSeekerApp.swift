@@ -3,6 +3,7 @@ import Combine
 import SeedSeekerKit
 import Sparkle
 import SwiftUI
+import UniformTypeIdentifiers
 
 @main
 struct SeedSeekerApp: App {
@@ -69,6 +70,9 @@ private struct ContentView: View {
     @State private var showingAbout = false
     @State private var resultKeyMonitor: Any?
     @State private var hostWindow: NSWindow?
+    @State private var exportDocument: ResultsFileDocument?
+    @State private var showingImporter = false
+    @State private var transferError: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -86,6 +90,29 @@ private struct ContentView: View {
             } content: {
                 ResultsView(controller: controller) { seed in scout.scout(seed, challenges: challenges) }
                     .navigationSplitViewColumnWidth(min: 340, ideal: 420)
+                    .toolbar {
+                        ToolbarItemGroup {
+                            Button {
+                                showingImporter = true
+                            } label: {
+                                Label("Import…", systemImage: "square.and.arrow.down")
+                            }
+                            // Toolbar labels default to icon-only, which left the
+                            // glyphs looking uncentred inside their glass capsules.
+                            .labelStyle(ToolbarActionLabelStyle())
+                            .help("Import results and their query from a file")
+                            .disabled(controller.isRunning)
+                            Button {
+                                beginExport()
+                            } label: {
+                                Label("Export…", systemImage: "square.and.arrow.up")
+                            }
+                            .labelStyle(ToolbarActionLabelStyle())
+                            .help("Export the results and the query that produced them to a file")
+                            .disabled(controller.isRunning || controller.results.isEmpty
+                                || controller.exportQuery == nil)
+                        }
+                    }
             } detail: {
                 SeedDetailView(model: scout, requirements: requirements, maximumDepth: maximumDepth,
                                excludeBlacksmithRewards: excludeBlacksmithRewards, challenges: challenges,
@@ -105,6 +132,29 @@ private struct ContentView: View {
             .help("Item artwork attribution and license")
         }
         .sheet(isPresented: $showingAbout) { AboutView() }
+        .fileExporter(
+            isPresented: Binding(
+                get: { exportDocument != nil },
+                set: { if !$0 { exportDocument = nil } }),
+            document: exportDocument,
+            contentType: .json,
+            defaultFilename: ResultsExport.suggestedFileName
+        ) { result in
+            if case .failure(let error) = result {
+                transferError = "Export failed: \(error.localizedDescription)"
+            }
+        }
+        .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.json]) { result in
+            if case .success(let url) = result { importResults(from: url) }
+        }
+        .alert("Results file", isPresented: Binding(
+            get: { transferError != nil },
+            set: { if !$0 { transferError = nil } })
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(transferError ?? "")
+        }
         .frame(minWidth: 1_020, minHeight: 640)
         .background(WindowAccessor(window: $hostWindow))
         .onAppear {
@@ -191,8 +241,9 @@ private struct ContentView: View {
             challenges: challenges)) ?? ""
     }
 
-    private func apply(_ preset: QueryPreset) {
-        let saved = preset.query
+    private func apply(_ preset: QueryPreset) { apply(preset.query) }
+
+    private func apply(_ saved: SavedQuery) {
         requirements = saved.requirements.map { requirement in
             var copy = requirement
             copy.key = Int64.random(in: 1...Int64.max)
@@ -203,6 +254,63 @@ private struct ContentView: View {
         excludeBlacksmithRewards = saved.excludeBlacksmithRewards
         fastMode = saved.fastMode
         challenges = saved.challenges
+    }
+
+    private func beginExport() {
+        // Export the query snapshot captured when the results were produced
+        // (at search start or import), never the live editor state.
+        guard !controller.isRunning, let query = controller.exportQuery,
+              !controller.results.isEmpty else { return }
+        let appVersion = Bundle.main
+            .object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+        exportDocument = ResultsFileDocument(
+            text: ResultsExport.encode(query, seeds: controller.results.map(\.seed),
+                                       appVersion: appVersion))
+    }
+
+    private func importResults(from url: URL) {
+        guard !controller.isRunning else {
+            transferError = "Stop the search before importing results."
+            return
+        }
+        Task {
+            // Read and parse the untrusted file off the main actor.
+            let outcome: Result<ResultsExport.Imported, any Error> = await Task.detached {
+                do {
+                    let accessing = url.startAccessingSecurityScopedResource()
+                    defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+                    let data = try Data(contentsOf: url)
+                    guard data.count <= ResultsExport.maxFileBytes else {
+                        throw ResultsExportError(
+                            "This file is too large to be a Seed Seeker results file (2 MiB limit).")
+                    }
+                    guard let text = String(data: data, encoding: .utf8) else {
+                        throw ResultsExportError("This is not a Seed Seeker results file (not UTF-8 text).")
+                    }
+                    return .success(try ResultsExport.decode(text))
+                } catch {
+                    return .failure(error)
+                }
+            }.value
+            switch outcome {
+            case .success(let imported):
+                // A search may have started while the file was being read.
+                guard !controller.isRunning else {
+                    transferError = "Stop the search before importing results."
+                    return
+                }
+                apply(imported.query)
+                controller.loadImported(seeds: imported.seeds, query: imported.query)
+                if let fileVersion = imported.shpdVersion, fileVersion != ResultsExport.shpdVersion {
+                    transferError = "Imported \(controller.results.count) seeds. Note: this file was " +
+                        "made for Shattered Pixel Dungeon v\(fileVersion); this app targets " +
+                        "v\(ResultsExport.shpdVersion), so the seeds may generate differently."
+                }
+            case .failure(let error):
+                transferError = (error as? LocalizedError)?.errorDescription
+                    ?? "The results file could not be imported."
+            }
+        }
     }
 
     private func savePreset(name: String) {
@@ -265,7 +373,8 @@ private struct ChallengesSettingsView: View {
 extension ItemKind {
     var icon: String {
         switch self {
-        case .weapon: "hammer.fill"
+        case .weapon, .meleeWeapon: "hammer.fill"
+        case .thrownWeapon: "scope"
         case .armor: "shield.fill"
         case .wand: "wand.and.stars"
         case .ring: "circle.circle.fill"
@@ -273,7 +382,7 @@ extension ItemKind {
     }
     var tint: Color {
         switch self {
-        case .weapon: .orange
+        case .weapon, .meleeWeapon, .thrownWeapon: .orange
         case .armor: .blue
         case .wand: .purple
         case .ring: .yellow
@@ -429,8 +538,10 @@ private struct QueryView: View {
                     .font(.callout).foregroundStyle(.secondary)
             }
         } else {
-            ForEach(ItemKind.allCases, id: \.self) { kind in
-                let group = requirements.filter { $0.kind == kind }
+            // Group by the broad family so a narrowed "Any thrown weapon"
+            // requirement sits with the other weapons.
+            ForEach([ItemKind.weapon, .armor, .wand, .ring], id: \.self) { kind in
+                let group = requirements.filter { $0.kind.family == kind }
                 if !group.isEmpty {
                     Section {
                         ForEach(group) { requirement in
@@ -534,20 +645,32 @@ private struct RequirementEditor: View {
                 .font(.headline).padding(.top, 14).padding(.bottom, 4)
             Form {
                 Section("Item") {
-                    Picker("Category", selection: $kind) {
-                        ForEach(ItemKind.allCases, id: \.self) { Text($0.label).tag($0) }
+                    Picker("Category", selection: Binding(get: { kind.family }, set: { kind = $0 })) {
+                        ForEach([ItemKind.weapon, .armor, .wand, .ring], id: \.self) { Text($0.label).tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    .onChange(of: kind) { _, _ in
-                        itemID = ""; tierMatch = .any; tier = 2; modifier = ""; normalizeUpgrade()
+                    .onChange(of: kind) { previous, value in
+                        if previous.family != value.family {
+                            itemID = ""; tierMatch = .any; tier = 2; modifier = ""; normalizeUpgrade()
+                        } else if let item = ItemCatalog.findById(itemID), !value.accepts(item) {
+                            itemID = ""
+                        }
+                    }
+                    if kind.family == .weapon {
+                        Picker("Weapon type", selection: $kind) {
+                            Text("Any").tag(ItemKind.weapon)
+                            Text("Melee").tag(ItemKind.meleeWeapon)
+                            Text("Thrown").tag(ItemKind.thrownWeapon)
+                        }
+                        .pickerStyle(.segmented)
                     }
                     Picker("Item", selection: $itemID) {
                         Text("Any \(kind.singularLabel)").tag("")
-                        if kind == .weapon {
-                            // Tier-1 melee weapons are starting gear and never spawn in the dungeon.
+                        if kind.family == .weapon {
+                            // Tier-1 weapons are starting gear and never spawn in the dungeon.
                             ForEach(2...5, id: \.self) { tier in
                                 Section("Tier \(tier)") {
-                                    ForEach(ItemCatalog.weapons.filter { $0.tier == tier }) { item in
+                                    ForEach(ItemCatalog.forKind(kind).filter { $0.tier == tier }) { item in
                                         Label { Text(item.name) } icon: {
                                             ItemSpriteIcon(spriteIndex: item.spriteIndex)
                                         }.tag(item.id)
@@ -563,7 +686,7 @@ private struct RequirementEditor: View {
                         }
                     }
                     .onChange(of: itemID) { _, value in if !value.isEmpty { tierMatch = .any } }
-                    if itemID.isEmpty && (kind == .weapon || kind == .armor) {
+                    if itemID.isEmpty && (kind.family == .weapon || kind.family == .armor) {
                         Picker("Tier", selection: $tierMatch) {
                             ForEach(TierMatch.allCases, id: \.self) { Text($0.label).tag($0) }
                         }
@@ -630,8 +753,8 @@ private struct RequirementEditor: View {
                     if kind.modifierLabel != nil {
                         Picker(kind.modifierLabel!, selection: $modifier) {
                             Section { Text("None").tag("") }
-                            Section(kind == .weapon ? "Enchantments" : "Glyphs") {
-                                ForEach(kind == .weapon ? ItemCatalog.enchantments : ItemCatalog.glyphs, id: \.self) { Text($0).tag($0) }
+                            Section(kind.family == .weapon ? "Enchantments" : "Glyphs") {
+                                ForEach(kind.family == .weapon ? ItemCatalog.enchantments : ItemCatalog.glyphs, id: \.self) { Text($0).tag($0) }
                             }
                             if !requireUncursed {
                                 Section("Curses") { ForEach(ItemCatalog.cursesFor(kind), id: \.self) { Text($0).tag($0) } }
@@ -701,6 +824,37 @@ private struct RequirementEditor: View {
 
 // MARK: - Results
 
+/// `square.and.arrow.up`/`down` carry more empty space above the glyph than
+/// below it, so a toolbar label leaves them looking low against their capsule.
+/// Lifting only the icon optically centres it without moving the title.
+/// The inset has to be symmetric: hover highlights each button separately, and
+/// padding only one side draws the highlight hard against the title's ellipsis.
+/// Padding both sides also keeps the pair's shared Liquid Glass container off
+/// the outer labels.
+private struct ToolbarActionLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 5) {
+            configuration.icon.offset(y: -1)
+            configuration.title
+        }
+        .padding(.horizontal, 6)
+    }
+}
+
+/// Plain-text JSON payload handed to `fileExporter`.
+private struct ResultsFileDocument: FileDocument {
+    static let readableContentTypes: [UTType] = [.json]
+    var text: String
+
+    init(text: String) { self.text = text }
+    init(configuration: ReadConfiguration) throws {
+        text = String(data: configuration.file.regularFileContents ?? Data(), encoding: .utf8) ?? ""
+    }
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: Data(text.utf8))
+    }
+}
+
 private struct ResultsView: View {
     let controller: SearchController
     let scout: (String) -> Void
@@ -720,7 +874,15 @@ private struct ResultsView: View {
         }.navigationTitle("Results")
     }
     @ViewBuilder private var status: some View {
-        if controller.state == nil { Text("Add requirements, then press Start Search.").foregroundStyle(.secondary) }
+        if controller.isImported {
+            HStack(spacing: 8) {
+                Text("Imported").font(.caption.bold())
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(.quaternary, in: Capsule())
+                Text(importedCaption).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        else if controller.state == nil { Text("Add requirements, then press Start Search.").foregroundStyle(.secondary) }
         else if controller.isRunning {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Seed match probability: \(NumberFormat.probabilityPercent(controller.matchProbability)) " +
@@ -744,6 +906,17 @@ private struct ResultsView: View {
             Text(state == .failed ? "Failed (error \(controller.errorCode))" : state == .completed ? "Completed" : "Cancelled")
                 .font(.caption.bold()).padding(.horizontal, 10).padding(.vertical, 4).background(.quaternary, in: Capsule())
         }
+    }
+    private var importedCaption: String {
+        let count = controller.results.count
+        var caption = count == 0
+            ? "the imported file contained no seeds"
+            : "\(count) seed\(count == 1 ? "" : "s") loaded from file"
+        if controller.importedDropped > 0 {
+            caption += " · \(controller.importedDropped) duplicate or over-limit "
+                + "entr\(controller.importedDropped == 1 ? "y" : "ies") dropped"
+        }
+        return caption
     }
     private func copy(_ seed: String) { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(seed, forType: .string) }
 }

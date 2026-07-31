@@ -4,9 +4,12 @@
   <gresource prefix="/dev/seedseeker/SeedSeeker">
     <file preprocess="xml-stripblanks">icons/scalable/apps/dev.seedseeker.SeedSeeker-symbolic.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/actions/kind-weapon-symbolic.svg</file>
+    <file preprocess="xml-stripblanks">icons/scalable/actions/kind-weapon-thrown-symbolic.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/actions/kind-armor-symbolic.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/actions/kind-wand-symbolic.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/actions/kind-ring-symbolic.svg</file>
+    <file preprocess="xml-stripblanks">icons/scalable/actions/results-import-symbolic.svg</file>
+    <file preprocess="xml-stripblanks">icons/scalable/actions/results-export-symbolic.svg</file>
     <file>style/style.css</file>
 
     <!--

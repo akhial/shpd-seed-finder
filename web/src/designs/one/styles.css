@@ -184,7 +184,9 @@ body {
 .d1-pane-head {
   flex: 0 0 auto;
   display: flex;
-  align-items: baseline;
+  /* The results head carries icon buttons taller than its text, and their
+     baseline would drag the whole row down. */
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
   height: 35px;
@@ -197,6 +199,57 @@ body {
   letter-spacing: 0.12em;
   color: var(--d1-text-3);
   background: var(--d1-panel-2);
+}
+
+.d1-pane-head-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Cancel the icon buttons' inner slack so the last glyph sits as far from
+     the pane edge as the head's title does. */
+  margin-right: -6px;
+}
+
+.d1-io-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 24px;
+  /* Symmetric, so the hover fill sits evenly around the label. */
+  padding: 0 6px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--d1-text-3);
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+/* Both buttons already carry side padding, so close the row gap a little
+   between them without pulling them nearer the seed count. */
+.d1-io-btn + .d1-io-btn {
+  margin-left: -2px;
+}
+
+/* The glyphs carry more empty space below than above, as on the other
+   platforms, so lift them to sit level with the label. */
+.d1-io-btn svg {
+  margin-top: -1px;
+}
+
+.d1-io-btn:hover:not(:disabled) {
+  color: var(--d1-text-2);
+  background: var(--d1-raised);
+}
+
+.d1-io-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .d1-pane-head-info {
@@ -1027,6 +1080,12 @@ input[type='range']::-moz-range-thumb {
   border: 1px solid rgba(217, 108, 95, 0.35);
 }
 
+.d1-banner-info {
+  color: var(--d1-text-2);
+  background: var(--d1-raised);
+  border: 1px solid var(--d1-border-strong);
+}
+
 .d1-results-empty {
   padding: 28px 18px;
   text-align: center;
@@ -1575,7 +1634,6 @@ input[type='range']::-moz-range-thumb {
   column-gap: 7px;
   row-gap: 2px;
   padding: 7px 16px;
-  padding-right: 190px; /* keep clear of the design-switcher pill */
   border-top: 1px solid var(--d1-border);
   background: var(--d1-panel-2);
   font-size: 12px;
@@ -1587,9 +1645,27 @@ input[type='range']::-moz-range-thumb {
 
 .d1-footer-sep { color: var(--d1-border-strong); }
 
+.d1-footer-narrow { display: none; }
+
 @media (max-width: 999px) {
-  .d1-footer { padding-right: 150px; padding-bottom: 10px; }
+  .d1-footer { padding-bottom: 10px; }
   .d1-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Phone widths can't hold the full notice, so shorten it to keep the footer
+   one line; the linked attribution page carries the unabbreviated text. */
+@media (max-width: 720px) {
+  .d1-footer {
+    flex-wrap: nowrap;
+    column-gap: 6px;
+    padding-left: 12px;
+    padding-right: 12px;
+    /* Sized so the row still fits a 320px phone with room to spare. */
+    font-size: 10.5px;
+  }
+
+  .d1-footer-wide { display: none; }
+  .d1-footer-narrow { display: inline; }
 }
 
 /* ---------- Scrollbars ---------- */

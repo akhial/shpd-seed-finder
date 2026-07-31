@@ -39,6 +39,12 @@ public sealed partial class MainWindow : Window
     private string? renderedSeed;
     /// <summary>Only the latest scout request may publish its manifest.</summary>
     private int scoutGeneration;
+    private bool searchRunning;
+    /// <summary>
+    /// The query that produced the current results, snapshotted at search
+    /// start (or import) so an export never reflects later editor changes.
+    /// </summary>
+    private QuerySettings? searchedQuery;
     private const int ResultCap = 1024;
     private static readonly string SettingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Seed Seeker", "query.json");
     private static readonly string PresetsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Seed Seeker", "presets.json");
@@ -70,7 +76,8 @@ public sealed partial class MainWindow : Window
         // the window except a focused text field.
         if (Content is UIElement root) root.KeyDown += Root_KeyDown;
         FloorSlider.Value = 1; FloorSlider.Minimum = 1; FloorSlider.Maximum = 24;
-        LoadSettings(); LoadPresets(); RefreshPresets(); RefreshQuery();
+        results.CollectionChanged += (_, _) => UpdateTransferButtons();
+        LoadSettings(); LoadPresets(); RefreshPresets(); RefreshQuery(); UpdateTransferButtons();
         Closed += (_, _) => { search?.Cancel(); search?.Dispose(); };
         // ContentDialog needs a live XamlRoot, which only exists once the root
         // element has loaded; Activated can fire before that.
@@ -213,7 +220,7 @@ public sealed partial class MainWindow : Window
         }
         void SyncVisibility()
         {
-            var k = (ItemKind)Math.Max(0, kind.SelectedIndex); var generic = item.SelectedIndex == 0 && k is ItemKind.Weapon or ItemKind.Armor;
+            var k = (ItemKind)Math.Max(0, kind.SelectedIndex); var generic = item.SelectedIndex == 0 && k.Family() is ItemKind.Weapon or ItemKind.Armor;
             var predicate = (TierMatch)Math.Max(0, tierMatch.SelectedIndex); var ranged = predicate is TierMatch.AtLeast or TierMatch.AtMost;
             tierMatch.Visibility = generic ? Visibility.Visible : Visibility.Collapsed;
             tier.Visibility = generic && predicate == TierMatch.Exactly ? Visibility.Visible : Visibility.Collapsed;
@@ -239,7 +246,7 @@ public sealed partial class MainWindow : Window
                 .ToList();
             modifier.Items.Clear(); modifier.Items.Add("None"); foreach (var value in modifiers) modifier.Items.Add(value);
             modifier.SelectedIndex = selection is null ? 0 : Math.Max(0, modifiers.IndexOf(selection) + 1);
-            modifier.Visibility = k is ItemKind.Weapon or ItemKind.Armor ? Visibility.Visible : Visibility.Collapsed;
+            modifier.Visibility = k.Family() is ItemKind.Weapon or ItemKind.Armor ? Visibility.Visible : Visibility.Collapsed;
         }
         void Populate()
         {
@@ -252,7 +259,7 @@ public sealed partial class MainWindow : Window
         Populate(); NormalizeTier(); SyncVisibility(); depth.Visibility = depthToggle.IsOn ? Visibility.Visible : Visibility.Collapsed;
         var dialog = new ContentDialog { XamlRoot = Content.XamlRoot, Title = isNew ? "New Requirement" : "Edit Requirement", PrimaryButtonText = isNew ? "Add" : "Save", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Primary, Content = VerticalScrollView(content, 510, 430) };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return false;
-        r.Kind = (ItemKind)kind.SelectedIndex; r.Item = item.SelectedIndex > 0 ? ItemCatalog.For(r.Kind).ElementAt(item.SelectedIndex - 1) : null; r.TierMatch = r.Item is null && r.Kind is ItemKind.Weapon or ItemKind.Armor ? (TierMatch)tierMatch.SelectedIndex : TierMatch.Any; r.Tier = r.TierMatch == TierMatch.Any ? 0 : selectedTier;
+        r.Kind = (ItemKind)kind.SelectedIndex; r.Item = item.SelectedIndex > 0 ? ItemCatalog.For(r.Kind).ElementAt(item.SelectedIndex - 1) : null; r.TierMatch = r.Item is null && r.Kind.Family() is ItemKind.Weapon or ItemKind.Armor ? (TierMatch)tierMatch.SelectedIndex : TierMatch.Any; r.Tier = r.TierMatch == TierMatch.Any ? 0 : selectedTier;
         r.UpgradeMatch = (UpgradeMatch)upgradeMatch.SelectedIndex; r.Upgrade = r.UpgradeMatch switch { UpgradeMatch.Any => 0, UpgradeMatch.Exactly => (int)upgrade.Value, UpgradeMatch.AtLeast when r.Kind == ItemKind.Ring => (int)upgrade.Value, UpgradeMatch.AtLeast => selectedMinimumUpgrade, _ => 0 }; r.Modifier = modifier.Visibility == Visibility.Visible && modifier.SelectedIndex > 0 ? modifier.SelectedItem?.ToString() : null;
         r.RequireUncursed = uncursed.IsChecked == true; r.Source = source.SelectedIndex == 0 ? null : (ScoutItemSource)(source.SelectedIndex - 1); r.IdentityGroup = group.SelectedIndex == 0 ? null : group.SelectedIndex; r.MaximumDepth = depthToggle.IsOn ? (int)depth.Value : null; return true;
     }
@@ -479,6 +486,9 @@ public sealed partial class MainWindow : Window
     private async void Start_Click(object sender, RoutedEventArgs e)
     {
         if (search is not null) { search.Cancel(); StartButton.IsEnabled = false; return; } results.Clear(); SearchStatus.Text = "Starting search…"; SetStartButton(running: true);
+        // Snapshot the query so an export always describes the query that
+        // actually produced the listed results, even after later edits.
+        searchedQuery = query.Clone();
         try { search = await Task.Run(() => engine.Start(query)); await RunSearch(search); } catch (Exception ex) { SearchStatus.Text = $"Failed: {ex.Message}"; }
         finally { search?.Dispose(); search = null; SetStartButton(running: false); StartButton.IsEnabled = query.Requirements.Count != 0; }
     }
@@ -490,7 +500,105 @@ public sealed partial class MainWindow : Window
         SavePresetButton.IsEnabled = !running;
         DeletePresetButton.IsEnabled = !running
             && PresetPicker.SelectedItem is QueryPreset { IsBuiltIn: false };
+        searchRunning = running;
+        UpdateTransferButtons();
     }
+
+    private void UpdateTransferButtons()
+    {
+        ImportResultsButton.IsEnabled = !searchRunning;
+        ExportResultsButton.IsEnabled = !searchRunning && results.Count > 0 && searchedQuery is not null;
+    }
+
+    private async void ExportResults_Click(object sender, RoutedEventArgs e)
+    {
+        // Export the query snapshot captured when the results were produced
+        // (at search start or import), never the live editor state.
+        if (search is not null || searchedQuery is null || results.Count == 0) return;
+        var exportQuery = searchedQuery.Clone();
+        var seeds = results.Select(x => x.Seed).ToList();
+        var picker = new Windows.Storage.Pickers.FileSavePicker
+        {
+            SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary,
+            SuggestedFileName = ResultsExport.SuggestedFileName,
+        };
+        picker.FileTypeChoices.Add("Seed Seeker results", [".json"]);
+        // Unpackaged apps must bind pickers to the window handle before use.
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+        var file = await picker.PickSaveFileAsync();
+        if (file is null) return;
+        try
+        {
+            var version = typeof(MainWindow).Assembly.GetName().Version;
+            var appVersion = version is null ? "dev" : $"{version.Major}.{version.Minor}.{version.Build}";
+            var contents = ResultsExport.Encode(exportQuery, seeds, appVersion);
+            await FileIO.WriteTextAsync(file, contents);
+        }
+        catch (Exception ex)
+        {
+            await ShowTransferMessage($"Export failed: {ex.Message}");
+        }
+    }
+
+    private async void ImportResults_Click(object sender, RoutedEventArgs e)
+    {
+        if (search is not null) return;
+        var picker = new Windows.Storage.Pickers.FileOpenPicker
+        {
+            SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary,
+        };
+        picker.FileTypeFilter.Add(".json");
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+        var file = await picker.PickSingleFileAsync();
+        if (file is null) return;
+        try
+        {
+            var properties = await file.GetBasicPropertiesAsync();
+            if (properties.Size > ResultsExport.MaxFileBytes)
+            {
+                await ShowTransferMessage("This file is too large to be a Seed Seeker results file (2 MiB limit).");
+                return;
+            }
+            var text = await FileIO.ReadTextAsync(file);
+            // Parse the untrusted file off the UI thread.
+            var imported = await Task.Run(() => ResultsExport.Decode(text));
+            // A search may have started while the picker or reads were pending.
+            if (search is not null)
+            {
+                await ShowTransferMessage("Stop the search before importing results.");
+                return;
+            }
+            ApplyQuery(imported.Query);
+            searchedQuery = imported.Query.Clone();
+            results.Clear();
+            // Deduplicate then cap, the shared import rule on every platform.
+            foreach (var seed in imported.Seeds.Distinct())
+                if (results.Count < ResultCap) results.Add(new(seed, results.Count + 1));
+            var dropped = imported.Seeds.Count - results.Count;
+            var status = $"Imported {results.Count} seed{(results.Count == 1 ? "" : "s")} from file.";
+            if (dropped > 0)
+                status += $"\n{dropped} duplicate or over-limit entr{(dropped == 1 ? "y" : "ies")} dropped.";
+            if (imported.FileShpdVersion is string fileVersion && fileVersion != ResultsExport.ShpdVersion)
+                status += $"\nMade for Shattered Pixel Dungeon v{fileVersion}; this app targets v{ResultsExport.ShpdVersion}, so seeds may generate differently.";
+            SearchStatus.Text = status;
+            UpdateTransferButtons();
+        }
+        catch (ResultsExportException ex)
+        {
+            await ShowTransferMessage(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            await ShowTransferMessage($"Import failed: {ex.Message}");
+        }
+    }
+
+    private async Task ShowTransferMessage(string message)
+    {
+        var dialog = new ContentDialog { XamlRoot = Content.XamlRoot, Title = "Results file", Content = message, CloseButtonText = "OK" };
+        await dialog.ShowAsync();
+    }
+
     private async Task RunSearch(NativeSearch active)
     {
         var timer = Stopwatch.StartNew(); long lastScanned = 0; var lastTime = 0d;

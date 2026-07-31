@@ -725,6 +725,7 @@ mod tests {
         let query = SearchQuery {
             requirements: vec![Requirement {
                 kind: ItemKind::Wand,
+                weapon_category: None,
                 item: Some(ItemId::WandFrost),
                 tier: TierRequirement::Any,
                 upgrade: crate::query::UpgradeRequirement::Exact(2),
@@ -804,6 +805,7 @@ mod tests {
         let query = SearchQuery {
             requirements: vec![Requirement {
                 kind: ItemKind::Wand,
+                weapon_category: None,
                 item: Some(ItemId::WandFrost),
                 tier: TierRequirement::Any,
                 upgrade: crate::query::UpgradeRequirement::Exact(2),
@@ -869,6 +871,7 @@ mod tests {
         let query = SearchQuery {
             requirements: vec![Requirement {
                 kind: ItemKind::Wand,
+                weapon_category: None,
                 item: Some(ItemId::WandFrost),
                 tier: TierRequirement::Any,
                 upgrade: crate::query::UpgradeRequirement::Exact(2),
@@ -914,6 +917,7 @@ mod tests {
         let query = SearchQuery {
             requirements: vec![Requirement {
                 kind: ItemKind::Wand,
+                weapon_category: None,
                 item: Some(ItemId::WandFrost),
                 tier: TierRequirement::Any,
                 upgrade: crate::query::UpgradeRequirement::Exact(2),
@@ -964,6 +968,7 @@ mod tests {
         let query = SearchQuery {
             requirements: vec![Requirement {
                 kind: ItemKind::Wand,
+                weapon_category: None,
                 item: Some(ItemId::WandFrost),
                 tier: TierRequirement::Any,
                 upgrade: crate::query::UpgradeRequirement::Exact(2),

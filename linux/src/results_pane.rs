@@ -103,6 +103,18 @@ impl ResultsPane {
 
         let title = adw::WindowTitle::new("Results", "");
         let header_bar = adw::HeaderBar::builder().title_widget(&title).build();
+        let export_button = gtk::Button::builder()
+            .icon_name("results-export-symbolic")
+            .tooltip_text("Export Results…")
+            .action_name("win.export-results")
+            .build();
+        let import_button = gtk::Button::builder()
+            .icon_name("results-import-symbolic")
+            .tooltip_text("Import Results…")
+            .action_name("win.import-results")
+            .build();
+        header_bar.pack_end(&export_button);
+        header_bar.pack_end(&import_button);
         let toolbar_view = adw::ToolbarView::new();
         toolbar_view.add_top_bar(&header_bar);
         toolbar_view.set_content(Some(&overlay));
@@ -195,6 +207,41 @@ impl ResultsPane {
         // focus: J/K only fire while no editable widget is focused.
         row.grab_focus();
         true
+    }
+
+    /// The currently listed seed codes, in display order.
+    #[must_use]
+    pub fn seed_codes(&self) -> Vec<String> {
+        self.seeds.borrow().clone()
+    }
+
+    /// Replaces the list with seeds restored from an imported results file.
+    /// Callers must ensure no search is running.
+    pub fn load_imported(&self, imported: &[String]) {
+        self.list.remove_all();
+        {
+            let mut seeds = self.seeds.borrow_mut();
+            seeds.clear();
+            seeds.extend_from_slice(imported);
+        }
+        for (index, seed) in imported.iter().enumerate() {
+            self.append_row(seed, index + 1);
+        }
+        self.progress_bar.set_visible(false);
+        self.progress_line.set_visible(false);
+        let count = imported.len() as u64;
+        self.title.set_subtitle(&match count {
+            0 => String::new(),
+            1 => "1 seed".to_owned(),
+            count => format!("{} seeds", group_digits(count)),
+        });
+        self.stats_line.set_label(&format!(
+            "Imported · {} seed{}",
+            group_digits(count),
+            if count == 1 { "" } else { "s" },
+        ));
+        self.stack.set_visible_child_name("results");
+        self.notify_results_changed();
     }
 
     pub fn cancel(&self) {
