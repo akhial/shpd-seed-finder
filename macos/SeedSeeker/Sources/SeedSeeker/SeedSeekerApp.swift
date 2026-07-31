@@ -97,7 +97,7 @@ private struct ContentView: View {
                             }
                             // Toolbar labels default to icon-only, which left the
                             // glyphs looking uncentred inside their glass capsules.
-                            .labelStyle(ToolbarActionLabelStyle(leadingInset: 6))
+                            .labelStyle(ToolbarActionLabelStyle())
                             .help("Import results and their query from a file")
                             .disabled(controller.isRunning)
                             Button {
@@ -105,7 +105,7 @@ private struct ContentView: View {
                             } label: {
                                 Label("Export…", systemImage: "square.and.arrow.up")
                             }
-                            .labelStyle(ToolbarActionLabelStyle(trailingInset: 6))
+                            .labelStyle(ToolbarActionLabelStyle())
                             .help("Export the results and the query that produced them to a file")
                             .disabled(controller.isRunning || controller.results.isEmpty
                                 || controller.exportQuery == nil)
@@ -767,19 +767,17 @@ private struct RequirementEditor: View {
 /// `square.and.arrow.up`/`down` carry more empty space above the glyph than
 /// below it, so a toolbar label leaves them looking low against their capsule.
 /// Lifting only the icon optically centres it without moving the title.
-/// The pair shares one Liquid Glass container, so the outer ends of the group
-/// are inset here to keep the labels off the capsule's curved edges.
+/// The inset has to be symmetric: hover highlights each button separately, and
+/// padding only one side draws the highlight hard against the title's ellipsis.
+/// Padding both sides also keeps the pair's shared Liquid Glass container off
+/// the outer labels.
 private struct ToolbarActionLabelStyle: LabelStyle {
-    var leadingInset: CGFloat = 0
-    var trailingInset: CGFloat = 0
-
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 5) {
             configuration.icon.offset(y: -1)
             configuration.title
         }
-        .padding(.leading, leadingInset)
-        .padding(.trailing, trailingInset)
+        .padding(.horizontal, 6)
     }
 }
 
