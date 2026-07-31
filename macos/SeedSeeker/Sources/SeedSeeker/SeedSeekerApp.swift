@@ -93,15 +93,19 @@ private struct ContentView: View {
                             Button {
                                 showingImporter = true
                             } label: {
-                                Label("Import Results…", systemImage: "square.and.arrow.down")
+                                Label("Import…", systemImage: "square.and.arrow.down")
                             }
+                            // Toolbar labels default to icon-only, which left the
+                            // glyphs looking uncentred inside their glass capsules.
+                            .labelStyle(ToolbarActionLabelStyle(leadingInset: 6))
                             .help("Import results and their query from a file")
                             .disabled(controller.isRunning)
                             Button {
                                 beginExport()
                             } label: {
-                                Label("Export Results…", systemImage: "square.and.arrow.up")
+                                Label("Export…", systemImage: "square.and.arrow.up")
                             }
+                            .labelStyle(ToolbarActionLabelStyle(trailingInset: 6))
                             .help("Export the results and the query that produced them to a file")
                             .disabled(controller.isRunning || controller.results.isEmpty
                                 || controller.exportQuery == nil)
@@ -759,6 +763,25 @@ private struct RequirementEditor: View {
 }
 
 // MARK: - Results
+
+/// `square.and.arrow.up`/`down` carry more empty space above the glyph than
+/// below it, so a toolbar label leaves them looking low against their capsule.
+/// Lifting only the icon optically centres it without moving the title.
+/// The pair shares one Liquid Glass container, so the outer ends of the group
+/// are inset here to keep the labels off the capsule's curved edges.
+private struct ToolbarActionLabelStyle: LabelStyle {
+    var leadingInset: CGFloat = 0
+    var trailingInset: CGFloat = 0
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 5) {
+            configuration.icon.offset(y: -1)
+            configuration.title
+        }
+        .padding(.leading, leadingInset)
+        .padding(.trailing, trailingInset)
+    }
+}
 
 /// Plain-text JSON payload handed to `fileExporter`.
 private struct ResultsFileDocument: FileDocument {
