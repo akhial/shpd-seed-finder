@@ -204,18 +204,18 @@ private struct ContentView: View {
         return true
     }
 
-    /// J (next) and K (previous) walk the search results while scouting.
+    /// J (next) and K (previous) walk the search results while scouting, and
+    /// holding either key keeps walking at the system key-repeat rate.
     /// A plain-key `.keyboardShortcut` would steal the letters from text
     /// fields, so a local monitor is used instead. It only acts for its own
     /// window (each window of the group installs one), and passes the event
-    /// through while a sheet is presented, while a text view is typing, on
-    /// key repeat, or when navigation has nowhere to go.
+    /// through while a sheet is presented, while a text view is typing, or
+    /// when navigation has nowhere to go.
     private func installResultKeyNavigation() {
         guard resultKeyMonitor == nil else { return }
         resultKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             guard let window = hostWindow, event.window === window, window.attachedSheet == nil,
                   event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
-                  !event.isARepeat,
                   !(window.firstResponder is NSText)
             else { return event }
             // Match the letter (mnemonic) or the physical key (keycodes 38/40),
@@ -229,6 +229,11 @@ private struct ContentView: View {
             } else {
                 return event
             }
+            // A repeat arriving while a scout is still in flight is dropped
+            // rather than queued, so a held key paces itself to the engine
+            // instead of running the list away from the manifest. It stays
+            // swallowed: the key is mid-navigation, not unhandled.
+            if event.isARepeat && scout.loading { return nil }
             return navigateResult(offset) ? nil : event
         }
     }
