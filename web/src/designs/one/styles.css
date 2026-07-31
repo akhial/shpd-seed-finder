@@ -1576,7 +1576,6 @@ input[type='range']::-moz-range-thumb {
   column-gap: 7px;
   row-gap: 2px;
   padding: 7px 16px;
-  padding-right: 190px; /* keep clear of the design-switcher pill */
   border-top: 1px solid var(--d1-border);
   background: var(--d1-panel-2);
   font-size: 12px;
@@ -1588,9 +1587,27 @@ input[type='range']::-moz-range-thumb {
 
 .d1-footer-sep { color: var(--d1-border-strong); }
 
+.d1-footer-narrow { display: none; }
+
 @media (max-width: 999px) {
-  .d1-footer { padding-right: 150px; padding-bottom: 10px; }
+  .d1-footer { padding-bottom: 10px; }
   .d1-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Phone widths can't hold the full notice, so shorten it to keep the footer
+   one line; the linked attribution page carries the unabbreviated text. */
+@media (max-width: 720px) {
+  .d1-footer {
+    flex-wrap: nowrap;
+    column-gap: 6px;
+    padding-left: 12px;
+    padding-right: 12px;
+    /* Sized so the row still fits a 320px phone with room to spare. */
+    font-size: 10.5px;
+  }
+
+  .d1-footer-wide { display: none; }
+  .d1-footer-narrow { display: inline; }
 }
 
 /* ---------- Scrollbars ---------- */
