@@ -22,6 +22,8 @@
 # Windows/.NET build products and local restore caches.
 /windows/SeedSeeker/bin/
 /windows/SeedSeeker/obj/
+/windows/SeedSeeker.Tests/bin/
+/windows/SeedSeeker.Tests/obj/
 /.dotnet-home/
 /.nuget-packages/
 

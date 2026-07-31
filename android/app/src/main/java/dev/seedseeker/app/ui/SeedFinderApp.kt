@@ -445,6 +445,12 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
         )
     }
 
+    val resultSeeds = remember(results) { results.map { it.seed } }
+    // Anchor for result navigation: the in-flight request's seed while
+    // scouting, otherwise the seed of the rendered manifest. Editing the
+    // seed field does not move the anchor until a scout actually runs.
+    val scoutedSeed = if (isScouting) scoutRun?.seed else scoutResult?.seed
+
     CompositionLocalProvider(
         LocalItemAtlas provides atlas,
         LocalItemIconAtlas provides itemIcons,
@@ -606,6 +612,9 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                 requirements = requirements,
                 maximumDepth = maximumDepth,
                 excludeBlacksmithRewards = excludeBlacksmithRewards,
+                resultSeeds = resultSeeds,
+                scoutedSeed = scoutedSeed,
+                onScoutSeed = ::scoutSeed,
                 onSeedChange = {
                     val formatted = SeedCode.formatInput(it)
                     scoutInput = formatted

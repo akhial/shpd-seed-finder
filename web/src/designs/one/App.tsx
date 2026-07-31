@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '@tanstack/react-store'
 import { formatSeedInput } from '../../lib/format'
 import { toQueryDocument, toQueryJson, validateQuery } from '../../lib/query'
+import { resultPosition, stepResult } from '../../lib/scout-nav'
 import { SearchCoordinator, scoutSeed, searchStore } from '../../lib/search/coordinator'
 import { isRefinementOf } from '../../lib/search/refine'
 import { queryStore, workerCountStore } from '../../lib/store'
@@ -134,17 +135,29 @@ export default function App() {
 
   // Scout state, lifted so results can populate the detail pane.
   const [scoutInput, setScoutInput] = useState('')
+  // Anchor for result navigation: the seed of the most recent scout request,
+  // set synchronously so rapid steps chain even while a scout is in flight.
+  // A failed request falls back to the seed whose manifest is still rendered,
+  // keeping the indicator honest.
+  const [scoutedSeed, setScoutedSeed] = useState<string | undefined>(undefined)
+  const renderedSeed = useRef<string | undefined>(undefined)
   const [scout, setScout] = useState<{ loading: boolean; error?: string; result?: ScoutResult }>({ loading: false })
   const scoutRequest = useRef(0)
+  // True while the newest scout request is still in flight. A held J/K uses
+  // this to pace itself to the scout worker instead of queueing on it.
+  const scoutBusy = useRef(false)
   const runScout = useCallback((seed: string) => {
     const input = formatSeedInput(seed)
     setScoutInput(input)
     setActiveTab('scout')
     if (input.length !== 11) {
       setScout((current) => ({ loading: false, result: current.result, error: 'Seed must use XXX-XXX-XXX format' }))
+      setScoutedSeed(renderedSeed.current)
       return
     }
+    setScoutedSeed(input)
     const requestId = ++scoutRequest.current
+    scoutBusy.current = true
     setScout((current) => ({ loading: true, result: current.result }))
     void (async () => {
       try {
@@ -158,6 +171,8 @@ export default function App() {
         if (requestId === scoutRequest.current) {
           setScout({ loading: false, result })
           setScoutInput(result.seed.code)
+          renderedSeed.current = result.seed.code
+          setScoutedSeed(result.seed.code)
         }
       } catch (error) {
         if (requestId === scoutRequest.current) {
@@ -166,10 +181,130 @@ export default function App() {
             result: current.result,
             error: error instanceof Error ? error.message : String(error),
           }))
+          setScoutedSeed(renderedSeed.current)
         }
+      } finally {
+        if (requestId === scoutRequest.current) scoutBusy.current = false
       }
     })()
   }, [])
+
+  // Result-to-result navigation while scouting: J/K on desktop, swipe on touch.
+  // The joined-string selector keeps referential stability across progress
+  // updates that do not add seeds.
+  const matchCodesKey = useStore(searchStore, (state) => state.matches.map((match) => match.code).join(' '))
+  const resultSeeds = useMemo(() => (matchCodesKey ? matchCodesKey.split(' ') : []), [matchCodesKey])
+  const scoutNav = useMemo(() => resultPosition(resultSeeds, scoutedSeed), [resultSeeds, scoutedSeed])
+  const navigateResults = useCallback(
+    (delta: number): boolean => {
+      const next = stepResult(resultSeeds, scoutedSeed, delta)
+      if (!next) return false
+      runScout(next)
+      return true
+    },
+    [resultSeeds, scoutedSeed, runScout],
+  )
+
+  // The key handler is installed once and reads the latest navigation state
+  // through refs: it owns hold timers that a re-subscribe would cancel, and
+  // every step changes `navigateResults`.
+  const navigateRef = useRef(navigateResults)
+  const activeTabRef = useRef(activeTab)
+  useEffect(() => {
+    navigateRef.current = navigateResults
+    activeTabRef.current = activeTab
+  }, [navigateResults, activeTab])
+
+  // J (next) / K (previous) walk the search results while scouting, and
+  // holding either key keeps walking. Inert while typing in a field, while a
+  // modal is open, and when the tabbed layout is showing another pane
+  // (navigating would teleport the user to Scout).
+  useEffect(() => {
+    // The OS repeat rate would queue scouts faster than the single scout
+    // worker drains them, so the hold runs on its own clock: a frame loop,
+    // which paces steps to what the pane can actually paint and stops on its
+    // own while the tab is hidden.
+    const HOLD_DELAY_MS = 300
+    const HOLD_INTERVAL_MS = 70
+    let holdDelta = 0
+    let frame: number | undefined
+    let dueAt = 0
+
+    const stopHold = () => {
+      if (frame !== undefined) cancelAnimationFrame(frame)
+      frame = undefined
+      holdDelta = 0
+    }
+
+    const step = (now: number) => {
+      frame = requestAnimationFrame(step)
+      if (now < dueAt) return
+      // Skip the frame rather than pile on: a slow scout simply slows the
+      // hold down instead of running the list away from the manifest.
+      if (scoutBusy.current) return
+      if (!navigateRef.current(holdDelta)) {
+        stopHold()
+        return
+      }
+      dueAt = now + HOLD_INTERVAL_MS
+    }
+
+    // Match the letter (mnemonic) or the physical key, so the shortcut works
+    // on layouts without Latin letters.
+    const deltaFor = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase()
+      return key === 'j' || event.code === 'KeyJ' ? 1 : key === 'k' || event.code === 'KeyK' ? -1 : 0
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return
+      const delta = deltaFor(event)
+      if (delta === 0) return
+      const target = event.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return
+      if (document.querySelector('.d1-modal, dialog[open], [role="dialog"]')) return
+      if (window.matchMedia('(max-width: 999px)').matches && activeTabRef.current !== 'scout') return
+      if (!navigateRef.current(delta)) return
+      event.preventDefault()
+      stopHold()
+      holdDelta = delta
+      dueAt = performance.now() + HOLD_DELAY_MS
+      frame = requestAnimationFrame(step)
+    }
+
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (deltaFor(event) !== 0) stopHold()
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    // A key released while the page is unfocused never reports a keyup.
+    window.addEventListener('blur', stopHold)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', stopHold)
+      stopHold()
+    }
+  }, [])
+
+  // Horizontal swipes over the scout pane step through the results on touch
+  // devices; mostly-vertical gestures stay scrolls.
+  const swipeStart = useRef<{ x: number; y: number } | undefined>(undefined)
+  const onScoutTouchStart = (event: React.TouchEvent) => {
+    const touch = event.touches[0]
+    swipeStart.current = touch && event.touches.length === 1 ? { x: touch.clientX, y: touch.clientY } : undefined
+  }
+  const onScoutTouchEnd = (event: React.TouchEvent) => {
+    const start = swipeStart.current
+    swipeStart.current = undefined
+    const touch = event.changedTouches[0]
+    if (!start || !touch) return
+    const deltaX = touch.clientX - start.x
+    const deltaY = touch.clientY - start.y
+    if (Math.abs(deltaX) < 60 || Math.abs(deltaX) < 1.5 * Math.abs(deltaY)) return
+    navigateResults(deltaX < 0 ? 1 : -1)
+  }
 
   const paneClass = (tab: Tab) => `d1-pane d1-pane-${tab}${activeTab === tab ? ' d1-pane-active' : ''}`
   const running = searchState === 'running' || searchState === 'stopping'
@@ -241,7 +376,12 @@ export default function App() {
             shpdVersion={engine?.shpdVersion}
           />
         </section>
-        <section className={paneClass('scout')} aria-label="Seed scout">
+        <section
+          className={paneClass('scout')}
+          aria-label="Seed scout"
+          onTouchStart={onScoutTouchStart}
+          onTouchEnd={onScoutTouchEnd}
+        >
           <ScoutPanel
             input={scoutInput}
             onInput={setScoutInput}
@@ -249,6 +389,8 @@ export default function App() {
             loading={scout.loading}
             error={scout.error}
             result={scout.result}
+            nav={scoutNav}
+            onNavigate={navigateResults}
           />
         </section>
       </main>

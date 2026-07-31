@@ -241,6 +241,21 @@
               <Button Grid.Column="2" Content="Copy" Click="CopySeed_Click" VerticalAlignment="Stretch"/>
             </Grid>
             <TextBlock x:Name="ScoutStatus" Style="{StaticResource Caption}" Margin="0,-2,0,0"/>
+            <!-- Shown while the scouted seed is one of the search results: J/K (or the chevrons) step through them. -->
+            <StackPanel x:Name="ResultNav" Orientation="Horizontal" Spacing="8" Visibility="Collapsed">
+              <Button x:Name="PrevResultButton" Click="PrevResult_Click" Padding="7,3"
+                      AutomationProperties.Name="Previous result"
+                      ToolTipService.ToolTip="Scout the previous search result (K)">
+                <FontIcon Glyph="&#xE76B;" FontSize="11"/>
+              </Button>
+              <TextBlock x:Name="ResultPosition" Style="{StaticResource Caption}" VerticalAlignment="Center"/>
+              <Button x:Name="NextResultButton" Click="NextResult_Click" Padding="7,3"
+                      AutomationProperties.Name="Next result"
+                      ToolTipService.ToolTip="Scout the next search result (J)">
+                <FontIcon Glyph="&#xE76C;" FontSize="11"/>
+              </Button>
+              <TextBlock Text="J / K" Style="{StaticResource Caption}" VerticalAlignment="Center" Opacity="0.6"/>
+            </StackPanel>
           </StackPanel>
 
           <Grid Grid.Row="1">

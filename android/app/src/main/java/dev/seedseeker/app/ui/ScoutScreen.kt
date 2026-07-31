@@ -3,6 +3,7 @@ package dev.seedseeker.app.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
@@ -48,9 +51,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
@@ -74,6 +79,7 @@ import dev.seedseeker.app.ui.theme.SpdDanger
 import dev.seedseeker.app.ui.theme.SpdGreen
 import dev.seedseeker.app.ui.theme.SpdTeal
 import dev.seedseeker.app.ui.theme.SpdUpgrade
+import kotlin.math.abs
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -85,6 +91,9 @@ fun ScoutScreen(
     requirements: List<ItemRequirement>,
     maximumDepth: Int,
     excludeBlacksmithRewards: Boolean,
+    resultSeeds: List<String>,
+    scoutedSeed: String?,
+    onScoutSeed: (String) -> Unit,
     onSeedChange: (String) -> Unit,
     onScout: () -> Unit,
     onChallenges: () -> Unit,
@@ -92,6 +101,15 @@ fun ScoutScreen(
     bottomBar: @Composable () -> Unit,
 ) {
     val seedIsReady = SeedCode.isCanonical(seedInput)
+    // Position within the search results, when the scouted seed came from one.
+    val resultIndex = ScoutResultNavigation.position(resultSeeds, scoutedSeed)
+    val stepToResult: (Int) -> Unit = { delta ->
+        ScoutResultNavigation.step(resultSeeds, scoutedSeed, delta)?.let(onScoutSeed)
+    }
+    // The gesture coroutine must survive recomposition: search matches stream
+    // in every ~90 ms and restarting pointerInput on them would cancel any
+    // swipe in progress.
+    val currentStepToResult by rememberUpdatedState(stepToResult)
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -115,7 +133,22 @@ fun ScoutScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(scaffoldPadding),
+                .padding(scaffoldPadding)
+                // Horizontal swipes step through the search results; vertical
+                // drags stay with the list's own scrolling.
+                .pointerInput(Unit) {
+                    var dragTotal = 0f
+                    val threshold = 64.dp.toPx()
+                    detectHorizontalDragGestures(
+                        onDragStart = { dragTotal = 0f },
+                        onDragCancel = { dragTotal = 0f },
+                        onDragEnd = {
+                            if (abs(dragTotal) >= threshold) {
+                                currentStepToResult(if (dragTotal < 0f) 1 else -1)
+                            }
+                        },
+                    ) { _, dragAmount -> dragTotal += dragAmount }
+                },
             contentAlignment = Alignment.TopCenter,
         ) {
             LazyColumn(
@@ -134,6 +167,17 @@ fun ScoutScreen(
                         onSeedChange = onSeedChange,
                         onScout = onScout,
                     )
+                }
+
+                if (resultIndex != null) {
+                    item {
+                        ResultNavigationBar(
+                            index = resultIndex,
+                            total = resultSeeds.size,
+                            onStep = stepToResult,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                    }
                 }
 
                 if (result == null && !isScouting) {
@@ -293,6 +337,42 @@ private fun SeedInputCard(
                     color = MaterialTheme.colorScheme.error,
                 )
             }
+        }
+    }
+}
+
+/**
+ * Position of the scouted seed within the search results, with previous/next
+ * affordances; horizontal swipes anywhere on the screen do the same.
+ */
+@Composable
+private fun ResultNavigationBar(
+    index: Int,
+    total: Int,
+    onStep: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        IconButton(onClick = { onStep(-1) }, enabled = index > 0) {
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                contentDescription = "Previous result",
+            )
+        }
+        Text(
+            "Result ${index + 1} of $total · swipe to browse",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        IconButton(onClick = { onStep(1) }, enabled = index < total - 1) {
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = "Next result",
+            )
         }
     }
 }

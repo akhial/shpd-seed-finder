@@ -68,6 +68,8 @@ private struct ContentView: View {
     @State private var controller = SearchController()
     @State private var scout = ScoutViewModel()
     @State private var showingAbout = false
+    @State private var resultKeyMonitor: Any?
+    @State private var hostWindow: NSWindow?
     @State private var exportDocument: ResultsFileDocument?
     @State private var showingImporter = false
     @State private var transferError: String?
@@ -113,7 +115,8 @@ private struct ContentView: View {
                     }
             } detail: {
                 SeedDetailView(model: scout, requirements: requirements, maximumDepth: maximumDepth,
-                               excludeBlacksmithRewards: excludeBlacksmithRewards, challenges: challenges)
+                               excludeBlacksmithRewards: excludeBlacksmithRewards, challenges: challenges,
+                               resultPosition: resultPosition, onNavigateResult: { _ = navigateResult($0) })
                     .navigationSplitViewColumnWidth(min: 360, ideal: 450)
             }
             Divider()
@@ -153,7 +156,9 @@ private struct ContentView: View {
             Text(transferError ?? "")
         }
         .frame(minWidth: 1_020, minHeight: 640)
+        .background(WindowAccessor(window: $hostWindow))
         .onAppear {
+            installResultKeyNavigation()
             guard !restored else { return }; restored = true
             let saved = QueryPersistence.decode(savedQueryJSON)
             requirements = saved.requirements; maximumDepth = saved.maximumDepth
@@ -162,6 +167,9 @@ private struct ContentView: View {
             fastMode = saved.fastMode
             userPresets = PresetPersistence.decode(savedPresetsJSON)
         }
+        .onDisappear {
+            if let monitor = resultKeyMonitor { NSEvent.removeMonitor(monitor); resultKeyMonitor = nil }
+        }
         .onChange(of: requirements) { save() }
         .onChange(of: maximumDepth) { save() }
         .onChange(of: requireBlacksmith) { save() }
@@ -169,7 +177,64 @@ private struct ContentView: View {
         .onChange(of: fastMode) { save() }
         .onChange(of: challenges) { save() }
         .onChange(of: controller.selectedSeed) { _, seed in
-            if let seed { scout.scout(seed, challenges: challenges) }
+            // J/K navigation scouts before moving the selection; only scout
+            // here for direct table selections.
+            if let seed, seed != scout.requestedSeed { scout.scout(seed, challenges: challenges) }
+        }
+    }
+
+    /// Where the scouted seed sits in the search results, or nil when it did
+    /// not come from one (hand-entered seed, or no search yet).
+    private var resultPosition: ResultPosition? {
+        let seeds = controller.results.map(\.seed)
+        guard let index = ResultNavigation.position(of: scout.requestedSeed, in: seeds) else { return nil }
+        return ResultPosition(index: index, total: seeds.count)
+    }
+
+    /// Scouts the search result `offset` steps from the last requested scout
+    /// seed. Scouting first (which records the new anchor synchronously) and
+    /// then moving the table selection lets rapid steps chain while a scout
+    /// is still in flight. Returns whether navigation moved.
+    private func navigateResult(_ offset: Int) -> Bool {
+        guard let next = ResultNavigation.seed(from: scout.requestedSeed,
+                                               in: controller.results.map(\.seed),
+                                               offset: offset) else { return false }
+        scout.scout(next, challenges: challenges)
+        controller.selectedSeed = next
+        return true
+    }
+
+    /// J (next) and K (previous) walk the search results while scouting, and
+    /// holding either key keeps walking at the system key-repeat rate.
+    /// A plain-key `.keyboardShortcut` would steal the letters from text
+    /// fields, so a local monitor is used instead. It only acts for its own
+    /// window (each window of the group installs one), and passes the event
+    /// through while a sheet is presented, while a text view is typing, or
+    /// when navigation has nowhere to go.
+    private func installResultKeyNavigation() {
+        guard resultKeyMonitor == nil else { return }
+        resultKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard let window = hostWindow, event.window === window, window.attachedSheet == nil,
+                  event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
+                  !(window.firstResponder is NSText)
+            else { return event }
+            // Match the letter (mnemonic) or the physical key (keycodes 38/40),
+            // so the shortcut works on layouts without Latin letters.
+            let key = event.charactersIgnoringModifiers?.lowercased()
+            let offset: Int
+            if key == "j" || event.keyCode == 38 {
+                offset = 1
+            } else if key == "k" || event.keyCode == 40 {
+                offset = -1
+            } else {
+                return event
+            }
+            // A repeat arriving while a scout is still in flight is dropped
+            // rather than queued, so a held key paces itself to the engine
+            // instead of running the list away from the manifest. It stays
+            // swallowed: the key is mid-navigation, not unhandled.
+            if event.isARepeat && scout.loading { return nil }
+            return navigateResult(offset) ? nil : event
         }
     }
 
@@ -899,13 +964,39 @@ private struct ResultsView: View {
     var world: ScoutWorld?
     var error: String?
     var loading = false
+    /// Anchor for result navigation: the seed of the most recent scout
+    /// request, set synchronously so rapid steps chain even while a scout is
+    /// in flight. A failed request falls back to the rendered manifest's seed.
+    private(set) var requestedSeed: String?
+    private var generation = 0
     private let engine = ProductionSeedFinderEngine()
     func scout(_ seed: String? = nil, challenges: Int) {
         if let seed { input = SeedCode.formatInput(seed) }
         guard SeedCode.isCanonical(input) else { error = "Seed must use XXX-XXX-XXX format"; return }
-        let requested = input; loading = true; error = nil
-        Task { do { world = try await engine.scoutSeed(requested, challenges: challenges) } catch { self.error = error.localizedDescription }; loading = false }
+        let requested = input; requestedSeed = requested; loading = true; error = nil
+        // Only the latest request may publish: unsequenced completions would
+        // let an older manifest land under a newer position indicator.
+        generation += 1
+        let current = generation
+        Task {
+            do {
+                let scouted = try await engine.scoutSeed(requested, challenges: challenges)
+                guard current == generation else { return }
+                world = scouted
+            } catch {
+                guard current == generation else { return }
+                self.error = error.localizedDescription
+                requestedSeed = world?.seed
+            }
+            loading = false
+        }
     }
+}
+
+/// Position of the scouted seed within the ordered search results.
+private struct ResultPosition {
+    let index: Int
+    let total: Int
 }
 
 private struct SeedDetailView: View {
@@ -914,6 +1005,8 @@ private struct SeedDetailView: View {
     let maximumDepth: Int
     let excludeBlacksmithRewards: Bool
     let challenges: Int
+    let resultPosition: ResultPosition?
+    let onNavigateResult: (Int) -> Void
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -941,6 +1034,21 @@ private struct SeedDetailView: View {
                 if model.loading { ProgressView().controlSize(.small) }
             }
             if let error = model.error { Text(error).foregroundStyle(.red).font(.caption) }
+            if let position = resultPosition {
+                HStack(spacing: 6) {
+                    Button { onNavigateResult(-1) } label: { Image(systemName: "chevron.left") }
+                        .buttonStyle(.borderless).disabled(position.index == 0)
+                        .accessibilityLabel("Previous result")
+                        .help("Scout the previous search result (K)")
+                    Text("Result \(position.index + 1) of \(position.total)")
+                        .font(.caption).monospacedDigit().foregroundStyle(.secondary)
+                    Button { onNavigateResult(1) } label: { Image(systemName: "chevron.right") }
+                        .buttonStyle(.borderless).disabled(position.index + 1 >= position.total)
+                        .accessibilityLabel("Next result")
+                        .help("Scout the next search result (J)")
+                    Text("J / K").font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
         }.padding([.horizontal, .top]).padding(.bottom, 8)
     }
 
@@ -1047,6 +1155,22 @@ private struct ScoutItemRow: View {
 }
 
 // MARK: - Helpers
+
+/// Captures the NSWindow hosting a SwiftUI view, so the result-navigation key
+/// monitor can scope itself to its own window in a multi-window WindowGroup.
+private struct WindowAccessor: NSViewRepresentable {
+    @Binding var window: NSWindow?
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async { window = view.window }
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        DispatchQueue.main.async { window = view.window }
+    }
+}
 
 private func intBinding(_ value: Binding<Int>) -> Binding<Double> {
     Binding(get: { Double(value.wrappedValue) }, set: { value.wrappedValue = Int($0.rounded()) })

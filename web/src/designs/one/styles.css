@@ -486,6 +486,25 @@ body {
   border-color: var(--d1-accent-border);
 }
 
+/* Keycap for inline shortcut hints: a rounded rectangle whose doubled bottom
+   edge — an inset line plus a shadow under it — reads as slightly raised. */
+.d1-keycap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 19px;
+  padding: 1px 5px 2px;
+  font-family: var(--d1-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--d1-text-2);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--d1-border-strong);
+  border-radius: 5px;
+  box-shadow: inset 0 -1px 0 var(--d1-border-strong), 0 1px 0 rgba(0, 0, 0, 0.35);
+}
+
 .d1-select,
 .d1-input {
   font: inherit;
@@ -1212,6 +1231,73 @@ input[type='range']::-moz-range-thumb {
 .d1-scout-error {
   padding: 8px 14px 0;
   margin: 0;
+}
+
+/* Result-to-result navigation while scouting a search result. */
+.d1-scout-nav {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--d1-border);
+  font-size: 12.5px;
+  color: var(--d1-text-3);
+}
+
+.d1-scout-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  padding: 0 0 2px;
+  font: inherit;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--d1-text-2);
+  background: var(--d1-raised);
+  border: 1px solid var(--d1-border-strong);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.d1-scout-nav-btn:hover:not(:disabled) {
+  color: var(--d1-amber-bright);
+  border-color: var(--d1-amber);
+}
+
+.d1-scout-nav-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.d1-scout-nav-pos b {
+  font-weight: 600;
+  color: var(--d1-text-2);
+}
+
+.d1-scout-nav-hint {
+  margin-left: auto;
+  font-size: 11.5px;
+  letter-spacing: 0.03em;
+}
+
+.d1-scout-nav-hint-keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Breathing room between the two key/label pairs. */
+.d1-scout-nav-hint-keys span + .d1-keycap { margin-left: 5px; }
+
+/* Keyboard hint on pointer layouts, swipe hint on the tabbed touch layout. */
+.d1-scout-nav-hint-swipe { display: none; }
+@media (max-width: 999px) {
+  .d1-scout-nav-hint-keys { display: none; }
+  .d1-scout-nav-hint-swipe { display: inline; }
 }
 
 .d1-scout-empty {
