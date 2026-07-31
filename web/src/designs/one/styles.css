@@ -205,6 +205,9 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  /* Cancel the icon buttons' inner slack so the last glyph sits as far from
+     the pane edge as the head's title does. */
+  margin-right: -6px;
 }
 
 .d1-io-btn {

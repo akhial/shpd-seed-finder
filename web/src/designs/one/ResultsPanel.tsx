@@ -152,7 +152,7 @@ export function ResultsPanel({
             disabled={running}
             onClick={() => fileInput.current?.click()}
           >
-            <UploadIcon size={13} />
+            <DownloadIcon size={13} />
           </button>
           <button
             type="button"
@@ -162,7 +162,7 @@ export function ResultsPanel({
             disabled={running || search.matches.length === 0 || !search.query}
             onClick={exportResults}
           >
-            <DownloadIcon size={13} />
+            <UploadIcon size={13} />
           </button>
           <input
             ref={fileInput}
