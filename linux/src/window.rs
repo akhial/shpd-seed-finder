@@ -10,8 +10,15 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::gio;
 
+use shpd_seedfinder_core::results_export;
+use shpd_seedfinder_core::seed::DungeonSeed;
+use shpd_seedfinder_session::MAX_ACCEPTED_RESULTS;
+
+/// Import size cap; a maximal legal results file is far below this.
+const MAX_RESULTS_FILE_BYTES: usize = 2 * 1024 * 1024;
+
 use crate::config::APP_NAME;
-use crate::state::UiRequirement;
+use crate::state::{AppState, UiRequirement};
 use crate::{
     challenges_dialog, detail_pane, persist, presets_dialog, query_pane, requirement_editor,
     results_pane, update,
@@ -26,6 +33,10 @@ pub fn present(app: &adw::Application) {
 
     let state = Rc::new(RefCell::new(persist::load()));
     let user_presets = Rc::new(RefCell::new(persist::load_presets()));
+    // The query that produced the current results list, snapshotted at search
+    // start (or import) so an export never reflects later editor changes.
+    let exported_query: Rc<RefCell<Option<shpd_seedfinder_core::query::SearchQuery>>> =
+        Rc::new(RefCell::new(None));
     let toasts = adw::ToastOverlay::new();
 
     let query = query_pane::QueryPane::new(build_menu().upcast_ref());
@@ -189,6 +200,7 @@ pub fn present(app: &adw::Application) {
         let state = Rc::clone(&state);
         let query = Rc::clone(&query);
         let results = Rc::clone(&results);
+        let exported_query = Rc::clone(&exported_query);
         let toasts = toasts.clone();
         let inner_split = inner_split.clone();
         let outer_split = outer_split.clone();
@@ -199,8 +211,9 @@ pub fn present(app: &adw::Application) {
             }
             match state.borrow().to_query() {
                 Ok(search_query) => {
-                    results.start(search_query);
+                    results.start(search_query.clone());
                     if results.is_running() {
+                        exported_query.replace(Some(search_query));
                         query.set_running(true);
                         outer_split.set_show_content(true);
                         inner_split.set_show_content(false);
@@ -250,6 +263,155 @@ pub fn present(app: &adw::Application) {
     });
     window.add_action(&presets_action);
 
+    let export_action = gio::SimpleAction::new("export-results", None);
+    export_action.connect_activate({
+        let results = Rc::clone(&results);
+        let exported_query = Rc::clone(&exported_query);
+        let toasts = toasts.clone();
+        let window = window.clone();
+        move |_, _| {
+            if results.is_running() {
+                toasts.add_toast(adw::Toast::new("Stop the search before exporting results"));
+                return;
+            }
+            let codes = results.seed_codes();
+            // Export the query snapshot captured when these results were
+            // produced, never the live editor state.
+            let query = exported_query.borrow().clone();
+            let (Some(query), false) = (query, codes.is_empty()) else {
+                toasts.add_toast(adw::Toast::new(
+                    "Run a search first — there are no results to export yet",
+                ));
+                return;
+            };
+            let seeds = match codes
+                .iter()
+                .map(|code| DungeonSeed::from_code(code))
+                .collect::<Result<Vec<_>, _>>()
+            {
+                Ok(seeds) => seeds,
+                Err(error) => {
+                    toasts.add_toast(adw::Toast::new(&format!("Cannot export: {error}")));
+                    return;
+                }
+            };
+            let contents = results_export::encode(&query, &seeds, env!("CARGO_PKG_VERSION"));
+            let dialog = gtk::FileDialog::builder()
+                .title("Export Results")
+                .initial_name("seed-seeker-results.json")
+                .build();
+            let toasts = toasts.clone();
+            dialog.save(Some(&window), gio::Cancellable::NONE, move |chosen| {
+                // Cancelling the dialog is not an error worth reporting.
+                let Ok(file) = chosen else { return };
+                match file.replace_contents(
+                    contents.as_bytes(),
+                    None,
+                    false,
+                    gio::FileCreateFlags::REPLACE_DESTINATION,
+                    gio::Cancellable::NONE,
+                ) {
+                    Ok(_) => toasts.add_toast(adw::Toast::new("Results exported")),
+                    Err(error) => {
+                        toasts.add_toast(adw::Toast::new(&format!("Export failed: {error}")));
+                    }
+                }
+            });
+        }
+    });
+    window.add_action(&export_action);
+
+    let import_action = gio::SimpleAction::new("import-results", None);
+    import_action.connect_activate({
+        let state = Rc::clone(&state);
+        let results = Rc::clone(&results);
+        let refresh_all = Rc::clone(&refresh_all);
+        let exported_query = Rc::clone(&exported_query);
+        let toasts = toasts.clone();
+        let window = window.clone();
+        move |_, _| {
+            if results.is_running() {
+                toasts.add_toast(adw::Toast::new("Stop the search before importing results"));
+                return;
+            }
+            let dialog = gtk::FileDialog::builder().title("Import Results").build();
+            let state = Rc::clone(&state);
+            let results = Rc::clone(&results);
+            let refresh_all = Rc::clone(&refresh_all);
+            let exported_query = Rc::clone(&exported_query);
+            let toasts = toasts.clone();
+            dialog.open(Some(&window), gio::Cancellable::NONE, move |chosen| {
+                let Ok(file) = chosen else { return };
+                file.load_contents_async(gio::Cancellable::NONE, move |loaded| {
+                    let contents = match loaded {
+                        Ok((bytes, _)) => bytes,
+                        Err(error) => {
+                            toasts.add_toast(adw::Toast::new(&format!("Import failed: {error}")));
+                            return;
+                        }
+                    };
+                    // A search may have started while the dialog was open.
+                    if results.is_running() {
+                        toasts.add_toast(adw::Toast::new(
+                            "Stop the search before importing results",
+                        ));
+                        return;
+                    }
+                    if contents.len() > MAX_RESULTS_FILE_BYTES {
+                        toasts.add_toast(adw::Toast::new(
+                            "Import failed: this file is too large to be a results file (2 MiB limit)",
+                        ));
+                        return;
+                    }
+                    match results_export::decode(&String::from_utf8_lossy(&contents)) {
+                        Ok(imported) => {
+                            let (kept, dropped) = results_export::dedupe_and_cap(
+                                &imported.seeds,
+                                MAX_ACCEPTED_RESULTS,
+                            );
+                            *state.borrow_mut() = AppState::from_query(&imported.query);
+                            exported_query.replace(Some(imported.query));
+                            let codes: Vec<String> =
+                                kept.iter().map(|seed| seed.to_code()).collect();
+                            results.load_imported(&codes);
+                            refresh_all();
+                            let mut message = format!(
+                                "Imported {} seed{}",
+                                codes.len(),
+                                if codes.len() == 1 { "" } else { "s" },
+                            );
+                            if dropped > 0 {
+                                let _ = std::fmt::Write::write_fmt(
+                                    &mut message,
+                                    format_args!(
+                                        " · {dropped} duplicate or over-limit entries dropped"
+                                    ),
+                                );
+                            }
+                            toasts.add_toast(adw::Toast::new(&message));
+                            if let Some(file_version) = imported.shpd_version
+                                && file_version != shpd_seedfinder_core::SHPD_VERSION
+                            {
+                                toasts.add_toast(adw::Toast::new(&format!(
+                                    "Note: this file targets Shattered Pixel Dungeon \
+                                     v{file_version}; this app targets v{} — seeds may \
+                                     generate differently",
+                                    shpd_seedfinder_core::SHPD_VERSION,
+                                )));
+                            }
+                        }
+                        Err(message) => {
+                            toasts.add_toast(adw::Toast::new(&format!(
+                                "Import failed: {message}"
+                            )));
+                        }
+                    }
+                });
+            });
+        }
+    });
+    window.add_action(&import_action);
+
     let focus_seed_action = gio::SimpleAction::new("focus-seed", None);
     focus_seed_action.connect_activate({
         let detail = Rc::clone(&detail);
@@ -281,6 +443,10 @@ fn build_menu() -> gio::Menu {
     query_section.append(Some("_Presets…"), Some("win.presets"));
     query_section.append(Some("_Challenges…"), Some("win.challenges"));
     menu.append_section(None, &query_section);
+    let results_section = gio::Menu::new();
+    results_section.append(Some("_Import Results…"), Some("win.import-results"));
+    results_section.append(Some("_Export Results…"), Some("win.export-results"));
+    menu.append_section(None, &results_section);
     let app_section = gio::Menu::new();
     app_section.append(Some("_Keyboard Shortcuts"), Some("win.shortcuts"));
     app_section.append(Some("_About Seed Seeker"), Some("app.about"));
