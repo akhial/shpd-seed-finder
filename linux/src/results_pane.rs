@@ -102,12 +102,12 @@ impl ResultsPane {
         let title = adw::WindowTitle::new("Results", "");
         let header_bar = adw::HeaderBar::builder().title_widget(&title).build();
         let export_button = gtk::Button::builder()
-            .icon_name("document-save-symbolic")
+            .icon_name("results-export-symbolic")
             .tooltip_text("Export Results…")
             .action_name("win.export-results")
             .build();
         let import_button = gtk::Button::builder()
-            .icon_name("document-open-symbolic")
+            .icon_name("results-import-symbolic")
             .tooltip_text("Import Results…")
             .action_name("win.import-results")
             .build();

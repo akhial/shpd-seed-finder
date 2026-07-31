@@ -93,7 +93,7 @@ export function CheckIcon(props: IconProps) {
   )
 }
 
-/** Lucide `download` — an arrow into a tray, the export-to-file action. */
+/** Lucide `download` — an arrow into a tray, the import-from-file action. */
 export function DownloadIcon(props: IconProps) {
   return (
     <Icon {...props}>
@@ -104,7 +104,7 @@ export function DownloadIcon(props: IconProps) {
   )
 }
 
-/** Lucide `upload` — an arrow out of a tray, the import-from-file action. */
+/** Lucide `upload` — an arrow out of a tray, the export-to-file action. */
 export function UploadIcon(props: IconProps) {
   return (
     <Icon {...props}>
