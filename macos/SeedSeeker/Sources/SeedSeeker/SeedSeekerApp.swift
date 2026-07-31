@@ -111,6 +111,14 @@ private struct ContentView: View {
                             .help("Export the results and the query that produced them to a file")
                             .disabled(controller.isRunning || controller.results.isEmpty
                                 || controller.exportQuery == nil)
+                            Button {
+                                controller.clearResults()
+                            } label: {
+                                Label("Clear", systemImage: "trash")
+                            }
+                            .labelStyle(ToolbarActionLabelStyle())
+                            .help("Clear the results, so the next search starts from scratch")
+                            .disabled(!controller.canClearResults)
                         }
                     }
             } detail: {
@@ -499,26 +507,19 @@ private struct QueryView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal).padding(.top, 8)
             }
-            VStack(spacing: 8) {
-                Button {
-                    if controller.isRunning { controller.cancel() }
-                    else if let request = builtRequest { controller.start(request) }
-                } label: {
-                    Label(controller.isRunning ? "Cancel Search" : "Start Search",
-                          systemImage: controller.isRunning ? "stop.fill" : "play.fill")
-                        .frame(maxWidth: .infinity).padding(.vertical, 5)
-                }.buttonStyle(.borderedProminent).tint(controller.isRunning ? .red : .accentColor)
-                    .disabled(requirements.isEmpty).keyboardShortcut(.return, modifiers: .command)
-                if let request = refinableRequest {
-                    Button { controller.refine(request) } label: {
-                        Label("Refine Results", systemImage: "line.3.horizontal.decrease.circle")
-                            .frame(maxWidth: .infinity).padding(.vertical, 5)
-                    }
-                    .buttonStyle(.bordered)
-                    .help("Re-check the seeds already found against the added requirements, then finish scanning the rest of the seed space.")
-                }
-            }
-            .padding()
+            // Starting a search that strictly narrows the last finished run
+            // refines it automatically; the controller decides, so there is
+            // no second button here.
+            Button {
+                if controller.isRunning { controller.cancel() }
+                else if let request = builtRequest { controller.start(request) }
+            } label: {
+                Label(controller.isRunning ? "Cancel Search" : "Start Search",
+                      systemImage: controller.isRunning ? "stop.fill" : "play.fill")
+                    .frame(maxWidth: .infinity).padding(.vertical, 5)
+            }.buttonStyle(.borderedProminent).tint(controller.isRunning ? .red : .accentColor)
+                .disabled(requirements.isEmpty).keyboardShortcut(.return, modifiers: .command)
+                .padding()
         }
         .navigationTitle("Query")
         .sheet(item: $editor) { session in
@@ -548,14 +549,6 @@ private struct QueryView: View {
                            requireBlacksmith: requireBlacksmith,
                            excludeBlacksmithRewards: excludeBlacksmithRewards,
                            fastMode: fastMode, challenges: challenges)
-    }
-
-    /// The current query as a request, when it strictly narrows the last
-    /// finished run and can therefore be refined instead of rescanned.
-    private var refinableRequest: SearchRequest? {
-        guard !controller.isRunning, let request = builtRequest,
-              controller.canRefine(with: request) else { return nil }
-        return request
     }
 
     @ViewBuilder private var requirementSections: some View {

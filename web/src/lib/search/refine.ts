@@ -1,4 +1,5 @@
 import type { QueryDocument, RequirementDocument } from '../wasm/types'
+import type { SearchStatus } from './coordinator-state'
 import type { SeedRange } from './traversal'
 
 /** Canonical fingerprint for one requirement, independent of key order. */
@@ -38,6 +39,31 @@ export function isRefinementOf(candidate: QueryDocument, base: QueryDocument): b
     if ((available.get(signature) ?? 0) < needed) return false
   }
   return true
+}
+
+/** The finished-run facts the refine decision reads out of the search store. */
+export interface RefineBase {
+  state: SearchStatus
+  queryJson: string
+}
+
+/**
+ * Whether starting `query` should continue the run described by `base`
+ * instead of scanning from scratch. Only a completed or cancelled run knows
+ * exactly how much of the seed space it covered; an imported, failed, or
+ * still-running one does not, and a fresh state has no query at all.
+ *
+ * This is the single gate for the implicit refine: there is no separate
+ * refine action in the UI, so every start consults it.
+ */
+export function shouldRefine(base: RefineBase, query: QueryDocument): boolean {
+  if (base.state !== 'completed' && base.state !== 'cancelled') return false
+  if (!base.queryJson) return false
+  try {
+    return isRefinementOf(query, JSON.parse(base.queryJson) as QueryDocument)
+  } catch {
+    return false
+  }
 }
 
 /**

@@ -27,8 +27,6 @@ export function QueryPanel({
   running,
   engineReady,
   onToggleSearch,
-  canRefine,
-  onRefine,
   isMac,
 }: {
   analysis: AnalysisResult | undefined
@@ -36,8 +34,6 @@ export function QueryPanel({
   running: boolean
   engineReady: boolean
   onToggleSearch: () => void
-  canRefine: boolean
-  onRefine: () => void
   isMac: boolean
 }) {
   const query = useStore(queryStore)
@@ -389,23 +385,13 @@ export function QueryPanel({
             )}
           </div>
         )}
-        {canRefine && !running && (
-          <button
-            type="button"
-            className="d1-btn d1-btn-big d1-btn-refine"
-            onClick={onRefine}
-            title="Keep matching seeds from the previous results and continue scanning for the combined requirements"
-          >
-            <span>Refine Results</span>
-          </button>
-        )}
         <button
           type="button"
-          className={`d1-btn d1-btn-big ${running ? 'd1-btn-danger' : impossible || canRefine ? '' : 'd1-btn-primary'}`}
+          className={`d1-btn d1-btn-big ${running ? 'd1-btn-danger' : impossible ? '' : 'd1-btn-primary'}`}
           disabled={startDisabled}
           onClick={onToggleSearch}
         >
-          <span>{running ? 'Cancel Search' : canRefine ? 'New Search' : 'Start Search'}</span>
+          <span>{running ? 'Cancel Search' : 'Start Search'}</span>
           <kbd>
             {isMac ? <CommandIcon size={13} /> : <span className="d1-kbd-text">Ctrl</span>}
             <ReturnIcon size={13} />

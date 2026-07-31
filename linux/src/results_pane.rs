@@ -21,6 +21,7 @@ use shpd_seedfinder_session::{
 
 use crate::format::{duration, estimate_duration, group_digits, probability_percent, seed_rate};
 use crate::result_navigation;
+use crate::state::{self, StartMode};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 const DRAIN_BATCH: usize = 256;
@@ -82,6 +83,7 @@ pub struct ResultsPane {
 type SelectHandler = Box<dyn Fn(&str)>;
 
 impl ResultsPane {
+    #[allow(clippy::too_many_lines)] // Widget assembly is declarative and linear.
     pub fn new(toasts: &adw::ToastOverlay) -> Rc<Self> {
         let empty_page = adw::StatusPage::builder()
             .icon_name("system-search-symbolic")
@@ -146,8 +148,14 @@ impl ResultsPane {
             .tooltip_text("Import Results…")
             .action_name("win.import-results")
             .build();
+        let clear_button = gtk::Button::builder()
+            .icon_name("edit-clear-all-symbolic")
+            .tooltip_text("Clear Results")
+            .action_name("win.clear-results")
+            .build();
         header_bar.pack_end(&export_button);
         header_bar.pack_end(&import_button);
+        header_bar.pack_end(&clear_button);
         let toolbar_view = adw::ToolbarView::new();
         toolbar_view.add_top_bar(&header_bar);
         toolbar_view.set_content(Some(&overlay));
@@ -218,10 +226,38 @@ impl ResultsPane {
         self.active.borrow().is_some() || self.pending_refine.borrow().is_some()
     }
 
-    /// The query of the last finished search whose traversal can still be
-    /// refined, if any.
-    pub fn refine_target(&self) -> Option<SearchQuery> {
-        self.base.borrow().as_ref().map(|base| base.query.clone())
+    /// How a start request for `query` is served: refining the last finished
+    /// search when `query` strictly extends it, and a fresh scan otherwise.
+    /// The choice is silent — the user only ever presses one search action.
+    pub fn start_mode(&self, query: &SearchQuery) -> StartMode {
+        state::start_mode(query, self.base.borrow().as_ref().map(|base| &base.query))
+    }
+
+    /// Whether there is anything for "Clear Results" to discard: listed seeds,
+    /// a finished-run message, or a refine base a later search could reuse.
+    pub fn can_clear(&self) -> bool {
+        !self.is_running()
+            && (!self.seeds.borrow().is_empty()
+                || self.base.borrow().is_some()
+                || self
+                    .stack
+                    .visible_child_name()
+                    .is_some_and(|name| name != "empty"))
+    }
+
+    /// Empties the seed list and forgets the finished run, returning the pane
+    /// to its idle state so the next search is guaranteed to start fresh.
+    /// Callers must ensure no search is running.
+    pub fn clear(&self) {
+        self.base.replace(None);
+        self.seeds.borrow_mut().clear();
+        self.list.remove_all();
+        self.progress_bar.set_visible(false);
+        self.progress_line.set_visible(false);
+        self.stats_line.set_label("");
+        self.title.set_subtitle("");
+        self.stack.set_visible_child_name("empty");
+        self.notify_results_changed();
     }
 
     /// 0-based position of `seed` among the found seeds with the total count,
@@ -362,8 +398,8 @@ impl ResultsPane {
     /// Narrows the last finished search without discarding it: the listed
     /// seeds are re-verified against `query` on a worker thread, and the scan
     /// then resumes over exactly the seeds the previous traversal never
-    /// covered. The caller ensures `query` extends the finished search's
-    /// query (see [`crate::state::extends_query`]).
+    /// covered. Callers reach this through [`Self::start_mode`], which only
+    /// asks for a refine when `query` extends the finished search's query.
     pub fn refine(self: &Rc<Self>, query: SearchQuery) {
         if self.is_running() {
             return;
@@ -373,15 +409,15 @@ impl ResultsPane {
             resume_from: base.resume_from,
             remaining: base.remaining,
         }) else {
+            self.start(query);
             return;
         };
         // Re-assert the superset invariant here rather than trusting the
-        // action's enabled flag: filter-and-resume is only sound when the
-        // refined query strictly extends the finished one.
-        if !crate::state::extends_query(&query, &base.query) {
-            self.toasts.add_toast(adw::Toast::new(
-                "Refining requires only added requirements; start a new search instead",
-            ));
+        // caller: filter-and-resume is only sound when the refined query
+        // strictly extends the finished one, and a search request must never
+        // end up doing nothing at all.
+        if !state::extends_query(&query, &base.query) {
+            self.start(query);
             return;
         }
         let seed_values: Vec<u64> = self

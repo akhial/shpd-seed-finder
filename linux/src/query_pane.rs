@@ -22,7 +22,6 @@ pub struct QueryPane {
     fast_row: adw::SwitchRow,
     start_content: adw::ButtonContent,
     start_button: gtk::Button,
-    refine_button: gtk::Button,
     challenges_button: gtk::Button,
     updating: Cell<bool>,
     on_edit: RefCell<Option<KeyHandler>>,
@@ -121,20 +120,6 @@ impl QueryPane {
             .css_classes(["pill", "suggested-action"])
             .action_name("win.start-search")
             .build();
-        // Shown only when the edited query strictly extends the finished
-        // search, so refining takes over the suggested role from a fresh start.
-        let refine_button = gtk::Button::builder()
-            .child(
-                &adw::ButtonContent::builder()
-                    .icon_name("edit-find-symbolic")
-                    .label("Refine Results")
-                    .build(),
-            )
-            .css_classes(["pill", "suggested-action"])
-            .action_name("win.refine-search")
-            .tooltip_text("Keep previous seeds that also satisfy the added requirements, then continue the scan")
-            .visible(false)
-            .build();
         let action_area = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(6)
@@ -144,7 +129,6 @@ impl QueryPane {
             .margin_end(18)
             .build();
         action_area.append(&challenges_button);
-        action_area.append(&refine_button);
         action_area.append(&start_button);
 
         let menu_button = gtk::MenuButton::builder()
@@ -176,7 +160,6 @@ impl QueryPane {
             fast_row,
             start_content,
             start_button,
-            refine_button,
             challenges_button,
             updating: Cell::new(false),
             on_edit: RefCell::new(None),
@@ -308,19 +291,6 @@ impl QueryPane {
                 .set_icon_name("media-playback-start-symbolic");
             self.start_content.set_label("Start Search");
             self.start_button.remove_css_class("destructive-action");
-            self.start_button.add_css_class("suggested-action");
-        }
-    }
-
-    /// Offers or hides the refine action. While offered it takes the
-    /// suggested role and a fresh start becomes the plain "New Search".
-    pub fn set_refine_offered(&self, offered: bool) {
-        self.refine_button.set_visible(offered);
-        if offered {
-            self.start_content.set_label("New Search");
-            self.start_button.remove_css_class("suggested-action");
-        } else if !self.start_button.has_css_class("destructive-action") {
-            self.start_content.set_label("Start Search");
             self.start_button.add_css_class("suggested-action");
         }
     }

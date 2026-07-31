@@ -53,7 +53,6 @@ import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.SearchState
 import dev.seedseeker.app.model.SearchStatus
 import dev.seedseeker.app.model.SeedResult
-import dev.seedseeker.app.model.isRefinementOf
 import dev.seedseeker.app.update.UpdateChecker
 import dev.seedseeker.app.update.UpdateInfo
 import kotlinx.coroutines.CancellationException
@@ -91,21 +90,6 @@ private fun readCapped(stream: java.io.InputStream, limit: Int): String {
 
 private enum class Destination { FINDER, SCOUT, CHALLENGES, ABOUT }
 private data class SearchRun(val id: Long, val request: SearchRequest, val refine: RefineSpec? = null)
-
-/** Resume window and previously shown seeds a refine run starts from. */
-private data class RefineSpec(
-    val resumeFrom: Long,
-    val remaining: Long,
-    val keepSeeds: List<SeedResult>,
-)
-
-/** A finished (completed or cancelled) run that a stricter follow-up query may refine. */
-private data class FinishedRun(
-    val request: SearchRequest,
-    val resumeFrom: Long,
-    val remaining: Long,
-    val results: List<SeedResult>,
-)
 
 private data class ScoutRun(val id: Long, val seed: String, val challenges: Int)
 
@@ -434,9 +418,10 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
             fastMode = fastMode,
         )
     }.getOrNull()
-    val refineBase = lastFinishedRun
-    val canRefine = !isSearching && refineBase != null && currentRequest != null &&
-        currentRequest.isRefinementOf(refineBase.request)
+    // Anything a Clear would actually erase: listed seeds, the refine base, or the
+    // status/notice lines the results area still shows.
+    val canClearResults = results.isNotEmpty() || lastFinishedRun != null ||
+        searchStatus != null || searchError != null || importNotice != null
 
     val navBar: @Composable () -> Unit = {
         SeedSeekerNavBar(
@@ -471,7 +456,6 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                 seedsPerSecond = searchSeedsPerSecond,
                 elapsedSeconds = searchElapsedSeconds,
                 isSearching = isSearching,
-                canRefine = canRefine,
                 isRefined = run?.refine != null,
                 refineSummary = refineSummary,
                 error = searchError,
@@ -532,37 +516,24 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                 onExcludeBlacksmithRewardsChange = { excludeBlacksmithRewards = it },
                 onFastModeChange = { fastMode = it },
                 onSearch = {
-                    if (requirements.isNotEmpty()) {
+                    if (currentRequest != null) {
                         importNotice = null
-                        searchedQuery = PresetQuery(
-                            requirements = requirements,
-                            maximumDepth = maximumDepth,
-                            requireBlacksmith = requireBlacksmith,
-                            excludeBlacksmithRewards = excludeBlacksmithRewards,
-                            fastMode = fastMode,
-                            challenges = challenges,
-                        )
-                        run = SearchRun(
-                            nextRunId++,
-                            SearchRequest(
+                        // Refining is implicit: a query that only narrows the last finished
+                        // run reuses its seeds and resumes where it stopped.
+                        val refine = refinePlanFor(currentRequest, lastFinishedRun)
+                        if (refine == null) {
+                            searchedQuery = PresetQuery(
                                 requirements = requirements,
                                 maximumDepth = maximumDepth,
-                                challenges = challenges,
                                 requireBlacksmith = requireBlacksmith,
                                 excludeBlacksmithRewards = excludeBlacksmithRewards,
                                 fastMode = fastMode,
-                            ),
-                        )
-                    }
-                },
-                onRefine = {
-                    // canRefine already smart-casts refineBase and currentRequest to non-null.
-                    if (canRefine) {
-                        run = SearchRun(
-                            nextRunId++,
-                            currentRequest,
-                            RefineSpec(refineBase.resumeFrom, refineBase.remaining, refineBase.results),
-                        )
+                                challenges = challenges,
+                            )
+                        }
+                        // A refine only claims the narrowed query once its filter phase has
+                        // actually rewritten the results, so the snapshot is set there.
+                        run = SearchRun(nextRunId++, currentRequest, refine)
                     }
                 },
                 onCancel = {
@@ -577,7 +548,19 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                     }
                 },
                 canExportResults = searchedQuery != null && results.isNotEmpty(),
+                canClearResults = canClearResults,
                 importNotice = importNotice,
+                onClearResults = {
+                    // Drops the refine base too, so the next search is always a fresh scan.
+                    run = null
+                    results = emptyList()
+                    lastFinishedRun = null
+                    refineSummary = null
+                    searchStatus = null
+                    searchError = null
+                    searchedQuery = null
+                    importNotice = null
+                },
                 onExportResults = {
                     // Export the query snapshot that produced the results,
                     // never the live editor state.

@@ -28,11 +28,11 @@ public sealed partial class MainWindow : Window
     private QuerySettings query = new();
     private List<QueryPreset> userPresets = [];
     private NativeSearch? search;
-    /// <summary>The last finished run, kept so a strictly narrower query can refine it instead of rescanning.</summary>
+    /// <summary>The last finished run, kept so a strictly narrower query refines it instead of rescanning.</summary>
     private BaseRun? baseRun;
-    /// <summary>True for the whole span of a search or refine handler, including the
-    /// refine's filter phase where no native session exists yet; gates the start and
-    /// refine entry points so two handlers can never race one session slot.</summary>
+    /// <summary>True for the whole span of a search or refine, including the
+    /// refine's filter phase where no native session exists yet; gates the start
+    /// and clear entry points so two handlers can never race one session slot.</summary>
     private bool busy;
     /// <summary>Every unique seed the current run has delivered, beyond the display cap;
     /// this is the filter input a later refine must use to avoid losing matches.</summary>
@@ -199,10 +199,9 @@ public sealed partial class MainWindow : Window
         RequirementList.ItemsSource = query.Requirements; NoRequirements.Visibility = query.Requirements.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         FloorLabel.Text = $"first {query.MaximumDepth} floor{(query.MaximumDepth == 1 ? "" : "s")}"; RequireBlacksmith.IsEnabled = query.MaximumDepth < 14; StartButton.IsEnabled = search is not null || (!busy && query.Requirements.Count != 0);
         var count = BitOperations.PopCount((uint)query.Challenges); ChallengeSummary.Text = count == 0 ? "None" : $"{count} enabled";
-        UpdateRefineButton();
     }
     private void FloorSlider_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e) { if (restoring || FloorLabel is null) return; query.MaximumDepth = (int)e.NewValue; RefreshQuery(); SaveSettings(); }
-    private void SettingChanged(object sender, RoutedEventArgs e) { if (restoring) return; query.RequireBlacksmith = RequireBlacksmith.IsOn; query.ExcludeBlacksmithRewards = ExcludeRewards.IsOn; query.FastMode = FastMode.IsOn; SaveSettings(); UpdateRefineButton(); }
+    private void SettingChanged(object sender, RoutedEventArgs e) { if (restoring) return; query.RequireBlacksmith = RequireBlacksmith.IsOn; query.ExcludeBlacksmithRewards = ExcludeRewards.IsOn; query.FastMode = FastMode.IsOn; SaveSettings(); }
 
     private async void AddRequirement_Click(object sender, RoutedEventArgs e) { var r = new ItemRequirement { Kind = ItemKind.Weapon, UpgradeMatch = UpgradeMatch.Any }; if (await EditRequirement(r, true)) { query.Requirements.Add(r); RefreshQuery(); SaveSettings(); } }
     private async void Requirement_Click(object sender, RoutedEventArgs e)
@@ -500,6 +499,11 @@ public sealed partial class MainWindow : Window
     {
         if (search is not null) { search.Cancel(); StartButton.IsEnabled = false; return; }
         if (busy) return;
+        // A query that only narrows the last finished run refines it instead of
+        // rescanning ground already covered. There is no separate control: the
+        // eligibility test decides, and the status line reports what happened.
+        // Clear Results drops the base run when a fresh scan is wanted.
+        if (baseRun is BaseRun previous && QueryRefinement.IsRefinement(query, previous.Query)) { await RefineSearch(previous); return; }
         busy = true; collected.Clear(); collectedSet.Clear(); results.Clear(); SearchStatus.Text = "Starting search…"; SetStartButton(running: true);
         try
         {
@@ -512,11 +516,15 @@ public sealed partial class MainWindow : Window
         catch (Exception ex) { SearchStatus.Text = $"Failed: {ex.Message}"; baseRun = null; }
         finally { busy = false; search?.Dispose(); search = null; SetStartButton(running: false); StartButton.IsEnabled = query.Requirements.Count != 0; }
     }
-    private async void Refine_Click(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// Filters the finished run's seeds through the narrowed query, then resumes
+    /// the scan where that run stopped. Only <see cref="Start_Click"/> calls this,
+    /// after its own re-entry guards, so the session slot is never contested.
+    /// </summary>
+    private async Task RefineSearch(BaseRun previous)
     {
-        if (busy || search is not null || baseRun is null || !QueryRefinement.IsRefinement(query, baseRun.Query)) return;
         busy = true;
-        var previous = baseRun; var snapshot = query.Clone(); SearchStatus.Text = "Verifying previous results…"; SetStartButton(running: true); StartButton.IsEnabled = false;
+        var snapshot = query.Clone(); SearchStatus.Text = "Verifying previous results…"; SetStartButton(running: true); StartButton.IsEnabled = false;
         try
         {
             // Filter before touching the displayed results, so a failure here
@@ -587,18 +595,31 @@ public sealed partial class MainWindow : Window
         SavePresetButton.IsEnabled = !running;
         DeletePresetButton.IsEnabled = !running
             && PresetPicker.SelectedItem is QueryPreset { IsBuiltIn: false };
-        if (running) RefineButton.Visibility = Visibility.Collapsed; else UpdateRefineButton();
         searchRunning = running;
         UpdateTransferButtons();
     }
-    private void UpdateRefineButton() => RefineButton.Visibility =
-        search is null && !busy && baseRun is not null && QueryRefinement.IsRefinement(query, baseRun.Query)
-            ? Visibility.Visible : Visibility.Collapsed;
 
     private void UpdateTransferButtons()
     {
         ImportResultsButton.IsEnabled = !searchRunning;
         ExportResultsButton.IsEnabled = !searchRunning && results.Count > 0 && searchedQuery is not null;
+        // `busy` also covers a refine's filter phase, which owns the results
+        // even though no native session exists yet.
+        ClearResultsButton.IsEnabled = !searchRunning && !busy
+            && (results.Count > 0 || collected.Count > 0 || baseRun is not null);
+    }
+
+    /// <summary>
+    /// Returns the results area to its idle state, dropping the refine base so
+    /// the next search rescans from the beginning instead of narrowing this run.
+    /// </summary>
+    private void ClearResults_Click(object sender, RoutedEventArgs e)
+    {
+        if (busy || search is not null) return;
+        results.Clear(); collected.Clear(); collectedSet.Clear();
+        baseRun = null; searchedQuery = null;
+        SearchStatus.Text = "Add requirements, then press Start Search.";
+        UpdateTransferButtons();
     }
 
     private async void ExportResults_Click(object sender, RoutedEventArgs e)
@@ -666,7 +687,7 @@ public sealed partial class MainWindow : Window
             searchedQuery = imported.Query.Clone();
             // Imported results carry no traversal state, so the previous
             // search's refine base no longer describes the listed seeds.
-            baseRun = null; UpdateRefineButton();
+            baseRun = null;
             results.Clear();
             // Deduplicate then cap, the shared import rule on every platform.
             foreach (var seed in imported.Seeds.Distinct())

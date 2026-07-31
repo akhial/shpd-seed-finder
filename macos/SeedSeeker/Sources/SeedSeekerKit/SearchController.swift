@@ -79,8 +79,16 @@ public final class SearchController {
         baseRun = nil; refinedKept = nil
     }
 
+    /// Starts `request`. When it strictly narrows the last finished run this
+    /// silently refines that run — filtering the seeds already found and
+    /// resuming the scan — instead of rescanning from zero. There is no
+    /// user-facing choice: eligibility alone decides.
     public func start(_ request: SearchRequest) {
-        task?.cancel(); results = []; refinedKept = nil; resetProgress()
+        if canRefine(with: request) { refine(request) } else { freshSearch(request) }
+    }
+
+    private func freshSearch(_ request: SearchRequest) {
+        task?.cancel(); results = []; refinedKept = nil; baseRun = nil; resetProgress()
         isImported = false; importedDropped = 0
         exportQuery = SavedQuery(
             requirements: request.requirements, maximumDepth: request.maximumDepth,
@@ -95,17 +103,35 @@ public final class SearchController {
         }
     }
 
-    /// Whether `request` can refine the last finished run: nothing running, a
-    /// base run on record, and strictly more requirements at identical scope.
+    /// Whether starting `request` would refine the last finished run rather
+    /// than rescan: nothing running, a base run on record, and strictly more
+    /// requirements at identical scope.
     public func canRefine(with request: SearchRequest) -> Bool {
         guard !isRunning, let baseRun else { return false }
         return request.isRefinement(of: baseRun.request)
     }
 
+    /// Whether there is anything for `clearResults()` to discard.
+    public var canClearResults: Bool {
+        !isRunning && (!results.isEmpty || state != nil || baseRun != nil || exportQuery != nil)
+    }
+
+    /// Empties the results area and forgets the finished run, so the next
+    /// search is a fresh full scan rather than a refine. Ignored while a
+    /// search or filter phase is running.
+    public func clearResults() {
+        guard !isRunning else { return }
+        results = []; selectedSeed = nil; exportQuery = nil
+        isImported = false; importedDropped = 0
+        baseRun = nil; refinedKept = nil
+        scannedSeeds = 0; totalSeeds = 0; matchProbability = nil; seedsPerSecond = 0; elapsed = 0
+        errorCode = 0; message = nil; state = nil
+    }
+
     /// Narrows the finished base run: re-verifies the seeds already found
     /// against the stricter request, then completes the base run's remaining
     /// seed-space coverage with a resumed scan, deduplicating by seed.
-    public func refine(_ request: SearchRequest) {
+    private func refine(_ request: SearchRequest) {
         guard canRefine(with: request), let base = baseRun else { return }
         task?.cancel(); resetProgress()
         let previousSeeds = results.map(\.seed)

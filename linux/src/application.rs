@@ -65,7 +65,6 @@ pub fn configure(app: &adw::Application) {
 
     app.set_accels_for_action("app.quit", &["<primary>q"]);
     app.set_accels_for_action("win.start-search", &["<primary>Return"]);
-    app.set_accels_for_action("win.refine-search", &["<primary><shift>Return"]);
     app.set_accels_for_action("win.add-requirement", &["<primary>n"]);
     app.set_accels_for_action("win.challenges", &["<primary>comma"]);
     app.set_accels_for_action("win.focus-seed", &["<primary>l"]);

@@ -60,6 +60,17 @@ export const initialCoordinatorState = (total = 0): CoordinatorState => ({
   filtering: false,
 })
 
+/**
+ * Whether "Clear results" has anything to discard. A running or stopping
+ * search owns the state — including the coverage bookkeeping a later refine
+ * needs — so it is never cleared from underneath, and a state that is already
+ * idle and empty has nothing to clear.
+ */
+export function canClearResults(state: CoordinatorState): boolean {
+  if (state.state === 'running' || state.state === 'stopping') return false
+  return state.state !== 'idle' || state.matches.length > 0
+}
+
 export function mergeMatches(existing: ParsedSeed[], incoming: ParsedSeed[], cap = RESULT_CAP): { matches: ParsedSeed[]; capped: boolean } {
   // Deduplicate by seed value: a refined search may re-test a small overlap
   // around the previous stop position and rediscover a filtered survivor.

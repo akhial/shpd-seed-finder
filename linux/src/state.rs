@@ -264,6 +264,28 @@ pub fn extends_query(candidate: &SearchQuery, base: &SearchQuery) -> bool {
     })
 }
 
+/// What the search action does for the current query.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StartMode {
+    /// Scan the whole seed range from the beginning.
+    Fresh,
+    /// Filter the previous run's seeds and resume where it stopped.
+    Refine,
+}
+
+/// Decides how a start request is served: refining is implicit, so a query
+/// that strictly extends the last finished run reuses its results instead of
+/// rescanning from zero. `refine_base` is the finished run's query, or `None`
+/// when there is nothing to refine — no run yet, results imported or cleared,
+/// or the run failed.
+#[must_use]
+pub fn start_mode(candidate: &SearchQuery, refine_base: Option<&SearchQuery>) -> StartMode {
+    match refine_base {
+        Some(base) if extends_query(candidate, base) => StartMode::Refine,
+        _ => StartMode::Fresh,
+    }
+}
+
 pub const fn kind_choice_label(choice: KindChoice) -> &'static str {
     match choice {
         (ItemKind::Weapon, None) => "Weapon",
@@ -401,7 +423,7 @@ mod tests {
     use shpd_seedfinder_core::catalog::{ItemId, ItemKind};
     use shpd_seedfinder_core::query::{TierRequirement, UpgradeRequirement};
 
-    use super::{AppState, UiRequirement, extends_query};
+    use super::{AppState, StartMode, UiRequirement, extends_query, start_mode};
 
     #[test]
     fn refinement_requires_identical_scope_and_strictly_more_requirements() {
@@ -442,6 +464,41 @@ mod tests {
         doubled_extended.requirements.push(extended.requirements[1]);
         assert!(extends_query(&doubled_extended, &doubled_base));
         assert!(!extends_query(&extended, &doubled_base));
+    }
+
+    #[test]
+    fn starting_refines_an_extended_finished_run_without_asking() {
+        let mut base_state = AppState::default();
+        let mut first = UiRequirement::new(base_state.claim_key());
+        first.kind = ItemKind::Ring;
+        base_state.requirements.push(first);
+        let base = base_state.to_query().unwrap();
+
+        let mut extended_state = base_state.clone();
+        let mut added = UiRequirement::new(extended_state.claim_key());
+        added.kind = ItemKind::Weapon;
+        added.upgrade = UpgradeRequirement::AtLeast(2);
+        extended_state.requirements.push(added);
+        let extended = extended_state.to_query().unwrap();
+
+        // Adding a requirement after a finished run refines it implicitly.
+        assert_eq!(
+            start_mode(&extended, Some(&base)),
+            StartMode::Refine,
+            "an extending query must reuse the finished run"
+        );
+
+        // Anything the finished run cannot vouch for starts fresh: an
+        // unchanged query, a narrower one, and any scope change.
+        assert_eq!(start_mode(&base, Some(&base)), StartMode::Fresh);
+        assert_eq!(start_mode(&base, Some(&extended)), StartMode::Fresh);
+        let mut deeper = extended.clone();
+        deeper.max_depth = 9;
+        assert_eq!(start_mode(&deeper, Some(&base)), StartMode::Fresh);
+
+        // Clearing the results drops the base, so even an extending query
+        // scans from the beginning again.
+        assert_eq!(start_mode(&extended, None), StartMode::Fresh);
     }
 
     #[test]

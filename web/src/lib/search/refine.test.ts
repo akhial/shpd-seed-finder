@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { QueryDocument } from '../wasm/types'
-import { distributeSegments, isRefinementOf, remainingSegments, segmentsLength } from './refine'
+import { distributeSegments, isRefinementOf, remainingSegments, segmentsLength, shouldRefine } from './refine'
+import type { SearchStatus } from './coordinator-state'
 import type { SeedRange } from './traversal'
 
 const base: QueryDocument = {
@@ -39,6 +40,33 @@ describe('isRefinementOf', () => {
     expect(isRefinementOf({ ...added, exclude_blacksmith_rewards: true }, base)).toBe(false)
     expect(isRefinementOf({ ...added, challenges: ['on_diet'] }, base)).toBe(false)
     expect(isRefinementOf({ ...added, challenges: ['on_diet'] }, { ...base, challenges: ['on_diet'] })).toBe(true)
+  })
+})
+
+describe('shouldRefine', () => {
+  const finished = (state: SearchStatus) => ({ state, queryJson: JSON.stringify(base) })
+
+  it('continues a completed or cancelled run whose query gained requirements', () => {
+    expect(shouldRefine(finished('completed'), added)).toBe(true)
+    expect(shouldRefine(finished('cancelled'), added)).toBe(true)
+  })
+
+  it('rescans when the run never established its coverage', () => {
+    // Imported results carry no scanned region, a failed run's is unknown,
+    // and a running one is still moving.
+    for (const state of ['idle', 'running', 'stopping', 'failed', 'imported'] as SearchStatus[]) {
+      expect(shouldRefine(finished(state), added)).toBe(false)
+    }
+  })
+
+  it('rescans when the query is not a strict superset of the finished one', () => {
+    expect(shouldRefine(finished('completed'), base)).toBe(false)
+    expect(shouldRefine(finished('completed'), { ...added, max_depth: 9 })).toBe(false)
+  })
+
+  it('rescans when there is no readable base query', () => {
+    expect(shouldRefine({ state: 'completed', queryJson: '' }, added)).toBe(false)
+    expect(shouldRefine({ state: 'completed', queryJson: '{not json' }, added)).toBe(false)
   })
 })
 

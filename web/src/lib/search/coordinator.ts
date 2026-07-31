@@ -1,8 +1,8 @@
 import { Store } from '@tanstack/store'
 import type { ParsedSeed, QueryDocument, ScoutRequest, ScoutResult } from '../wasm/types'
-import { applyProgress, importedResultsState, initialCoordinatorState, markWorkerDone, RESULT_CAP, type CoordinatorState } from './coordinator-state'
+import { applyProgress, canClearResults, importedResultsState, initialCoordinatorState, markWorkerDone, RESULT_CAP, type CoordinatorState } from './coordinator-state'
 import type { SearchWorkerRequest, SearchWorkerResponse } from './protocol'
-import { distributeSegments, isRefinementOf, remainingSegments, segmentsLength } from './refine'
+import { distributeSegments, isRefinementOf, remainingSegments, segmentsLength, shouldRefine } from './refine'
 import { advanceTraversalStart, partitionRotated, randomTraversalStart, type SeedRange } from './traversal'
 
 export const searchStore = new Store<CoordinatorState>(initialCoordinatorState())
@@ -20,6 +20,19 @@ const STOP_ACK_TIMEOUT_MS = 2_000
  */
 export function loadImportedResults(matches: ParsedSeed[], query: QueryDocument): void {
   searchStore.setState((state) => importedResultsState(state, matches, query))
+}
+
+/**
+ * Empties the results list along with the finished-run bookkeeping behind it —
+ * the query, the matches, and the scanned coverage a later start would
+ * otherwise continue from — so the next search is guaranteed to scan from
+ * scratch. Ignored while a search is running or stopping, which owns that
+ * state. The session counter is preserved so late messages from the previous
+ * session stay stale.
+ */
+export function clearResults(): void {
+  if (!canClearResults(searchStore.state)) return
+  searchStore.setState((state) => ({ ...initialCoordinatorState(state.total), sessionId: state.sessionId }))
 }
 
 export class SearchCoordinator {
@@ -48,7 +61,24 @@ export class SearchCoordinator {
     return this.workers.slice(0, target)
   }
 
+  /**
+   * Runs `query`. When the last finished run used a strict subset of these
+   * requirements over the same scope, the scan continues from it rather than
+   * restarting — see `refine`. Refining is never a separate user decision:
+   * it is strictly cheaper than the fresh scan it replaces and yields the
+   * same result set, so every start takes it when it is sound.
+   */
   start(query: QueryDocument, workerCount = Math.max(1, navigator.hardwareConcurrency ?? 4)): void {
+    if (shouldRefine(searchStore.state, query)) {
+      this.refine(query, workerCount)
+      return
+    }
+    this.startFresh(query, workerCount)
+  }
+
+  /** Scans the whole seed space from a fresh traversal start, discarding any
+   * previous results. */
+  private startFresh(query: QueryDocument, workerCount: number): void {
     const workers = this.ensureWorkers(workerCount)
     const sessionId = ++this.sessionId
     const startedAt = performance.now()
@@ -80,6 +110,10 @@ export class SearchCoordinator {
    * covered. The previous run's matches, coverage, and query stay untouched
    * in the store until the re-verification has succeeded, so a cancelled or
    * failed filter phase falls back to the still-finished previous search.
+   *
+   * Reached from `start` whenever `shouldRefine` holds; the superset
+   * invariant is re-asserted below because filter-and-resume is only sound
+   * under it.
    */
   refine(query: QueryDocument, workerCount = Math.max(1, navigator.hardwareConcurrency ?? 4)): void {
     const previous = searchStore.state

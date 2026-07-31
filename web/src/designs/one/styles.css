@@ -173,6 +173,10 @@ body {
 .d1-pane {
   min-height: 0;
   min-width: 0;
+  /* Panes size from the layout, never from their contents, so their heads can
+     adapt to the width they actually get instead of guessing from the
+     viewport. */
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   background: var(--d1-panel);
@@ -230,10 +234,21 @@ body {
   cursor: pointer;
 }
 
-/* Both buttons already carry side padding, so close the row gap a little
+/* The buttons already carry side padding, so close the row gap a little
    between them without pulling them nearer the seed count. */
 .d1-io-btn + .d1-io-btn {
   margin-left: -2px;
+}
+
+/* Three labelled controls plus the seed count overrun the head once the pane
+   is narrow — on a phone, but also in the tightest three-column desktop
+   layout, where this column bottoms out at its 320px minimum. Both cases key
+   off the pane's own width, not the viewport's, so the row degrades to bare
+   glyphs exactly when it has to; each button still names itself through its
+   title and aria-label. */
+@container (max-width: 400px) {
+  .d1-io-label { display: none; }
+  .d1-io-btn { padding: 0 5px; }
 }
 
 /* The glyphs carry more empty space below than above, as on the other
@@ -472,19 +487,6 @@ body {
 .d1-kbd-text { line-height: 1; }
 
 .d1-btn-danger.d1-btn-big kbd { background: rgba(255, 255, 255, 0.14); border-color: rgba(255, 255, 255, 0.2); }
-
-/* Refine keeps the accent role while the neighboring start button demotes to
-   the plain "New Search" look, making the recommended action obvious. */
-.d1-btn-refine {
-  color: var(--d1-accent-ink);
-  background: var(--d1-accent);
-  border-color: var(--d1-accent-border);
-}
-
-.d1-btn-refine:hover:not(:disabled) {
-  background: var(--d1-accent-hover);
-  border-color: var(--d1-accent-border);
-}
 
 /* Keycap for inline shortcut hints: a rounded rectangle whose doubled bottom
    edge — an inset line plus a shadow under it — reads as slightly raised. */

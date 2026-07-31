@@ -142,13 +142,6 @@
             </StackPanel>
             <Button.KeyboardAccelerators><KeyboardAccelerator Modifiers="Control" Key="Enter"/></Button.KeyboardAccelerators>
           </Button>
-          <Button x:Name="RefineButton" HorizontalAlignment="Stretch" Padding="0,9" Click="Refine_Click" Visibility="Collapsed"
-                  ToolTipService.ToolTip="Re-check the previous results against the added requirements, then continue where the last search stopped">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-              <FontIcon Glyph="&#xE71C;" FontSize="14"/>
-              <TextBlock Text="Refine Results"/>
-            </StackPanel>
-          </Button>
           <HyperlinkButton Content="Shattered Pixel Dungeon v3.3.8" Click="About_Click" FontSize="12"
                            HorizontalAlignment="Center" Padding="6,2"
                            ToolTipService.ToolTip="Artwork attribution and licenses"/>
@@ -184,6 +177,14 @@
                 <StackPanel Orientation="Horizontal" Spacing="6">
                   <FontIcon Glyph="&#xE898;" FontSize="14" VerticalAlignment="Center"/>
                   <TextBlock Text="Export" VerticalAlignment="Center"/>
+                </StackPanel>
+              </Button>
+              <!-- Discards the results and the run they came from, so the next
+                   Start Search scans from the beginning instead of refining. -->
+              <Button x:Name="ClearResultsButton" Style="{StaticResource SubtleLabelButton}" Click="ClearResults_Click" ToolTipService.ToolTip="Clear the results so the next search starts fresh">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <FontIcon Glyph="&#xE894;" FontSize="14" VerticalAlignment="Center"/>
+                  <TextBlock Text="Clear" VerticalAlignment="Center"/>
                 </StackPanel>
               </Button>
             </StackPanel>

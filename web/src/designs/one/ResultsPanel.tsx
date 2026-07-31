@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from '@tanstack/react-store'
 import { compactNumber, formatDuration, probabilityLabel } from '../../lib/format'
-import { CheckIcon, CopyIcon, DownloadIcon, UploadIcon } from '../../lib/icons'
+import { CheckIcon, CopyIcon, DownloadIcon, TrashIcon, UploadIcon } from '../../lib/icons'
 import {
   MAX_RESULTS_FILE_BYTES,
   RESULTS_FILE_NAME,
@@ -9,8 +9,8 @@ import {
   encodeResultsFile,
   parsedSeedFromCode,
 } from '../../lib/results-file'
-import { loadImportedResults, searchStore } from '../../lib/search/coordinator'
-import { RESULT_CAP } from '../../lib/search/coordinator-state'
+import { clearResults, loadImportedResults, searchStore } from '../../lib/search/coordinator'
+import { canClearResults, RESULT_CAP } from '../../lib/search/coordinator-state'
 import { queryStore } from '../../lib/store'
 import { analyzeQuery } from '../../lib/wasm'
 import type { AnalysisResult } from '../../lib/wasm/types'
@@ -101,6 +101,15 @@ export function ResultsPanel({
   // shows at most the advertised cap.
   const shownMatches = search.matches.slice(0, RESULT_CAP)
 
+  // Returns the panel to its idle empty state, banners included. Dropping the
+  // finished run also drops what a start would have refined from, which is
+  // the point: the next search rescans the whole seed space.
+  const discardResults = () => {
+    clearResults()
+    setFileError(undefined)
+    setFileInfo(undefined)
+  }
+
   const exportResults = () => {
     // Export the query snapshot captured when the results were produced (at
     // search start or import), never the live editor state.
@@ -167,7 +176,7 @@ export function ResultsPanel({
             onClick={() => fileInput.current?.click()}
           >
             <DownloadIcon size={13} />
-            Import
+            <span className="d1-io-label">Import</span>
           </button>
           <button
             type="button"
@@ -178,7 +187,18 @@ export function ResultsPanel({
             onClick={exportResults}
           >
             <UploadIcon size={13} />
-            Export
+            <span className="d1-io-label">Export</span>
+          </button>
+          <button
+            type="button"
+            className="d1-io-btn"
+            title="Clear these results, so the next search starts from scratch"
+            aria-label="Clear results"
+            disabled={!canClearResults(search)}
+            onClick={discardResults}
+          >
+            <TrashIcon size={13} />
+            <span className="d1-io-label">Clear</span>
           </button>
           <input
             ref={fileInput}

@@ -35,7 +35,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -87,7 +86,6 @@ fun FinderScreen(
     seedsPerSecond: Double,
     elapsedSeconds: Long,
     isSearching: Boolean,
-    canRefine: Boolean,
     isRefined: Boolean,
     refineSummary: Pair<Int, Int>?,
     error: String?,
@@ -104,12 +102,13 @@ fun FinderScreen(
     onExcludeBlacksmithRewardsChange: (Boolean) -> Unit,
     onFastModeChange: (Boolean) -> Unit,
     onSearch: () -> Unit,
-    onRefine: () -> Unit,
     onCancel: () -> Unit,
     canExportResults: Boolean,
+    canClearResults: Boolean,
     importNotice: String?,
     onExportResults: () -> Unit,
     onImportResults: () -> Unit,
+    onClearResults: () -> Unit,
     onScoutSeed: (String) -> Unit,
     bottomBar: @Composable () -> Unit,
 ) {
@@ -154,6 +153,14 @@ fun FinderScreen(
                                     onExportResults()
                                 },
                             )
+                            DropdownMenuItem(
+                                text = { Text("Clear results") },
+                                enabled = !isSearching && canClearResults,
+                                onClick = {
+                                    showOverflowMenu = false
+                                    onClearResults()
+                                },
+                            )
                         }
                     }
                 },
@@ -170,9 +177,7 @@ fun FinderScreen(
                     seedsPerSecond = seedsPerSecond,
                     elapsedSeconds = elapsedSeconds,
                     isSearching = isSearching,
-                    canRefine = canRefine,
                     onSearch = onSearch,
-                    onRefine = onRefine,
                     onCancel = onCancel,
                 )
                 bottomBar()
@@ -582,9 +587,7 @@ private fun SearchActionBar(
     seedsPerSecond: Double,
     elapsedSeconds: Long,
     isSearching: Boolean,
-    canRefine: Boolean,
     onSearch: () -> Unit,
-    onRefine: () -> Unit,
     onCancel: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
@@ -614,31 +617,15 @@ private fun SearchActionBar(
                     }
                 }
             } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                Button(
+                    onClick = onSearch,
+                    enabled = requirementCount > 0,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shapes = ButtonDefaults.shapes(),
                 ) {
-                    if (canRefine) {
-                        FilledTonalButton(
-                            onClick = onRefine,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp),
-                            shapes = ButtonDefaults.shapes(),
-                        ) {
-                            Text("Refine Results", style = MaterialTheme.typography.titleMedium)
-                        }
-                    }
-                    Button(
-                        onClick = onSearch,
-                        enabled = requirementCount > 0,
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp),
-                        shapes = ButtonDefaults.shapes(),
-                    ) {
-                        Text("Search", style = MaterialTheme.typography.titleMedium)
-                    }
+                    Text("Search", style = MaterialTheme.typography.titleMedium)
                 }
             }
         }
