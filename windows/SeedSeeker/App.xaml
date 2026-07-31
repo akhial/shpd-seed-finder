@@ -43,6 +43,12 @@
         <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}"/>
       </Style>
 
+      <!-- Same subtle treatment, sized for a glyph next to a caption. The side
+           padding is symmetric so the hover fill sits evenly around the label. -->
+      <Style x:Key="SubtleLabelButton" TargetType="Button" BasedOn="{StaticResource SubtleIconButton}">
+        <Setter Property="Padding" Value="8,5"/>
+      </Style>
+
       <!-- ToggleSwitch trimmed of its content column so it right-aligns inside cards -->
       <Style x:Key="CompactToggle" TargetType="ToggleSwitch">
         <Setter Property="MinWidth" Value="0"/>

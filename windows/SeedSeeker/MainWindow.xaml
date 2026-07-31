@@ -165,11 +165,19 @@
             <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
             <TextBlock Text="Results" Style="{StaticResource SubtitleTextBlockStyle}" VerticalAlignment="Center"/>
             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2" VerticalAlignment="Center">
-              <Button x:Name="ImportResultsButton" Style="{StaticResource SubtleIconButton}" Click="ImportResults_Click" ToolTipService.ToolTip="Import results from a file">
-                <FontIcon Glyph="&#xE8B5;" FontSize="14"/>
+              <!-- Download/Upload glyphs, so the arrow directions match the
+                   other platforms: into the app for import, out of it for export. -->
+              <Button x:Name="ImportResultsButton" Style="{StaticResource SubtleLabelButton}" Click="ImportResults_Click" ToolTipService.ToolTip="Import results from a file">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <FontIcon Glyph="&#xE896;" FontSize="14" VerticalAlignment="Center"/>
+                  <TextBlock Text="Import" VerticalAlignment="Center"/>
+                </StackPanel>
               </Button>
-              <Button x:Name="ExportResultsButton" Style="{StaticResource SubtleIconButton}" Click="ExportResults_Click" ToolTipService.ToolTip="Export results to a file">
-                <FontIcon Glyph="&#xE74E;" FontSize="14"/>
+              <Button x:Name="ExportResultsButton" Style="{StaticResource SubtleLabelButton}" Click="ExportResults_Click" ToolTipService.ToolTip="Export results to a file">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <FontIcon Glyph="&#xE898;" FontSize="14" VerticalAlignment="Center"/>
+                  <TextBlock Text="Export" VerticalAlignment="Center"/>
+                </StackPanel>
               </Button>
             </StackPanel>
           </Grid>
