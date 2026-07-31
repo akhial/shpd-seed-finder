@@ -8,6 +8,8 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Rect
 import androidx.activity.compose.PredictiveBackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Search
@@ -28,6 +30,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.asImageBitmap
@@ -44,6 +47,7 @@ import dev.seedseeker.app.model.BuiltInPresets
 import dev.seedseeker.app.model.PresetQuery
 import dev.seedseeker.app.model.PresetStorage
 import dev.seedseeker.app.model.QueryPreset
+import dev.seedseeker.app.model.ResultsExport
 import dev.seedseeker.app.model.ScoutWorld
 import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.SearchState
@@ -67,6 +71,23 @@ private const val CHALLENGES_KEY = "challenges_mask"
 private const val UPDATE_LAST_CHECK_KEY = "update_last_check"
 private const val UPDATE_SKIPPED_KEY = "update_skipped_version"
 private const val UPDATE_CHECK_INTERVAL_MILLIS = 24L * 60 * 60 * 1000
+
+private const val MAX_IMPORTED_RESULTS = 1_024
+
+/** Reads at most `limit` bytes as UTF-8, failing on larger files. */
+private fun readCapped(stream: java.io.InputStream, limit: Int): String {
+    val buffer = ByteArray(limit + 1)
+    var total = 0
+    while (total < buffer.size) {
+        val read = stream.read(buffer, total, buffer.size - total)
+        if (read < 0) break
+        total += read
+    }
+    require(total <= limit) {
+        "This file is too large to be a Seed Seeker results file (2 MiB limit)."
+    }
+    return String(buffer, 0, total, Charsets.UTF_8)
+}
 
 private enum class Destination { FINDER, SCOUT, CHALLENGES, ABOUT }
 private data class SearchRun(val id: Long, val request: SearchRequest, val refine: RefineSpec? = null)
@@ -151,6 +172,92 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
     var isScouting by remember { mutableStateOf(false) }
     var scoutError by remember { mutableStateOf<String?>(null) }
     var availableUpdate by remember { mutableStateOf<UpdateInfo?>(null) }
+    // Survives the activity recreation a document picker can trigger.
+    var pendingExport by rememberSaveable { mutableStateOf<String?>(null) }
+    var transferError by remember { mutableStateOf<String?>(null) }
+    var importNotice by remember { mutableStateOf<String?>(null) }
+    // The query that produced the current results, snapshotted at search
+    // start (or import) so an export never reflects later editor changes.
+    var searchedQuery by remember { mutableStateOf<PresetQuery?>(null) }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        val contents = pendingExport
+        pendingExport = null
+        if (uri != null && contents != null) {
+            scope.launch {
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        context.contentResolver.openOutputStream(uri, "wt")
+                            ?.use { it.write(contents.toByteArray()) }
+                            ?: error("Could not open the selected file.")
+                    }
+                }.onFailure { failure ->
+                    transferError = "Export failed: ${failure.message}"
+                }
+            }
+        }
+    }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                runCatching {
+                    val text = context.contentResolver.openInputStream(uri)?.use { stream ->
+                        readCapped(stream, ResultsExport.MAX_FILE_BYTES)
+                    } ?: error("Could not read the selected file.")
+                    ResultsExport.decode(text)
+                }
+            }
+            outcome.onSuccess { imported ->
+                // A search may have started while the picker was open or the
+                // file was being read.
+                if (isSearching) {
+                    transferError = "Stop the search before importing results."
+                    return@onSuccess
+                }
+                requirements = imported.query.requirements.map { it.copy(key = nextRequirementKey++) }
+                maximumDepth = imported.query.maximumDepth
+                requireBlacksmith = imported.query.requireBlacksmith
+                excludeBlacksmithRewards = imported.query.excludeBlacksmithRewards
+                fastMode = imported.query.fastMode
+                challenges = imported.query.challenges
+                preferences.edit().putInt(CHALLENGES_KEY, challenges).apply()
+                // Deduplicate then cap, the shared import rule on every platform.
+                val kept = LinkedHashSet<String>()
+                for (seed in imported.seeds) {
+                    if (kept.size == MAX_IMPORTED_RESULTS) break
+                    kept.add(seed)
+                }
+                val dropped = imported.seeds.size - kept.size
+                results = kept.map { SeedResult(it, imported.query.requirements.size) }
+                searchedQuery = imported.query
+                // Imported results carry no traversal state, so the previous
+                // search's refine base no longer describes the listed seeds.
+                lastFinishedRun = null
+                searchStatus = null
+                searchError = null
+                importNotice = buildString {
+                    append("Imported ${kept.size} seed${if (kept.size == 1) "" else "s"} from file")
+                    if (dropped > 0) {
+                        append(" · $dropped duplicate or over-limit entr${if (dropped == 1) "y" else "ies"} dropped")
+                    }
+                    val fileVersion = imported.shpdVersion
+                    if (fileVersion != null && fileVersion != ResultsExport.SHPD_VERSION) {
+                        append(
+                            " · made for Shattered Pixel Dungeon v$fileVersion; this app targets " +
+                                "v${ResultsExport.SHPD_VERSION}, so seeds may generate differently",
+                        )
+                    }
+                }
+            }.onFailure { failure ->
+                transferError = failure.message ?: "The results file could not be imported."
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
         val now = System.currentTimeMillis()
@@ -201,6 +308,17 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                     engine.filterSeeds(currentRun.request, refine.keepSeeds.map { it.seed })
                 }
                 results = kept.map { SeedResult(it, currentRun.request.requirements.size) }
+                // From here on the listed results match the refined request, so
+                // that is what an export must claim. A cancelled filter phase
+                // leaves the previous results — and their snapshot — untouched.
+                searchedQuery = PresetQuery(
+                    requirements = currentRun.request.requirements,
+                    maximumDepth = currentRun.request.maximumDepth,
+                    requireBlacksmith = currentRun.request.requireBlacksmith,
+                    excludeBlacksmithRewards = currentRun.request.excludeBlacksmithRewards,
+                    fastMode = currentRun.request.fastMode,
+                    challenges = currentRun.request.challenges,
+                )
                 refineSummary = kept.size to refine.keepSeeds.size
                 if (refine.remaining == 0L) {
                     searchStatus = SearchStatus(SearchState.COMPLETED, 0, 0)
@@ -409,6 +527,15 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                 onFastModeChange = { fastMode = it },
                 onSearch = {
                     if (requirements.isNotEmpty()) {
+                        importNotice = null
+                        searchedQuery = PresetQuery(
+                            requirements = requirements,
+                            maximumDepth = maximumDepth,
+                            requireBlacksmith = requireBlacksmith,
+                            excludeBlacksmithRewards = excludeBlacksmithRewards,
+                            fastMode = fastMode,
+                            challenges = challenges,
+                        )
                         run = SearchRun(
                             nextRunId++,
                             SearchRequest(
@@ -442,6 +569,30 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                         // are untouched, so the refine can be retried.
                         run = null
                     }
+                },
+                canExportResults = searchedQuery != null && results.isNotEmpty(),
+                importNotice = importNotice,
+                onExportResults = {
+                    // Export the query snapshot that produced the results,
+                    // never the live editor state.
+                    val query = searchedQuery
+                    if (query == null || results.isEmpty()) {
+                        transferError = "Run a search first — there are no results to export yet."
+                    } else {
+                        runCatching {
+                            ResultsExport.encode(query, results.map { it.seed }, BuildConfig.VERSION_NAME)
+                        }.onSuccess { contents ->
+                            pendingExport = contents
+                            exportLauncher.launch(ResultsExport.SUGGESTED_FILE_NAME)
+                        }.onFailure { failure ->
+                            transferError = "Export failed: ${failure.message}"
+                        }
+                    }
+                },
+                onImportResults = {
+                    importLauncher.launch(
+                        arrayOf("application/json", "text/plain", "application/octet-stream"),
+                    )
                 },
                 onScoutSeed = ::scoutSeed,
                 bottomBar = navBar,
@@ -539,6 +690,17 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                         }
                     }
                     showRequirementSheet = false
+                },
+            )
+        }
+
+        transferError?.let { message ->
+            AlertDialog(
+                onDismissRequest = { transferError = null },
+                title = { Text("Results file") },
+                text = { Text(message) },
+                confirmButton = {
+                    TextButton(onClick = { transferError = null }) { Text("OK") }
                 },
             )
         }

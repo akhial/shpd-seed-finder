@@ -39,6 +39,12 @@ public sealed partial class MainWindow : Window
     private readonly List<string> collected = [];
     private readonly HashSet<string> collectedSet = [];
     private bool restoring = true;
+    private bool searchRunning;
+    /// <summary>
+    /// The query that produced the current results, snapshotted at search
+    /// start (or import) so an export never reflects later editor changes.
+    /// </summary>
+    private QuerySettings? searchedQuery;
     private const int ResultCap = 1024;
     private static readonly string SettingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Seed Seeker", "query.json");
     private static readonly string PresetsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Seed Seeker", "presets.json");
@@ -66,7 +72,8 @@ public sealed partial class MainWindow : Window
         _ = ItemAtlas.GetAsync();
         ResultsList.ItemsSource = results; ScoutButton.IsEnabled = false;
         FloorSlider.Value = 1; FloorSlider.Minimum = 1; FloorSlider.Maximum = 24;
-        LoadSettings(); LoadPresets(); RefreshPresets(); RefreshQuery();
+        results.CollectionChanged += (_, _) => UpdateTransferButtons();
+        LoadSettings(); LoadPresets(); RefreshPresets(); RefreshQuery(); UpdateTransferButtons();
         Closed += (_, _) => { search?.Cancel(); search?.Dispose(); };
         // ContentDialog needs a live XamlRoot, which only exists once the root
         // element has loaded; Activated can fire before that.
@@ -480,7 +487,15 @@ public sealed partial class MainWindow : Window
         if (search is not null) { search.Cancel(); StartButton.IsEnabled = false; return; }
         if (busy) return;
         busy = true; collected.Clear(); collectedSet.Clear(); results.Clear(); SearchStatus.Text = "Starting search…"; SetStartButton(running: true);
-        try { var snapshot = query.Clone(); search = await Task.Run(() => engine.Start(snapshot)); await RunSearch(search); await CaptureBaseRun(snapshot, search); } catch (Exception ex) { SearchStatus.Text = $"Failed: {ex.Message}"; baseRun = null; }
+        try
+        {
+            var snapshot = query.Clone();
+            // Snapshot the query so an export always describes the query that
+            // actually produced the listed results, even after later edits.
+            searchedQuery = snapshot;
+            search = await Task.Run(() => engine.Start(snapshot)); await RunSearch(search); await CaptureBaseRun(snapshot, search);
+        }
+        catch (Exception ex) { SearchStatus.Text = $"Failed: {ex.Message}"; baseRun = null; }
         finally { busy = false; search?.Dispose(); search = null; SetStartButton(running: false); StartButton.IsEnabled = query.Requirements.Count != 0; }
     }
     private async void Refine_Click(object sender, RoutedEventArgs e)
@@ -495,6 +510,10 @@ public sealed partial class MainWindow : Window
             var kept = await Task.Run(() => engine.FilterSeeds(snapshot, previous.Seeds));
             results.Clear(); collected.Clear(); collectedSet.Clear();
             Collect(kept);
+            // From here on the listed results match the refined query, so
+            // that is what an export must claim. A failure above leaves the
+            // previous results — and their snapshot — untouched.
+            searchedQuery = snapshot;
             var prefix = $"Refined: kept {kept.Count} of {previous.Seeds.Count} previous seed{(previous.Seeds.Count == 1 ? "" : "s")}";
             if (previous.Remaining > 0 && kept.Count < ResultCap)
             {
@@ -555,10 +574,114 @@ public sealed partial class MainWindow : Window
         DeletePresetButton.IsEnabled = !running
             && PresetPicker.SelectedItem is QueryPreset { IsBuiltIn: false };
         if (running) RefineButton.Visibility = Visibility.Collapsed; else UpdateRefineButton();
+        searchRunning = running;
+        UpdateTransferButtons();
     }
     private void UpdateRefineButton() => RefineButton.Visibility =
         search is null && !busy && baseRun is not null && QueryRefinement.IsRefinement(query, baseRun.Query)
             ? Visibility.Visible : Visibility.Collapsed;
+
+    private void UpdateTransferButtons()
+    {
+        ImportResultsButton.IsEnabled = !searchRunning;
+        ExportResultsButton.IsEnabled = !searchRunning && results.Count > 0 && searchedQuery is not null;
+    }
+
+    private async void ExportResults_Click(object sender, RoutedEventArgs e)
+    {
+        // Export the query snapshot captured when the results were produced
+        // (at search start or import), never the live editor state.
+        // `busy` also covers a refine's filter phase, which runs with no
+        // native session but replaces the results when it lands.
+        if (busy || search is not null || searchedQuery is null || results.Count == 0) return;
+        var exportQuery = searchedQuery.Clone();
+        var seeds = results.Select(x => x.Seed).ToList();
+        var picker = new Windows.Storage.Pickers.FileSavePicker
+        {
+            SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary,
+            SuggestedFileName = ResultsExport.SuggestedFileName,
+        };
+        picker.FileTypeChoices.Add("Seed Seeker results", [".json"]);
+        // Unpackaged apps must bind pickers to the window handle before use.
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+        var file = await picker.PickSaveFileAsync();
+        if (file is null) return;
+        try
+        {
+            var version = typeof(MainWindow).Assembly.GetName().Version;
+            var appVersion = version is null ? "dev" : $"{version.Major}.{version.Minor}.{version.Build}";
+            var contents = ResultsExport.Encode(exportQuery, seeds, appVersion);
+            await FileIO.WriteTextAsync(file, contents);
+        }
+        catch (Exception ex)
+        {
+            await ShowTransferMessage($"Export failed: {ex.Message}");
+        }
+    }
+
+    private async void ImportResults_Click(object sender, RoutedEventArgs e)
+    {
+        if (busy || search is not null) return;
+        var picker = new Windows.Storage.Pickers.FileOpenPicker
+        {
+            SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.DocumentsLibrary,
+        };
+        picker.FileTypeFilter.Add(".json");
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, WinRT.Interop.WindowNative.GetWindowHandle(this));
+        var file = await picker.PickSingleFileAsync();
+        if (file is null) return;
+        try
+        {
+            var properties = await file.GetBasicPropertiesAsync();
+            if (properties.Size > ResultsExport.MaxFileBytes)
+            {
+                await ShowTransferMessage("This file is too large to be a Seed Seeker results file (2 MiB limit).");
+                return;
+            }
+            var text = await FileIO.ReadTextAsync(file);
+            // Parse the untrusted file off the UI thread.
+            var imported = await Task.Run(() => ResultsExport.Decode(text));
+            // A search or refine may have started while the picker or reads
+            // were pending.
+            if (busy || search is not null)
+            {
+                await ShowTransferMessage("Stop the search before importing results.");
+                return;
+            }
+            ApplyQuery(imported.Query);
+            searchedQuery = imported.Query.Clone();
+            // Imported results carry no traversal state, so the previous
+            // search's refine base no longer describes the listed seeds.
+            baseRun = null; UpdateRefineButton();
+            results.Clear();
+            // Deduplicate then cap, the shared import rule on every platform.
+            foreach (var seed in imported.Seeds.Distinct())
+                if (results.Count < ResultCap) results.Add(new(seed, results.Count + 1));
+            var dropped = imported.Seeds.Count - results.Count;
+            var status = $"Imported {results.Count} seed{(results.Count == 1 ? "" : "s")} from file.";
+            if (dropped > 0)
+                status += $"\n{dropped} duplicate or over-limit entr{(dropped == 1 ? "y" : "ies")} dropped.";
+            if (imported.FileShpdVersion is string fileVersion && fileVersion != ResultsExport.ShpdVersion)
+                status += $"\nMade for Shattered Pixel Dungeon v{fileVersion}; this app targets v{ResultsExport.ShpdVersion}, so seeds may generate differently.";
+            SearchStatus.Text = status;
+            UpdateTransferButtons();
+        }
+        catch (ResultsExportException ex)
+        {
+            await ShowTransferMessage(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            await ShowTransferMessage($"Import failed: {ex.Message}");
+        }
+    }
+
+    private async Task ShowTransferMessage(string message)
+    {
+        var dialog = new ContentDialog { XamlRoot = Content.XamlRoot, Title = "Results file", Content = message, CloseButtonText = "OK" };
+        await dialog.ShowAsync();
+    }
+
     private async Task RunSearch(NativeSearch active, string? prefix = null)
     {
         var timer = Stopwatch.StartNew(); long lastScanned = 0; var lastTime = 0d;

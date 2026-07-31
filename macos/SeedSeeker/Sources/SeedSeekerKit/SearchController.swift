@@ -29,7 +29,19 @@ public final class SearchController {
     public private(set) var baseRun: BaseRun?
     /// How many previous results survived the last refine; nil after a fresh search.
     public private(set) var refinedKept: Int?
+    /// Whether the current results were restored from an imported file
+    /// rather than produced by a search.
+    public private(set) var isImported = false
+    /// Imported entries dropped as duplicates or beyond the result cap.
+    public private(set) var importedDropped = 0
+    /// The query that produced the current results, snapshotted at search
+    /// start (or import) so an export never reflects later editor changes.
+    public private(set) var exportQuery: SavedQuery?
     public var selectedSeed: String?
+
+    /// Shared import rule on every platform: results are deduplicated
+    /// (keeping first occurrences) and capped at the result limit.
+    public static let importCap = 1_024
 
     private let engine: any SeedFinderEngine
     private var session: (any SeedFinderSearchSession)?
@@ -47,8 +59,34 @@ public final class SearchController {
         state == .completed && scannedSeeds == 0 && results.isEmpty
     }
 
+    /// Replaces the results with seeds restored from an imported results
+    /// file, deduplicating and capping per the shared import rule and
+    /// remembering the query that produced them for later export. Callers
+    /// must ensure no search is running.
+    public func loadImported(seeds: [String], query: SavedQuery) {
+        var unique: [String] = []
+        var seen = Set<String>()
+        for seed in seeds where unique.count < Self.importCap && seen.insert(seed).inserted {
+            unique.append(seed)
+        }
+        results = unique.map { SeedResult(seed: $0, matchedRequirements: query.requirements.count) }
+        importedDropped = seeds.count - unique.count
+        exportQuery = query
+        scannedSeeds = 0; totalSeeds = 0; matchProbability = nil; seedsPerSecond = 0; elapsed = 0
+        errorCode = 0; message = nil; state = nil; isImported = true; selectedSeed = nil
+        // Imported results carry no traversal state, so the previous
+        // search's base run no longer describes the listed seeds.
+        baseRun = nil; refinedKept = nil
+    }
+
     public func start(_ request: SearchRequest) {
         task?.cancel(); results = []; refinedKept = nil; resetProgress()
+        isImported = false; importedDropped = 0
+        exportQuery = SavedQuery(
+            requirements: request.requirements, maximumDepth: request.maximumDepth,
+            requireBlacksmith: request.requireBlacksmith,
+            excludeBlacksmithRewards: request.excludeBlacksmithRewards,
+            fastMode: request.fastMode, challenges: request.challenges)
         task = Task { [weak self] in
             guard let self else { return }
             await self.run(request, alreadyShown: []) { engine in
@@ -89,6 +127,14 @@ public final class SearchController {
             }
             self.results = kept.map { SeedResult(seed: $0, matchedRequirements: request.requirements.count) }
             self.refinedKept = kept.count
+            // From here on the listed results match the refined request, so
+            // that is what an export must claim. A cancel or failure above
+            // leaves the base results — and their snapshot — untouched.
+            self.exportQuery = SavedQuery(
+                requirements: request.requirements, maximumDepth: request.maximumDepth,
+                requireBlacksmith: request.requireBlacksmith,
+                excludeBlacksmithRewards: request.excludeBlacksmithRewards,
+                fastMode: request.fastMode, challenges: request.challenges)
             if base.remaining > 0 {
                 await self.run(request, alreadyShown: Set(kept)) { engine in
                     try await engine.startResumedSearch(request, resumeFrom: base.resumeFrom, scanLen: base.remaining)

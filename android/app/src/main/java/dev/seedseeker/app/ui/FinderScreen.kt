@@ -26,10 +26,13 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
@@ -103,10 +106,15 @@ fun FinderScreen(
     onSearch: () -> Unit,
     onRefine: () -> Unit,
     onCancel: () -> Unit,
+    canExportResults: Boolean,
+    importNotice: String?,
+    onExportResults: () -> Unit,
+    onImportResults: () -> Unit,
     onScoutSeed: (String) -> Unit,
     bottomBar: @Composable () -> Unit,
 ) {
     var showPresets by remember { mutableStateOf(false) }
+    var showOverflowMenu by remember { mutableStateOf(false) }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -121,6 +129,32 @@ fun FinderScreen(
                     }
                     IconButton(onClick = onAbout) {
                         Icon(Icons.Filled.Info, contentDescription = "About and licenses")
+                    }
+                    Box {
+                        IconButton(onClick = { showOverflowMenu = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "More options")
+                        }
+                        DropdownMenu(
+                            expanded = showOverflowMenu,
+                            onDismissRequest = { showOverflowMenu = false },
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Import results…") },
+                                enabled = !isSearching,
+                                onClick = {
+                                    showOverflowMenu = false
+                                    onImportResults()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Export results…") },
+                                enabled = !isSearching && canExportResults,
+                                onClick = {
+                                    showOverflowMenu = false
+                                    onExportResults()
+                                },
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -187,6 +221,18 @@ fun FinderScreen(
                     contentPadding = PaddingValues(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
+                    importNotice?.let { notice ->
+                        item {
+                            Text(
+                                notice,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                     if (results.isEmpty()) {
                         item {
                             Text(

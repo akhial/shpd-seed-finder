@@ -8,6 +8,8 @@
     <file preprocess="xml-stripblanks">icons/scalable/actions/kind-armor-symbolic.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/actions/kind-wand-symbolic.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/actions/kind-ring-symbolic.svg</file>
+    <file preprocess="xml-stripblanks">icons/scalable/actions/results-import-symbolic.svg</file>
+    <file preprocess="xml-stripblanks">icons/scalable/actions/results-export-symbolic.svg</file>
     <file>style/style.css</file>
 
     <!--

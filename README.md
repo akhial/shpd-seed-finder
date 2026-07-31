@@ -221,8 +221,7 @@ Searches run fully client-side in Web Workers through WebAssembly. Release tags 
 #### Building
 
 ```sh
-cd android
-JAVA_HOME=/path/to/java-21 ./gradlew :app:assembleRelease --offline
+JAVA_HOME=/path/to/java-21 ./android/gradlew -p android :app:assembleRelease
 ```
 
 #### Signing
@@ -233,6 +232,15 @@ JAVA_HOME=/path/to/java-21 ./gradlew :app:assembleRelease --offline
   --ks-pass pass:android --key-pass pass:android \
   --out seed-seeker-release-debug-signed.apk \
   android/app/build/outputs/apk/release/app-release-unsigned.apk
+```
+
+#### Installing
+
+```sh
+"$ANDROID_HOME/platform-tools/adb" devices -l
+"$ANDROID_HOME/platform-tools/adb" install -r seed-seeker-release-debug-signed.apk
+"$ANDROID_HOME/platform-tools/adb" shell monkey \
+  -p dev.seedseeker.unofficial -c android.intent.category.LAUNCHER 1
 ```
 
 ### macOS
@@ -284,11 +292,10 @@ The workspace includes the GTK app, so the commands above need its system librar
 #### Android
 
 ```sh
-cd android
-JAVA_HOME=/path/to/java-21 ./gradlew \
+JAVA_HOME=/path/to/java-21 ./android/gradlew -p android \
   :app:testDebugUnitTest \
   :app:lintDebug \
-  :app:assembleRelease --offline
+  :app:assembleRelease
 ```
 
 #### macOS

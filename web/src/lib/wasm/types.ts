@@ -65,8 +65,8 @@ export interface QueryState {
   challenges: ChallengeName[]
 }
 
-export type TierDocument = { exact: number } | { at_least: number } | { at_most: number }
-export type UpgradeDocument = number | { at_least: number }
+export type TierDocument = 'any' | { exact: number } | { at_least: number } | { at_most: number }
+export type UpgradeDocument = number | 'any' | { exact: number } | { at_least: number }
 
 export interface RequirementDocument {
   kind?: RequirementKind

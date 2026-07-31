@@ -238,6 +238,7 @@ export default function App() {
             hasRequirements={hasRequirements}
             onScout={runScout}
             activeSeed={scout.result?.seed.code}
+            shpdVersion={engine?.shpdVersion}
           />
         </section>
         <section className={paneClass('scout')} aria-label="Seed scout">
@@ -253,13 +254,26 @@ export default function App() {
       </main>
 
       <footer className="d1-footer">
-        <span>{engine ? `Shattered Pixel Dungeon v${engine.shpdVersion}` : 'loading engine…'}</span>
+        <span>
+          {engine ? (
+            <>
+              <span className="d1-footer-wide">Shattered Pixel Dungeon</span>
+              <span className="d1-footer-narrow">SHPD</span>
+              {` v${engine.shpdVersion}`}
+            </>
+          ) : (
+            'loading engine…'
+          )}
+        </span>
         <span className="d1-footer-sep" aria-hidden="true">·</span>
         <span>GPL-3.0-or-later</span>
         <span className="d1-footer-sep" aria-hidden="true">·</span>
         <a href="/licenses/COPYING.txt">License</a>
         <span className="d1-footer-sep" aria-hidden="true">·</span>
-        <a href="/third_party/shattered-pixel-dungeon/ATTRIBUTION.md">Asset attribution</a>
+        <a href="/third_party/shattered-pixel-dungeon/ATTRIBUTION.md">
+          <span className="d1-footer-wide">Asset attribution</span>
+          <span className="d1-footer-narrow">Attribution</span>
+        </a>
       </footer>
     </div>
   )

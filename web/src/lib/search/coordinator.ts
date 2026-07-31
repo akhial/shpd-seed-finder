@@ -1,6 +1,6 @@
 import { Store } from '@tanstack/store'
 import type { ParsedSeed, QueryDocument, ScoutRequest, ScoutResult } from '../wasm/types'
-import { applyProgress, initialCoordinatorState, markWorkerDone, RESULT_CAP, type CoordinatorState } from './coordinator-state'
+import { applyProgress, importedResultsState, initialCoordinatorState, markWorkerDone, RESULT_CAP, type CoordinatorState } from './coordinator-state'
 import type { SearchWorkerRequest, SearchWorkerResponse } from './protocol'
 import { distributeSegments, isRefinementOf, remainingSegments, segmentsLength } from './refine'
 import { advanceTraversalStart, partitionRotated, randomTraversalStart, type SeedRange } from './traversal'
@@ -11,6 +11,16 @@ export const searchStore = new Store<CoordinatorState>(initialCoordinatorState()
  * coordinator force-finalizes the stop. Workers acknowledge within one chunk
  * normally; the timeout only covers a worker that died or never started. */
 const STOP_ACK_TIMEOUT_MS = 2_000
+
+/**
+ * Replaces the results list with seeds restored from an imported results
+ * file, remembering the query that produced them for later export. Callers
+ * must ensure no search is running; stale worker messages are ignored
+ * because progress only applies to a running session.
+ */
+export function loadImportedResults(matches: ParsedSeed[], query: QueryDocument): void {
+  searchStore.setState((state) => importedResultsState(state, matches, query))
+}
 
 export class SearchCoordinator {
   private workers: Worker[] = []
@@ -53,6 +63,9 @@ export class SearchCoordinator {
       startedAt,
       segments,
       queryJson,
+      // Snapshot the query so an export always describes the query that
+      // actually produced the listed results, even after later edits.
+      query,
     }))
     this.startedWorkers = workers.length
     workers.forEach((worker, index) => {
@@ -96,7 +109,7 @@ export class SearchCoordinator {
         if (this.filterRestore?.sessionId !== sessionId) return
         this.filterRestore = undefined
         const remainder = remainingSegments(searchStore.state.segments, searchStore.state.workerScanned)
-        this.beginResumedScan(queryJson, remainder, kept, previousMatches.length, workerCount, sessionId)
+        this.beginResumedScan(query, remainder, kept, previousMatches.length, workerCount, sessionId)
       })
       .catch((error: unknown) => {
         this.restoreAfterFilter(sessionId, error instanceof Error ? error.message : String(error))
@@ -119,13 +132,14 @@ export class SearchCoordinator {
   }
 
   private beginResumedScan(
-    queryJson: string,
+    query: QueryDocument,
     remainder: SeedRange[],
     kept: ParsedSeed[],
     previousCount: number,
     workerCount: number,
     sessionId: number,
   ): void {
+    const queryJson = JSON.stringify(query)
     const startedAt = performance.now()
     const refined = { kept: kept.length, of: previousCount }
     // A filtered subset that already fills the display cap cannot surface
@@ -139,6 +153,10 @@ export class SearchCoordinator {
         matches: kept,
         capped: kept.length >= RESULT_CAP,
         queryJson,
+        // From here on the listed matches belong to the refined query, so
+        // that is what an export must claim. A cancelled or failed filter
+        // phase leaves the previous matches — and their snapshot — untouched.
+        query,
         refined,
         startedAt,
         elapsed: 0,
@@ -162,6 +180,7 @@ export class SearchCoordinator {
       matches: kept,
       capped: false,
       queryJson,
+      query,
       refined,
       startedAt,
       elapsed: 0,

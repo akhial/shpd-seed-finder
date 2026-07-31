@@ -1,9 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useStore } from '@tanstack/react-store'
 import { compactNumber, formatDuration, probabilityLabel } from '../../lib/format'
-import { CheckIcon, CopyIcon } from '../../lib/icons'
-import { searchStore } from '../../lib/search/coordinator'
+import { CheckIcon, CopyIcon, DownloadIcon, UploadIcon } from '../../lib/icons'
+import {
+  MAX_RESULTS_FILE_BYTES,
+  RESULTS_FILE_NAME,
+  decodeResultsFile,
+  encodeResultsFile,
+  parsedSeedFromCode,
+} from '../../lib/results-file'
+import { loadImportedResults, searchStore } from '../../lib/search/coordinator'
 import { RESULT_CAP } from '../../lib/search/coordinator-state'
+import { queryStore } from '../../lib/store'
+import { analyzeQuery } from '../../lib/wasm'
 import type { AnalysisResult } from '../../lib/wasm/types'
 
 /** Re-renders 10 times a second while active so stats stay live between worker updates. */
@@ -28,19 +37,35 @@ function estimateDuration(milliseconds: number | undefined): string {
   return `${Math.floor(hours / 24)}d ${hours % 24}h`
 }
 
+function triggerJsonDownload(text: string, filename: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
 export function ResultsPanel({
   analysis,
   hasRequirements,
   onScout,
   activeSeed,
+  shpdVersion,
 }: {
   analysis: AnalysisResult | undefined
   hasRequirements: boolean
   onScout: (code: string) => void
   activeSeed?: string
+  shpdVersion?: string
 }) {
   const search = useStore(searchStore)
   const [copied, setCopied] = useState<string | undefined>(undefined)
+  const [fileError, setFileError] = useState<string | undefined>(undefined)
+  const [fileInfo, setFileInfo] = useState<string | undefined>(undefined)
+  const fileInput = useRef<HTMLInputElement>(null)
 
   const copySeed = (code: string) => {
     void navigator.clipboard.writeText(code).then(() => {
@@ -57,29 +82,116 @@ export function ResultsPanel({
   const timeToSeed = probability && probability > 0 && search.rate > 0 ? 1_000 / (probability * search.rate) : undefined
 
   const statusChip =
-    search.state === 'completed' ? 'Completed' : search.state === 'cancelled' ? 'Cancelled' : search.state === 'failed' ? 'Failed' : undefined
+    search.state === 'completed'
+      ? 'Completed'
+      : search.state === 'cancelled'
+        ? 'Cancelled'
+        : search.state === 'failed'
+          ? 'Failed'
+          : search.state === 'imported'
+            ? 'Imported'
+            : undefined
   // The store keeps every delivered match for refine soundness; the panel
   // shows at most the advertised cap.
   const shownMatches = search.matches.slice(0, RESULT_CAP)
+
+  const exportResults = () => {
+    // Export the query snapshot captured when the results were produced (at
+    // search start or import), never the live editor state.
+    const query = search.query
+    if (!query || search.matches.length === 0) {
+      setFileError('Run a search first — there are no results to export yet.')
+      return
+    }
+    triggerJsonDownload(
+      encodeResultsFile(query, search.matches.map((match) => match.code), shpdVersion ?? 'unknown'),
+      RESULTS_FILE_NAME,
+    )
+    setFileError(undefined)
+  }
+
+  const importResults = async (file: File) => {
+    try {
+      if (file.size > MAX_RESULTS_FILE_BYTES) {
+        throw new Error('This file is too large to be a Seed Seeker results file (2 MiB limit).')
+      }
+      const decoded = decodeResultsFile(await file.text())
+      // The engine re-validates the query strictly: unknown items, effects,
+      // challenges, or query fields fail here instead of being dropped.
+      const verdict = await analyzeQuery(JSON.stringify(decoded.queryDocument))
+      if (!verdict.valid) throw new Error(`The query in this results file is not usable: ${verdict.error}`)
+      // A search may have started while the picker or the awaits were pending.
+      if (searchStore.state.state === 'running') {
+        throw new Error('A search is running — stop it before importing results.')
+      }
+      queryStore.setState(() => decoded.query)
+      loadImportedResults(decoded.seeds.map(parsedSeedFromCode), decoded.queryDocument)
+      setFileError(undefined)
+      setFileInfo(
+        decoded.shpdVersion !== undefined && shpdVersion !== undefined && decoded.shpdVersion !== shpdVersion
+          ? `This file was made for Shattered Pixel Dungeon v${decoded.shpdVersion}; this app targets v${shpdVersion}. The seeds may generate differently.`
+          : undefined,
+      )
+    } catch (error) {
+      setFileError(error instanceof Error ? error.message : String(error))
+    }
+  }
 
   return (
     <>
       <div className="d1-pane-head">
         <span>Results</span>
-        <span className="d1-pane-head-info">
-          {running && <span className="d1-live-dot" aria-hidden="true" />}
-          {shownMatches.length > 0
-            ? `${shownMatches.length.toLocaleString()} seed${shownMatches.length === 1 ? '' : 's'}`
-            : running
-              ? search.filtering
-                ? 'refining…'
-                : 'searching…'
-              : ''}
+        <span className="d1-pane-head-side">
+          <span className="d1-pane-head-info">
+            {running && <span className="d1-live-dot" aria-hidden="true" />}
+            {shownMatches.length > 0
+              ? `${shownMatches.length.toLocaleString()} seed${shownMatches.length === 1 ? '' : 's'}`
+              : running
+                ? search.filtering
+                  ? 'refining…'
+                  : 'searching…'
+                : ''}
+          </span>
+          <button
+            type="button"
+            className="d1-io-btn"
+            title="Import results from a file"
+            aria-label="Import results from a file"
+            disabled={running}
+            onClick={() => fileInput.current?.click()}
+          >
+            <DownloadIcon size={13} />
+            Import
+          </button>
+          <button
+            type="button"
+            className="d1-io-btn"
+            title="Export results to a file"
+            aria-label="Export results to a file"
+            disabled={running || search.matches.length === 0 || !search.query}
+            onClick={exportResults}
+          >
+            <UploadIcon size={13} />
+            Export
+          </button>
+          <input
+            ref={fileInput}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              event.target.value = ''
+              if (file) void importResults(file)
+            }}
+          />
         </span>
       </div>
 
       <div className="d1-results-status">
         {search.error && <div className="d1-banner d1-banner-error" role="alert">{search.error}</div>}
+        {fileError && <div className="d1-banner d1-banner-error" role="alert">{fileError}</div>}
+        {fileInfo && <div className="d1-banner d1-banner-info" role="status">{fileInfo}</div>}
 
         {running && search.filtering && (
           <>
@@ -130,9 +242,13 @@ export function ResultsPanel({
 
         {!running && !impossible && statusChip && (
           <div className="d1-done-row">
-            <span className={`d1-state-chip${search.state === 'completed' ? ' d1-state-ok' : ''}`}>{statusChip}</span>
+            <span className={`d1-state-chip${search.state === 'completed' || search.state === 'imported' ? ' d1-state-ok' : ''}`}>{statusChip}</span>
             <span className="d1-caption">
-              {shownMatches.length.toLocaleString()} seed{shownMatches.length === 1 ? '' : 's'} · tested {compactNumber(search.tested)} in {formatDuration(search.elapsed)}
+              {search.state === 'imported'
+                ? `${shownMatches.length.toLocaleString()} seed${shownMatches.length === 1 ? '' : 's'} loaded from file${
+                    search.importedDropped ? ` · ${search.importedDropped.toLocaleString()} entr${search.importedDropped === 1 ? 'y' : 'ies'} dropped (duplicates or beyond the 1,024-seed limit)` : ''
+                  }`
+                : `${shownMatches.length.toLocaleString()} seed${shownMatches.length === 1 ? '' : 's'} · tested ${compactNumber(search.tested)} in ${formatDuration(search.elapsed)}`}
             </span>
           </div>
         )}
@@ -151,7 +267,9 @@ export function ResultsPanel({
           <div className="d1-results-empty">
             {search.state === 'completed'
               ? <p>No seeds matched this query in the searched range.</p>
-              : <p>Matching seeds will appear here as they're found.</p>}
+              : search.state === 'imported'
+                ? <p>The imported file contained no seeds.</p>
+                : <p>Matching seeds will appear here as they're found.</p>}
           </div>
         ) : (
           <ol className="d1-result-list">
