@@ -184,7 +184,9 @@ body {
 .d1-pane-head {
   flex: 0 0 auto;
   display: flex;
-  align-items: baseline;
+  /* The results head carries icon buttons taller than its text, and their
+     baseline would drag the whole row down. */
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
   height: 35px;
