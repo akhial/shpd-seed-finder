@@ -153,6 +153,7 @@ export function ResultsPanel({
             onClick={() => fileInput.current?.click()}
           >
             <DownloadIcon size={13} />
+            Import
           </button>
           <button
             type="button"
@@ -163,6 +164,7 @@ export function ResultsPanel({
             onClick={exportResults}
           >
             <UploadIcon size={13} />
+            Export
           </button>
           <input
             ref={fileInput}

@@ -214,13 +214,32 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
+  gap: 5px;
   height: 24px;
+  /* Symmetric, so the hover fill sits evenly around the label. */
+  padding: 0 6px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: none;
   color: var(--d1-text-3);
   background: transparent;
   border: none;
   border-radius: 7px;
   cursor: pointer;
+}
+
+/* Both buttons already carry side padding, so close the row gap a little
+   between them without pulling them nearer the seed count. */
+.d1-io-btn + .d1-io-btn {
+  margin-left: -2px;
+}
+
+/* The glyphs carry more empty space below than above, as on the other
+   platforms, so lift them to sit level with the label. */
+.d1-io-btn svg {
+  margin-top: -1px;
 }
 
 .d1-io-btn:hover:not(:disabled) {
