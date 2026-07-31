@@ -29,6 +29,16 @@ public sealed partial class MainWindow : Window
     private List<QueryPreset> userPresets = [];
     private NativeSearch? search;
     private bool restoring = true;
+    /// <summary>
+    /// Anchor for result navigation: the seed of the most recent scout
+    /// request, set synchronously so rapid steps chain while a scout is in
+    /// flight. A failed request falls back to <see cref="renderedSeed"/>.
+    /// </summary>
+    private string? scoutedSeed;
+    /// <summary>The seed whose manifest the scout pane currently shows.</summary>
+    private string? renderedSeed;
+    /// <summary>Only the latest scout request may publish its manifest.</summary>
+    private int scoutGeneration;
     private bool searchRunning;
     /// <summary>
     /// The query that produced the current results, snapshotted at search
@@ -61,6 +71,10 @@ public sealed partial class MainWindow : Window
         // Decode the item atlases up front so the first sprite render is warm.
         _ = ItemAtlas.GetAsync();
         ResultsList.ItemsSource = results; ScoutButton.IsEnabled = false;
+        results.CollectionChanged += (_, _) => UpdateResultNav();
+        // J/K step the scout pane through the search results from anywhere in
+        // the window except a focused text field.
+        if (Content is UIElement root) root.KeyDown += Root_KeyDown;
         FloorSlider.Value = 1; FloorSlider.Minimum = 1; FloorSlider.Maximum = 24;
         results.CollectionChanged += (_, _) => UpdateTransferButtons();
         LoadSettings(); LoadPresets(); RefreshPresets(); RefreshQuery(); UpdateTransferButtons();
@@ -606,12 +620,49 @@ public sealed partial class MainWindow : Window
     private void SeedInput_TextChanged(object sender, TextChangedEventArgs e) { var formatted = SeedCode.Format(SeedInput.Text); if (formatted != SeedInput.Text) { SeedInput.Text = formatted; SeedInput.SelectionStart = formatted.Length; } ScoutButton.IsEnabled = SeedCode.IsCanonical(formatted); }
     private void SeedInput_KeyDown(object sender, KeyRoutedEventArgs e) { if (e.Key == VirtualKey.Enter && SeedCode.IsCanonical(SeedInput.Text)) { _ = ScoutSeed(SeedInput.Text); e.Handled = true; } }
     private async void Scout_Click(object sender, RoutedEventArgs e) => await ScoutSeed(SeedInput.Text);
+    private List<string> ResultSeeds() => results.Select(result => result.Seed).ToList();
+    /// <summary>Steps the scouted seed through the search results; returns false (inert) when the scouted seed is not one of them or the step cannot move.</summary>
+    private bool NavigateResult(int delta)
+    {
+        if (ResultNavigation.Step(ResultSeeds(), scoutedSeed, delta) is not int target) return false;
+        // The selection-changed handler fills the seed field and scouts.
+        ResultsList.SelectedIndex = target;
+        ResultsList.ScrollIntoView(results[target]);
+        return true;
+    }
+    private void UpdateResultNav()
+    {
+        if (ResultNavigation.IndexOf(ResultSeeds(), scoutedSeed) is not int index) { ResultNav.Visibility = Visibility.Collapsed; return; }
+        ResultNav.Visibility = Visibility.Visible;
+        ResultPosition.Text = $"Result {index + 1} of {results.Count}";
+        PrevResultButton.IsEnabled = index > 0;
+        NextResultButton.IsEnabled = index < results.Count - 1;
+    }
+    private void PrevResult_Click(object sender, RoutedEventArgs e) => NavigateResult(-1);
+    private void NextResult_Click(object sender, RoutedEventArgs e) => NavigateResult(1);
+    private void Root_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key is not (VirtualKey.J or VirtualKey.K)) return;
+        // Never steal letters from a focused text input.
+        if (e.OriginalSource is TextBox or NumberBox or AutoSuggestBox or PasswordBox) return;
+        if (IsKeyDown(VirtualKey.Control) || IsKeyDown(VirtualKey.Menu)) return;
+        // Only swallow the key when navigation actually moved: an inert j/k
+        // must stay available to list type-ahead and combo type-select.
+        e.Handled = NavigateResult(e.Key == VirtualKey.J ? 1 : -1);
+    }
+    private static bool IsKeyDown(VirtualKey key) =>
+        Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(key)
+            .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+
     private async Task ScoutSeed(string seed)
     {
+        var generation = ++scoutGeneration;
+        scoutedSeed = seed; UpdateResultNav();
         ScoutButton.IsEnabled = false; ScoutStatus.Text = "Scouting…";
         try
         {
             var world = await Task.Run(() => engine.Scout(seed, query.Challenges));
+            if (generation != scoutGeneration) return;
             var matches = ScoutMatcher.SelectMatches(world.Items, query.Requirements,
                 query.MaximumDepth, query.ExcludeBlacksmithRewards);
             var groups = world.Items.Select((item, index) => (Item: item, Index: index))
@@ -623,8 +674,16 @@ public sealed partial class MainWindow : Window
             ScoutList.ItemsSource = new CollectionViewSource { IsSourceGrouped = true, Source = groups }.View;
             ScoutStatus.Text = $"{world.Items.Count} items across {groups.Count} floors" + (query.Requirements.Count == 0 ? "" : $"  ·  {matches.Count} requirement match{(matches.Count == 1 ? "" : "es")}");
             EmptyScout.Visibility = Visibility.Collapsed; ScoutList.Visibility = Visibility.Visible;
+            renderedSeed = seed;
         }
-        catch (Exception ex) { ScoutStatus.Text = ex.Message; } finally { ScoutButton.IsEnabled = SeedCode.IsCanonical(SeedInput.Text); }
+        catch (Exception ex)
+        {
+            if (generation != scoutGeneration) return;
+            ScoutStatus.Text = ex.Message;
+            // Keep the indicator describing the manifest that is still shown.
+            scoutedSeed = renderedSeed; UpdateResultNav();
+        }
+        finally { if (generation == scoutGeneration) ScoutButton.IsEnabled = SeedCode.IsCanonical(SeedInput.Text); }
     }
     private static string Region(int depth) => depth switch { <= 5 => "Sewers", <= 10 => "Prison", <= 15 => "Caves", <= 20 => "Dwarven City", _ => "Demon Halls" };
     private void CopySeed_Click(object sender, RoutedEventArgs e) { if (SeedCode.IsCanonical(SeedInput.Text)) Copy(SeedInput.Text); }

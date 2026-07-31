@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use adw::prelude::*;
-use gtk::gio;
+use gtk::{gdk, gio, glib};
 
 use shpd_seedfinder_core::results_export;
 use shpd_seedfinder_core::seed::DungeonSeed;
@@ -173,10 +173,12 @@ pub fn present(app: &adw::Application) {
     results.connect_select({
         let state = Rc::clone(&state);
         let detail = Rc::clone(&detail);
+        let results = Rc::clone(&results);
         let inner_split = inner_split.clone();
         let outer_split = outer_split.clone();
         move |seed| {
             detail.scout(Some(seed), &state.borrow());
+            detail.set_result_position(results.position_of(seed));
             outer_split.set_show_content(true);
             inner_split.set_show_content(true);
         }
@@ -193,8 +195,86 @@ pub fn present(app: &adw::Application) {
     detail.connect_scout({
         let state = Rc::clone(&state);
         let detail = Rc::clone(&detail);
-        move || detail.scout(None, &state.borrow())
+        let results = Rc::clone(&results);
+        move || {
+            detail.scout(None, &state.borrow());
+            // A hand-entered seed may still be one of the results; keep the
+            // position indicator honest either way.
+            let position = detail
+                .current_seed()
+                .and_then(|seed| results.position_of(&seed));
+            detail.set_result_position(position);
+        }
     });
+
+    // Keeps the seed pane's "Result N of M" indicator honest while a new
+    // search clears the list or a running one streams matches in.
+    results.connect_results_changed({
+        let detail = Rc::clone(&detail);
+        let results = Rc::clone(&results);
+        move || {
+            let position = detail
+                .current_seed()
+                .and_then(|seed| results.position_of(&seed));
+            detail.set_result_position(position);
+        }
+    });
+
+    // J/K step the scouted seed through the search results; row selection
+    // then drives the scout above. The keys stay inert while a dialog is
+    // presented, while an editable widget has focus, or while a collapsed
+    // split view is showing another page (navigating would flip pages the
+    // user is not on).
+    let navigate_keys = gtk::EventControllerKey::new();
+    navigate_keys.set_propagation_phase(gtk::PropagationPhase::Bubble);
+    navigate_keys.connect_key_pressed({
+        let window = window.clone();
+        let results = Rc::clone(&results);
+        let detail = Rc::clone(&detail);
+        let inner_split = inner_split.clone();
+        let outer_split = outer_split.clone();
+        move |_, key, _, modifiers| {
+            let delta = match key {
+                gdk::Key::j | gdk::Key::J => 1,
+                gdk::Key::k | gdk::Key::K => -1,
+                _ => return glib::Propagation::Proceed,
+            };
+            if modifiers.intersects(
+                gdk::ModifierType::CONTROL_MASK
+                    | gdk::ModifierType::ALT_MASK
+                    | gdk::ModifierType::SUPER_MASK,
+            ) {
+                return glib::Propagation::Proceed;
+            }
+            // Never navigate behind a modal (requirement editor, presets,
+            // challenges, shortcuts are all in-window adw::Dialogs).
+            if window.visible_dialog().is_some() {
+                return glib::Propagation::Proceed;
+            }
+            // Bubble-phase keys rarely escape an editable widget, but a
+            // focused entry must never lose typed letters to navigation.
+            if GtkWindowExt::focus(&window)
+                .is_some_and(|focus| focus.is::<gtk::Text>() || focus.is::<gtk::TextView>())
+            {
+                return glib::Propagation::Proceed;
+            }
+            // On collapsed layouts, act only while the seed page is visible.
+            let seed_page_visible = (!outer_split.is_collapsed() || outer_split.shows_content())
+                && (!inner_split.is_collapsed() || inner_split.shows_content());
+            if !seed_page_visible {
+                return glib::Propagation::Proceed;
+            }
+            let Some(seed) = detail.current_seed() else {
+                return glib::Propagation::Proceed;
+            };
+            if results.select_step(&seed, delta) {
+                glib::Propagation::Stop
+            } else {
+                glib::Propagation::Proceed
+            }
+        }
+    });
+    window.add_controller(navigate_keys);
 
     start_action.connect_activate({
         let state = Rc::clone(&state);
@@ -460,6 +540,8 @@ fn present_shortcuts(window: &adw::ApplicationWindow) {
         ("Add requirement", "<primary>n"),
         ("Start or stop the search", "<primary>Return"),
         ("Enter a seed code", "<primary>l"),
+        ("Scout the next search result", "j"),
+        ("Scout the previous search result", "k"),
         ("Challenges", "<primary>comma"),
         ("Keyboard shortcuts", "<primary>question"),
         ("Quit", "<primary>q"),

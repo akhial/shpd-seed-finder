@@ -19,6 +19,7 @@ use crate::{glow, sprites};
 
 pub struct DetailPane {
     pub page: adw::NavigationPage,
+    title: adw::WindowTitle,
     entry: gtk::Entry,
     scout_button: gtk::Button,
     copy_button: gtk::Button,
@@ -124,7 +125,8 @@ impl DetailPane {
         stack.add_named(&placeholder, Some("empty"));
         stack.add_named(&manifest_area, Some("manifest"));
 
-        let header_bar = adw::HeaderBar::new();
+        let title = adw::WindowTitle::new("Seed", "");
+        let header_bar = adw::HeaderBar::builder().title_widget(&title).build();
         let toolbar_view = adw::ToolbarView::new();
         toolbar_view.add_top_bar(&header_bar);
         toolbar_view.add_top_bar(&entry_clamp);
@@ -138,6 +140,7 @@ impl DetailPane {
 
         let pane = Rc::new(Self {
             page: nav_page,
+            title,
             entry,
             scout_button,
             copy_button,
@@ -204,6 +207,25 @@ impl DetailPane {
 
     pub fn focus_entry(&self) {
         self.entry.grab_focus();
+    }
+
+    /// The canonical code of the currently scouted seed, if any.
+    pub fn current_seed(&self) -> Option<String> {
+        self.world
+            .borrow()
+            .as_ref()
+            .map(|world| world.seed.to_code())
+    }
+
+    /// Shows where the scouted seed sits in the search results (0-based
+    /// index and total), or clears the indicator when it is not one of them.
+    pub fn set_result_position(&self, position: Option<(usize, usize)>) {
+        match position {
+            Some((index, total)) => self
+                .title
+                .set_subtitle(&format!("Result {} of {total}", index + 1)),
+            None => self.title.set_subtitle(""),
+        }
     }
 
     /// Scouts the seed in the entry, or `code` when given (also filling the

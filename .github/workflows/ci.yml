@@ -215,6 +215,11 @@ jobs:
       - name: Test workspace
         run: cargo test --locked --workspace --exclude shpd-seedfinder-gtk
 
+      # The WinUI app only compiles on Windows, but the extracted
+      # result-navigation logic is plain C# and tested separately.
+      - name: Test result navigation helpers
+        run: dotnet test windows/SeedSeeker.Tests/SeedSeeker.Tests.csproj
+
       # The csproj builds and copies the Rust engine DLL itself.
       - name: Build app
         run: pwsh scripts/build-windows-app.ps1 -Platform x64
