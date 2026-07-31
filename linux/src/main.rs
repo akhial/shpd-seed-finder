@@ -11,6 +11,7 @@ mod presets;
 mod presets_dialog;
 mod query_pane;
 mod requirement_editor;
+mod result_navigation;
 mod results_pane;
 mod scout_match;
 mod sprites;
