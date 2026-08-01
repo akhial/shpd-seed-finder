@@ -444,7 +444,7 @@ impl ResultsPane {
                 // trusting the decision helper: the soundness of resuming
                 // depends on it. A filter never scans at all.
                 let (resume_from, remaining) = if mode == StartMode::TargetRefine {
-                    if !state::extends_query(&query, &target_query) {
+                    if !query.continues(&target_query) {
                         self.start_scan(query, StartMode::Detached);
                         return;
                     }
@@ -467,7 +467,7 @@ impl ResultsPane {
                     self.start_scan(query, StartMode::Detached);
                     return;
                 };
-                if !state::extends_query(&query, &base_query) {
+                if !query.continues(&base_query) {
                     self.start_scan(query, StartMode::Detached);
                     return;
                 }

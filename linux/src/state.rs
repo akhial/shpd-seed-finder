@@ -236,39 +236,6 @@ impl AppState {
     }
 }
 
-/// Whether `candidate` refines `base`: identical scope and a multiset of
-/// requirements that is equal to or a superset of the base requirements. Only
-/// then are the base search's matches guaranteed to contain every candidate
-/// match within the region it already scanned, which is what makes
-/// filter-and-resume refinement sound.
-///
-/// Equality is deliberately included: an unchanged query keeps every previously
-/// found seed and simply resumes the scan where it stopped, which is what makes
-/// a session survive a stop-and-start-again. Only an explicit clear discards it.
-#[must_use]
-pub fn extends_query(candidate: &SearchQuery, base: &SearchQuery) -> bool {
-    if candidate.max_depth != base.max_depth
-        || candidate.challenges != base.challenges
-        || candidate.require_blacksmith != base.require_blacksmith
-        || candidate.exclude_blacksmith_rewards != base.exclude_blacksmith_rewards
-        || candidate.fast_mode != base.fast_mode
-        || candidate.requirements.len() < base.requirements.len()
-    {
-        return false;
-    }
-    // Multiset containment; the counts stay tiny (at most 64 requirements).
-    let mut unclaimed: Vec<&Requirement> = candidate.requirements.iter().collect();
-    base.requirements.iter().all(|needed| {
-        unclaimed
-            .iter()
-            .position(|available| *available == needed)
-            .is_some_and(|index| {
-                unclaimed.swap_remove(index);
-                true
-            })
-    })
-}
-
 /// Whether two queries name a common item: some requirement of each has the
 /// same kind, and either both name the same item or at least one names none
 /// (a kind-level requirement subsumes every item of its kind). Scope and
@@ -318,6 +285,12 @@ pub struct TargetFacts<'a> {
 /// An empty Target Set holds nothing worth preserving, so a non-continuing
 /// query re-anchors on this search instead of filtering nothing.
 ///
+/// Continuation itself is the engine's [`SearchQuery::continues`], never a
+/// local re-derivation. It deliberately admits equality: an unchanged query
+/// keeps every previously found seed and simply resumes the scan where it
+/// stopped, which is what makes a session survive a stop-and-start-again.
+/// Only an explicit clear discards it.
+///
 /// `detached_base` is the last concluded run's query when — and only when —
 /// that run was itself detached; a failed run is never a continuation base.
 #[must_use]
@@ -329,7 +302,7 @@ pub fn start_mode(
     let Some(target) = target else {
         return StartMode::Anchor;
     };
-    let continues_target = extends_query(candidate, target.query);
+    let continues_target = candidate.continues(target.query);
     if target.set_size == 0 {
         return if continues_target && target.remaining > 0 {
             StartMode::TargetRefine
@@ -344,7 +317,7 @@ pub fn start_mode(
         return StartMode::TargetFilter;
     }
     match detached_base {
-        Some(base) if extends_query(candidate, base) => StartMode::ContinueDetached,
+        Some(base) if candidate.continues(base) => StartMode::ContinueDetached,
         _ => StartMode::Detached,
     }
 }
@@ -486,9 +459,7 @@ mod tests {
     use shpd_seedfinder_core::catalog::{ItemId, ItemKind};
     use shpd_seedfinder_core::query::{TierRequirement, UpgradeRequirement};
 
-    use super::{
-        AppState, StartMode, TargetFacts, UiRequirement, extends_query, shares_item, start_mode,
-    };
+    use super::{AppState, StartMode, TargetFacts, UiRequirement, shares_item, start_mode};
 
     #[test]
     fn refinement_requires_identical_scope_and_no_fewer_requirements() {
@@ -506,24 +477,24 @@ mod tests {
         added.upgrade = UpgradeRequirement::Exact(3);
         extended_state.requirements.push(added);
         let extended = extended_state.to_query().unwrap();
-        assert!(extends_query(&extended, &base));
+        assert!(extended.continues(&base));
 
         // An identical query still qualifies: the filter keeps every seed and
         // the scan resumes, so a stopped session continues instead of resetting.
-        assert!(extends_query(&base, &base));
+        assert!(base.continues(&base));
 
         // Dropping a requirement, editing a base requirement, and any scope
         // change all force a fresh search instead.
-        assert!(!extends_query(&base, &extended));
+        assert!(!base.continues(&extended));
         let mut edited = extended.clone();
         edited.requirements[0].upgrade = UpgradeRequirement::AtLeast(3);
-        assert!(!extends_query(&edited, &base));
+        assert!(!edited.continues(&base));
         let mut deeper = extended.clone();
         deeper.max_depth = 9;
-        assert!(!extends_query(&deeper, &base));
+        assert!(!deeper.continues(&base));
         let mut fast = extended.clone();
         fast.fast_mode = true;
-        assert!(!extends_query(&fast, &base));
+        assert!(!fast.continues(&base));
 
         // Duplicates are counted as a multiset: two copies of the base
         // requirement satisfy a two-copy base, one copy does not.
@@ -531,8 +502,8 @@ mod tests {
         doubled_base.requirements.push(base.requirements[0]);
         let mut doubled_extended = doubled_base.clone();
         doubled_extended.requirements.push(extended.requirements[1]);
-        assert!(extends_query(&doubled_extended, &doubled_base));
-        assert!(!extends_query(&extended, &doubled_base));
+        assert!(doubled_extended.continues(&doubled_base));
+        assert!(!extended.continues(&doubled_base));
     }
 
     /// A populated Target with plenty of uncovered range.
@@ -597,7 +568,7 @@ mod tests {
         let mut deeper_state = base_state.clone();
         deeper_state.max_depth = 9;
         let deeper = deeper_state.to_query().unwrap();
-        assert!(!extends_query(&deeper, &base));
+        assert!(!deeper.continues(&base));
         assert_eq!(
             start_mode(&deeper, Some(&facts(&base)), None),
             StartMode::TargetFilter
