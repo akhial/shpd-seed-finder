@@ -18,8 +18,10 @@ class SearchRequestRefinementTest {
     }
 
     @Test
-    fun anIdenticalQueryIsNotARefinement() {
-        assertFalse(request(frost, fireblast).isRefinementOf(request(frost, fireblast)))
+    fun anIdenticalQueryContinuesTheBaseRun() {
+        // Tapping Search again without touching the query must resume, not start over:
+        // filtering keeps every seed and the scan picks up where the base run stopped.
+        assertTrue(request(frost, fireblast).isRefinementOf(request(frost, fireblast)))
     }
 
     @Test
@@ -27,6 +29,9 @@ class SearchRequestRefinementTest {
         assertFalse(request(frost).isRefinementOf(request(frost, fireblast)))
         val editedFrost = frost.copy(upgrade = 3)
         assertFalse(request(editedFrost, fireblast).isRefinementOf(request(frost)))
+        // Equal size but a different multiset: swapping or editing in place still runs fresh.
+        assertFalse(request(fireblast).isRefinementOf(request(frost)))
+        assertFalse(request(editedFrost).isRefinementOf(request(frost)))
     }
 
     @Test
@@ -50,7 +55,8 @@ class SearchRequestRefinementTest {
     fun requirementKeysAreIgnoredWhenMatching() {
         val rekeyed = frost.copy(key = 77)
         assertTrue(request(rekeyed, haste).isRefinementOf(request(frost)))
-        assertFalse(request(rekeyed).isRefinementOf(request(frost)))
+        // Same requirement, different UI list key: still the same query, so still eligible.
+        assertTrue(request(rekeyed).isRefinementOf(request(frost)))
     }
 
     private fun request(

@@ -19,12 +19,19 @@ function requirementCounts(requirements: RequirementDocument[]): Map<string, num
 }
 
 /**
- * Whether `candidate` refines `base`: identical scope (depth, challenges, and
- * flags) and a strict superset of the base requirements. Only then are the
- * base run's matches guaranteed to contain every candidate match in the
- * already-scanned region, which is what makes filter-and-resume sound.
+ * Whether a run of `candidate` can continue one of `base`: identical scope
+ * (depth, challenges, and flags) and a requirement multiset equal to or a
+ * superset of the base one. Only then are the base run's matches guaranteed
+ * to contain every candidate match in the already-scanned region, which is
+ * what makes filter-and-resume sound.
+ *
+ * Equality is deliberately included, not an edge case: an unchanged query
+ * describes the identical world set, so the coverage argument holds and the
+ * filter phase trivially keeps every previous match. That is what lets a
+ * cancelled search be resumed by pressing Start again — results only ever
+ * disappear when the query genuinely changes, or on an explicit clear.
  */
-export function isRefinementOf(candidate: QueryDocument, base: QueryDocument): boolean {
+export function isContinuationOf(candidate: QueryDocument, base: QueryDocument): boolean {
   if ((candidate.max_depth ?? 24) !== (base.max_depth ?? 24)) return false
   if ((candidate.require_blacksmith ?? false) !== (base.require_blacksmith ?? false)) return false
   if ((candidate.exclude_blacksmith_rewards ?? false) !== (base.exclude_blacksmith_rewards ?? false)) return false
@@ -33,7 +40,6 @@ export function isRefinementOf(candidate: QueryDocument, base: QueryDocument): b
   const baseChallenges = [...(base.challenges ?? [])].sort()
   if (candidateChallenges.length !== baseChallenges.length) return false
   if (candidateChallenges.some((name, index) => name !== baseChallenges[index])) return false
-  if (candidate.requirements.length <= base.requirements.length) return false
   const available = requirementCounts(candidate.requirements)
   for (const [signature, needed] of requirementCounts(base.requirements)) {
     if ((available.get(signature) ?? 0) < needed) return false
@@ -54,13 +60,15 @@ export interface RefineBase {
  * still-running one does not, and a fresh state has no query at all.
  *
  * This is the single gate for the implicit refine: there is no separate
- * refine action in the UI, so every start consults it.
+ * refine or resume action in the UI, so every start consults it. An unchanged
+ * query continues too, which is what keeps a session alive across repeated
+ * Cancel/Start cycles; only the Clear button ends it.
  */
 export function shouldRefine(base: RefineBase, query: QueryDocument): boolean {
   if (base.state !== 'completed' && base.state !== 'cancelled') return false
   if (!base.queryJson) return false
   try {
-    return isRefinementOf(query, JSON.parse(base.queryJson) as QueryDocument)
+    return isContinuationOf(query, JSON.parse(base.queryJson) as QueryDocument)
   } catch {
     return false
   }

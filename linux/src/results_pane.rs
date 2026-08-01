@@ -149,7 +149,7 @@ impl ResultsPane {
             .action_name("win.import-results")
             .build();
         let clear_button = gtk::Button::builder()
-            .icon_name("edit-clear-all-symbolic")
+            .icon_name("clear-results-symbolic")
             .tooltip_text("Clear Results")
             .action_name("win.clear-results")
             .build();
@@ -399,7 +399,9 @@ impl ResultsPane {
     /// seeds are re-verified against `query` on a worker thread, and the scan
     /// then resumes over exactly the seeds the previous traversal never
     /// covered. Callers reach this through [`Self::start_mode`], which only
-    /// asks for a refine when `query` extends the finished search's query.
+    /// asks for a refine when `query` extends — or exactly repeats — the
+    /// finished search's query. An unchanged query keeps every seed, so this
+    /// is also how a stopped search is continued.
     pub fn refine(self: &Rc<Self>, query: SearchQuery) {
         if self.is_running() {
             return;
@@ -412,10 +414,10 @@ impl ResultsPane {
             self.start(query);
             return;
         };
-        // Re-assert the superset invariant here rather than trusting the
+        // Re-assert the containment invariant here rather than trusting the
         // caller: filter-and-resume is only sound when the refined query
-        // strictly extends the finished one, and a search request must never
-        // end up doing nothing at all.
+        // extends the finished one, or repeats it exactly, and a search request
+        // must never end up doing nothing at all.
         if !state::extends_query(&query, &base.query) {
             self.start(query);
             return;
@@ -446,7 +448,7 @@ impl ResultsPane {
         self.stack.set_visible_child_name("results");
         self.title.set_subtitle("Refining…");
         self.stats_line.set_label(&format!(
-            "Re-checking {} found seed{} against the added requirements…",
+            "Re-checking {} found seed{} against the current requirements…",
             group_digits(previous_matches),
             if previous_matches == 1 { "" } else { "s" },
         ));
@@ -569,7 +571,7 @@ impl ResultsPane {
                 "edit-find-symbolic",
                 "No Seeds Left",
                 &format!(
-                    "None of the {} previous seeds satisfy the added requirements, \
+                    "None of the {} previous seeds satisfy the current requirements, \
                      and the previous search had already covered every seed.",
                     group_digits(previous)
                 ),

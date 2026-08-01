@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { QueryDocument } from '../wasm/types'
-import { distributeSegments, isRefinementOf, remainingSegments, segmentsLength, shouldRefine } from './refine'
+import { distributeSegments, isContinuationOf, remainingSegments, segmentsLength, shouldRefine } from './refine'
 import type { SearchStatus } from './coordinator-state'
 import type { SeedRange } from './traversal'
 
@@ -11,35 +11,43 @@ const added: QueryDocument = {
   requirements: [{ kind: 'ring', upgrade: { at_least: 2 } }, { kind: 'weapon', upgrade: 3 }],
 }
 
-describe('isRefinementOf', () => {
+describe('isContinuationOf', () => {
   it('accepts adding a requirement with identical scope', () => {
-    expect(isRefinementOf(added, base)).toBe(true)
+    expect(isContinuationOf(added, base)).toBe(true)
   })
   it('accepts reordered requirements and reordered keys', () => {
     const reordered: QueryDocument = {
       requirements: [{ upgrade: 3, kind: 'weapon' }, { upgrade: { at_least: 2 }, kind: 'ring' }],
     }
-    expect(isRefinementOf(reordered, base)).toBe(true)
+    expect(isContinuationOf(reordered, base)).toBe(true)
   })
-  it('rejects an identical query', () => {
-    expect(isRefinementOf(base, base)).toBe(false)
+  it('accepts an unchanged query, which continues the run rather than restarting it', () => {
+    expect(isContinuationOf(base, base)).toBe(true)
+    // Equality is judged on content, not on key or requirement order.
+    expect(isContinuationOf({ requirements: [{ upgrade: { at_least: 2 }, kind: 'ring' }] }, base)).toBe(true)
+    expect(isContinuationOf(added, added)).toBe(true)
   })
   it('rejects removed or edited requirements', () => {
-    expect(isRefinementOf({ requirements: [] }, base)).toBe(false)
-    expect(isRefinementOf({ requirements: [{ kind: 'ring', upgrade: { at_least: 3 } }, { kind: 'weapon' }] }, base)).toBe(false)
+    expect(isContinuationOf({ requirements: [] }, base)).toBe(false)
+    expect(isContinuationOf({ requirements: [{ kind: 'ring', upgrade: { at_least: 3 } }, { kind: 'weapon' }] }, base)).toBe(false)
+    expect(isContinuationOf(base, added)).toBe(false)
   })
   it('respects requirement multiplicity', () => {
     const twoRings: QueryDocument = { requirements: [base.requirements[0], base.requirements[0]] }
-    expect(isRefinementOf(twoRings, base)).toBe(true)
-    expect(isRefinementOf({ requirements: [base.requirements[0], { kind: 'wand' }] }, twoRings)).toBe(false)
+    expect(isContinuationOf(twoRings, base)).toBe(true)
+    expect(isContinuationOf(twoRings, twoRings)).toBe(true)
+    expect(isContinuationOf(base, twoRings)).toBe(false)
+    expect(isContinuationOf({ requirements: [base.requirements[0], { kind: 'wand' }] }, twoRings)).toBe(false)
   })
   it('rejects any scope change', () => {
-    expect(isRefinementOf({ ...added, max_depth: 9 }, base)).toBe(false)
-    expect(isRefinementOf({ ...added, fast_mode: true }, base)).toBe(false)
-    expect(isRefinementOf({ ...added, require_blacksmith: true }, base)).toBe(false)
-    expect(isRefinementOf({ ...added, exclude_blacksmith_rewards: true }, base)).toBe(false)
-    expect(isRefinementOf({ ...added, challenges: ['on_diet'] }, base)).toBe(false)
-    expect(isRefinementOf({ ...added, challenges: ['on_diet'] }, { ...base, challenges: ['on_diet'] })).toBe(true)
+    expect(isContinuationOf({ ...added, max_depth: 9 }, base)).toBe(false)
+    expect(isContinuationOf({ ...added, fast_mode: true }, base)).toBe(false)
+    expect(isContinuationOf({ ...added, require_blacksmith: true }, base)).toBe(false)
+    expect(isContinuationOf({ ...added, exclude_blacksmith_rewards: true }, base)).toBe(false)
+    expect(isContinuationOf({ ...added, challenges: ['on_diet'] }, base)).toBe(false)
+    expect(isContinuationOf({ ...added, challenges: ['on_diet'] }, { ...base, challenges: ['on_diet'] })).toBe(true)
+    // Even an otherwise unchanged query restarts when the scope moves.
+    expect(isContinuationOf({ ...base, max_depth: 9 }, base)).toBe(false)
   })
 })
 
@@ -51,6 +59,13 @@ describe('shouldRefine', () => {
     expect(shouldRefine(finished('cancelled'), added)).toBe(true)
   })
 
+  it('continues a completed or cancelled run whose query is unchanged', () => {
+    // Pressing Start again after a cancel resumes the same session; results
+    // survive until the user clears them.
+    expect(shouldRefine(finished('completed'), base)).toBe(true)
+    expect(shouldRefine(finished('cancelled'), base)).toBe(true)
+  })
+
   it('rescans when the run never established its coverage', () => {
     // Imported results carry no scanned region, a failed run's is unknown,
     // and a running one is still moving.
@@ -59,9 +74,11 @@ describe('shouldRefine', () => {
     }
   })
 
-  it('rescans when the query is not a strict superset of the finished one', () => {
-    expect(shouldRefine(finished('completed'), base)).toBe(false)
+  it('rescans when the query no longer covers the finished one', () => {
+    expect(shouldRefine({ state: 'completed', queryJson: JSON.stringify(added) }, base)).toBe(false)
+    expect(shouldRefine(finished('completed'), { requirements: [{ kind: 'wand' }] })).toBe(false)
     expect(shouldRefine(finished('completed'), { ...added, max_depth: 9 })).toBe(false)
+    expect(shouldRefine(finished('completed'), { ...base, max_depth: 9 })).toBe(false)
   })
 
   it('rescans when there is no readable base query', () => {

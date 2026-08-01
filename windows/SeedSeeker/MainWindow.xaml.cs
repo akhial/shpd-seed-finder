@@ -28,7 +28,7 @@ public sealed partial class MainWindow : Window
     private QuerySettings query = new();
     private List<QueryPreset> userPresets = [];
     private NativeSearch? search;
-    /// <summary>The last finished run, kept so a strictly narrower query refines it instead of rescanning.</summary>
+    /// <summary>The last finished run, kept so an unchanged or narrower query continues it instead of rescanning.</summary>
     private BaseRun? baseRun;
     /// <summary>True for the whole span of a search or refine, including the
     /// refine's filter phase where no native session exists yet; gates the start
@@ -499,11 +499,13 @@ public sealed partial class MainWindow : Window
     {
         if (search is not null) { search.Cancel(); StartButton.IsEnabled = false; return; }
         if (busy) return;
-        // A query that only narrows the last finished run refines it instead of
-        // rescanning ground already covered. There is no separate control: the
-        // eligibility test decides, and the status line reports what happened.
-        // Clear Results drops the base run when a fresh scan is wanted.
-        if (baseRun is BaseRun previous && QueryRefinement.IsRefinement(query, previous.Query)) { await RefineSearch(previous); return; }
+        // A query that leaves the last finished run's requirements in place —
+        // unchanged, or narrowed by further ones — continues it instead of
+        // rescanning ground already covered, so a session survives Cancel and
+        // restart. There is no separate control: the eligibility test decides,
+        // and the status line reports what happened. Clear Results drops the
+        // base run when a fresh scan is wanted.
+        if (baseRun is BaseRun previous && QueryRefinement.CanRefine(query, previous.Query)) { await RefineSearch(previous); return; }
         busy = true; collected.Clear(); collectedSet.Clear(); results.Clear(); SearchStatus.Text = "Starting search…"; SetStartButton(running: true);
         try
         {
@@ -517,9 +519,11 @@ public sealed partial class MainWindow : Window
         finally { busy = false; search?.Dispose(); search = null; SetStartButton(running: false); StartButton.IsEnabled = query.Requirements.Count != 0; }
     }
     /// <summary>
-    /// Filters the finished run's seeds through the narrowed query, then resumes
-    /// the scan where that run stopped. Only <see cref="Start_Click"/> calls this,
-    /// after its own re-entry guards, so the session slot is never contested.
+    /// Filters the finished run's seeds through the current query, then resumes
+    /// the scan where that run stopped. The query may equal the run's — the
+    /// filter then keeps everything and this is a plain "continue". Only
+    /// <see cref="Start_Click"/> calls this, after its own re-entry guards, so
+    /// the session slot is never contested.
     /// </summary>
     private async Task RefineSearch(BaseRun previous)
     {
@@ -611,7 +615,8 @@ public sealed partial class MainWindow : Window
 
     /// <summary>
     /// Returns the results area to its idle state, dropping the refine base so
-    /// the next search rescans from the beginning instead of narrowing this run.
+    /// the next search rescans from the beginning instead of continuing this run.
+    /// This is the only way to end a session: every other path keeps it alive.
     /// </summary>
     private void ClearResults_Click(object sender, RoutedEventArgs e)
     {

@@ -75,8 +75,9 @@ export default function App() {
 
   // Starting is a single action: the coordinator continues the previous
   // finished run instead of rescanning whenever that is sound (same scope,
-  // only added requirements), which needs no decision from the user. The
-  // results panel reports it as a refine when it happens.
+  // requirements unchanged or only added), which needs no decision from the
+  // user. An unchanged query therefore resumes a cancelled run rather than
+  // wiping it. The results panel reports it as a refine when it happens.
   const toggleSearch = useCallback(() => {
     const controller = coordinator.current
     if (!controller) return

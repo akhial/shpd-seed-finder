@@ -255,7 +255,7 @@ export function ResultsPanel({
             </div>
             {search.refined && (
               <p className="d1-caption">
-                Refining: kept {search.refined.kept.toLocaleString()} of {search.refined.of.toLocaleString()} previous seed{search.refined.of === 1 ? '' : 's'}, scanning the remaining range…
+                Kept {search.refined.kept.toLocaleString()} of {search.refined.of.toLocaleString()} previous seed{search.refined.of === 1 ? '' : 's'} — searching the remaining range…
               </p>
             )}
             <p className="d1-caption">{search.state === 'stopping' ? 'Stopping…' : probabilityLabel(probability)}</p>

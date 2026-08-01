@@ -391,13 +391,15 @@ internal fun resultsHeaderText(
     resultCount: Int,
     state: SearchState?,
     isSearching: Boolean,
-    isRefined: Boolean,
+    refinePhase: RefinePhase?,
     refineSummary: Pair<Int, Int>?,
 ): String {
     // (kept, of) counts from a refine's re-verification of the previous run's seeds.
     val kept = refineSummary?.let { (keptCount, of) -> " · kept $keptCount of $of" }.orEmpty()
     return when {
-        isSearching && isRefined -> "Results — $resultCount$kept · refining"
+        // "refining" is the filter phase only; the resumed scan that follows is a search.
+        isSearching && refinePhase == RefinePhase.FILTERING -> "Results — $resultCount$kept · refining"
+        isSearching && refinePhase == RefinePhase.SCANNING -> "Results — $resultCount$kept · searching"
         isSearching -> "Results — $resultCount · live"
         state == SearchState.COMPLETED && refineSummary != null -> "Results — $resultCount$kept"
         state == SearchState.COMPLETED -> "Results — $resultCount found"

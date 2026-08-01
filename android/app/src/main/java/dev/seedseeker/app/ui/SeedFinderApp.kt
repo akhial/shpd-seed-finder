@@ -147,6 +147,8 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
     var lastFinishedRun by remember { mutableStateOf<FinishedRun?>(null) }
     // (kept, of) counts from the latest refine's re-verification of on-screen seeds.
     var refineSummary by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    // Null unless a refine run is in flight; distinguishes its filter phase from the resumed scan.
+    var refinePhase by remember { mutableStateOf<RefinePhase?>(null) }
     var isSearching by remember { mutableStateOf(false) }
     var searchError by remember { mutableStateOf<String?>(null) }
     var scoutInput by remember { mutableStateOf("") }
@@ -273,6 +275,8 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
         searchError = null
         searchStatus = null
         refineSummary = null
+        // Set together with isSearching so the header never reads one without the other.
+        refinePhase = if (currentRun.refine != null) RefinePhase.FILTERING else null
         searchSeedsPerSecond = 0.0
         searchElapsedSeconds = 0L
 
@@ -310,6 +314,10 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                     return@LaunchedEffect
                 }
             }
+
+            // The kept seeds are re-verified; what follows is an ordinary scan of the
+            // window the base run never reached, so the header stops saying "refining".
+            if (refine != null) refinePhase = RefinePhase.SCANNING
 
             val openedSession = withContext(Dispatchers.Default) {
                 if (refine == null) {
@@ -373,6 +381,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
         } finally {
             activeSession = null
             isSearching = false
+            refinePhase = null
             session?.let {
                 withContext(NonCancellable + Dispatchers.Default) { it.close() }
             }
@@ -456,7 +465,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                 seedsPerSecond = searchSeedsPerSecond,
                 elapsedSeconds = searchElapsedSeconds,
                 isSearching = isSearching,
-                isRefined = run?.refine != null,
+                refinePhase = refinePhase,
                 refineSummary = refineSummary,
                 error = searchError,
                 onAbout = {
@@ -518,8 +527,8 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                 onSearch = {
                     if (currentRequest != null) {
                         importNotice = null
-                        // Refining is implicit: a query that only narrows the last finished
-                        // run reuses its seeds and resumes where it stopped.
+                        // Refining is implicit: a query that narrows — or leaves unchanged —
+                        // the last finished run reuses its seeds and resumes where it stopped.
                         val refine = refinePlanFor(currentRequest, lastFinishedRun)
                         if (refine == null) {
                             searchedQuery = PresetQuery(
@@ -556,6 +565,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                     results = emptyList()
                     lastFinishedRun = null
                     refineSummary = null
+                    refinePhase = null
                     searchStatus = null
                     searchError = null
                     searchedQuery = null

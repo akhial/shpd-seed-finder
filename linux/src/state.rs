@@ -236,10 +236,15 @@ impl AppState {
     }
 }
 
-/// Whether `candidate` refines `base`: identical scope and a strict multiset
-/// superset of the base requirements. Only then are the base search's matches
-/// guaranteed to contain every candidate match within the region it already
-/// scanned, which is what makes filter-and-resume refinement sound.
+/// Whether `candidate` refines `base`: identical scope and a multiset of
+/// requirements that is equal to or a superset of the base requirements. Only
+/// then are the base search's matches guaranteed to contain every candidate
+/// match within the region it already scanned, which is what makes
+/// filter-and-resume refinement sound.
+///
+/// Equality is deliberately included: an unchanged query keeps every previously
+/// found seed and simply resumes the scan where it stopped, which is what makes
+/// a session survive a stop-and-start-again. Only an explicit clear discards it.
 #[must_use]
 pub fn extends_query(candidate: &SearchQuery, base: &SearchQuery) -> bool {
     if candidate.max_depth != base.max_depth
@@ -247,7 +252,7 @@ pub fn extends_query(candidate: &SearchQuery, base: &SearchQuery) -> bool {
         || candidate.require_blacksmith != base.require_blacksmith
         || candidate.exclude_blacksmith_rewards != base.exclude_blacksmith_rewards
         || candidate.fast_mode != base.fast_mode
-        || candidate.requirements.len() <= base.requirements.len()
+        || candidate.requirements.len() < base.requirements.len()
     {
         return false;
     }
@@ -274,10 +279,10 @@ pub enum StartMode {
 }
 
 /// Decides how a start request is served: refining is implicit, so a query
-/// that strictly extends the last finished run reuses its results instead of
-/// rescanning from zero. `refine_base` is the finished run's query, or `None`
-/// when there is nothing to refine — no run yet, results imported or cleared,
-/// or the run failed.
+/// that extends — or simply repeats — the last finished run reuses its results
+/// instead of rescanning from zero. `refine_base` is the finished run's query,
+/// or `None` when there is nothing to refine — no run yet, results imported or
+/// cleared, or the run failed.
 #[must_use]
 pub fn start_mode(candidate: &SearchQuery, refine_base: Option<&SearchQuery>) -> StartMode {
     match refine_base {
@@ -426,7 +431,7 @@ mod tests {
     use super::{AppState, StartMode, UiRequirement, extends_query, start_mode};
 
     #[test]
-    fn refinement_requires_identical_scope_and_strictly_more_requirements() {
+    fn refinement_requires_identical_scope_and_no_fewer_requirements() {
         let mut base_state = AppState::default();
         let mut first = UiRequirement::new(base_state.claim_key());
         first.kind = ItemKind::Ring;
@@ -443,9 +448,13 @@ mod tests {
         let extended = extended_state.to_query().unwrap();
         assert!(extends_query(&extended, &base));
 
-        // An identical query, an edited base requirement, and any scope
+        // An identical query still qualifies: the filter keeps every seed and
+        // the scan resumes, so a stopped session continues instead of resetting.
+        assert!(extends_query(&base, &base));
+
+        // Dropping a requirement, editing a base requirement, and any scope
         // change all force a fresh search instead.
-        assert!(!extends_query(&base, &base));
+        assert!(!extends_query(&base, &extended));
         let mut edited = extended.clone();
         edited.requirements[0].upgrade = UpgradeRequirement::AtLeast(3);
         assert!(!extends_query(&edited, &base));
@@ -488,10 +497,22 @@ mod tests {
             "an extending query must reuse the finished run"
         );
 
-        // Anything the finished run cannot vouch for starts fresh: an
-        // unchanged query, a narrower one, and any scope change.
-        assert_eq!(start_mode(&base, Some(&base)), StartMode::Fresh);
+        // Starting again with the query unchanged continues the session: the
+        // filter keeps every seed and the scan picks up where it stopped. This
+        // is the stop-then-start-again case, which must never wipe results.
+        assert_eq!(
+            start_mode(&base, Some(&base)),
+            StartMode::Refine,
+            "an unchanged query must continue the previous run"
+        );
+        assert_eq!(start_mode(&extended, Some(&extended)), StartMode::Refine);
+
+        // Anything the finished run cannot vouch for starts fresh: a narrower
+        // query, an edited requirement, and any scope change.
         assert_eq!(start_mode(&base, Some(&extended)), StartMode::Fresh);
+        let mut edited = extended.clone();
+        edited.requirements[0].kind = ItemKind::Armor;
+        assert_eq!(start_mode(&edited, Some(&base)), StartMode::Fresh);
         let mut deeper = extended.clone();
         deeper.max_depth = 9;
         assert_eq!(start_mode(&deeper, Some(&base)), StartMode::Fresh);
@@ -499,6 +520,40 @@ mod tests {
         // Clearing the results drops the base, so even an extending query
         // scans from the beginning again.
         assert_eq!(start_mode(&extended, None), StartMode::Fresh);
+    }
+
+    /// QA repro: finish a search, add a requirement, start (refines), stop it,
+    /// then start again without touching the query. A cancelled run still
+    /// leaves a refine base behind, so the second start must continue the
+    /// session rather than wipe the results — only "Clear Results" does that.
+    #[test]
+    fn restarting_a_cancelled_run_with_an_unchanged_query_keeps_the_session() {
+        let mut base_state = AppState::default();
+        let mut first = UiRequirement::new(base_state.claim_key());
+        first.kind = ItemKind::Ring;
+        base_state.requirements.push(first);
+        let finished = base_state.to_query().unwrap();
+
+        let mut extended_state = base_state.clone();
+        let mut added = UiRequirement::new(extended_state.claim_key());
+        added.kind = ItemKind::Weapon;
+        added.upgrade = UpgradeRequirement::AtLeast(2);
+        extended_state.requirements.push(added);
+        let refined = extended_state.to_query().unwrap();
+
+        // First start after adding the requirement: a refine.
+        assert_eq!(start_mode(&refined, Some(&finished)), StartMode::Refine);
+
+        // Cancelling that refine keeps its query as the base. Starting again
+        // with the very same query must refine, not rescan from zero.
+        assert_eq!(
+            start_mode(&refined, Some(&refined)),
+            StartMode::Refine,
+            "a cancelled run plus an unchanged query must not wipe the results"
+        );
+
+        // Only an explicit clear (which drops the base) starts over.
+        assert_eq!(start_mode(&refined, None), StartMode::Fresh);
     }
 
     #[test]

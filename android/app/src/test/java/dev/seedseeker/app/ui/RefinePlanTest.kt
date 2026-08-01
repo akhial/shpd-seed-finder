@@ -12,7 +12,7 @@ import org.junit.Test
 
 /**
  * Search is the only entry point: refining happens automatically whenever the
- * pending query merely narrows the last finished run.
+ * pending query narrows — or leaves unchanged — the last finished run.
  */
 class RefinePlanTest {
     private val frost = ItemRequirement(1, ItemCatalog.wands.first { it.id == "wand_frost" }, 2)
@@ -35,9 +35,23 @@ class RefinePlanTest {
     }
 
     @Test
+    fun anUnchangedQueryContinuesTheBaseRun() {
+        // The QA repro: a cancelled run, then Search again without editing the query.
+        // Results must survive — the filter keeps every seed and the scan resumes.
+        val cancelled = FinishedRun(request(frost, fireblast), resumeFrom = 8_192, remaining = 256, results = seeds)
+        assertEquals(
+            RefineSpec(8_192, 256, seeds),
+            refinePlanFor(request(frost, fireblast), cancelled),
+        )
+        // Re-adding the same requirements through the editor gives them fresh list keys.
+        val rekeyed = request(frost.copy(key = 41), fireblast.copy(key = 42))
+        assertEquals(RefineSpec(8_192, 256, seeds), refinePlanFor(rekeyed, cancelled))
+    }
+
+    @Test
     fun anIneligibleQueryRunsFresh() {
-        // Same query, a widened one, an edited requirement, and a scope change.
-        assertNull(refinePlanFor(request(frost), base))
+        // A widened query, a swapped requirement, an edited requirement, and a scope change.
+        assertNull(refinePlanFor(request(frost), base.copy(request = request(frost, fireblast))))
         assertNull(refinePlanFor(request(fireblast), base))
         assertNull(refinePlanFor(request(frost.copy(upgrade = 3), fireblast), base))
         assertNull(refinePlanFor(request(frost, fireblast, maximumDepth = 12), base))

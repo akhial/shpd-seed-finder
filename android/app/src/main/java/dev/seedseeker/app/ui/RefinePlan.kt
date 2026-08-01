@@ -5,6 +5,18 @@ import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.SeedResult
 import dev.seedseeker.app.model.isRefinementOf
 
+/**
+ * Which half of an in-flight refine run is executing. Only [FILTERING] is "refining" to the user;
+ * once the kept seeds have been re-verified the run is an ordinary search over the resumed window.
+ */
+enum class RefinePhase {
+    /** Re-verifying the previous run's seeds against the new query. */
+    FILTERING,
+
+    /** Scanning the seeds the base run never reached. */
+    SCANNING,
+}
+
 /** Resume window and previously shown seeds a refine run starts from. */
 internal data class RefineSpec(
     val resumeFrom: Long,
@@ -12,7 +24,7 @@ internal data class RefineSpec(
     val keepSeeds: List<SeedResult>,
 )
 
-/** A finished (completed or cancelled) run that a stricter follow-up query may refine. */
+/** A finished (completed or cancelled) run that a follow-up query may refine or continue. */
 internal data class FinishedRun(
     val request: SearchRequest,
     val resumeFrom: Long,
@@ -21,10 +33,11 @@ internal data class FinishedRun(
 )
 
 /**
- * How a Search tap must run [request]: refining is implicit, so a query that only narrows
- * [base] reuses that run's seeds and resumes where it stopped, and every other query — no
- * base at all (never searched, imported results, a failed run, or results the user cleared),
- * a widened or edited query, or any scope change — returns null for a fresh scan.
+ * How a Search tap must run [request]: refining is implicit, so a query that narrows [base] — or
+ * leaves it unchanged, which simply continues that run — reuses its seeds and resumes where it
+ * stopped. Every other query returns null for a fresh scan: no base at all (never searched,
+ * imported results, a failed run, or results the user cleared), a widened or edited query, or
+ * any scope change.
  */
 internal fun refinePlanFor(request: SearchRequest, base: FinishedRun?): RefineSpec? {
     if (base == null || !request.isRefinementOf(base.request)) return null

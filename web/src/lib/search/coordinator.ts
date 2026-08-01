@@ -2,7 +2,7 @@ import { Store } from '@tanstack/store'
 import type { ParsedSeed, QueryDocument, ScoutRequest, ScoutResult } from '../wasm/types'
 import { applyProgress, canClearResults, importedResultsState, initialCoordinatorState, markWorkerDone, RESULT_CAP, type CoordinatorState } from './coordinator-state'
 import type { SearchWorkerRequest, SearchWorkerResponse } from './protocol'
-import { distributeSegments, isRefinementOf, remainingSegments, segmentsLength, shouldRefine } from './refine'
+import { distributeSegments, isContinuationOf, remainingSegments, segmentsLength, shouldRefine } from './refine'
 import { advanceTraversalStart, partitionRotated, randomTraversalStart, type SeedRange } from './traversal'
 
 export const searchStore = new Store<CoordinatorState>(initialCoordinatorState())
@@ -62,11 +62,13 @@ export class SearchCoordinator {
   }
 
   /**
-   * Runs `query`. When the last finished run used a strict subset of these
-   * requirements over the same scope, the scan continues from it rather than
-   * restarting — see `refine`. Refining is never a separate user decision:
-   * it is strictly cheaper than the fresh scan it replaces and yields the
-   * same result set, so every start takes it when it is sound.
+   * Runs `query`. When the last finished run used the same scope and the same
+   * requirements or a subset of them, the scan continues from it rather than
+   * restarting — see `refine`. Continuing is never a separate user decision:
+   * it is never more expensive than the fresh scan it replaces and yields the
+   * same result set, so every start takes it when it is sound. An unchanged
+   * query therefore resumes where a cancel stopped instead of discarding the
+   * results; only the Clear button ends a session.
    */
   start(query: QueryDocument, workerCount = Math.max(1, navigator.hardwareConcurrency ?? 4)): void {
     if (shouldRefine(searchStore.state, query)) {
@@ -104,24 +106,26 @@ export class SearchCoordinator {
   }
 
   /**
-   * Narrows a finished (completed or cancelled) search without discarding it:
-   * the existing matches are re-verified against the combined query, and the
-   * scan continues over exactly the seed ranges the previous run never
+   * Continues a finished (completed or cancelled) search without discarding
+   * it: the existing matches are re-verified against the combined query, and
+   * the scan continues over exactly the seed ranges the previous run never
    * covered. The previous run's matches, coverage, and query stay untouched
    * in the store until the re-verification has succeeded, so a cancelled or
    * failed filter phase falls back to the still-finished previous search.
+   * With an unchanged query the filter phase keeps every previous match and
+   * this is a plain resume.
    *
-   * Reached from `start` whenever `shouldRefine` holds; the superset
+   * Reached from `start` whenever `shouldRefine` holds; the equal-or-superset
    * invariant is re-asserted below because filter-and-resume is only sound
    * under it.
    */
   refine(query: QueryDocument, workerCount = Math.max(1, navigator.hardwareConcurrency ?? 4)): void {
     const previous = searchStore.state
     if (previous.state !== 'completed' && previous.state !== 'cancelled') return
-    // Re-assert the superset invariant here rather than trusting the UI: the
-    // soundness of filter-and-resume depends on it.
+    // Re-assert the equal-or-superset invariant here rather than trusting the
+    // UI: the soundness of filter-and-resume depends on it.
     try {
-      if (!isRefinementOf(query, JSON.parse(previous.queryJson) as QueryDocument)) return
+      if (!isContinuationOf(query, JSON.parse(previous.queryJson) as QueryDocument)) return
     } catch {
       return
     }

@@ -17,16 +17,12 @@ class ResultsHeaderTextTest {
     @Test
     fun refineShowsKeptOfPreviousCounts() {
         assertEquals(
-            "Results — 5 · kept 5 of 12 · refining",
-            header(5, state = SearchState.RUNNING, isSearching = true, isRefined = true, refineSummary = 5 to 12),
-        )
-        assertEquals(
             "Results — 7 · kept 5 of 12",
-            header(7, state = SearchState.COMPLETED, isRefined = true, refineSummary = 5 to 12),
+            header(7, state = SearchState.COMPLETED, refineSummary = 5 to 12),
         )
         assertEquals(
             "Results — 6 · kept 5 of 12 · cancelled",
-            header(6, state = SearchState.CANCELLED, isRefined = true, refineSummary = 5 to 12),
+            header(6, state = SearchState.CANCELLED, refineSummary = 5 to 12),
         )
     }
 
@@ -35,7 +31,23 @@ class ResultsHeaderTextTest {
         // While the previous seeds are being re-verified there is no summary yet.
         assertEquals(
             "Results — 12 · refining",
-            header(12, state = null, isSearching = true, isRefined = true),
+            header(12, state = null, isSearching = true, refinePhase = RefinePhase.FILTERING),
+        )
+    }
+
+    @Test
+    fun onlyTheFilterPhaseSaysRefining() {
+        // Once the kept seeds are settled the resumed scan is an ordinary search,
+        // so the header stops claiming to be refining but keeps the kept counts.
+        assertEquals(
+            "Results — 39 · kept 23 of 329 · searching",
+            header(
+                39,
+                state = SearchState.RUNNING,
+                isSearching = true,
+                refinePhase = RefinePhase.SCANNING,
+                refineSummary = 23 to 329,
+            ),
         )
     }
 
@@ -43,7 +55,7 @@ class ResultsHeaderTextTest {
         resultCount: Int,
         state: SearchState?,
         isSearching: Boolean = false,
-        isRefined: Boolean = false,
+        refinePhase: RefinePhase? = null,
         refineSummary: Pair<Int, Int>? = null,
-    ) = resultsHeaderText(resultCount, state, isSearching, isRefined, refineSummary)
+    ) = resultsHeaderText(resultCount, state, isSearching, refinePhase, refineSummary)
 }

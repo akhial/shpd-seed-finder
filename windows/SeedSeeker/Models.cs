@@ -134,18 +134,26 @@ public sealed class QuerySettings
 }
 
 /// <summary>
-/// Decides whether one query narrows another: identical scope, and every baseline
-/// requirement still present (counting duplicates) alongside at least one new one.
-/// Only such queries can refine a finished run's results instead of rescanning.
+/// Decides whether a query can continue a finished run instead of rescanning it:
+/// identical scope, and every baseline requirement still present (counting
+/// duplicates). Extra requirements are allowed but not required — an unchanged
+/// query qualifies too, and continuing it is exactly right: its filter trivially
+/// keeps every seed the run delivered and the scan resumes where it stopped. A
+/// search session therefore survives until the user explicitly clears it.
 /// </summary>
 public static class QueryRefinement
 {
-    public static bool IsRefinement(QuerySettings candidate, QuerySettings baseline)
+    /// <summary>
+    /// True when <paramref name="candidate"/>'s requirements are equal to, or a
+    /// superset of, <paramref name="baseline"/>'s under an identical scope.
+    /// Deliberately not strict: an equal multiset is a continuation, not a rescan.
+    /// </summary>
+    public static bool CanRefine(QuerySettings candidate, QuerySettings baseline)
     {
         if (candidate.MaximumDepth != baseline.MaximumDepth || candidate.RequireBlacksmith != baseline.RequireBlacksmith
             || candidate.ExcludeBlacksmithRewards != baseline.ExcludeBlacksmithRewards || candidate.FastMode != baseline.FastMode
             || candidate.Challenges != baseline.Challenges) return false;
-        if (candidate.Requirements.Count <= baseline.Requirements.Count) return false;
+        if (candidate.Requirements.Count < baseline.Requirements.Count) return false;
         var remaining = candidate.Requirements.Select(Signature).ToList();
         return baseline.Requirements.All(r => remaining.Remove(Signature(r)));
     }

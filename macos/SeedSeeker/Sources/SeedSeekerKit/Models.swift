@@ -242,17 +242,21 @@ public struct SearchRequest: Codable, Sendable {
 }
 
 extension SearchRequest {
-    /// Whether this request narrows `base`: identical scope (floor limit,
-    /// blacksmith settings, fast mode, and challenges) plus a strict multiset
-    /// superset of its requirements. Row identity (`key`) is ignored, so a
-    /// re-added requirement still counts as the same one.
+    /// Whether this request refines `base`: identical scope (floor limit,
+    /// blacksmith settings, fast mode, and challenges) plus a multiset of
+    /// requirements equal to or a superset of its own. Row identity (`key`) is
+    /// ignored, so a re-added requirement still counts as the same one.
+    ///
+    /// Equality qualifies deliberately: restarting an unchanged query must
+    /// continue the session — the filter keeps every seed and the scan resumes
+    /// where it stopped — rather than throw the results away and rescan.
     public func isRefinement(of base: SearchRequest) -> Bool {
         guard maximumDepth == base.maximumDepth,
               requireBlacksmith == base.requireBlacksmith,
               excludeBlacksmithRewards == base.excludeBlacksmithRewards,
               fastMode == base.fastMode,
               challenges == base.challenges,
-              requirements.count > base.requirements.count else { return false }
+              requirements.count >= base.requirements.count else { return false }
         var counts: [ItemRequirement: Int] = [:]
         for requirement in requirements { counts[requirement.normalized(), default: 0] += 1 }
         for requirement in base.requirements {

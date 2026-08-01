@@ -116,7 +116,7 @@ private struct ContentView: View {
                             } label: {
                                 Label("Clear", systemImage: "trash")
                             }
-                            .labelStyle(ToolbarActionLabelStyle())
+                            .labelStyle(ToolbarActionLabelStyle(trailingEllipsis: false))
                             .help("Clear the results, so the next search starts from scratch")
                             .disabled(!controller.canClearResults)
                         }
@@ -507,9 +507,9 @@ private struct QueryView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal).padding(.top, 8)
             }
-            // Starting a search that strictly narrows the last finished run
-            // refines it automatically; the controller decides, so there is
-            // no second button here.
+            // Starting a search that narrows — or just repeats — the last
+            // finished run refines it automatically; the controller decides,
+            // so there is no second button here.
             Button {
                 if controller.isRunning { controller.cancel() }
                 else if let request = builtRequest { controller.start(request) }
@@ -847,17 +847,31 @@ private struct RequirementEditor: View {
 /// `square.and.arrow.up`/`down` carry more empty space above the glyph than
 /// below it, so a toolbar label leaves them looking low against their capsule.
 /// Lifting only the icon optically centres it without moving the title.
-/// The inset has to be symmetric: hover highlights each button separately, and
-/// padding only one side draws the highlight hard against the title's ellipsis.
-/// Padding both sides also keeps the pair's shared Liquid Glass container off
-/// the outer labels.
+/// Both sides need an inset: hover highlights each button separately, so
+/// padding one side alone draws the highlight hard against the other end of
+/// the label. It also keeps the group's shared Liquid Glass container off the
+/// outer labels.
+///
+/// The 6pt was tuned against "Import…"/"Export…", whose trailing dots sit on
+/// the baseline and read as extra room on the right — enough to balance the
+/// icon's own side bearing on the left. A title without an ellipsis ("Clear")
+/// ends hard against the inset, so the same value leaves it visibly
+/// left-heavy; `trailingEllipsis: false` trims the leading side by the
+/// ellipsis's optical width to even the two gaps back out.
 private struct ToolbarActionLabelStyle: LabelStyle {
+    /// Room a trailing ellipsis contributes on the right, which a title
+    /// without one has to reclaim from the leading inset instead.
+    private static let ellipsisAllowance: CGFloat = 2
+    /// Whether this label's title ends in an ellipsis.
+    var trailingEllipsis = true
+
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 5) {
             configuration.icon.offset(y: -1)
             configuration.title
         }
-        .padding(.horizontal, 6)
+        .padding(.leading, trailingEllipsis ? 6 : 6 - Self.ellipsisAllowance)
+        .padding(.trailing, 6)
     }
 }
 

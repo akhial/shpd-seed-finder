@@ -322,12 +322,16 @@ final class SeedSeekerKitTests: XCTestCase {
         let base = try SearchRequest(requirements: [wand(key: 1, upgrade: 3)])
         let added = try SearchRequest(requirements: [wand(key: 9, upgrade: 3), wand(key: 10, upgrade: 0)])
         XCTAssertTrue(added.isRefinement(of: base))
-        // Identical requirements (even with different keys) are not a refinement.
-        XCTAssertFalse(try SearchRequest(requirements: [wand(key: 7, upgrade: 3)]).isRefinement(of: base))
+        // An unchanged query refines too (it continues the run), and row
+        // identity is ignored, so re-adding the same requirement still counts.
+        XCTAssertTrue(base.isRefinement(of: base))
+        XCTAssertTrue(try SearchRequest(requirements: [wand(key: 7, upgrade: 3)]).isRefinement(of: base))
         // Removing or editing a base requirement breaks containment.
         XCTAssertFalse(base.isRefinement(of: added))
         XCTAssertFalse(try SearchRequest(requirements: [wand(key: 1, upgrade: 2), wand(key: 2, upgrade: 0)])
             .isRefinement(of: base))
+        // Same count, different requirement: an edit, not a continuation.
+        XCTAssertFalse(try SearchRequest(requirements: [wand(key: 1, upgrade: 2)]).isRefinement(of: base))
         // Duplicates count as a multiset: the candidate must repeat them too.
         let doubled = try SearchRequest(requirements: [wand(key: 1, upgrade: 3), wand(key: 2, upgrade: 3)])
         XCTAssertTrue(try SearchRequest(requirements: [wand(key: 3, upgrade: 3), wand(key: 4, upgrade: 3),

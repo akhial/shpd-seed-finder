@@ -111,7 +111,8 @@ final class RefineSearchTests: XCTestCase {
         XCTAssertEqual(controller.baseRun?.remaining, 100)
 
         XCTAssertTrue(controller.canRefine(with: refined))
-        XCTAssertFalse(controller.canRefine(with: base), "identical request must not refine")
+        XCTAssertTrue(controller.canRefine(with: base),
+                      "an unchanged request continues the run rather than rescanning")
 
         engine.filterResult = ["AAA-AAA-AAA", "AAA-AAA-AAC"]
         engine.resumedSessions = [FakeSearchSession(
@@ -259,6 +260,57 @@ final class RefineSearchTests: XCTestCase {
         XCTAssertTrue(controller.results.isEmpty)
     }
 
+    /// QA repro: the session survives every Start/Cancel cycle until an
+    /// explicit Clear. Re-running an untouched query continues the cancelled
+    /// run — the filter trivially keeps every seed and the scan resumes —
+    /// rather than falling back to a fresh scan that wipes the results.
+    func testRestartingAnUnchangedQueryAfterCancelContinuesInsteadOfWiping() async throws {
+        let engine = FakeEngine()
+        let controller = SearchController(engine: engine)
+        let refined = try wandRequest(count: 2)
+
+        engine.startSessions = [FakeSearchSession(
+            batches: [[result("AAA-AAA-AAA"), result("AAA-AAA-AAB")]],
+            hint: ResumeHint(position: 500, remaining: 100))]
+        controller.start(try wandRequest(count: 1))
+        try await waitUntilIdle(controller)
+
+        // Adding a requirement refines; the user cancels the resumed scan, so
+        // the refined request — not the original — becomes the base run.
+        engine.filterResult = ["AAA-AAA-AAA"]
+        engine.resumedSessions = [FakeSearchSession(
+            batches: [[result("AAA-AAA-AAC", matched: 2)]], finalState: .cancelled,
+            hint: ResumeHint(position: 600, remaining: 50))]
+        controller.start(refined)
+        try await waitUntilIdle(controller)
+        XCTAssertEqual(controller.state, .cancelled)
+        XCTAssertEqual(controller.results.map(\.seed), ["AAA-AAA-AAA", "AAA-AAA-AAC"])
+        XCTAssertTrue(controller.canRefine(with: refined),
+                      "the unchanged query must stay eligible after a cancel")
+
+        for cycle in 1...3 {
+            engine.filterResult = controller.results.map(\.seed)
+            engine.resumedSessions = [FakeSearchSession(
+                batches: [], finalState: .cancelled,
+                hint: ResumeHint(position: 600, remaining: 50))]
+            controller.start(refined)
+            try await waitUntilIdle(controller)
+
+            XCTAssertEqual(engine.freshCalls, 1, "cycle \(cycle) must not rescan from zero")
+            XCTAssertEqual(engine.resumedCalls.count, cycle + 1)
+            XCTAssertEqual(engine.resumedCalls.last?.resumeFrom, 600)
+            XCTAssertEqual(engine.resumedCalls.last?.scanLen, 50)
+            XCTAssertEqual(controller.results.map(\.seed), ["AAA-AAA-AAA", "AAA-AAA-AAC"],
+                           "cycle \(cycle) must keep the session's results")
+            XCTAssertEqual(controller.refinedKept, 2)
+        }
+
+        // Only the explicit Clear ends the session.
+        controller.clearResults()
+        XCTAssertTrue(controller.results.isEmpty)
+        XCTAssertFalse(controller.canRefine(with: refined))
+    }
+
     /// Anything the base run cannot be narrowed into — a scope change, fewer
     /// or unrelated requirements — must rescan from zero.
     func testStartingAnIneligibleQueryRescansFromScratch() async throws {
@@ -270,6 +322,12 @@ final class RefineSearchTests: XCTestCase {
         controller.start(try wandRequest(count: 1))
         try await waitUntilIdle(controller)
         XCTAssertEqual(controller.results.map(\.seed), ["AAA-AAA-AAA"])
+
+        // Same requirement count, but edited: a different query, not a
+        // continuation of this one.
+        let edited = try SearchRequest(requirements: [
+            ItemRequirement(key: 1, item: nil, upgrade: 2, kind: .wand, upgradeMatch: .exactly)])
+        XCTAssertFalse(controller.canRefine(with: edited))
 
         // More requirements, but at a different floor limit: not a refinement.
         let rescoped = try SearchRequest(requirements: wandRequest(count: 2).requirements,

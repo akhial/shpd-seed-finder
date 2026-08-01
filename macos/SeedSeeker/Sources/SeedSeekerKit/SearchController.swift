@@ -79,10 +79,11 @@ public final class SearchController {
         baseRun = nil; refinedKept = nil
     }
 
-    /// Starts `request`. When it strictly narrows the last finished run this
-    /// silently refines that run — filtering the seeds already found and
-    /// resuming the scan — instead of rescanning from zero. There is no
-    /// user-facing choice: eligibility alone decides.
+    /// Starts `request`. When it narrows — or simply repeats — the last
+    /// finished run this silently refines that run: filtering the seeds
+    /// already found and resuming the scan instead of rescanning from zero.
+    /// There is no user-facing choice: eligibility alone decides. Results
+    /// therefore survive until the query widens or `clearResults()` is used.
     public func start(_ request: SearchRequest) {
         if canRefine(with: request) { refine(request) } else { freshSearch(request) }
     }
@@ -104,8 +105,8 @@ public final class SearchController {
     }
 
     /// Whether starting `request` would refine the last finished run rather
-    /// than rescan: nothing running, a base run on record, and strictly more
-    /// requirements at identical scope.
+    /// than rescan: nothing running, a base run on record, and the same
+    /// requirements or more at identical scope.
     public func canRefine(with request: SearchRequest) -> Bool {
         guard !isRunning, let baseRun else { return false }
         return request.isRefinement(of: baseRun.request)
@@ -128,9 +129,10 @@ public final class SearchController {
         errorCode = 0; message = nil; state = nil
     }
 
-    /// Narrows the finished base run: re-verifies the seeds already found
-    /// against the stricter request, then completes the base run's remaining
-    /// seed-space coverage with a resumed scan, deduplicating by seed.
+    /// Continues the finished base run: re-verifies the seeds already found
+    /// against `request` — which may be identical, in which case every seed
+    /// survives — then completes the base run's remaining seed-space coverage
+    /// with a resumed scan, deduplicating by seed.
     private func refine(_ request: SearchRequest) {
         guard canRefine(with: request), let base = baseRun else { return }
         task?.cancel(); resetProgress()
