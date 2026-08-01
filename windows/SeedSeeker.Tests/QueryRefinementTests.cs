@@ -18,14 +18,20 @@ public sealed class QueryRefinementTests
     {
         var baseline = Query(Ring(), Wand());
         Assert.True(QueryRefinement.CanRefine(baseline.Clone(), baseline));
-        // The same instance (no Clone) must qualify too: Signature is by value.
+        // The same instance (no Clone) must qualify too: the comparison is by
+        // value, on the encoded queries, never by reference.
         Assert.True(QueryRefinement.CanRefine(baseline, baseline));
     }
 
     [Fact]
-    public void AnEmptyQueryContinuesAnEmptyBaseline()
+    public void AnUnsearchableQueryContinuesNothing()
     {
-        Assert.True(QueryRefinement.CanRefine(Query(), Query()));
+        // A query with no requirements is not a query the engine will decode,
+        // so it has no result set to inherit and rescanning is the only sound
+        // answer — the same verdict the web frontend reaches. The UI never
+        // asks: Start is disabled until a requirement exists, and importing a
+        // results file whose query has none is refused outright.
+        Assert.False(QueryRefinement.CanRefine(Query(), Query()));
     }
 
     [Fact]

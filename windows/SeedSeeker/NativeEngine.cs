@@ -16,6 +16,7 @@ internal static partial class Native
     [LibraryImport(Library)] internal static partial void seedfinder_close(long handle);
     [LibraryImport(Library)] internal static partial int seedfinder_scout(byte[] request, nuint length, out nint packet, out nuint outputLength);
     [LibraryImport(Library)] internal static partial int seedfinder_filter_seeds(byte[] request, nuint length, ulong[] seeds, nuint seedsLength, out nint packet, out nuint outputLength);
+    [LibraryImport(Library)] internal static partial int seedfinder_query_continues(byte[] candidate, nuint candidateLength, byte[] baseline, nuint baselineLength);
     [LibraryImport(Library)] internal static partial void seedfinder_buffer_free(nint packet, nuint length);
 }
 
@@ -90,6 +91,25 @@ public sealed class NativeEngine
         var code = Native.seedfinder_filter_seeds(packet, (nuint)packet.Length, values, (nuint)values.Length, out var ptr, out var len);
         if (code != 0) throw new InvalidOperationException($"Native filter failed ({code}).");
         return ReadSeedList(CopyAndFree(ptr, len));
+    }
+
+    /// <summary>
+    /// Whether <paramref name="candidate"/> continues <paramref name="baseline"/>:
+    /// identical scope and a requirement multiset containing the baseline's
+    /// (equality included). The engine owns this predicate — the same
+    /// <c>SearchQuery::continues</c> that decides which seeds a resumed pass may
+    /// skip — so the decision is made on the encoded SSF7 packets rather than
+    /// re-derived here, and the two can never drift.
+    /// </summary>
+    public static bool QueryContinues(QuerySettings candidate, QuerySettings baseline)
+    {
+        var left = EncodeQuery(candidate); var right = EncodeQuery(baseline);
+        // A query the engine cannot decode continues nothing, matching the web
+        // frontend: an unsearchable query — one with no requirements, say — has
+        // no result set to inherit, so the only sound answer is a fresh scan.
+        // The UI never asks about one anyway: Start stays disabled until a
+        // requirement exists, and imports reject a query without them.
+        return Native.seedfinder_query_continues(left, (nuint)left.Length, right, (nuint)right.Length) == 1;
     }
 
     private static byte[] EncodeQuery(QuerySettings query)

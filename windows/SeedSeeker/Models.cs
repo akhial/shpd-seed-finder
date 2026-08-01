@@ -129,6 +129,10 @@ public sealed class QuerySettings
 /// query qualifies too, and continuing it is exactly right: its filter trivially
 /// keeps every seed the run delivered and the scan resumes where it stopped. A
 /// search session therefore survives until the user explicitly clears it.
+/// The continuation rule itself belongs to the engine and is asked of it, since
+/// soundness of the resumed scan depends on the two agreeing exactly.
+/// <see cref="SharesRequirement"/> stays local by contrast: it gates nothing but
+/// a re-verifying filter, so it is a UI heuristic rather than a soundness rule.
 /// </summary>
 public static class QueryRefinement
 {
@@ -136,19 +140,12 @@ public static class QueryRefinement
     /// True when <paramref name="candidate"/>'s requirements are equal to, or a
     /// superset of, <paramref name="baseline"/>'s under an identical scope.
     /// Deliberately not strict: an equal multiset is a continuation, not a rescan.
+    /// The engine decides — this encodes both queries and asks
+    /// <c>seedfinder_query_continues</c>, so refine eligibility here is the very
+    /// predicate the resumed scan relies on and cannot drift from it.
     /// </summary>
-    public static bool CanRefine(QuerySettings candidate, QuerySettings baseline)
-    {
-        if (candidate.MaximumDepth != baseline.MaximumDepth || candidate.RequireBlacksmith != baseline.RequireBlacksmith
-            || candidate.ExcludeBlacksmithRewards != baseline.ExcludeBlacksmithRewards || candidate.FastMode != baseline.FastMode
-            || candidate.Challenges != baseline.Challenges) return false;
-        if (candidate.Requirements.Count < baseline.Requirements.Count) return false;
-        var remaining = candidate.Requirements.Select(Signature).ToList();
-        return baseline.Requirements.All(r => remaining.Remove(Signature(r)));
-    }
-
-    private static string Signature(ItemRequirement r) =>
-        $"{r.Item?.Id}|{r.Upgrade}|{r.Modifier}|{r.Kind}|{r.Tier}|{r.TierMatch}|{r.UpgradeMatch}|{r.Source}|{r.IdentityGroup}|{r.MaximumDepth}|{r.RequireUncursed}";
+    public static bool CanRefine(QuerySettings candidate, QuerySettings baseline) =>
+        NativeEngine.QueryContinues(candidate, baseline);
 
     /// <summary>
     /// Whether two queries name a common item: some requirement of each has the

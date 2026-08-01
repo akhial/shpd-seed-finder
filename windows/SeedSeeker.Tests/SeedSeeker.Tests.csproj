@@ -1,20 +1,34 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- Plain net8.0 on purpose: the WinUI app only compiles on Windows, but
-         the linked sources are pure C# (Models.cs keeps its XAML-bound members
-         in Models.Presentation.cs for exactly this reason), so these tests run
-         anywhere the SDK does (including the macOS/Linux development hosts
-         and CI). -->
+         the linked sources carry no Windows App SDK types (Models.cs keeps its
+         XAML-bound members in Models.Presentation.cs for exactly this reason),
+         so these tests run anywhere the SDK does (including the macOS/Linux
+         development hosts and CI). The engine they call through is native but
+         not Windows-specific: it is built here for whatever host is running. -->
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>SeedSeeker.Tests</RootNamespace>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
+    <!-- LibraryImport's generated stubs are unsafe, as in the app csproj. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\SeedSeeker\ResultNavigation.cs" Link="ResultNavigation.cs" />
     <Compile Include="..\SeedSeeker\Models.cs" Link="Models.cs" />
+    <!-- Refine eligibility is the engine's own predicate, reached through the
+         P/Invokes here, so the tests exercise the shipping path rather than a
+         second implementation of it. -->
+    <Compile Include="..\SeedSeeker\NativeEngine.cs" Link="NativeEngine.cs" />
   </ItemGroup>
+  <!-- The engine library for the host, which NativeEngineLibrary.cs then finds.
+       The WinUI csproj cross-builds the Windows DLL for the app itself; this is
+       the plain host build the test process can actually load. -->
+  <Target Name="BuildRustEngine" BeforeTargets="Build">
+    <!-- Forward slashes: this target has to run on the macOS and Linux hosts too. -->
+    <Exec WorkingDirectory="$(MSBuildThisFileDirectory)../.." Command="cargo build -p shpd-seedfinder-ffi" />
+  </Target>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageReference Include="xunit" Version="2.9.2" />
