@@ -1708,6 +1708,10 @@ input[type='range']::-moz-range-thumb {
   transform: translateX(-50%);
   bottom: calc(46px + env(safe-area-inset-bottom, 0px));
   z-index: 60;
+  /* Without an explicit width the fixed box shrink-to-fits into the space
+     right of `left: 50%` — half the viewport — and wraps early. `max-content`
+     lets it grow to the text and only wrap at the max-width below. */
+  width: max-content;
   max-width: min(92vw, 480px);
   padding: 9px 14px;
   border: 1px solid var(--d1-border-strong);
