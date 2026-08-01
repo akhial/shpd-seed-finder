@@ -88,7 +88,9 @@ private struct ContentView: View {
         if controller.runKind == .detached && controller.refinedKept == nil && controller.target != nil {
             parts.append("Unrelated query — detached search from previous results.")
         }
-        if controller.reachedResultCap { parts.append("Result limit reached (1,024 seeds).") }
+        // Only a concluded run announces the cap: while an accumulating scan
+        // runs, a full display is the expected state, not news.
+        if controller.reachedResultCap && !controller.isRunning { parts.append("Result limit reached (1,024 seeds).") }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 

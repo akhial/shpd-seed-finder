@@ -98,8 +98,10 @@ export function ResultsPanel({
             ? 'Imported'
             : undefined
   // The store keeps every delivered match for refine soundness; the panel
-  // shows at most the advertised cap.
+  // lists at most the advertised cap, while the counts report the full
+  // collection — an accumulated set is the user's real result.
   const shownMatches = search.matches.slice(0, RESULT_CAP)
+  const foundCount = search.matches.length
 
   // Returns the panel to its idle empty state, banners included. Dropping the
   // finished run also drops what a start would have refined from, which is
@@ -159,8 +161,8 @@ export function ResultsPanel({
         <span className="d1-pane-head-side">
           <span className="d1-pane-head-info">
             {running && <span className="d1-live-dot" aria-hidden="true" />}
-            {shownMatches.length > 0
-              ? `${shownMatches.length.toLocaleString()} seed${shownMatches.length === 1 ? '' : 's'}`
+            {foundCount > 0
+              ? `${foundCount.toLocaleString()} seed${foundCount === 1 ? '' : 's'}`
               : running
                 ? search.filtering
                   ? 'refining…'
@@ -261,10 +263,10 @@ export function ResultsPanel({
             <span className={`d1-state-chip${search.state === 'completed' || search.state === 'imported' ? ' d1-state-ok' : ''}`}>{statusChip}</span>
             <span className="d1-caption">
               {search.state === 'imported'
-                ? `${shownMatches.length.toLocaleString()} seed${shownMatches.length === 1 ? '' : 's'} loaded from file${
+                ? `${foundCount.toLocaleString()} seed${foundCount === 1 ? '' : 's'} loaded from file${
                     search.importedDropped ? ` · ${search.importedDropped.toLocaleString()} entr${search.importedDropped === 1 ? 'y' : 'ies'} dropped (duplicates or beyond the 1,024-seed limit)` : ''
                   }`
-                : `${shownMatches.length.toLocaleString()} seed${shownMatches.length === 1 ? '' : 's'} · tested ${compactNumber(search.tested)} in ${formatDuration(search.elapsed)}`}
+                : `${foundCount.toLocaleString()} seed${foundCount === 1 ? '' : 's'} · tested ${compactNumber(search.tested)} in ${formatDuration(search.elapsed)}`}
             </span>
           </div>
         )}

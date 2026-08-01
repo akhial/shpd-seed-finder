@@ -84,6 +84,8 @@ fun FinderScreen(
     challenges: Int,
     presets: List<QueryPreset>,
     results: List<SeedResult>,
+    /** The run's full collection size; `results` lists at most the display cap. */
+    foundCount: Int,
     status: SearchStatus?,
     seedsPerSecond: Double,
     elapsedSeconds: Long,
@@ -207,6 +209,7 @@ fun FinderScreen(
                     fastMode = fastMode,
                     challenges = challenges,
                     results = results,
+                    foundCount = foundCount,
                     status = status,
                     isSearching = isSearching,
                     refinePhase = refinePhase,
@@ -285,6 +288,7 @@ private fun QueryHeader(
     fastMode: Boolean,
     challenges: Int,
     results: List<SeedResult>,
+    foundCount: Int,
     status: SearchStatus?,
     isSearching: Boolean,
     refinePhase: RefinePhase?,
@@ -349,7 +353,7 @@ private fun QueryHeader(
         )
         Text(
             resultsHeaderText(
-                resultCount = results.size,
+                resultCount = foundCount,
                 state = status?.state,
                 isSearching = isSearching,
                 refinePhase = refinePhase,

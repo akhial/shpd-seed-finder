@@ -4,7 +4,6 @@ import { formatSeedInput } from '../../lib/format'
 import { toQueryDocument, toQueryJson, validateQuery } from '../../lib/query'
 import { resultPosition, stepResult } from '../../lib/scout-nav'
 import { SearchCoordinator, scoutSeed, searchStore } from '../../lib/search/coordinator'
-import { RESULT_CAP } from '../../lib/search/coordinator-state'
 import { queryStore, workerCountStore } from '../../lib/store'
 import { analyzeQuery, getEngineInfo, parseSeedCode } from '../../lib/wasm'
 import type { AnalysisResult, EngineInfo, ScoutResult } from '../../lib/wasm/types'
@@ -32,9 +31,9 @@ const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigat
 export default function App() {
   const query = useStore(queryStore)
   const searchState = useStore(searchStore, (state) => state.state)
-  // The collection can outgrow the display cap (repeated searches keep
-  // accumulating); the badge mirrors the capped list, not the full set.
-  const matchCount = useStore(searchStore, (state) => Math.min(state.matches.length, RESULT_CAP))
+  // The badge reports the full accumulated collection, like every seed
+  // count; only the listed rows are capped.
+  const matchCount = useStore(searchStore, (state) => state.matches.length)
 
   const [engine, setEngine] = useState<EngineInfo | undefined>(undefined)
   const coordinator = useRef<SearchCoordinator | undefined>(undefined)

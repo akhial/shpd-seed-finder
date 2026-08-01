@@ -20,7 +20,7 @@ describe('searchStatusNotes', () => {
   it('reports the filter phase while a refine verifies previous results', () => {
     const notes = searchStatusNotes(state({ state: 'running', filtering: true, refined: { kept: 0, of: 128 } }))
     expect(notes).toEqual([
-      { kind: 'refine', text: 'Verifying 128 previously found seeds against the combined requirements…' },
+      { kind: 'refine', text: 'Verifying 128 previously found seeds…' },
     ])
   })
 
@@ -51,5 +51,16 @@ describe('searchStatusNotes', () => {
   it('holds the previous run\'s cap notice while the filter phase runs', () => {
     const notes = searchStatusNotes(state({ state: 'running', filtering: true, capped: true, refined: { kept: 0, of: 1_024 } }))
     expect(notes.map((note) => note.kind)).toEqual(['refine'])
+  })
+
+  it('holds the cap notice while an accumulating scan is still running', () => {
+    // A refine whose survivors fill the display scans for more: the full
+    // display is the expected state, so only "searching for more" speaks.
+    const notes = searchStatusNotes(state({ state: 'running', capped: true, refined: { kept: 2_048, of: 2_048 } }))
+    expect(notes).toEqual([
+      { kind: 'refine', text: 'Kept 2,048 of 2,048 previous seeds — searching for more…' },
+    ])
+    const concluded = searchStatusNotes(state({ state: 'completed', capped: true, refined: { kept: 2_048, of: 2_048 } }))
+    expect(concluded.map((note) => note.kind)).toEqual(['refine', 'cap'])
   })
 })

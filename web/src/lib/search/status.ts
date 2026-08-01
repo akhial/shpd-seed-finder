@@ -22,7 +22,7 @@ export function searchStatusNotes(state: CoordinatorState): StatusNote[] {
   if (running && state.filtering && state.refined) {
     notes.push({
       kind: 'refine',
-      text: `Verifying ${state.refined.of.toLocaleString()} previously found seed${plural(state.refined.of)} against the combined requirements…`,
+      text: `Verifying ${state.refined.of.toLocaleString()} previously found seed${plural(state.refined.of)}…`,
     })
   } else if (running && state.refined) {
     notes.push({
@@ -44,9 +44,10 @@ export function searchStatusNotes(state: CoordinatorState): StatusNote[] {
       text: 'Unrelated query — detached search from previous results.',
     })
   }
-  // While the filter phase runs, `capped` still describes the previous run —
-  // the verified subset may well come in under the cap — so hold the notice
-  // until the filter lands and the flag is recomputed.
-  if (state.capped && !state.filtering) notes.push({ kind: 'cap', text: 'Result limit reached (1,024 seeds).' })
+  // The cap notice only speaks once a run has concluded: while an
+  // accumulating scan runs, a full display is the expected state ("searching
+  // for more" says what is happening), and during the filter phase `capped`
+  // still describes the previous run.
+  if (state.capped && !running) notes.push({ kind: 'cap', text: 'Result limit reached (1,024 seeds).' })
   return notes
 }

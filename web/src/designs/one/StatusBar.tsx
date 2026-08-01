@@ -57,9 +57,12 @@ export function StatusSnackbar() {
           : `Refined: kept ${search.refined.kept.toLocaleString()} of ${search.refined.of.toLocaleString()} previous seed${plural}.`,
       )
     }
-    if (search.capped && !seen.current.capped) events.push('Result limit reached (1,024 seeds).')
+    // The cap event waits for the run to conclude: a full display during an
+    // accumulating scan is the expected state, not news.
+    const capVisible = search.capped && !running && !search.filtering
+    if (capVisible && !seen.current.capped) events.push('Result limit reached (1,024 seeds).')
     seen.current.filterDone = filterDone
-    seen.current.capped = search.capped
+    seen.current.capped = capVisible
     if (events.length > 0) setNote({ text: events.join(' '), at: performance.now() })
   }, [search])
 

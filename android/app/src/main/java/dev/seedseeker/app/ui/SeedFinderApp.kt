@@ -144,6 +144,9 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
     var editingRequirement by remember { mutableStateOf<ItemRequirement?>(null) }
     var showRequirementSheet by remember { mutableStateOf(false) }
     var results by remember { mutableStateOf(emptyList<SeedResult>()) }
+    // The run's full collection size: the listed `results` stop at RESULT_CAP
+    // rows, but every seed count the user reads reports this number.
+    var foundCount by remember { mutableStateOf(0) }
     var searchStatus by remember { mutableStateOf<SearchStatus?>(null) }
     var searchSeedsPerSecond by remember { mutableStateOf(0.0) }
     var searchElapsedSeconds by remember { mutableLongStateOf(0L) }
@@ -233,6 +236,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                 val dropped = imported.seeds.size - kept.size
                 val importedResults = kept.map { SeedResult(it, imported.query.requirements.size) }
                 results = importedResults
+                foundCount = importedResults.size
                 searchedQuery = imported.query
                 // Imported results carry no traversal state, so the previous
                 // search's refine base no longer describes the listed seeds.
@@ -314,6 +318,8 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
         // Target and any detached continuation's filter base read this, never the capped display.
         var collected = emptyList<SeedResult>()
         // Local to the effect so the limit snackbar fires once per run, never per recomposition.
+        // Only a concluded run announces the cap: while an accumulating scan runs, a full
+        // display is the expected state, not news.
         var resultLimitNotified = false
         fun notifyIfResultLimitReached() {
             if (resultLimitNotified || results.size < RESULT_CAP) return
@@ -331,6 +337,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
             val refine = currentRun.refine
             if (refine == null) {
                 results = emptyList()
+                foundCount = 0
                 if (currentRun.mode == StartMode.DETACHED) {
                     // The display and the Target Set diverge here; say so once per scan.
                     scope.launch {
@@ -349,6 +356,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                 // Every survivor stays collected; the screen lists at most RESULT_CAP of them.
                 collected = kept.map { SeedResult(it, currentRun.request.requirements.size) }
                 results = displayedResults(collected)
+                foundCount = collected.size
                 // From here on the listed results match the refined request, so
                 // that is what an export must claim. A cancelled filter phase
                 // leaves the previous results — and their snapshot — untouched.
@@ -367,8 +375,8 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                         "Kept ${kept.size} of ${refine.keepSeeds.size} previous seeds.",
                     )
                 }
-                notifyIfResultLimitReached()
                 if (refine.remaining == 0L) {
+                    notifyIfResultLimitReached()
                     searchStatus = SearchStatus(SearchState.COMPLETED, 0, 0)
                     lastFinishedRun =
                         FinishedRun(currentRun.request, refine.resumeFrom, 0, collected)
@@ -406,7 +414,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                     // only the displayed list stops at the cap.
                     collected = collected + newResults
                     results = displayedResults(collected)
-                    notifyIfResultLimitReached()
+                    foundCount = collected.size
                 }
                 val statusTime = System.nanoTime()
                 searchElapsedSeconds = (statusTime - searchStartedAt) / 1_000_000_000L
@@ -434,6 +442,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                 }
                 if (status.state != SearchState.RUNNING) {
                     if (status.state != SearchState.FAILED) {
+                        notifyIfResultLimitReached()
                         // The hint is only exact once the session has stopped, and it must be
                         // read before the finally block closes the handle.
                         val hint = withContext(Dispatchers.Default) { openedSession.resumeHint() }
@@ -542,6 +551,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                 challenges = challenges,
                 presets = BuiltInPresets.all + userPresets,
                 results = results,
+                foundCount = foundCount,
                 status = searchStatus,
                 seedsPerSecond = searchSeedsPerSecond,
                 elapsedSeconds = searchElapsedSeconds,
@@ -647,6 +657,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                     // always a fresh anchor scan. Clear is the only action that does.
                     run = null
                     results = emptyList()
+                    foundCount = 0
                     lastFinishedRun = null
                     lastRunKind = null
                     target = null

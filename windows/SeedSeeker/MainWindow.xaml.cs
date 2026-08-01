@@ -858,18 +858,16 @@ public sealed partial class MainWindow : Window
             var status = await Task.Run(active.Status); var seconds = timer.Elapsed.TotalSeconds; var rate = seconds > lastTime ? (status.Scanned - lastScanned) / (seconds - lastTime) : 0; lastScanned = status.Scanned; lastTime = seconds;
             var probability = status.Probability > 0 ? $"{status.Probability:P4}" : "calculating"; var tts = status.Probability > 0 && rate > 0 ? FormatDuration(1 / status.Probability / rate) : "calculating";
             SearchStatus.Text = status.State == SearchState.Running ? $"Seed match probability: {probability}   •   TTS @ {rate:N0} seeds/s: {tts}\nTime elapsed: {FormatDuration(seconds)}" : status.State switch { SearchState.Completed => "Completed", SearchState.Cancelled => "Cancelled", _ => $"Failed (error {status.ErrorCode})" };
-            // A full display only truncates the listing: the session keeps
-            // running until the engine's own per-session accept cap stops it,
-            // and every further find still reaches `collected` and the Target.
-            if (results.Count >= ResultCap) SetStatusBar(WithCapNotice(summary));
             // The engine reports a terminal state only once every queued match
             // has been drained, so breaking here never leaves seeds behind —
             // including a session that stopped itself at its accept cap.
             if (status.State != SearchState.Running) break;
         }
-        // Settle the bar on the summary alone once "searching for more…" is
-        // over; when the display filled, its joined notice is the final word.
-        if (results.Count < ResultCap) SetStatusBar(summary);
+        // Only the concluded run announces the cap: a full display during an
+        // accumulating scan is the expected state ("searching for more…" says
+        // what is happening), and every further find still reached
+        // `collected` and the Target.
+        SetStatusBar(results.Count >= ResultCap ? WithCapNotice(summary) : summary);
     }
     private static string FormatDuration(double seconds) => seconds switch { < 1 => "less than a second", < 60 => $"{seconds:N0}s", < 3600 => $"{seconds / 60:N1}m", < 86400 => $"{seconds / 3600:N1}h", _ => $"{seconds / 86400:N1}d" };
 
