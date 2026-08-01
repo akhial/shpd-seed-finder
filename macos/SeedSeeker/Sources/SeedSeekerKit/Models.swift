@@ -244,27 +244,22 @@ public struct SearchRequest: Codable, Sendable {
 extension SearchRequest {
     /// Whether this request refines `base`: identical scope (floor limit,
     /// blacksmith settings, fast mode, and challenges) plus a multiset of
-    /// requirements equal to or a superset of its own. Row identity (`key`) is
-    /// ignored, so a re-added requirement still counts as the same one.
+    /// requirements equal to or a superset of its own.
     ///
     /// Equality qualifies deliberately: restarting an unchanged query must
     /// continue the session — the filter keeps every seed and the scan resumes
     /// where it stopped — rather than throw the results away and rescan.
+    ///
+    /// The rule itself is the engine's (`SearchQuery::continues`, bridged as
+    /// `seedfinder_query_continues`): both queries go over the same SSF7 wire
+    /// the search takes, so refine eligibility is decided once for every
+    /// platform instead of being re-derived here. Row identity (`key`) drops
+    /// out for free — it is not part of the wire format. A query too large to
+    /// encode continues nothing.
     public func isRefinement(of base: SearchRequest) -> Bool {
-        guard maximumDepth == base.maximumDepth,
-              requireBlacksmith == base.requireBlacksmith,
-              excludeBlacksmithRewards == base.excludeBlacksmithRewards,
-              fastMode == base.fastMode,
-              challenges == base.challenges,
-              requirements.count >= base.requirements.count else { return false }
-        var counts: [ItemRequirement: Int] = [:]
-        for requirement in requirements { counts[requirement.normalized(), default: 0] += 1 }
-        for requirement in base.requirements {
-            let normalized = requirement.normalized()
-            guard let count = counts[normalized], count > 0 else { return false }
-            counts[normalized] = count - 1
-        }
-        return true
+        guard let candidate = try? QueryCodec.encode(self),
+              let encodedBase = try? QueryCodec.encode(base) else { return false }
+        return QueryContinuation.continues(candidate, base: encodedBase)
     }
 
     /// Whether this request and `base` name a common item: some requirement of
@@ -280,15 +275,6 @@ extension SearchRequest {
                     && (candidate.item == nil || other.item == nil || candidate.item?.id == other.item?.id)
             }
         }
-    }
-}
-
-private extension ItemRequirement {
-    /// A copy with `key` cleared so refinement comparison ignores row identity.
-    func normalized() -> ItemRequirement {
-        var copy = self
-        copy.key = 0
-        return copy
     }
 }
 

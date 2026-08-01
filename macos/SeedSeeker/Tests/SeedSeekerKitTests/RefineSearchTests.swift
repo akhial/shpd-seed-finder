@@ -80,6 +80,10 @@ final class RefineSearchTests: XCTestCase {
                                 upgradeMatch: key == 1 ? .exactly : .any)
         })
     }
+    private func wand(key: Int64, upgrade: Int) throws -> ItemRequirement {
+        try ItemRequirement(key: key, item: nil, upgrade: upgrade, kind: .wand,
+                            upgradeMatch: upgrade == 0 ? .any : .exactly)
+    }
     private func result(_ seed: String, matched: Int = 1) -> SeedResult {
         SeedResult(seed: seed, matchedRequirements: matched)
     }
@@ -657,6 +661,99 @@ final class RefineSearchTests: XCTestCase {
         XCTAssertEqual(controller.results.count, SearchController.resultCap)
         XCTAssertEqual(engine.resumedCalls.count, 1,
                        "a continuation with coverage left scans for more even at the display cap")
+    }
+
+    // MARK: - The continuation predicate, as the engine answers it
+
+    /// `isRefinement(of:)` is the engine's own predicate reached over SSF7, so
+    /// these are conformance assertions for the whole encode → bridge → decode
+    /// path rather than for a rule this module owns.
+    func testEngineDecidesContinuationOverTheEncodedQuery() throws {
+        let base = try SearchRequest(requirements: [wand(key: 1, upgrade: 3)])
+        let added = try SearchRequest(requirements: [wand(key: 9, upgrade: 3), wand(key: 10, upgrade: 0)])
+        XCTAssertTrue(added.isRefinement(of: base))
+        // An unchanged query continues the run, and row identity never reaches
+        // the wire, so a re-added requirement is still the same requirement.
+        XCTAssertTrue(base.isRefinement(of: base))
+        XCTAssertTrue(try SearchRequest(requirements: [wand(key: 7, upgrade: 3)]).isRefinement(of: base))
+        // Removing or editing a base requirement breaks containment.
+        XCTAssertFalse(base.isRefinement(of: added))
+        XCTAssertFalse(try SearchRequest(requirements: [wand(key: 1, upgrade: 2), wand(key: 2, upgrade: 0)])
+            .isRefinement(of: base))
+        // Same count, different requirement: an edit, not a continuation.
+        XCTAssertFalse(try SearchRequest(requirements: [wand(key: 1, upgrade: 2)]).isRefinement(of: base))
+        // Duplicates count as a multiset: the candidate must repeat them too.
+        let doubled = try SearchRequest(requirements: [wand(key: 1, upgrade: 3), wand(key: 2, upgrade: 3)])
+        XCTAssertTrue(try SearchRequest(requirements: [wand(key: 3, upgrade: 3), wand(key: 4, upgrade: 3),
+                                                       wand(key: 5, upgrade: 0)]).isRefinement(of: doubled))
+        XCTAssertFalse(try SearchRequest(requirements: [wand(key: 3, upgrade: 3), wand(key: 5, upgrade: 0)])
+            .isRefinement(of: doubled))
+        XCTAssertTrue(doubled.isRefinement(of: base))
+    }
+
+    /// Any scope difference ends the continuation: the base run's coverage says
+    /// nothing about a differently scoped query's matches.
+    func testAnyScopeChangeEndsTheContinuation() throws {
+        let base = try SearchRequest(requirements: [wand(key: 1, upgrade: 3)])
+        let requirements = [try wand(key: 9, upgrade: 3), try wand(key: 10, upgrade: 0)]
+        XCTAssertTrue(try SearchRequest(requirements: requirements).isRefinement(of: base))
+        XCTAssertFalse(try SearchRequest(requirements: requirements, maximumDepth: 12).isRefinement(of: base))
+        XCTAssertFalse(try SearchRequest(requirements: requirements, requireBlacksmith: true).isRefinement(of: base))
+        XCTAssertFalse(try SearchRequest(requirements: requirements, excludeBlacksmithRewards: true).isRefinement(of: base))
+        XCTAssertFalse(try SearchRequest(requirements: requirements, fastMode: true).isRefinement(of: base))
+        XCTAssertFalse(try SearchRequest(requirements: requirements, challenges: 32).isRefinement(of: base))
+    }
+
+    /// Every requirement predicate must reach the engine intact: a row that
+    /// differs in any of them is a different requirement — narrowing one row
+    /// only continues when the original row is still there beside it.
+    func testEveryRequirementPredicateReachesTheEngine() throws {
+        let plain = try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .weapon, upgradeMatch: .any)
+        let base = try SearchRequest(requirements: [plain])
+        let variants: [(String, ItemRequirement)] = [
+            ("named item", try ItemRequirement(key: 2, item: ItemCatalog.weapons[0], upgrade: 0,
+                                               kind: .weapon, upgradeMatch: .any)),
+            ("modifier", try ItemRequirement(key: 3, item: nil, upgrade: 0,
+                                             modifier: ItemCatalog.modifiersFor(.weapon)[0],
+                                             kind: .weapon, upgradeMatch: .any)),
+            ("tier", try ItemRequirement(key: 4, item: nil, upgrade: 0, kind: .weapon,
+                                         tier: 3, tierMatch: .atLeast, upgradeMatch: .any)),
+            ("upgrade", try ItemRequirement(key: 5, item: nil, upgrade: 2, kind: .weapon,
+                                            upgradeMatch: .exactly)),
+            ("source", try ItemRequirement(key: 6, item: nil, upgrade: 0, kind: .weapon,
+                                           upgradeMatch: .any, source: .shop)),
+            ("identity group", try ItemRequirement(key: 7, item: nil, upgrade: 0, kind: .weapon,
+                                                   upgradeMatch: .any, identityGroup: 1)),
+            ("item floor limit", try ItemRequirement(key: 8, item: nil, upgrade: 0, kind: .weapon,
+                                                     upgradeMatch: .any, maximumDepth: 10)),
+            ("uncursed", try ItemRequirement(key: 9, item: nil, upgrade: 0, kind: .weapon,
+                                             upgradeMatch: .any, requireUncursed: true)),
+            ("weapon class", try ItemRequirement(key: 10, item: nil, upgrade: 0, kind: .meleeWeapon,
+                                                 upgradeMatch: .any)),
+        ]
+        for (label, variant) in variants {
+            let narrowed = try SearchRequest(requirements: [variant])
+            XCTAssertFalse(narrowed.isRefinement(of: base),
+                           "\(label): tightening the only row replaces it, so it cannot continue")
+            XCTAssertTrue(narrowed.isRefinement(of: narrowed), "\(label): must continue itself")
+            XCTAssertTrue(try SearchRequest(requirements: [plain, variant]).isRefinement(of: base),
+                          "\(label): adding a row beside the base row continues")
+        }
+    }
+
+    /// The bridge itself, on raw packets: the verdict comes from the native
+    /// decode, and a packet it cannot read is never a continuation — resuming
+    /// coverage on a verdict we failed to obtain is the unsound direction.
+    func testQueryContinuationBridgeAnswersFromRawPackets() throws {
+        let base = try QueryCodec.encode(wandRequest(count: 1))
+        let narrowed = try QueryCodec.encode(wandRequest(count: 2))
+        XCTAssertTrue(QueryContinuation.continues(narrowed, base: base))
+        XCTAssertTrue(QueryContinuation.continues(base, base: base))
+        XCTAssertFalse(QueryContinuation.continues(base, base: narrowed))
+        XCTAssertFalse(QueryContinuation.continues(Data("SSF7".utf8), base: base),
+                       "a truncated packet decodes to nothing")
+        XCTAssertFalse(QueryContinuation.continues(Data(), base: base))
+        XCTAssertFalse(QueryContinuation.continues(narrowed, base: Data("SSF0nonsense".utf8)))
     }
 
     func testClearResultsAlsoDiscardsImportedResults() throws {

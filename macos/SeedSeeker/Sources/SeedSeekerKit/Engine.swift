@@ -38,6 +38,31 @@ private func copiedPacket(_ pointer: UnsafeMutablePointer<UInt8>?, _ length: Int
     return Data(bytes: pointer, count: length)
 }
 
+/// The engine's refine soundness predicate, bridged rather than re-derived:
+/// whether the SSF7 query in `candidate` continues the one in `base` —
+/// identical scope (floor limit, challenges, blacksmith flags, fast mode) and a
+/// requirement multiset containing base's, equality included.
+///
+/// Unlike the session calls this is synchronous: the decision gates Start
+/// Search, and the native side only decodes two packets and compares them.
+/// It is deliberately outside `SeedFinderEngine` — the rule is the engine's
+/// regardless of which engine runs the search, so a test double cannot answer
+/// it differently.
+public enum QueryContinuation {
+    /// Anything but a definite yes (a "no", or an undecodable packet the FFI
+    /// reports negative) reads as "does not continue", which is the safe
+    /// direction: the search re-anchors and rescans instead of reusing results
+    /// whose coverage it cannot claim.
+    public static func continues(_ candidate: Data, base: Data) -> Bool {
+        candidate.withUnsafeBytes { candidateBytes in
+            base.withUnsafeBytes { baseBytes in
+                seedfinder_query_continues(candidateBytes.bindMemory(to: UInt8.self).baseAddress, candidateBytes.count,
+                                           baseBytes.bindMemory(to: UInt8.self).baseAddress, baseBytes.count) == 1
+            }
+        }
+    }
+}
+
 public struct ProductionSeedFinderEngine: SeedFinderEngine {
     public init() {}
 
