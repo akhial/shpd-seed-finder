@@ -15,9 +15,10 @@ use shpd_seedfinder_core::model::GeneratedWorld;
 use shpd_seedfinder_core::probability::estimate_match_probability;
 use shpd_seedfinder_core::query::SearchQuery;
 use shpd_seedfinder_core::search::{
-    SearchError, SearchOptions, StreamingSearchHandle, StreamingSearchState, WorldGenerator,
+    SearchOptions, StreamingSearchHandle, StreamingSearchState, WorldGenerator,
     spawn_partial_streaming_search, spawn_rotated_streaming_search, spawn_streaming_search,
 };
+pub use shpd_seedfinder_core::search::SearchError;
 use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
 use shpd_seedfinder_core::wire::{
     WireError, decode_query, decode_scout_request, encode_results, encode_scout_world,
@@ -190,12 +191,18 @@ pub fn filter_matching_seeds(
                 let generator = &generator;
                 let plan = &plan;
                 scope.spawn(move || {
-                    generator
-                        .generate_batch_gated(slice, depth, plan)
-                        .into_iter()
-                        .flatten()
-                        .filter(|world| query.matches(world))
-                        .collect::<Vec<_>>()
+                    // The catch keeps the panic on this side of the scope:
+                    // an unwinding scoped thread would make `thread::scope`
+                    // itself panic on exit, turning the error path below into
+                    // a panic whenever more than one slice trips it.
+                    catch_unwind(AssertUnwindSafe(|| {
+                        generator
+                            .generate_batch_gated(slice, depth, plan)
+                            .into_iter()
+                            .flatten()
+                            .filter(|world| query.matches(world))
+                            .collect::<Vec<_>>()
+                    }))
                 })
             })
             .collect::<Vec<_>>();
@@ -203,7 +210,13 @@ pub fn filter_matching_seeds(
         for handle in handles {
             // A generator panic must surface as an error: silently treating
             // its slice as empty would drop genuine matches from the filter.
-            matched.extend(handle.join().map_err(|_| SearchError::WorkerPanicked)?);
+            matched.extend(
+                handle
+                    .join()
+                    .ok()
+                    .and_then(Result::ok)
+                    .ok_or(SearchError::WorkerPanicked)?,
+            );
         }
         Ok(matched)
     })
@@ -237,6 +250,20 @@ pub enum FilterPacketError {
     Filter(SearchError),
     Response(WireError),
     Panicked,
+}
+
+/// Decodes two `SSF7` query requests and reports whether `candidate`
+/// continues `base`: identical scope (depth, challenges, blacksmith flags,
+/// fast mode) and a requirement multiset containing every requirement of
+/// `base`. This is the soundness precondition for refining a search — only a
+/// continuing query may filter a stopped session's delivered results and
+/// resume its uncovered remainder. See [`SearchQuery::continues`].
+///
+/// # Errors
+///
+/// Returns the decode error of the first undecodable packet.
+pub fn queries_continue(candidate: &[u8], base: &[u8]) -> Result<bool, WireError> {
+    Ok(decode_query(candidate)?.continues(&decode_query(base)?))
 }
 
 pub struct NativeSession {
@@ -307,7 +334,7 @@ impl NativeSession {
     /// # Errors
     ///
     /// Returns [`SearchError`] for an invalid query, a resume position outside
-    /// the seed space, a scan length beyond it, or worker spawn failure.
+    /// the seed space, or a scan length beyond it.
     pub fn production_resumed(
         query: SearchQuery,
         resume_from: u64,
@@ -347,12 +374,16 @@ impl NativeSession {
 
     /// Where and how much a follow-up traversal must scan to finish this
     /// session's coverage of the seed space: `[resume_position, remaining]`.
-    /// Exact once the session has stopped; conservative while it is running.
+    /// Exact once the session has stopped (any terminal status implies the
+    /// workers have exited); meaningless while it is running — a running
+    /// session's hint can overshoot the work actually done and must never be
+    /// resumed from.
     #[must_use]
     pub fn resume_hint(&self) -> [i64; 2] {
+        let coverage = self.search.resume_coverage();
         [
-            i64::try_from(self.search.resume_position()).unwrap_or(i64::MAX),
-            i64::try_from(self.search.remaining()).unwrap_or(i64::MAX),
+            i64::try_from(coverage.position).unwrap_or(i64::MAX),
+            i64::try_from(coverage.remaining).unwrap_or(i64::MAX),
         ]
     }
 
@@ -851,6 +882,36 @@ mod tests {
             production_filter_packet(b"bad!????????", &[seed.value()]),
             Err(FilterPacketError::Request(WireError::BadMagic))
         );
+    }
+
+    #[test]
+    fn unsatisfiable_resumed_session_hands_back_its_whole_arc() {
+        // A +4 ring cannot exist by depth sixteen. The session completes
+        // instantly without scanning, and the hint must return the entire
+        // requested arc so a later satisfiable continuation still covers it.
+        let impossible = SearchQuery {
+            requirements: vec![Requirement {
+                kind: shpd_seedfinder_core::catalog::ItemKind::Ring,
+                weapon_category: None,
+                item: None,
+                tier: TierRequirement::Any,
+                upgrade: UpgradeRequirement::Exact(4),
+                effect: None,
+                require_uncursed: false,
+                source: None,
+                identity_group: None,
+                max_depth: None,
+            }],
+            max_depth: 16,
+            challenges: Challenges::NONE,
+            require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
+            fast_mode: false,
+        };
+        let session = NativeSession::production_resumed(impossible, 42, 1_000).unwrap();
+        wait(&session);
+        assert_eq!(session.status()[0], STATE_COMPLETED);
+        assert_eq!(session.resume_hint(), [42, 1_000]);
     }
 
     #[test]

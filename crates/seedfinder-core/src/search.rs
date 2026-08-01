@@ -276,6 +276,9 @@ struct StreamingShared {
     total: u64,
     chunk_size: u64,
     max_results: u64,
+    /// The query plan proved no seed can match, so no worker ever claims a
+    /// chunk and the traversal's coverage must stay zero.
+    unsatisfiable: bool,
     tested: AtomicU64,
     accepted: AtomicU64,
     cancelled: AtomicBool,
@@ -290,9 +293,7 @@ struct StreamingShared {
 
 impl StreamingShared {
     fn state(&self) -> StreamingSearchState {
-        if self.failed.load(Ordering::Acquire) {
-            StreamingSearchState::Failed
-        } else if self.active_workers.load(Ordering::Acquire) != 0 {
+        if self.active_workers.load(Ordering::Acquire) != 0 {
             StreamingSearchState::Running
         } else if !self
             .results
@@ -302,10 +303,14 @@ impl StreamingShared {
         {
             // Frontends poll results and stop polling as soon as status
             // becomes terminal. Keep the session observable as running until
-            // every produced match has been drained — for cancelled searches
-            // too, because those matches sit inside the consumed prefix a
-            // refined search will never revisit.
+            // every produced match has been drained — for cancelled and
+            // failed searches too, because those matches sit inside the
+            // consumed prefix a refined search will never revisit. Every
+            // terminal state therefore implies that the workers have exited
+            // and the resume coverage snapshot is frozen.
             StreamingSearchState::Running
+        } else if self.failed.load(Ordering::Acquire) {
+            StreamingSearchState::Failed
         } else if self.cancelled.load(Ordering::Acquire) {
             StreamingSearchState::Cancelled
         } else {
@@ -391,15 +396,16 @@ impl StreamingSearchHandle {
     /// fully recorded: every one of the first `scanned_prefix()` seeds visited
     /// by this traversal was either rejected, pruned, or delivered as a match.
     ///
-    /// Matches which were tested but discarded because `max_results` was
-    /// already reached are *not* part of this prefix, so resuming a stopped
-    /// search from this position never loses a match. The value is only
-    /// meaningful once [`Self::is_finished`] is true: while workers are still
-    /// running it can transiently overshoot by up to one claimed-but-unstarted
-    /// chunk per worker, because a chunk is claimed from the cursor before the
-    /// worker marks it pending.
-    #[must_use]
-    pub fn scanned_prefix(&self) -> u64 {
+    /// The value is only meaningful once [`Self::is_finished`] is true: while
+    /// workers are still running it can transiently overshoot by up to one
+    /// claimed-but-unstarted chunk per worker, because a chunk is claimed
+    /// from the cursor before the worker marks it pending.
+    fn scanned_prefix(&self) -> u64 {
+        if self.shared.unsatisfiable {
+            // No worker ever ran: the pre-seeded cursor exists to complete
+            // the search instantly and must not masquerade as coverage.
+            return 0;
+        }
         let claimed = self
             .shared
             .cursor
@@ -414,24 +420,36 @@ impl StreamingSearchHandle {
             .min(claimed)
     }
 
-    /// Number of seeds of this traversal not yet covered by
-    /// [`Self::scanned_prefix`].
+    /// Where and how much a follow-up traversal must scan to complete this
+    /// traversal's coverage, derived from one coherent snapshot of the
+    /// scanned prefix. Read it only after the search has finished: every
+    /// terminal [`StreamingSearchState`] implies [`Self::is_finished`], and a
+    /// snapshot taken from a running search may overshoot the work actually
+    /// done, so it must never be resumed from.
     #[must_use]
-    pub fn remaining(&self) -> u64 {
-        self.shared.total - self.scanned_prefix()
-    }
-
-    /// Absolute seed value where a follow-up traversal can resume so that,
-    /// combined with the already-delivered matches, no seed outcome is lost.
-    /// Re-testing a small overlap near the stop point is possible; resumed
-    /// consumers should deduplicate matches by seed. Like
-    /// [`Self::scanned_prefix`], read it only after the search has finished.
-    #[must_use]
-    pub fn resume_position(&self) -> u64 {
+    pub fn resume_coverage(&self) -> ResumeCoverage {
+        let prefix = self.scanned_prefix();
         let range_len = self.shared.end_seed_exclusive - self.shared.range_start;
         let offset = self.shared.traversal_start - self.shared.range_start;
-        self.shared.range_start + (offset + self.scanned_prefix()) % range_len
+        ResumeCoverage {
+            position: self.shared.range_start + (offset + prefix) % range_len,
+            remaining: self.shared.total - prefix,
+        }
     }
+}
+
+/// A finished traversal's uncovered remainder: a follow-up traversal covering
+/// `remaining` seeds from `position` (wrapping at the end of the configured
+/// range) completes the coverage without losing any seed outcome. A resumed
+/// pass can re-test a small overlap after a cancellation or worker panic, so
+/// consumers accumulating matches across passes should deduplicate them by
+/// seed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ResumeCoverage {
+    /// Absolute seed value where the follow-up traversal starts.
+    pub position: u64,
+    /// Number of seeds the follow-up traversal must cover.
+    pub remaining: u64,
 }
 
 impl Drop for StreamingSearchHandle {
@@ -488,9 +506,8 @@ pub fn spawn_rotated_streaming_search<G: WorldGenerator + Send + 'static>(
 /// Starts a non-blocking multicore traversal covering only the `scan_len`
 /// seeds beginning at `traversal_start`, wrapping at the end of the configured
 /// range. This is the resume primitive used to refine a stopped or completed
-/// search: pass the previous handle's [`StreamingSearchHandle::resume_position`]
-/// and [`StreamingSearchHandle::remaining`] to continue exactly where the
-/// previous traversal left off.
+/// search: pass the previous handle's [`StreamingSearchHandle::resume_coverage`]
+/// values to continue exactly where the previous traversal left off.
 ///
 /// A `scan_len` of zero is accepted and completes immediately.
 ///
@@ -519,7 +536,11 @@ pub fn spawn_partial_streaming_search<G: WorldGenerator + Send + 'static>(
     let plan = Arc::new(QueryPlan::analyze(&query));
     let shared = Arc::new(StreamingShared {
         // An impossible query is complete before any worker claims a chunk.
+        // The flag keeps its reported coverage at zero: completing without
+        // scanning must not consume the remainder a satisfiable follow-up
+        // query still has to cover.
         cursor: AtomicU64::new(if plan.is_unsatisfiable() { total } else { 0 }),
+        unsatisfiable: plan.is_unsatisfiable(),
         range_start: options.start_seed,
         end_seed_exclusive: options.end_seed_exclusive,
         traversal_start,
@@ -583,6 +604,11 @@ fn streaming_worker<G: WorldGenerator>(
     let generation_depth = plan.generation_depth();
     let seeds_before_wrap = shared.end_seed_exclusive - shared.traversal_start;
     let low_water = &shared.worker_low_water[worker_index];
+    // The result cap gates *claiming*: a claimed chunk always runs to
+    // completion (unless cancelled), so every pass that claims at least one
+    // chunk advances the recorded coverage — resumed passes are guaranteed to
+    // make progress. The cap can overshoot by at most one chunk of accepted
+    // matches per worker.
     while !shared.cancelled.load(Ordering::Acquire)
         && shared.accepted.load(Ordering::Acquire) < shared.max_results
     {
@@ -616,10 +642,7 @@ fn streaming_worker<G: WorldGenerator>(
             // This branch runs for at most one claimed chunk in the entire
             // search. Keeping the two numeric ranges separate preserves the
             // ordinary increment loop and accurate panic diagnostics.
-            if logical_end > seeds_before_wrap
-                && !shared.cancelled.load(Ordering::Acquire)
-                && shared.accepted.load(Ordering::Acquire) < shared.max_results
-            {
+            if logical_end > seeds_before_wrap && !shared.cancelled.load(Ordering::Acquire) {
                 consumed += streaming_seed_range(
                     generator,
                     query,
@@ -656,9 +679,9 @@ fn streaming_worker<G: WorldGenerator>(
 
 /// Tests one contiguous seed range and returns how many seeds at the front of
 /// the range had their outcome fully recorded (rejected, pruned, or delivered
-/// as an accepted match). A seed whose match was discarded because
-/// `max_results` was already reached is *not* counted, so a resumed traversal
-/// starting after the counted prefix will rediscover it.
+/// as an accepted match). Only cancellation stops a range midway; the result
+/// cap is enforced when chunks are claimed, so a range that starts is normally
+/// consumed in full and its prefix count equals its length.
 #[inline]
 #[allow(clippy::too_many_arguments)]
 fn streaming_seed_range<G: WorldGenerator>(
@@ -689,32 +712,17 @@ fn streaming_seed_range<G: WorldGenerator>(
     let mut local_tested = 0_u64;
     let mut consumed = 0_u64;
     for world in worlds {
-        if shared.cancelled.load(Ordering::Acquire)
-            || shared.accepted.load(Ordering::Acquire) >= shared.max_results
-        {
+        if shared.cancelled.load(Ordering::Acquire) {
             break;
         }
         local_tested += 1;
-        let Some(world) = world else {
-            consumed += 1;
-            continue;
-        };
-        if query.matches(&world) {
-            if shared
-                .accepted
-                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |accepted| {
-                    (accepted < shared.max_results).then_some(accepted + 1)
-                })
-                .is_ok()
-            {
+        if let Some(world) = world {
+            if query.matches(&world) {
+                shared.accepted.fetch_add(1, Ordering::AcqRel);
                 local_results.push(world);
-                consumed += 1;
-            } else {
-                break;
             }
-        } else {
-            consumed += 1;
         }
+        consumed += 1;
     }
     shared.tested.fetch_add(local_tested, Ordering::Relaxed);
     if !local_results.is_empty() {
@@ -1176,8 +1184,13 @@ mod tests {
         );
         // The arc [17, 12) is fully consumed; a follow-up scan starts at 12.
         assert_eq!(handle.scanned_prefix(), 5);
-        assert_eq!(handle.remaining(), 0);
-        assert_eq!(handle.resume_position(), 12);
+        assert_eq!(
+            handle.resume_coverage(),
+            super::ResumeCoverage {
+                position: 12,
+                remaining: 0
+            }
+        );
 
         assert!(matches!(
             spawn_partial_streaming_search(&generator, wand_query(), options, 17, 11),
@@ -1201,14 +1214,66 @@ mod tests {
 
         assert_eq!(handle.state(), StreamingSearchState::Completed);
         assert_eq!(handle.tested(), 0);
-        assert_eq!(handle.remaining(), 0);
-        assert_eq!(handle.resume_position(), 40);
+        let coverage = handle.resume_coverage();
+        assert_eq!(coverage.remaining, 0);
+        assert_eq!(coverage.position, 40);
     }
 
     #[test]
-    fn resume_position_excludes_matches_discarded_by_the_result_cap() {
-        // Every seed matches; a cap of two forces a mid-chunk discard, so the
-        // scanned prefix must stop just before the first discarded match.
+    fn unsatisfiable_partial_search_reports_no_coverage() {
+        // A +4 ring cannot exist by depth sixteen, so the plan is proved
+        // unsatisfiable and the search completes without generating a single
+        // world. Completing without scanning must not consume the remainder:
+        // the hint hands the whole requested arc back to the caller, so a
+        // later satisfiable continuation can still cover it.
+        let impossible = SearchQuery {
+            requirements: vec![Requirement {
+                kind: ItemKind::Ring,
+                weapon_category: None,
+                item: None,
+                tier: TierRequirement::Any,
+                upgrade: crate::query::UpgradeRequirement::Exact(4),
+                effect: None,
+                require_uncursed: false,
+                source: None,
+                identity_group: None,
+                max_depth: None,
+            }],
+            max_depth: 16,
+            challenges: crate::challenges::Challenges::NONE,
+            require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
+            fast_mode: false,
+        };
+        let options = SearchOptions {
+            start_seed: 0,
+            end_seed_exclusive: 100,
+            workers: NonZeroUsize::new(2).unwrap(),
+            chunk_size: NonZeroUsize::new(4).unwrap(),
+            max_results: NonZeroUsize::MIN,
+        };
+        let generator = Arc::new(DivisibleGenerator);
+        let handle =
+            spawn_partial_streaming_search(&generator, impossible, options, 30, 50).unwrap();
+        finish(&handle);
+
+        assert_eq!(handle.state(), StreamingSearchState::Completed);
+        assert_eq!(handle.tested(), 0);
+        assert_eq!(
+            handle.resume_coverage(),
+            super::ResumeCoverage {
+                position: 30,
+                remaining: 50
+            }
+        );
+    }
+
+    #[test]
+    fn capped_resumed_passes_always_advance_and_never_duplicate() {
+        // Every seed matches; a cap of two fills mid-chunk. The cap gates
+        // claiming — a claimed chunk still runs to completion — so every
+        // pass is guaranteed to advance coverage by at least one chunk, and
+        // cap-stopped passes never re-deliver a seed.
         let options = SearchOptions {
             start_seed: 0,
             end_seed_exclusive: 10,
@@ -1220,13 +1285,9 @@ mod tests {
         let mut found = Vec::new();
         let mut resume_from = 0;
         let mut remaining = 10;
-        // A pass may legitimately consume zero seeds (a worker can abandon its
-        // first chunk when the cap fills), so bound the loop by iterations
-        // rather than asserting per-pass progress.
         let mut passes = 0;
         while remaining > 0 {
             passes += 1;
-            assert!(passes <= 100, "resumed passes must terminate");
             let handle = spawn_partial_streaming_search(
                 &generator,
                 wand_query(),
@@ -1236,24 +1297,32 @@ mod tests {
             )
             .unwrap();
             finish(&handle);
+            let coverage = handle.resume_coverage();
+            assert!(
+                coverage.remaining < remaining,
+                "every capped pass must advance coverage"
+            );
             found.extend(
                 handle
                     .drain_results(16)
                     .into_iter()
                     .map(|world| world.seed.value()),
             );
-            resume_from = handle.resume_position();
-            remaining = handle.remaining();
+            resume_from = coverage.position;
+            remaining = coverage.remaining;
         }
 
+        // One full chunk per pass: [0, 4), [4, 8), [8, 10).
+        assert_eq!(passes, 3);
         // Every seed is recovered exactly once across the resumed passes.
         assert_eq!(found, (0..10).collect::<Vec<_>>());
     }
 
     #[test]
-    fn resume_position_is_exact_when_the_cap_stops_a_chunk_midway() {
-        // Even seeds match. With a cap of three the worker stops right after
-        // accepting seed four inside the chunk [4, 8).
+    fn the_result_cap_stops_at_a_chunk_boundary_with_exact_coverage() {
+        // Even seeds match. The cap of three fills inside the chunk [4, 8),
+        // which still runs to completion (overshooting the cap by one match)
+        // before the worker stops claiming.
         let options = SearchOptions {
             start_seed: 0,
             end_seed_exclusive: 12,
@@ -1272,11 +1341,16 @@ mod tests {
                 .into_iter()
                 .map(|world| world.seed.value())
                 .collect::<Vec<_>>(),
-            vec![0, 2, 4]
+            vec![0, 2, 4, 6]
         );
-        assert_eq!(handle.scanned_prefix(), 5);
-        assert_eq!(handle.resume_position(), 5);
-        assert_eq!(handle.remaining(), 7);
+        assert_eq!(handle.scanned_prefix(), 8);
+        assert_eq!(
+            handle.resume_coverage(),
+            super::ResumeCoverage {
+                position: 8,
+                remaining: 4
+            }
+        );
     }
 
     #[test]
@@ -1294,8 +1368,8 @@ mod tests {
         handle.cancel();
         finish(&handle);
 
-        let prefix = handle.scanned_prefix();
-        assert_eq!(handle.remaining(), 4_096 - prefix);
+        let coverage = handle.resume_coverage();
+        assert_eq!(coverage.remaining, 4_096 - handle.scanned_prefix());
         let first_found = handle
             .drain_results(2_048)
             .into_iter()
@@ -1308,8 +1382,8 @@ mod tests {
             &generator,
             wand_query(),
             options,
-            handle.resume_position(),
-            handle.remaining(),
+            coverage.position,
+            coverage.remaining,
         )
         .unwrap();
         finish(&resumed);
@@ -1327,6 +1401,57 @@ mod tests {
             (0..4_096_u64)
                 .filter(|seed| seed % 17 == 0)
                 .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn failed_search_stays_running_until_queued_results_are_drained() {
+        // Every seed matches and the generator panics at seed six, inside the
+        // second chunk. The four matches from the completed first chunk sit
+        // inside the consumed prefix a refined search never revisits, so they
+        // must be drained before the failure becomes observable; the panicked
+        // chunk itself stays out of the reported coverage.
+        struct MatchThenPanic;
+
+        impl WorldGenerator for MatchThenPanic {
+            fn generate(&self, seed: crate::seed::DungeonSeed, _max_depth: u8) -> GeneratedWorld {
+                assert_ne!(seed.value(), 6, "fixture panic at seed six");
+                GeneratedWorld {
+                    seed,
+                    items: vec![WorldItem {
+                        item: ItemId::WandFrost,
+                        upgrade: 2,
+                        effect: None,
+                        cursed: false,
+                        depth: 1,
+                        source: ItemSource::Heap,
+                        accessibility: Accessibility::Independent,
+                    }],
+                }
+            }
+        }
+
+        let options = SearchOptions {
+            start_seed: 0,
+            end_seed_exclusive: 12,
+            workers: NonZeroUsize::MIN,
+            chunk_size: NonZeroUsize::new(4).unwrap(),
+            max_results: NonZeroUsize::new(16).unwrap(),
+        };
+        let generator = Arc::new(MatchThenPanic);
+        let handle =
+            spawn_partial_streaming_search(&generator, wand_query(), options, 0, 12).unwrap();
+        finish(&handle);
+
+        assert_eq!(handle.state(), StreamingSearchState::Running);
+        assert_eq!(handle.drain_results(16).len(), 4);
+        assert_eq!(handle.state(), StreamingSearchState::Failed);
+        assert_eq!(
+            handle.resume_coverage(),
+            super::ResumeCoverage {
+                position: 4,
+                remaining: 8
+            }
         );
     }
 

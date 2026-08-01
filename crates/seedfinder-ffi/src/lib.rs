@@ -6,8 +6,9 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 
 use shpd_seedfinder_session::{
-    FilterPacketError, NativeSession, ScoutCallError, ScoutPacketError, StartSessionError,
-    close_session, production_filter_packet, production_scout_packet, registry,
+    FilterPacketError, NativeSession, ScoutCallError, ScoutPacketError, SearchError,
+    StartSessionError, close_session, production_filter_packet, production_scout_packet,
+    queries_continue, registry,
 };
 
 const OK: i32 = 0;
@@ -89,7 +90,9 @@ pub extern "C" fn seedfinder_start_resumed_search(
 
 /// Writes `[resume_position, remaining]` for the session into `out_hint`,
 /// which must reference two writable `i64` slots. The values are exact once
-/// the session has stopped and conservative while it is running.
+/// the session has stopped (any terminal status implies that) and meaningless
+/// while it is running: a running session's hint can overshoot the work
+/// actually done and must never be resumed from.
 #[unsafe(no_mangle)]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn seedfinder_resume_hint(handle: i64, out_hint: *mut i64) -> i32 {
@@ -138,8 +141,40 @@ pub extern "C" fn seedfinder_filter_seeds(
         };
         match production_filter_packet(bytes, seed_values) {
             Ok(packet) => return_packet(packet, out_packet, out_len),
+            // A worker panic is an engine failure, not a caller error.
+            Err(
+                FilterPacketError::Filter(SearchError::WorkerPanicked)
+                | FilterPacketError::Response(_)
+                | FilterPacketError::Panicked,
+            ) => INTERNAL,
             Err(FilterPacketError::Request(_) | FilterPacketError::Filter(_)) => INVALID,
-            Err(FilterPacketError::Response(_) | FilterPacketError::Panicked) => INTERNAL,
+        }
+    }))
+    .unwrap_or(INTERNAL)
+}
+
+/// Reports whether the `SSF7` query in `candidate` continues the one in
+/// `base`: identical scope and a requirement multiset containing `base`'s.
+/// Only a continuing query may reuse a stopped session's results and resume
+/// hint (the filter-and-resume refine flow). Returns 1 when it continues,
+/// 0 when it does not, and a negative code for an undecodable packet.
+#[unsafe(no_mangle)]
+pub extern "C" fn seedfinder_query_continues(
+    candidate: *const u8,
+    candidate_len: usize,
+    base: *const u8,
+    base_len: usize,
+) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        let (Some(candidate), Some(base)) = (
+            request_slice(candidate, candidate_len),
+            request_slice(base, base_len),
+        ) else {
+            return INVALID;
+        };
+        match queries_continue(candidate, base) {
+            Ok(continues) => i32::from(continues),
+            Err(_) => INVALID,
         }
     }))
     .unwrap_or(INTERNAL)
@@ -307,11 +342,23 @@ mod tests {
         let handle = seedfinder_start_search(request.as_ptr(), request.len());
         assert!(handle > 0);
         seedfinder_cancel(handle);
+        // A stopped search keeps reporting state 0 until every queued result
+        // is drained, so the loop must poll while it waits.
         let mut status = [0; 5];
-        while {
+        loop {
+            let mut packet = ptr::null_mut();
+            let mut packet_len = 0;
+            assert_eq!(
+                seedfinder_poll(handle, 16, &raw mut packet, &raw mut packet_len),
+                OK
+            );
+            if !packet.is_null() {
+                seedfinder_buffer_free(packet, packet_len);
+            }
             assert_eq!(seedfinder_status(handle, status.as_mut_ptr()), OK);
-            status[0] == 0
-        } {
+            if status[0] != 0 {
+                break;
+            }
             std::thread::yield_now();
         }
         let mut hint = [0_i64; 2];
@@ -340,6 +387,28 @@ mod tests {
             UNKNOWN_HANDLE
         );
         assert_eq!(seedfinder_resume_hint(handle, ptr::null_mut()), INVALID);
+    }
+
+    #[test]
+    fn query_continuation_bridge_decodes_and_compares() {
+        let request = query_packet();
+        assert_eq!(
+            seedfinder_query_continues(
+                request.as_ptr(),
+                request.len(),
+                request.as_ptr(),
+                request.len()
+            ),
+            1
+        );
+        assert_eq!(
+            seedfinder_query_continues(b"bad".as_ptr(), 3, request.as_ptr(), request.len()),
+            INVALID
+        );
+        assert_eq!(
+            seedfinder_query_continues(ptr::null(), 0, request.as_ptr(), request.len()),
+            INVALID
+        );
     }
 
     #[test]

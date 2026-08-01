@@ -246,6 +246,24 @@ pub fn filter_seeds(query_json: &str, seed_values: Vec<f64>) -> Result<String, J
     filter_seeds_impl(query_json, &seed_values).map_err(|error| JsError::new(&error))
 }
 
+/// Reports whether the query in `candidate_json` continues the one in
+/// `base_json`: identical scope (depth, challenges, blacksmith flags, fast
+/// mode) and a requirement multiset containing the base's. Only a continuing
+/// query may reuse a stopped search's results and coverage remainder (the
+/// filter-and-resume refine flow).
+///
+/// # Errors
+///
+/// Returns a JavaScript error when either query fails to decode.
+#[wasm_bindgen]
+pub fn query_continues(candidate_json: &str, base_json: &str) -> Result<bool, JsError> {
+    query_continues_impl(candidate_json, base_json).map_err(|error| JsError::new(&error))
+}
+
+fn query_continues_impl(candidate_json: &str, base_json: &str) -> Result<bool, String> {
+    Ok(json_query::decode(candidate_json)?.continues(&json_query::decode(base_json)?))
+}
+
 /// Cooperative, single-threaded browser search state.
 #[wasm_bindgen]
 pub struct SearchSession {
@@ -647,8 +665,20 @@ mod tests {
 
     use super::{
         MAX_RESULTS, SearchSession, analyze_query, engine_info, filter_seeds_impl,
-        format_seed_code, parse_seed_code_impl, scout_impl,
+        format_seed_code, parse_seed_code_impl, query_continues_impl, scout_impl,
     };
+
+    #[test]
+    fn query_continuation_matches_scope_and_requirement_multiset() {
+        let base = r#"{"requirements":[{"kind":"ring","upgrade":{"at_least":1}}],"max_depth":6}"#;
+        let narrowed = r#"{"requirements":[{"kind":"ring","upgrade":{"at_least":1}},{"kind":"wand"}],"max_depth":6}"#;
+        let rescoped = r#"{"requirements":[{"kind":"ring","upgrade":{"at_least":1}}],"max_depth":7}"#;
+        assert!(query_continues_impl(base, base).unwrap());
+        assert!(query_continues_impl(narrowed, base).unwrap());
+        assert!(!query_continues_impl(base, narrowed).unwrap());
+        assert!(!query_continues_impl(rescoped, base).unwrap());
+        assert!(query_continues_impl("not json", base).is_err());
+    }
 
     #[test]
     fn engine_info_reports_core_constants() {

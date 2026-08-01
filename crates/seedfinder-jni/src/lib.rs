@@ -4,10 +4,11 @@
 
 use jni::JNIEnv;
 use jni::objects::{JByteArray, JClass, JLongArray};
-use jni::sys::{jint, jlong};
+use jni::sys::{JNI_FALSE, jboolean, jint, jlong};
 use shpd_seedfinder_session::{
-    FilterPacketError, NativeSession, ScoutCallError, ScoutPacketError, StartSessionError,
-    close_session, production_filter_packet, production_scout_packet, registry,
+    FilterPacketError, NativeSession, ScoutCallError, ScoutPacketError, SearchError,
+    StartSessionError, close_session, production_filter_packet, production_scout_packet,
+    queries_continue, registry,
 };
 
 fn throw_illegal_argument(env: &mut JNIEnv<'_>, message: impl AsRef<str>) {
@@ -147,7 +148,9 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_startResumedSe
 
 /// Returns `[resumePosition, remaining]` for a session: where and how much a
 /// follow-up traversal must scan to finish this session's coverage of the
-/// seed space. Exact once the session has stopped.
+/// seed space. Exact once the session has stopped (any terminal status
+/// implies that); meaningless while it is running — never resume from a
+/// running session's hint.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_resumeHint<'local>(
     mut env: JNIEnv<'local>,
@@ -216,6 +219,13 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_filterSeeds<'l
             throw_illegal_argument(&mut env, error.to_string());
             return JByteArray::default();
         }
+        // A worker panic is an engine failure, not a caller error: log the
+        // diagnostic like every other panic path and throw the state error.
+        Err(FilterPacketError::Filter(SearchError::WorkerPanicked)) => {
+            android_error("native seed filtering worker panicked");
+            throw_illegal_state(&mut env, "native seed filtering failed");
+            return JByteArray::default();
+        }
         Err(FilterPacketError::Filter(error)) => {
             throw_illegal_argument(&mut env, format!("cannot filter seeds: {error:?}"));
             return JByteArray::default();
@@ -235,6 +245,34 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_filterSeeds<'l
         Err(error) => {
             throw_illegal_state(&mut env, format!("cannot allocate result packet: {error}"));
             JByteArray::default()
+        }
+    }
+}
+
+/// Reports whether the `SSF7` query in `candidate` continues the one in
+/// `base` — the soundness precondition for the filter-and-resume refine flow.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_queryContinues<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    candidate: JByteArray<'local>,
+    base: JByteArray<'local>,
+) -> jboolean {
+    let (candidate, base) = match (
+        env.convert_byte_array(&candidate),
+        env.convert_byte_array(&base),
+    ) {
+        (Ok(candidate), Ok(base)) => (candidate, base),
+        (Err(error), _) | (_, Err(error)) => {
+            throw_illegal_argument(&mut env, format!("invalid request array: {error}"));
+            return JNI_FALSE;
+        }
+    };
+    match queries_continue(&candidate, &base) {
+        Ok(continues) => u8::from(continues),
+        Err(error) => {
+            throw_illegal_argument(&mut env, error.to_string());
+            JNI_FALSE
         }
     }
 }

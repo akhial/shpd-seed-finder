@@ -23,7 +23,11 @@ only action that discards results is the explicit **Clear** button.
   scope (floor limit, blacksmith flags, fast mode, challenges) is identical
   and B's requirement multiset is a superset of A's (equality included).
   Only then is every B-match inside A's covered region already in A's
-  matches, which is what makes filter-and-resume sound.
+  matches, which is what makes filter-and-resume sound. The engine owns this
+  predicate — `SearchQuery::continues` in `seedfinder-core`, exposed as
+  `seedfinder_query_continues` (C), `JniBindings.queryContinues` (Android)
+  and `query_continues` (wasm) — and frontends should call it rather than
+  re-derive it.
 - **Shares an item**: some requirement of B and some requirement of A have
   the same kind, and either at least one of the two names no specific item or
   both name the same item. Scope and challenge differences are irrelevant
@@ -39,10 +43,15 @@ Set:
    resume scanning the target's uncovered remainder — even when the
    survivors already fill the display cap. Each resumed scan stops after it
    accepts about `RESULT_CAP` (1,024) *new* finds, the engine's per-session
-   accept cap. New finds match the Target Query by construction, so they
-   join the Target Set and the coverage advances; repeating an identical
+   accept cap (the cap gates claiming work, so a scan may deliver slightly
+   more than the cap but is guaranteed to advance coverage — a resumed pass
+   never treads water). New finds match the Target Query by construction, so
+   they join the Target Set and the coverage advances; repeating an identical
    query therefore keeps growing the Target Set by roughly a cap's worth of
-   seeds per run.
+   seeds per run. An *unsatisfiable* refine completes instantly with its
+   coverage untouched: proving no seed can match consumes none of the
+   remainder, so removing the impossible requirement later resumes where the
+   target actually stopped.
 2. **`Q` shares an item with the Target Query** → *target filter*: re-verify
    the whole Target Set against `Q` and display the survivors. No scanning;
    the Target Set and its coverage are untouched. Because the base is always

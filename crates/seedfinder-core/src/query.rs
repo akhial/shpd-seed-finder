@@ -223,6 +223,34 @@ impl SearchQuery {
         Ok(())
     }
 
+    /// Whether this query *continues* `base`: identical scope (floor limit,
+    /// challenges, blacksmith flags, fast mode) and a requirement multiset
+    /// containing every requirement of `base`, equality included. Only then
+    /// is every match of this query within `base`'s covered region already
+    /// among `base`'s matches, which is the soundness precondition for
+    /// refining a search — filtering the delivered results and resuming the
+    /// uncovered remainder (see `docs/search-semantics.md`). Frontends must
+    /// consult this single predicate rather than re-deriving it.
+    #[must_use]
+    pub fn continues(&self, base: &SearchQuery) -> bool {
+        if self.max_depth != base.max_depth
+            || self.challenges != base.challenges
+            || self.require_blacksmith != base.require_blacksmith
+            || self.exclude_blacksmith_rewards != base.exclude_blacksmith_rewards
+            || self.fast_mode != base.fast_mode
+        {
+            return false;
+        }
+        let mut unmatched = self.requirements.clone();
+        base.requirements.iter().all(|needed| {
+            unmatched
+                .iter()
+                .position(|candidate| candidate == needed)
+                .map(|index| unmatched.swap_remove(index))
+                .is_some()
+        })
+    }
+
     /// Matches requirements as an AND query while respecting distinct item
     /// instances and mutually exclusive quest/chest reward branches.
     #[must_use]
@@ -434,6 +462,50 @@ mod tests {
             identity_group: None,
             max_depth: None,
         }
+    }
+
+    #[test]
+    fn continuation_needs_identical_scope_and_a_requirement_superset() {
+        let base = SearchQuery {
+            requirements: vec![requirement(ItemId::Sword), requirement(ItemId::Sword)],
+            max_depth: 4,
+            challenges: crate::challenges::Challenges::NONE,
+            require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
+            fast_mode: false,
+        };
+
+        // Equality and supersets continue, in any requirement order.
+        assert!(base.continues(&base));
+        let mut narrowed = base.clone();
+        narrowed
+            .requirements
+            .insert(0, requirement(ItemId::WandFrost));
+        assert!(narrowed.continues(&base));
+        assert!(!base.continues(&narrowed));
+
+        // The multiset counts duplicates: one Sword does not cover two.
+        let mut single = base.clone();
+        single.requirements.pop();
+        assert!(base.continues(&single));
+        assert!(!single.continues(&base));
+
+        // Any scope difference breaks continuation.
+        let mut deeper = base.clone();
+        deeper.max_depth = 5;
+        assert!(!deeper.continues(&base));
+        let mut challenged = base.clone();
+        challenged.challenges = crate::challenges::Challenges::DARKNESS;
+        assert!(!challenged.continues(&base));
+        let mut smith = base.clone();
+        smith.require_blacksmith = true;
+        assert!(!smith.continues(&base));
+        let mut excluded = base.clone();
+        excluded.exclude_blacksmith_rewards = true;
+        assert!(!excluded.continues(&base));
+        let mut fast = base.clone();
+        fast.fast_mode = true;
+        assert!(!fast.continues(&base));
     }
 
     #[test]
