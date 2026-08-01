@@ -262,9 +262,6 @@ export function QueryPanel({
             fill
             onChange={(value) => patchQuery({ maxDepth: value })}
           />
-          <p className="d1-caption d1-caption-spaced">
-            Boss floors 5, 10, and 15 hold no items.
-          </p>
         </section>
 
         <section className="d1-section">

@@ -518,8 +518,6 @@ private struct QueryView: View {
                         Slider(value: floorLimitBinding($maximumDepth),
                                in: 0...Double(FloorLimits.options.count - 1), step: 1)
                             .accessibilityValue(Text("first \(maximumDepth) floor\(maximumDepth == 1 ? "" : "s")"))
-                        Text("Boss floors 5, 10 and 15 hold no items.")
-                            .font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 Section("Blacksmith") {

@@ -499,11 +499,6 @@ private fun ScopeSection(
                     enabled = enabled,
                     modifier = Modifier.semantics { stateDescription = "Floor $maximumDepth" },
                 )
-                Text(
-                    "Boss floors 5, 10, and 15 hold no items.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 SwitchRow(
                     label = "Blacksmith reachable",
                     supporting = null,

@@ -91,7 +91,7 @@ impl QueryPane {
 
         let depth_row = adw::SpinRow::builder()
             .title("Floor limit")
-            .subtitle("Search only the first floors — boss floors 5, 10 and 15 hold no items")
+            .subtitle("Search only the first floors")
             .adjustment(&gtk::Adjustment::new(24.0, 1.0, 24.0, 1.0, 5.0, 0.0))
             .build();
         let blacksmith_row = adw::SwitchRow::builder()
