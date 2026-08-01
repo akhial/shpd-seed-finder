@@ -243,8 +243,9 @@ public struct SearchRequest: Codable, Sendable {
 
 extension SearchRequest {
     /// Whether this request refines `base`: identical scope (floor limit,
-    /// blacksmith settings, fast mode, and challenges) plus a multiset of
-    /// requirements equal to or a superset of its own.
+    /// blacksmith settings, fast mode, and challenges) plus, for every base
+    /// requirement, a distinct requirement of this request at least as strict
+    /// — equal, added-to, or strengthened (a named item, a tightened bound).
     ///
     /// Equality qualifies deliberately: restarting an unchanged query must
     /// continue the session — the filter keeps every seed and the scan resumes

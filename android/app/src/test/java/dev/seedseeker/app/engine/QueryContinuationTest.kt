@@ -3,8 +3,10 @@ package dev.seedseeker.app.engine
 
 import dev.seedseeker.app.catalog.ItemCatalog
 import dev.seedseeker.app.model.Challenge
+import dev.seedseeker.app.model.ItemKind
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.SearchRequest
+import dev.seedseeker.app.model.UpgradeMatch
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -47,6 +49,30 @@ class QueryContinuationTest {
         // Equal size but a different multiset: swapping or editing in place still runs fresh.
         assertContinues(false, request(fireblast), request(frost))
         assertContinues(false, request(editedFrost), request(frost))
+    }
+
+    @Test
+    fun strengtheningABaseRequirementContinues() {
+        // Naming the ring, or raising an at-least bound, only shrinks the match
+        // set, so the base run's coverage still holds — the "specific ring after
+        // any-ring runs" refine must resume scanning, not stall on the filter.
+        val anyRing = ItemRequirement(
+            4, null, 3,
+            kind = ItemKind.RING, upgradeMatch = UpgradeMatch.AT_LEAST,
+        )
+        val namedRing = ItemRequirement(
+            5, ItemCatalog.rings.first { it.id == "ring_haste" }, 3,
+            upgradeMatch = UpgradeMatch.AT_LEAST,
+        )
+        assertContinues(true, request(namedRing), request(anyRing))
+        assertContinues(true, request(anyRing.copy(upgrade = 4)), request(anyRing))
+        // A strengthened requirement covers one base row, never two, and the
+        // cover must survive the named ring standing beside a wildcard.
+        assertContinues(true, request(namedRing, anyRing.copy(key = 6)), request(anyRing, namedRing))
+        assertContinues(false, request(namedRing, frost), request(anyRing, anyRing.copy(key = 6)))
+        // Loosening breaks containment: the widened query must rescan.
+        assertContinues(false, request(anyRing), request(namedRing))
+        assertContinues(false, request(anyRing.copy(upgrade = 2)), request(anyRing))
     }
 
     @Test

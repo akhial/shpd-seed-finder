@@ -15,6 +15,7 @@ import dev.seedseeker.app.model.ScoutItemSource
 import dev.seedseeker.app.model.ScoutWorld
 import dev.seedseeker.app.model.SeedResult
 import dev.seedseeker.app.model.TierMatch
+import dev.seedseeker.app.model.UpgradeMatch
 import dev.seedseeker.app.catalog.ItemCatalog
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -33,7 +34,8 @@ interface NativeSeedFinder {
 
     /**
      * Whether [candidate] never widens [base]: identical scope (depth, challenges, blacksmith
-     * flags, fast mode) and a multiset of requirements equal to or a superset of the base run's
+     * flags, fast mode) and every base requirement covered by a distinct candidate requirement
+     * at least as strict — equal or strengthened (a named item, a tightened bound)
      * (UI list keys are not part of the wire query, so re-keying is invisible here). Only such a
      * query may reuse the base run's results and finish by rescanning the seeds it never reached,
      * which is what makes filter-and-resume sound; per docs/search-semantics.md the engine owns
@@ -90,8 +92,11 @@ class DemoNativeSeedFinder : NativeSeedFinder {
     /**
      * The one demo answer that is not a stand-in shape but the real rule: a demo APK ships no
      * `.so`, and a wrong continuation verdict would send every demo search down a refine branch
-     * the shipped app would never take. It mirrors `SearchQuery::continues` — identical scope and
-     * a requirement multiset containing the base's, ignoring UI list keys.
+     * the shipped app would never take. It mirrors `SearchQuery::continues` — identical scope
+     * and every base requirement covered by a distinct candidate requirement at least as strict
+     * (equal or strengthened: a named item, a tightened bound), ignoring UI list keys. Coverage
+     * is a bipartite matching, found with augmenting paths just like the engine's, because a
+     * strengthened requirement can cover several base rows and greedy claiming picks wrongly.
      */
     override fun queryContinues(candidate: SearchRequest, base: SearchRequest): Boolean {
         if (candidate.maximumDepth != base.maximumDepth ||
@@ -103,9 +108,58 @@ class DemoNativeSeedFinder : NativeSeedFinder {
             return false
         }
         if (candidate.requirements.size < base.requirements.size) return false
-        val unmatched = candidate.requirements.mapTo(mutableListOf()) { it.copy(key = 0) }
-        return base.requirements.all { unmatched.remove(it.copy(key = 0)) }
+        val owner = arrayOfNulls<Int>(candidate.requirements.size)
+        fun cover(baseIndex: Int, visited: BooleanArray): Boolean {
+            candidate.requirements.forEachIndexed { candidateIndex, requirement ->
+                if (visited[candidateIndex] || !requirement.implies(base.requirements[baseIndex])) {
+                    return@forEachIndexed
+                }
+                visited[candidateIndex] = true
+                val displaced = owner[candidateIndex]
+                if (displaced == null || cover(displaced, visited)) {
+                    owner[candidateIndex] = baseIndex
+                    return true
+                }
+            }
+            return false
+        }
+        return base.requirements.indices.all { cover(it, BooleanArray(candidate.requirements.size)) }
     }
+
+    /**
+     * Whether every item this requirement accepts is also accepted by `base`, given identical
+     * query scope — the per-requirement half of the continuation rule, mirroring
+     * `Requirement::implies`. A base identity group must be carried by label; a base per-item
+     * floor limit of null means the query's own (identical) limit, so null implies only null.
+     */
+    private fun ItemRequirement.implies(base: ItemRequirement): Boolean =
+        kind.family == base.kind.family &&
+            (base.kind.weaponClass == null || kind.weaponClass == base.kind.weaponClass) &&
+            (base.item == null || item?.id == base.item.id) &&
+            tierImplies(base) &&
+            upgradeImplies(base) &&
+            (base.modifier == null || modifier == base.modifier) &&
+            (requireUncursed || !base.requireUncursed) &&
+            (base.source == null || source == base.source) &&
+            (base.identityGroup == null || identityGroup == base.identityGroup) &&
+            (base.maximumDepth == null || (maximumDepth != null && maximumDepth <= base.maximumDepth))
+
+    private fun ItemRequirement.tierImplies(base: ItemRequirement): Boolean =
+        when (base.tierMatch) {
+            TierMatch.ANY -> true
+            TierMatch.EXACT -> tierMatch == TierMatch.EXACT && tier == base.tier
+            TierMatch.AT_LEAST ->
+                tierMatch in setOf(TierMatch.EXACT, TierMatch.AT_LEAST) && tier >= base.tier
+            TierMatch.AT_MOST ->
+                tierMatch in setOf(TierMatch.EXACT, TierMatch.AT_MOST) && tier <= base.tier
+        }
+
+    private fun ItemRequirement.upgradeImplies(base: ItemRequirement): Boolean =
+        when (base.upgradeMatch) {
+            UpgradeMatch.ANY -> true
+            UpgradeMatch.EXACT -> upgradeMatch == UpgradeMatch.EXACT && upgrade == base.upgrade
+            UpgradeMatch.AT_LEAST -> upgradeMatch != UpgradeMatch.ANY && upgrade >= base.upgrade
+        }
 
     override fun scoutSeed(seed: String, challenges: Int): ScoutWorld {
         require(SeedCode.isCanonical(seed)) { "Seed must use XXX-XXX-XXX format" }

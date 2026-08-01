@@ -704,9 +704,10 @@ final class RefineSearchTests: XCTestCase {
         XCTAssertFalse(try SearchRequest(requirements: requirements, challenges: 32).isRefinement(of: base))
     }
 
-    /// Every requirement predicate must reach the engine intact: a row that
-    /// differs in any of them is a different requirement — narrowing one row
-    /// only continues when the original row is still there beside it.
+    /// Every requirement predicate must reach the engine intact. Each variant
+    /// strengthens the plain row, so it continues the base — but the base must
+    /// never continue the variant: if a predicate were dropped on the wire the
+    /// two rows would encode identically and that direction would pass too.
     func testEveryRequirementPredicateReachesTheEngine() throws {
         let plain = try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .weapon, upgradeMatch: .any)
         let base = try SearchRequest(requirements: [plain])
@@ -733,8 +734,10 @@ final class RefineSearchTests: XCTestCase {
         ]
         for (label, variant) in variants {
             let narrowed = try SearchRequest(requirements: [variant])
-            XCTAssertFalse(narrowed.isRefinement(of: base),
-                           "\(label): tightening the only row replaces it, so it cannot continue")
+            XCTAssertTrue(narrowed.isRefinement(of: base),
+                          "\(label): tightening the only row strengthens the query, so it continues")
+            XCTAssertFalse(base.isRefinement(of: narrowed),
+                           "\(label): loosening back must rescan — and proves the predicate reached the engine")
             XCTAssertTrue(narrowed.isRefinement(of: narrowed), "\(label): must continue itself")
             XCTAssertTrue(try SearchRequest(requirements: [plain, variant]).isRefinement(of: base),
                           "\(label): adding a row beside the base row continues")

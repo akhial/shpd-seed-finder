@@ -40,8 +40,9 @@ private func copiedPacket(_ pointer: UnsafeMutablePointer<UInt8>?, _ length: Int
 
 /// The engine's refine soundness predicate, bridged rather than re-derived:
 /// whether the SSF7 query in `candidate` continues the one in `base` —
-/// identical scope (floor limit, challenges, blacksmith flags, fast mode) and a
-/// requirement multiset containing base's, equality included.
+/// identical scope (floor limit, challenges, blacksmith flags, fast mode) and
+/// every base requirement covered by a distinct candidate requirement at least
+/// as strict — equal or strengthened (a named item, a tightened bound).
 ///
 /// Unlike the session calls this is synchronous: the decision gates Start
 /// Search, and the native side only decodes two packets and compares them.

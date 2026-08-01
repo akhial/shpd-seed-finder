@@ -254,8 +254,9 @@ pub enum FilterPacketError {
 
 /// Decodes two `SSF7` query requests and reports whether `candidate`
 /// continues `base`: identical scope (depth, challenges, blacksmith flags,
-/// fast mode) and a requirement multiset containing every requirement of
-/// `base`. This is the soundness precondition for refining a search — only a
+/// fast mode) and every requirement of `base` covered by a distinct
+/// candidate requirement at least as strict (equal or strengthened).
+/// This is the soundness precondition for refining a search — only a
 /// continuing query may filter a stopped session's delivered results and
 /// resume its uncovered remainder. See [`SearchQuery::continues`].
 ///

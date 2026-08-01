@@ -5,8 +5,10 @@ import type { SeedRange } from './traversal'
 
 /**
  * Whether a run of `candidate` can continue one of `base`: identical scope
- * (depth, challenges, and flags) and a requirement multiset equal to or a
- * superset of the base one. Only then are the base run's matches guaranteed
+ * (depth, challenges, and flags) and every base requirement covered by a
+ * distinct candidate requirement at least as strict — equal, added-to, or
+ * strengthened (a named item where the base wanted any of its kind, a
+ * tightened bound). Only then are the base run's matches guaranteed
  * to contain every candidate match in the already-scanned region, which is
  * what makes filter-and-resume sound.
  *

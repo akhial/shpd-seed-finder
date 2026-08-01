@@ -95,8 +95,9 @@ public sealed class NativeEngine
 
     /// <summary>
     /// Whether <paramref name="candidate"/> continues <paramref name="baseline"/>:
-    /// identical scope and a requirement multiset containing the baseline's
-    /// (equality included). The engine owns this predicate — the same
+    /// identical scope and every baseline requirement covered by a distinct
+    /// candidate requirement at least as strict (equal or strengthened).
+    /// The engine owns this predicate — the same
     /// <c>SearchQuery::continues</c> that decides which seeds a resumed pass may
     /// skip — so the decision is made on the encoded SSF7 packets rather than
     /// re-derived here, and the two can never drift.

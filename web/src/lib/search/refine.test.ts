@@ -39,9 +39,18 @@ describe('isContinuationOf', () => {
     expect(isContinuationOf({ requirements: [{ upgrade: { at_least: 2 }, kind: 'ring' }] }, base)).toBe(true)
     expect(isContinuationOf(added, added)).toBe(true)
   })
-  it('rejects removed or edited requirements', () => {
+  it('accepts strengthened requirements: the narrower query only matches seeds the base already found', () => {
+    // Naming the ring, or raising its bound, keeps every candidate match
+    // inside the base run's matches — the exact shape of the reported
+    // "specific ring after any-ring runs" stall, which must refine and
+    // resume rather than filter and stop.
+    expect(isContinuationOf({ requirements: [{ kind: 'ring', item: 'ring_arcana', upgrade: { at_least: 2 } }] }, base)).toBe(true)
+    expect(isContinuationOf({ requirements: [{ kind: 'ring', upgrade: { at_least: 3 } }, { kind: 'weapon' }] }, base)).toBe(true)
+  })
+  it('rejects removed or loosened requirements', () => {
     expect(isContinuationOf({ requirements: [] }, base)).toBe(false)
-    expect(isContinuationOf({ requirements: [{ kind: 'ring', upgrade: { at_least: 3 } }, { kind: 'weapon' }] }, base)).toBe(false)
+    expect(isContinuationOf({ requirements: [{ kind: 'ring', upgrade: { at_least: 1 } }, { kind: 'weapon' }] }, base)).toBe(false)
+    expect(isContinuationOf({ requirements: [{ kind: 'ring' }] }, base)).toBe(false)
     expect(isContinuationOf(base, added)).toBe(false)
   })
   it('respects requirement multiplicity', () => {
@@ -206,9 +215,16 @@ describe('decideStart', () => {
     expect(decideStart(withTarget({}), added)).toBe('target-refine')
     expect(decideStart(withTarget({}), base)).toBe('target-refine')
   })
+  it('refines a strengthened Target Query: filter the set, then resume its coverage', () => {
+    // Naming a specific ring after any-ring runs must keep scanning the
+    // remainder for it, not stop at whatever the filter kept.
+    expect(decideStart(withTarget({}), { requirements: [{ kind: 'ring', item: 'ring_arcana', upgrade: { at_least: 2 } }] })).toBe('target-refine')
+    expect(decideStart(withTarget({}), { requirements: [{ kind: 'ring', upgrade: { at_least: 3 } }] })).toBe('target-refine')
+  })
   it('filters when the query shares an item without continuing', () => {
-    // Editing the ring's upgrade is not a continuation, but it is still about rings.
-    expect(decideStart(withTarget({}), { requirements: [{ kind: 'ring', upgrade: { at_least: 3 } }] })).toBe('target-filter')
+    // Loosening the ring's upgrade is not a continuation, but it is still about
+    // rings, and filtering from the full Target Set brings seeds back.
+    expect(decideStart(withTarget({}), { requirements: [{ kind: 'ring', upgrade: { at_least: 1 } }] })).toBe('target-filter')
   })
   it('detaches an unrelated query, continuing a detached run when sound', () => {
     const wands: QueryDocument = { requirements: [{ kind: 'wand' }] }

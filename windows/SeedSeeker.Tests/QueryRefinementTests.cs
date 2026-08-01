@@ -66,23 +66,35 @@ public sealed class QueryRefinementTests
     [Fact]
     public void EveryRequirementFieldParticipatesInTheComparison()
     {
+        // Each variant strengthens the plain ring, so it refines the baseline;
+        // the reverse direction must rescan — and if the field were dropped on
+        // the wire both directions would pass, so the False half is what
+        // proves the field reached the engine.
         var baseline = Query(Ring());
-        Assert.False(QueryRefinement.CanRefine(Query(new ItemRequirement
+        var variants = new[]
         {
-            Kind = ItemKind.Ring, UpgradeMatch = UpgradeMatch.AtLeast, RequireUncursed = true,
-        }), baseline));
-        Assert.False(QueryRefinement.CanRefine(Query(new ItemRequirement
+            new ItemRequirement
+            {
+                Kind = ItemKind.Ring, UpgradeMatch = UpgradeMatch.AtLeast, RequireUncursed = true,
+            },
+            new ItemRequirement
+            {
+                Kind = ItemKind.Ring, UpgradeMatch = UpgradeMatch.AtLeast, MaximumDepth = 5,
+            },
+            new ItemRequirement
+            {
+                Kind = ItemKind.Ring, UpgradeMatch = UpgradeMatch.AtLeast, Source = ScoutItemSource.Shop,
+            },
+            new ItemRequirement
+            {
+                Kind = ItemKind.Ring, UpgradeMatch = UpgradeMatch.AtLeast, IdentityGroup = 1,
+            },
+        };
+        foreach (var variant in variants)
         {
-            Kind = ItemKind.Ring, UpgradeMatch = UpgradeMatch.AtLeast, MaximumDepth = 5,
-        }), baseline));
-        Assert.False(QueryRefinement.CanRefine(Query(new ItemRequirement
-        {
-            Kind = ItemKind.Ring, UpgradeMatch = UpgradeMatch.AtLeast, Source = ScoutItemSource.Shop,
-        }), baseline));
-        Assert.False(QueryRefinement.CanRefine(Query(new ItemRequirement
-        {
-            Kind = ItemKind.Ring, UpgradeMatch = UpgradeMatch.AtLeast, IdentityGroup = 1,
-        }), baseline));
+            Assert.True(QueryRefinement.CanRefine(Query(variant), baseline));
+            Assert.False(QueryRefinement.CanRefine(baseline, Query(variant)));
+        }
         // Key is random per requirement and must not affect eligibility.
         var keyed = Ring(); keyed.Key = 12345;
         Assert.True(QueryRefinement.CanRefine(Query(keyed), baseline));

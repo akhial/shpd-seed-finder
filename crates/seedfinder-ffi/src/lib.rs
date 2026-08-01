@@ -154,7 +154,8 @@ pub extern "C" fn seedfinder_filter_seeds(
 }
 
 /// Reports whether the `SSF7` query in `candidate` continues the one in
-/// `base`: identical scope and a requirement multiset containing `base`'s.
+/// `base`: identical scope and every base requirement covered by a distinct
+/// candidate requirement at least as strict (equal or strengthened).
 /// Only a continuing query may reuse a stopped session's results and resume
 /// hint (the filter-and-resume refine flow). Returns 1 when it continues,
 /// 0 when it does not, and a negative code for an undecodable packet.

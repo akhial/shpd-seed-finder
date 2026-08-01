@@ -483,12 +483,21 @@ mod tests {
         // the scan resumes, so a stopped session continues instead of resetting.
         assert!(base.continues(&base));
 
-        // Dropping a requirement, editing a base requirement, and any scope
-        // change all force a fresh search instead.
+        // Tightening a base requirement strengthens the query, so it still
+        // continues: every match it can find was already a base match.
+        let mut tightened = extended.clone();
+        tightened.requirements[0].upgrade = UpgradeRequirement::AtLeast(3);
+        assert!(tightened.continues(&base));
+        let mut named = extended.clone();
+        named.requirements[0].item = Some(ItemId::RingArcana);
+        assert!(named.continues(&base));
+
+        // Dropping a requirement, loosening a base requirement, and any
+        // scope change all force a fresh search instead.
         assert!(!base.continues(&extended));
-        let mut edited = extended.clone();
-        edited.requirements[0].upgrade = UpgradeRequirement::AtLeast(3);
-        assert!(!edited.continues(&base));
+        let mut loosened = extended.clone();
+        loosened.requirements[0].upgrade = UpgradeRequirement::AtLeast(1);
+        assert!(!loosened.continues(&base));
         let mut deeper = extended.clone();
         deeper.max_depth = 9;
         assert!(!deeper.continues(&base));

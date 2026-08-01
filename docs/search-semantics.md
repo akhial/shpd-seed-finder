@@ -19,11 +19,16 @@ only action that discards results is the explicit **Clear** button.
 - **Target coverage** — the portion of the seed space the target traversal
   has scanned, kept as resume state (uncovered remainder). Imported results
   carry no coverage.
-- **Continuation** (existing rule, unchanged): query B continues query A when
-  scope (floor limit, blacksmith flags, fast mode, challenges) is identical
-  and B's requirement multiset is a superset of A's (equality included).
-  Only then is every B-match inside A's covered region already in A's
-  matches, which is what makes filter-and-resume sound. The engine owns this
+- **Continuation**: query B continues query A when scope (floor limit,
+  blacksmith flags, fast mode, challenges) is identical and every
+  requirement of A is covered by a *distinct* requirement of B at least as
+  strict — equal, or strengthened: an item named where A wanted any of its
+  kind, a tightened upgrade/tier bound, a demanded source, effect, curse
+  state, or per-item floor limit. (A plain requirement multiset superset is
+  the special case where the covering requirements are equal.) Only then is
+  every B-match inside A's covered region already in A's matches, which is
+  what makes filter-and-resume sound; loosening any requirement breaks the
+  containment and B must rescan. The engine owns this
   predicate — `SearchQuery::continues` in `seedfinder-core`, exposed as
   `seedfinder_query_continues` (C), `JniBindings.queryContinues` (Android)
   and `query_continues` (wasm) — and frontends should call it rather than

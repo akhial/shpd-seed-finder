@@ -33,8 +33,9 @@ int32_t seedfinder_status(int64_t handle, int64_t out_status[5]);
 // running — never resume from a running session's hint.
 int32_t seedfinder_resume_hint(int64_t handle, int64_t out_hint[2]);
 // Reports whether the SSF7 query in candidate continues the one in base:
-// identical scope (depth, challenges, blacksmith flags, fast mode) and a
-// requirement multiset containing base's. Only a continuing query may reuse
+// identical scope (depth, challenges, blacksmith flags, fast mode) and every
+// base requirement covered by a distinct candidate requirement at least as
+// strict (equal or strengthened). Only a continuing query may reuse
 // a stopped session's results and resume hint (filter-and-resume refining).
 // Returns 1 when it continues, 0 when it does not, negative on invalid packets.
 int32_t seedfinder_query_continues(const uint8_t *candidate, size_t candidate_len, const uint8_t *base, size_t base_len);

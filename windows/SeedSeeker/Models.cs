@@ -137,9 +137,10 @@ public sealed class QuerySettings
 public static class QueryRefinement
 {
     /// <summary>
-    /// True when <paramref name="candidate"/>'s requirements are equal to, or a
-    /// superset of, <paramref name="baseline"/>'s under an identical scope.
-    /// Deliberately not strict: an equal multiset is a continuation, not a rescan.
+    /// True when every requirement of <paramref name="baseline"/> is covered by
+    /// a distinct requirement of <paramref name="candidate"/> at least as strict
+    /// (equal or strengthened) under an identical scope.
+    /// Deliberately not strict: an equal query is a continuation, not a rescan.
     /// The engine decides — this encodes both queries and asks
     /// <c>seedfinder_query_continues</c>, so refine eligibility here is the very
     /// predicate the resumed scan relies on and cannot drift from it.
