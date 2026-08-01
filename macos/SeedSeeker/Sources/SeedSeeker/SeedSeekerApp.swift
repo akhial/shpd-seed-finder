@@ -172,7 +172,7 @@ private struct ContentView: View {
                         .lineLimit(1).truncationMode(.tail)
                 }
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 16)
         }
         .sheet(isPresented: $showingAbout) { AboutView() }
         .fileExporter(
