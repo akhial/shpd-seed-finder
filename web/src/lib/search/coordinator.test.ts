@@ -144,6 +144,26 @@ describe('implicit refine on start', () => {
     expect(postedTypes()).toEqual(['search:start', 'search:start'])
   })
 
+  it('fans a large filter phase out across the worker pool in contiguous slices', () => {
+    const coordinator = new SearchCoordinator(TOTAL)
+    seedFinishedRun(baseQuery)
+    const bigSet = Array.from({ length: 40 }, (_, index) => match(index + 1))
+    searchStore.setState((current) => ({
+      ...current,
+      matches: bigSet,
+      target: { ...current.target!, matches: bigSet },
+    }))
+    coordinator.start(baseQuery, 2)
+
+    // 40 seeds over 2 workers: two contiguous halves whose concatenation is
+    // the original input order, so the survivors keep their discovery order.
+    const posted = StubWorker.posted.filter((message) => message.type === 'filter')
+    expect(posted.map((message) => message.seeds)).toEqual([
+      bigSet.slice(0, 20).map((item) => item.value),
+      bigSet.slice(20).map((item) => item.value),
+    ])
+  })
+
   it('filters the full Target Set when the query shares an item without continuing it', () => {
     const coordinator = new SearchCoordinator(TOTAL)
     // Target query: ring and weapon. Dropping the weapon requirement is not

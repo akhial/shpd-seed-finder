@@ -12,6 +12,11 @@ export const searchStore = new Store<CoordinatorState>(initialCoordinatorState()
  * normally; the timeout only covers a worker that died or never started. */
 const STOP_ACK_TIMEOUT_MS = 2_000
 
+/** Smallest filter slice worth its own worker: re-verifying a seed means
+ * generating its world in full, but below this many seeds the fan-out
+ * overhead outweighs the generation time saved. */
+const MIN_FILTER_CHUNK = 16
+
 /**
  * Replaces the results list with seeds restored from an imported results
  * file, remembering the query that produced them for later export. Callers
@@ -141,7 +146,7 @@ export class SearchCoordinator {
       runKind: mode,
       error: undefined,
     }))
-    void filterSeeds(queryJson, target.matches.map((match) => match.value))
+    void this.filterSeeds(queryJson, target.matches.map((match) => match.value), workerCount)
       .then((kept) => {
         if (this.filterRestore?.sessionId !== sessionId) return
         this.filterRestore = undefined
@@ -182,7 +187,7 @@ export class SearchCoordinator {
       runKind: 'detached',
       error: undefined,
     }))
-    void filterSeeds(queryJson, previousMatches.map((match) => match.value))
+    void this.filterSeeds(queryJson, previousMatches.map((match) => match.value), workerCount)
       .then((kept) => {
         if (this.filterRestore?.sessionId !== sessionId) return
         this.filterRestore = undefined
@@ -192,6 +197,32 @@ export class SearchCoordinator {
       .catch((error: unknown) => {
         this.restoreAfterFilter(sessionId, error instanceof Error ? error.message : String(error))
       })
+  }
+
+  /**
+   * Re-verifies seeds against a query across the scan worker pool, resolving
+   * with the matching seeds in input order. The pool sits idle during a
+   * refine's filter phase, so the set fans out over the same workers the
+   * resumed scan will use — funnelling it through one worker made verifying
+   * a large Target Set take longer than the scan that follows it. Chunks are
+   * contiguous slices, so concatenating the results preserves input order.
+   */
+  private filterSeeds(queryJson: string, seeds: number[], workerCount: number): Promise<ParsedSeed[]> {
+    if (seeds.length === 0) return Promise.resolve([])
+    const poolSize = Math.max(1, Math.floor(workerCount) || 1)
+    const chunkCount = Math.min(poolSize, Math.max(1, Math.ceil(seeds.length / MIN_FILTER_CHUNK)))
+    const workers = this.ensureWorkers(chunkCount)
+    const chunkSize = Math.ceil(seeds.length / chunkCount)
+    const requests: Promise<ParsedSeed[]>[] = []
+    for (let index = 0; index < chunkCount; index += 1) {
+      const chunk = seeds.slice(index * chunkSize, (index + 1) * chunkSize)
+      requests.push(new Promise((resolve, reject) => {
+        const requestId = ++nextRequestId
+        filterRequests.set(requestId, { resolve, reject })
+        workers[index].postMessage({ type: 'filter', queryJson, seeds: chunk, requestId } satisfies SearchWorkerRequest)
+      }))
+    }
+    return Promise.all(requests).then((parts) => parts.flat())
   }
 
   /** Puts the store back into the previous finished state after a cancelled
@@ -319,6 +350,15 @@ export class SearchCoordinator {
   }
 
   private onMessage(workerId: number, message: SearchWorkerResponse): void {
+    // Filter replies belong to a fan-out request, not a scan session.
+    if (message.type === 'filter:result' || message.type === 'filter:error') {
+      const pending = filterRequests.get(message.requestId)
+      if (!pending) return
+      filterRequests.delete(message.requestId)
+      if (message.type === 'filter:error') pending.reject(new Error(message.error))
+      else pending.resolve(JSON.parse(message.resultJson) as ParsedSeed[])
+      return
+    }
     if (!('sessionId' in message) || message.sessionId !== searchStore.state.sessionId) return
     if (message.type === 'search:progress') {
       searchStore.setState((state) => applyProgress(state, { ...message, workerId, now: performance.now() }))
@@ -342,11 +382,12 @@ export class SearchCoordinator {
 }
 
 let scoutWorker: Worker | undefined
-let filterWorker: Worker | undefined
 let nextRequestId = 0
 const scoutRequests = new Map<number, { resolve: (value: ScoutResult) => void; reject: (reason: Error) => void }>()
 const filterRequests = new Map<number, { resolve: (value: ParsedSeed[]) => void; reject: (reason: Error) => void }>()
 
+// Scouting keeps a worker of its own so it stays interactive: filter fan-outs
+// and scans own the coordinator's pool, sometimes for seconds at a time.
 function getScoutWorker(): Worker {
   if (!scoutWorker) {
     scoutWorker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
@@ -363,39 +404,11 @@ function getScoutWorker(): Worker {
   return scoutWorker
 }
 
-// Filtering re-generates up to a thousand worlds and can take a while; it
-// gets its own worker so interactive scouting never queues behind it.
-function getFilterWorker(): Worker {
-  if (!filterWorker) {
-    filterWorker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' })
-    filterWorker.addEventListener('message', (event: MessageEvent<SearchWorkerResponse>) => {
-      const message = event.data
-      if (message.type !== 'filter:result' && message.type !== 'filter:error') return
-      const pending = filterRequests.get(message.requestId)
-      if (!pending) return
-      filterRequests.delete(message.requestId)
-      if (message.type === 'filter:error') pending.reject(new Error(message.error))
-      else pending.resolve(JSON.parse(message.resultJson) as ParsedSeed[])
-    })
-  }
-  return filterWorker
-}
-
 export function scoutSeed(request: ScoutRequest): Promise<ScoutResult> {
   const requestId = ++nextRequestId
   return new Promise((resolve, reject) => {
     scoutRequests.set(requestId, { resolve, reject })
     const requestJson = JSON.stringify(request satisfies ScoutRequest & { query?: QueryDocument })
     getScoutWorker().postMessage({ type: 'scout', requestJson, requestId } satisfies SearchWorkerRequest)
-  })
-}
-
-/** Re-verifies specific seeds against a full query on a dedicated worker,
- * resolving with the matching seeds in input order. */
-export function filterSeeds(queryJson: string, seeds: number[]): Promise<ParsedSeed[]> {
-  const requestId = ++nextRequestId
-  return new Promise((resolve, reject) => {
-    filterRequests.set(requestId, { resolve, reject })
-    getFilterWorker().postMessage({ type: 'filter', queryJson, seeds, requestId } satisfies SearchWorkerRequest)
   })
 }
