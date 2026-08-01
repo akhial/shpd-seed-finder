@@ -672,7 +672,8 @@ mod tests {
     fn query_continuation_matches_scope_and_requirement_multiset() {
         let base = r#"{"requirements":[{"kind":"ring","upgrade":{"at_least":1}}],"max_depth":6}"#;
         let narrowed = r#"{"requirements":[{"kind":"ring","upgrade":{"at_least":1}},{"kind":"wand"}],"max_depth":6}"#;
-        let rescoped = r#"{"requirements":[{"kind":"ring","upgrade":{"at_least":1}}],"max_depth":7}"#;
+        let rescoped =
+            r#"{"requirements":[{"kind":"ring","upgrade":{"at_least":1}}],"max_depth":7}"#;
         assert!(query_continues_impl(base, base).unwrap());
         assert!(query_continues_impl(narrowed, base).unwrap());
         assert!(!query_continues_impl(base, narrowed).unwrap());

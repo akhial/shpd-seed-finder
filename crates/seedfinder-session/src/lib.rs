@@ -14,11 +14,11 @@ use shpd_seedfinder_core::main_world::{CanonicalMainWorldGenerator, ConfiguredMa
 use shpd_seedfinder_core::model::GeneratedWorld;
 use shpd_seedfinder_core::probability::estimate_match_probability;
 use shpd_seedfinder_core::query::SearchQuery;
+pub use shpd_seedfinder_core::search::SearchError;
 use shpd_seedfinder_core::search::{
     SearchOptions, StreamingSearchHandle, StreamingSearchState, WorldGenerator,
     spawn_partial_streaming_search, spawn_rotated_streaming_search, spawn_streaming_search,
 };
-pub use shpd_seedfinder_core::search::SearchError;
 use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
 use shpd_seedfinder_core::wire::{
     WireError, decode_query, decode_scout_request, encode_results, encode_scout_world,
