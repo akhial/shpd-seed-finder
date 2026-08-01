@@ -924,17 +924,27 @@ private struct ResultsFileDocument: FileDocument {
     }
 }
 
+/// A displayed result with its 1-based row number precomputed: numbering via
+/// `firstIndex(of:)` in the cell is quadratic over the table, which a
+/// cap-sized list turns into visible main-thread stalls.
+private struct NumberedResult: Identifiable {
+    let number: Int
+    let result: SeedResult
+    var id: String { result.id }
+}
+
 private struct ResultsView: View {
     let controller: SearchController
     let scout: (String) -> Void
     var body: some View {
+        let rows = controller.results.enumerated().map { NumberedResult(number: $0.offset + 1, result: $0.element) }
         VStack(alignment: .leading, spacing: 10) {
             statusBody.padding([.horizontal, .top])
-            Table(controller.results, selection: Bindable(controller).selectedSeed) {
-                TableColumn("#") { result in Text("\((controller.results.firstIndex(of: result) ?? 0) + 1)").foregroundStyle(.secondary) }.width(45)
-                TableColumn("Seed") { result in
-                    Text(result.seed).font(.system(.body, design: .monospaced))
-                        .contextMenu { Button("Copy Seed") { copy(result.seed) }; Button("Scout Seed") { scout(result.seed) } }
+            Table(rows, selection: Bindable(controller).selectedSeed) {
+                TableColumn("#") { row in Text("\(row.number)").foregroundStyle(.secondary) }.width(45)
+                TableColumn("Seed") { row in
+                    Text(row.result.seed).font(.system(.body, design: .monospaced))
+                        .contextMenu { Button("Copy Seed") { copy(row.result.seed) }; Button("Scout Seed") { scout(row.result.seed) } }
                 }
             }
             Button("Copy Selected") { if let seed = controller.selectedSeed { copy(seed) } }

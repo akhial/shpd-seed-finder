@@ -26,6 +26,13 @@ use crate::state::{self, StartMode};
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 const DRAIN_BATCH: usize = 256;
 
+/// Most rows the seed list ever holds (docs/search-semantics.md). The
+/// collection behind the list is uncapped — every find still reaches the
+/// Target Set, refine filters, and export — but appending thousands of GTK
+/// rows stalls the main loop, so only the first `DISPLAY_CAP` seeds are
+/// listed. Deliberately equal to the engine's per-session accept cap.
+const DISPLAY_CAP: usize = MAX_ACCEPTED_RESULTS;
+
 struct ActiveSearch {
     session: Rc<NativeSession>,
     query: SearchQuery,
@@ -91,6 +98,10 @@ pub struct ResultsPane {
     progress_line: gtk::Label,
     progress_bar: gtk::ProgressBar,
     list: gtk::ListBox,
+    /// Every accepted seed of the current display run, uncapped and in
+    /// traversal order. This collection — not the row widgets — feeds the
+    /// Target, refine filters, export, and scout navigation; `list` holds
+    /// rows for its first `DISPLAY_CAP` entries only.
     seeds: RefCell<Vec<String>>,
     active: RefCell<Option<ActiveSearch>>,
     pending_refine: RefCell<Option<PendingRefine>>,
@@ -315,6 +326,8 @@ impl ResultsPane {
         let Some(target) = result_navigation::step(&self.seeds.borrow(), seed, delta) else {
             return false;
         };
+        // Rows exist only for the first DISPLAY_CAP seeds of the collection;
+        // a step landing past the listed prefix leaves the selection alone.
         let Some(row) = self
             .list
             .row_at_index(i32::try_from(target).unwrap_or(i32::MAX))
@@ -355,7 +368,7 @@ impl ResultsPane {
             seeds.clear();
             seeds.extend_from_slice(imported);
         }
-        for (index, seed) in imported.iter().enumerate() {
+        for (index, seed) in imported.iter().take(DISPLAY_CAP).enumerate() {
             self.append_row(seed, index + 1);
         }
         self.progress_bar.set_visible(false);
@@ -619,7 +632,11 @@ impl ResultsPane {
             let mut seeds = self.seeds.borrow_mut();
             for world in &kept_worlds {
                 let code = world.seed.to_code();
-                self.append_row(&code, seeds.len() + 1);
+                // Only the first DISPLAY_CAP survivors get a row; the rest
+                // stay in the collection for the Target and later refines.
+                if seeds.len() < DISPLAY_CAP {
+                    self.append_row(&code, seeds.len() + 1);
+                }
                 seen.insert(code.clone());
                 seeds.push(code);
             }
@@ -710,12 +727,12 @@ impl ResultsPane {
             } else {
                 "Completed · every seed was already scanned"
             });
-            self.toasts.add_toast(adw::Toast::new(&format!(
-                "Refined: kept {} of {} previous seed{}",
-                group_digits(kept),
-                group_digits(previous),
-                if previous == 1 { "" } else { "s" },
-            )));
+            // A filter never scans, so its collection is exactly the kept
+            // seeds and this session accepted nothing new.
+            let collected = usize::try_from(kept).unwrap_or(usize::MAX);
+            if let Some(notice) = conclusion_toast(Some((kept, previous)), collected, 0) {
+                self.toasts.add_toast(adw::Toast::new(&notice));
+            }
         }
         self.finish();
     }
@@ -919,27 +936,12 @@ impl ResultsPane {
                     if matches == 1 { "" } else { "es" },
                 ));
                 self.progress_line.set_visible(false);
-                let capped = matches >= MAX_ACCEPTED_RESULTS as u64;
-                let refined_notice = refined.map(|(kept, previous)| {
-                    format!(
-                        "Refined: kept {} of {} previous seed{}",
-                        group_digits(kept),
-                        group_digits(previous),
-                        if previous == 1 { "" } else { "s" },
-                    )
-                });
-                // A single toast even when both notices apply; stacked toasts
-                // would hide one behind the other.
-                match (refined_notice, capped) {
-                    (Some(notice), true) => self
-                        .toasts
-                        .add_toast(adw::Toast::new(&format!("{notice} · result limit reached"))),
-                    (Some(notice), false) => self.toasts.add_toast(adw::Toast::new(&notice)),
-                    (None, true) => self.toasts.add_toast(adw::Toast::new(&format!(
-                        "Result limit reached ({} seeds)",
-                        group_digits(MAX_ACCEPTED_RESULTS as u64)
-                    ))),
-                    (None, false) => {}
+                // The engine's cap counts this session's accepts only, so a
+                // resumed refine subtracts the survivors it started from.
+                let new_finds = matches.saturating_sub(refined.map_or(0, |(kept, _)| kept));
+                let collected = self.seeds.borrow().len();
+                if let Some(notice) = conclusion_toast(refined, collected, new_finds) {
+                    self.toasts.add_toast(adw::Toast::new(&notice));
                 }
             }
         }
@@ -974,7 +976,11 @@ impl ResultsPane {
                 if !active.seen.insert(code.clone()) {
                     continue;
                 }
-                self.append_row(&code, seeds.len() + 1);
+                // Live finds past the display cap join the collection (and
+                // through it the Target) without a row.
+                if seeds.len() < DISPLAY_CAP {
+                    self.append_row(&code, seeds.len() + 1);
+                }
                 seeds.push(code);
                 active.matches += 1;
                 appended = true;
@@ -1015,6 +1021,54 @@ impl ResultsPane {
     }
 }
 
+/// The single status toast for a concluded run — a refine outcome, a list
+/// notice, or both joined into one message (stacked toasts would hide one
+/// behind the other) — or `None` when nothing is worth announcing. `refined`
+/// is `(kept, previous)` when the run re-verified earlier seeds, `collected`
+/// the full uncapped collection size, and `new_finds` how many seeds this
+/// session accepted beyond the refine survivors. The list notice reports
+/// truncation — the collection outgrew the `DISPLAY_CAP` listed rows — or,
+/// for an untruncated run, that the engine's accept cap ended the session.
+fn conclusion_toast(
+    refined: Option<(u64, u64)>,
+    collected: usize,
+    new_finds: u64,
+) -> Option<String> {
+    let refined_notice = refined.map(|(kept, previous)| {
+        format!(
+            "Refined: kept {} of {} previous seed{}",
+            group_digits(kept),
+            group_digits(previous),
+            if previous == 1 { "" } else { "s" },
+        )
+    });
+    let limit_notice = if collected > DISPLAY_CAP {
+        Some(format!(
+            "listing the first {} of {} seeds",
+            group_digits(DISPLAY_CAP as u64),
+            group_digits(collected as u64),
+        ))
+    } else if new_finds >= MAX_ACCEPTED_RESULTS as u64 {
+        Some(format!(
+            "result limit reached ({} seeds)",
+            group_digits(MAX_ACCEPTED_RESULTS as u64),
+        ))
+    } else {
+        None
+    };
+    match (refined_notice, limit_notice) {
+        (Some(refine), Some(limit)) => Some(format!("{refine} · {limit}")),
+        (Some(refine), None) => Some(refine),
+        (None, Some(limit)) => {
+            let mut chars = limit.chars();
+            chars
+                .next()
+                .map(|first| first.to_uppercase().chain(chars).collect())
+        }
+        (None, None) => None,
+    }
+}
+
 fn caption_label() -> gtk::Label {
     gtk::Label::builder()
         .css_classes(["caption", "dim-label", "numeric"])
@@ -1029,4 +1083,100 @@ fn caption_label() -> gtk::Label {
 #[allow(clippy::cast_precision_loss)]
 const fn precise(value: u64) -> f64 {
     value as f64
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DISPLAY_CAP, conclusion_toast};
+
+    const CAP: u64 = DISPLAY_CAP as u64;
+
+    #[test]
+    fn quiet_run_shows_no_toast() {
+        assert_eq!(conclusion_toast(None, 12, 12), None);
+    }
+
+    #[test]
+    fn plain_refine_reports_the_kept_count() {
+        assert_eq!(
+            conclusion_toast(Some((3, 10)), 3, 0),
+            Some("Refined: kept 3 of 10 previous seeds".to_owned()),
+        );
+    }
+
+    #[test]
+    fn refine_of_a_single_seed_stays_singular() {
+        assert_eq!(
+            conclusion_toast(Some((1, 1)), 1, 0),
+            Some("Refined: kept 1 of 1 previous seed".to_owned()),
+        );
+    }
+
+    #[test]
+    fn fresh_scan_hitting_the_engine_cap_reports_the_limit() {
+        assert_eq!(
+            conclusion_toast(None, DISPLAY_CAP, CAP),
+            Some("Result limit reached (1\u{202f}024 seeds)".to_owned()),
+        );
+    }
+
+    #[test]
+    fn survivors_alone_filling_the_display_are_not_truncation() {
+        // Exactly DISPLAY_CAP collected seeds all have rows, and a session
+        // that accepted nothing new never hit the engine cap.
+        assert_eq!(
+            conclusion_toast(Some((CAP, 2_000)), DISPLAY_CAP, 0),
+            Some("Refined: kept 1\u{202f}024 of 2\u{202f}000 previous seeds".to_owned()),
+        );
+    }
+
+    #[test]
+    fn accumulated_refine_reports_truncation_in_one_toast() {
+        assert_eq!(
+            conclusion_toast(Some((900, 1_500)), 1_900, 1_000),
+            Some(
+                "Refined: kept 900 of 1\u{202f}500 previous seeds · \
+                 listing the first 1\u{202f}024 of 1\u{202f}900 seeds"
+                    .to_owned()
+            ),
+        );
+    }
+
+    #[test]
+    fn truncation_outranks_the_engine_cap_notice() {
+        assert_eq!(
+            conclusion_toast(Some((500, 500)), 1_524, CAP),
+            Some(
+                "Refined: kept 500 of 500 previous seeds · \
+                 listing the first 1\u{202f}024 of 1\u{202f}524 seeds"
+                    .to_owned()
+            ),
+        );
+    }
+
+    #[test]
+    fn capped_resume_without_truncation_reports_the_limit() {
+        assert_eq!(
+            conclusion_toast(Some((0, 500)), DISPLAY_CAP, CAP),
+            Some(
+                "Refined: kept 0 of 500 previous seeds · \
+                 result limit reached (1\u{202f}024 seeds)"
+                    .to_owned()
+            ),
+        );
+    }
+
+    #[test]
+    fn oversized_filter_survivor_set_reports_truncation_alone() {
+        // A target filter of a grown Target Set: no scan, no engine cap,
+        // but more survivors than rows.
+        assert_eq!(
+            conclusion_toast(Some((3_000, 5_116)), 3_000, 0),
+            Some(
+                "Refined: kept 3\u{202f}000 of 5\u{202f}116 previous seeds · \
+                 listing the first 1\u{202f}024 of 3\u{202f}000 seeds"
+                    .to_owned()
+            ),
+        );
+    }
 }

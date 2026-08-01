@@ -1,6 +1,6 @@
 import { Store } from '@tanstack/store'
 import type { ParsedSeed, QueryDocument, ScoutRequest, ScoutResult } from '../wasm/types'
-import { applyProgress, canClearResults, importedResultsState, initialCoordinatorState, markWorkerDone, RESULT_CAP, settleRun, type CoordinatorState, type RunKind, type SearchStatus } from './coordinator-state'
+import { applyProgress, canClearResults, importedResultsState, initialCoordinatorState, markWorkerDone, RESULT_CAP, runSaturated, settleRun, type CoordinatorState, type RunKind, type SearchStatus } from './coordinator-state'
 import type { SearchWorkerRequest, SearchWorkerResponse } from './protocol'
 import { decideStart, distributeSegments, isContinuationOf, remainingSegments, segmentsLength } from './refine'
 import { advanceTraversalStart, partitionRotated, randomTraversalStart, type SeedRange } from './traversal'
@@ -221,11 +221,11 @@ export class SearchCoordinator {
     const queryJson = JSON.stringify(query)
     const startedAt = performance.now()
     const refined = { kept: kept.length, of: previousCount }
-    // A filtered subset that already fills the display cap cannot surface
-    // anything new; skip the scan but keep the coverage bookkeeping intact so
-    // a further refine can continue from the same remainder. A target filter
-    // arrives here with an empty remainder by construction.
-    if (segmentsLength(remainder) === 0 || kept.length >= RESULT_CAP) {
+    // Nothing left to scan: a target filter arrives here with an empty
+    // remainder by construction, and a fully covered refine has no range to
+    // resume. A cap-filling survivor set is deliberately NOT a reason to
+    // skip — the scan still grows the collection past the display cap.
+    if (segmentsLength(remainder) === 0) {
       searchStore.setState((state) => settleRun({
         ...state,
         state: 'completed',
@@ -258,7 +258,8 @@ export class SearchCoordinator {
       state: 'running',
       filtering: false,
       matches: kept,
-      capped: false,
+      capped: kept.length >= RESULT_CAP,
+      sessionBaseline: kept.length,
       queryJson,
       query,
       refined,
@@ -321,7 +322,7 @@ export class SearchCoordinator {
     if (!('sessionId' in message) || message.sessionId !== searchStore.state.sessionId) return
     if (message.type === 'search:progress') {
       searchStore.setState((state) => applyProgress(state, { ...message, workerId, now: performance.now() }))
-      if (searchStore.state.capped) this.workers.forEach((worker) => worker.postMessage({ type: 'search:stop', sessionId: message.sessionId } satisfies SearchWorkerRequest))
+      if (runSaturated(searchStore.state)) this.workers.forEach((worker) => worker.postMessage({ type: 'search:stop', sessionId: message.sessionId } satisfies SearchWorkerRequest))
     }
     if (message.type === 'search:done' || message.type === 'search:stopped') {
       const kind = message.type === 'search:done' ? 'done' : 'stopped'

@@ -582,24 +582,22 @@ public sealed partial class MainWindow : Window
             // query may no longer continue an older detached scan.
             lastRunDetached = false;
             var summary = $"Refined: kept {kept.Count} of {anchor.Seeds.Count} previous seed{(anchor.Seeds.Count == 1 ? "" : "s")}";
-            if (resume && anchor.Remaining > 0 && kept.Count < ResultCap)
+            if (resume && anchor.Remaining > 0)
             {
+                // Always resume, even when the survivors already fill the
+                // display: the engine accepts up to another cap's worth of new
+                // finds per session, and every one of them joins the uncapped
+                // Target Set through `collected` whether or not it can be
+                // listed. Repeating an identical query therefore keeps growing
+                // the Target Set by roughly a cap per run.
                 SetStatusBar($"{summary} — searching for more…");
                 search = await Task.Run(() => engine.StartResumed(snapshot, anchor.ResumeFrom, anchor.Remaining));
                 StartButton.IsEnabled = true;
                 await RunSearch(search, summary); await CaptureBaseRun(snapshot, search, RunKind.TargetRefine);
             }
-            else if (resume && anchor.Remaining > 0)
-            {
-                // The kept subset already fills the display, so a scan could
-                // surface nothing visible. The target keeps its unscanned
-                // window, so a further refine continues from the same place.
-                SearchStatus.Text = "Completed"; SetStatusBar($"{summary} · Result limit reached (1,024 seeds).");
-                baseRun = new(snapshot, [.. collected], anchor.ResumeFrom, anchor.Remaining);
-            }
             // A filter-only run (or a refine with nothing left to scan) scans
             // nothing: the Target Set and its coverage stay exactly as they were.
-            else { SearchStatus.Text = "Completed"; SetStatusBar(summary); baseRun = new(snapshot, [.. collected], anchor.ResumeFrom, 0); }
+            else { SearchStatus.Text = "Completed"; SetStatusBar(results.Count >= ResultCap ? WithCapNotice(summary) : summary); baseRun = new(snapshot, [.. collected], anchor.ResumeFrom, 0); }
         }
         // The Target stays valid on failure: nothing of its coverage was
         // consumed, so the refine can simply be retried.
@@ -631,22 +629,17 @@ public sealed partial class MainWindow : Window
             // previous results — and their snapshot — untouched.
             searchedQuery = snapshot;
             var summary = $"Refined: kept {kept.Count} of {previous.Seeds.Count} previous seed{(previous.Seeds.Count == 1 ? "" : "s")}";
-            if (previous.Remaining > 0 && kept.Count < ResultCap)
+            if (previous.Remaining > 0)
             {
+                // Always resume, even when the survivors already fill the
+                // display: new finds beyond the cap still enter `collected`,
+                // the continuation base a later refine filters.
                 SetStatusBar($"{summary} — searching for more…");
                 search = await Task.Run(() => engine.StartResumed(snapshot, previous.ResumeFrom, previous.Remaining));
                 StartButton.IsEnabled = true;
                 await RunSearch(search, summary); await CaptureBaseRun(snapshot, search, RunKind.Detached);
             }
-            else if (previous.Remaining > 0)
-            {
-                // The kept subset already fills the display, so a scan could
-                // surface nothing visible. Keep the unscanned window so a
-                // further refine continues from the same place.
-                SearchStatus.Text = "Completed"; SetStatusBar($"{summary} · Result limit reached (1,024 seeds).");
-                baseRun = new(snapshot, [.. collected], previous.ResumeFrom, previous.Remaining);
-            }
-            else { SearchStatus.Text = "Completed"; SetStatusBar(summary); baseRun = new(snapshot, [.. collected], previous.ResumeFrom, 0); }
+            else { SearchStatus.Text = "Completed"; SetStatusBar(results.Count >= ResultCap ? WithCapNotice(summary) : summary); baseRun = new(snapshot, [.. collected], previous.ResumeFrom, 0); }
         }
         // The previous base run stays valid on failure: nothing of its
         // coverage was consumed, so the refine can simply be retried.
@@ -707,6 +700,13 @@ public sealed partial class MainWindow : Window
     /// the text while the bar itself stays put, so the layout never jumps.
     /// </summary>
     private void SetStatusBar(string? text) => StatusBarText.Text = text ?? "";
+    /// <summary>Display-truncation notice for the status bar, joined to a run's
+    /// summary when one exists. It reports that the *listing* stopped at
+    /// <see cref="ResultCap"/> rows — every further find still reaches
+    /// <see cref="collected"/> and the Target Set.</summary>
+    private static string WithCapNotice(string? summary) => summary is null
+        ? "Result limit reached (1,024 seeds)."
+        : $"{summary} · Result limit reached (1,024 seeds).";
     private void SetStartButton(bool running)
     {
         StartIcon.Glyph = running ? "" : "";
@@ -858,14 +858,17 @@ public sealed partial class MainWindow : Window
             var status = await Task.Run(active.Status); var seconds = timer.Elapsed.TotalSeconds; var rate = seconds > lastTime ? (status.Scanned - lastScanned) / (seconds - lastTime) : 0; lastScanned = status.Scanned; lastTime = seconds;
             var probability = status.Probability > 0 ? $"{status.Probability:P4}" : "calculating"; var tts = status.Probability > 0 && rate > 0 ? FormatDuration(1 / status.Probability / rate) : "calculating";
             SearchStatus.Text = status.State == SearchState.Running ? $"Seed match probability: {probability}   •   TTS @ {rate:N0} seeds/s: {tts}\nTime elapsed: {FormatDuration(seconds)}" : status.State switch { SearchState.Completed => "Completed", SearchState.Cancelled => "Cancelled", _ => $"Failed (error {status.ErrorCode})" };
-            if (results.Count >= ResultCap) { active.Cancel(); SetStatusBar(summary is null ? "Result limit reached (1,024 seeds)." : $"{summary} · Result limit reached (1,024 seeds)."); }
+            // A full display only truncates the listing: the session keeps
+            // running until the engine's own per-session accept cap stops it,
+            // and every further find still reaches `collected` and the Target.
+            if (results.Count >= ResultCap) SetStatusBar(WithCapNotice(summary));
             // The engine reports a terminal state only once every queued match
             // has been drained, so breaking here never leaves seeds behind —
-            // even right after the display-cap cancel above.
+            // including a session that stopped itself at its accept cap.
             if (status.State != SearchState.Running) break;
         }
         // Settle the bar on the summary alone once "searching for more…" is
-        // over; when the cap fired, its joined notice above is the final word.
+        // over; when the display filled, its joined notice is the final word.
         if (results.Count < ResultCap) SetStatusBar(summary);
     }
     private static string FormatDuration(double seconds) => seconds switch { < 1 => "less than a second", < 60 => $"{seconds:N0}s", < 3600 => $"{seconds / 60:N1}m", < 86400 => $"{seconds / 3600:N1}h", _ => $"{seconds / 86400:N1}d" };

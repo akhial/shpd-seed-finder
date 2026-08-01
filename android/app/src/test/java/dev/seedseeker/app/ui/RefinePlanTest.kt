@@ -133,6 +133,39 @@ class RefinePlanTest {
     }
 
     @Test
+    fun theDisplayCapsAtTheResultLimitButTheCollectionDoesNot() {
+        assertEquals(1_024, RESULT_CAP)
+        // Under the cap the collection is listed as-is (same instance, so growing the display
+        // stays a no-op for recomposition until the cap is hit).
+        assertSame(seeds, displayedResults(seeds))
+        // Over the cap only the first RESULT_CAP finds are listed, in discovery order.
+        val collected = (0 until RESULT_CAP + 7).map { SeedResult(seedCode(it), 1) }
+        val displayed = displayedResults(collected)
+        assertEquals(RESULT_CAP, displayed.size)
+        assertEquals(collected.take(RESULT_CAP), displayed)
+    }
+
+    @Test
+    fun theTargetSettlesFromTheUncappedCollectionPastTheDisplayCap() {
+        // A refine whose survivors already fill the display still grows the Target Set with
+        // every new find: the settled base is the collection, never the capped display.
+        val existing = (0 until RESULT_CAP).map { SeedResult(seedCode(it), 1) }
+        val newFinds = (RESULT_CAP until RESULT_CAP + 3).map { SeedResult(seedCode(it), 2) }
+        val bigTarget = target.copy(results = existing)
+        val settled = settledTarget(
+            bigTarget, StartMode.TARGET_REFINE, request(frost, fireblast),
+            existing + newFinds, resumeFrom = 8_192, remaining = 256,
+        )
+        assertEquals(existing + newFinds, settled?.results)
+        // The next refine of that Target filters the full uncapped set again.
+        val plan = startPlanFor(request(frost, fireblast), settled, null, StartMode.TARGET_REFINE)
+        assertEquals(
+            StartPlan(StartMode.TARGET_REFINE, RefineSpec(8_192, 256, existing + newFinds)),
+            plan,
+        )
+    }
+
+    @Test
     fun anAnchorRunEstablishesTheTarget() {
         val settled = settledTarget(null, StartMode.ANCHOR, request(frost), seeds, 4_096, 512)
         assertEquals(target, settled)
@@ -160,6 +193,17 @@ class RefinePlanTest {
             assertSame(target, settledTarget(target, mode, request(ring), seeds.take(1), 1, 1))
         }
         assertNull(settledTarget(null, StartMode.DETACHED, request(ring), seeds, 1, 1))
+    }
+
+    /** A distinct well-formed seed code per index, e.g. 1 -> "AAA-AAA-AAB". */
+    private fun seedCode(index: Int): String {
+        val letters = CharArray(9)
+        var rest = index
+        for (position in 8 downTo 0) {
+            letters[position] = 'A' + rest % 26
+            rest /= 26
+        }
+        return String(letters).chunked(3).joinToString("-")
     }
 
     private fun request(

@@ -49,6 +49,12 @@ export interface CoordinatorState {
   queryJson: string
   /** Set while the current results came from refining a previous run. */
   refined?: RefineSummary
+  /** How many unique matches existed when the current scan started (the
+   * refine survivors; zero for a fresh scan). The scan stops once it has
+   * added `RESULT_CAP` matches beyond this — the per-session accept cap the
+   * native engines enforce — so repeating a query keeps growing the
+   * collection while each run stays bounded. */
+  sessionBaseline: number
   /** True while a refine is re-verifying the previous results and no worker
    * has started scanning yet. */
   filtering: boolean
@@ -81,7 +87,14 @@ export const initialCoordinatorState = (total = 0): CoordinatorState => ({
   queryJson: '',
   filtering: false,
   runKind: 'anchor',
+  sessionBaseline: 0,
 })
+
+/** Whether the current run has delivered its per-session quota of new
+ * matches; the coordinator stops the workers once it has. */
+export function runSaturated(state: CoordinatorState): boolean {
+  return state.matches.length - state.sessionBaseline >= RESULT_CAP
+}
 
 /**
  * Whether "Clear results" has anything to discard. A running or stopping
@@ -184,13 +197,17 @@ export function applyProgress(state: CoordinatorState, update: ProgressUpdate): 
   const tested = sumScanned(workerScanned)
   const merged = mergeMatches(state.matches, update.matches)
   const rateSamples = [...state.rateSamples, { at: update.now, tested }].filter((sample) => update.now - sample.at <= 5_000)
+  // `capped` reports display truncation; the run itself ends on its own
+  // accept quota, so a refine whose survivors already fill the display still
+  // scans for more.
+  const saturated = merged.matches.length - state.sessionBaseline >= RESULT_CAP
   return settleRun({
     ...state,
     workerScanned,
     tested,
     matches: merged.matches,
     capped: merged.capped,
-    state: merged.capped && state.state === 'running' ? 'completed' : state.state,
+    state: saturated && state.state === 'running' ? 'completed' : state.state,
     elapsed: update.now - state.startedAt,
     rateSamples,
     rate: calculateRate(rateSamples),

@@ -12,7 +12,10 @@ only action that discards results is the explicit **Clear** button.
 - **Target Set** — every unique match the Target Query's traversal has
   delivered, uncapped (the display cap only limits what is listed). It grows
   when an extending search scans previously uncovered range; it never
-  shrinks.
+  shrinks. The *displayed* list is capped at 1,024 rows on every platform —
+  a run's full result set (survivors plus new finds) can exceed that, and
+  the excess must still reach the Target Set and any later refine, just not
+  the screen.
 - **Target coverage** — the portion of the seed space the target traversal
   has scanned, kept as resume state (uncovered remainder). Imported results
   carry no coverage.
@@ -32,10 +35,14 @@ When Start Search runs query `Q` and a Target exists with a non-empty Target
 Set:
 
 1. **`Q` continues the Target Query** → *target refine*: re-verify the whole
-   Target Set against `Q` (filter phase), display the survivors, then resume
-   scanning the target's uncovered remainder if the display is still under
-   the cap. New finds match the Target Query by construction, so they join
-   the Target Set and the coverage advances.
+   Target Set against `Q` (filter phase), display the survivors, then always
+   resume scanning the target's uncovered remainder — even when the
+   survivors already fill the display cap. Each resumed scan stops after it
+   accepts about `RESULT_CAP` (1,024) *new* finds, the engine's per-session
+   accept cap. New finds match the Target Query by construction, so they
+   join the Target Set and the coverage advances; repeating an identical
+   query therefore keeps growing the Target Set by roughly a cap's worth of
+   seeds per run.
 2. **`Q` shares an item with the Target Query** → *target filter*: re-verify
    the whole Target Set against `Q` and display the survivors. No scanning;
    the Target Set and its coverage are untouched. Because the base is always

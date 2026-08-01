@@ -98,6 +98,26 @@ public sealed class SearchPlanTests
     }
 
     [Fact]
+    public void AFullDisplayNeverDowngradesARefine()
+    {
+        // The 1,024-row display cap truncates the listing only. A Target Set
+        // at or beyond the cap still refines-and-resumes on a continuation —
+        // the resumed session accepts up to another cap's worth of new finds,
+        // which is what lets an identical query grow the Target Set by
+        // roughly a cap per run (docs/search-semantics.md, Start decision 1).
+        var grown = Target(Query(Ring()), seeds: 1500, remaining: 100);
+        Assert.Equal(StartMode.TargetRefine, SearchPlan.DecideStart(Query(Ring()), grown));
+        Assert.Equal(StartMode.TargetRefine, SearchPlan.DecideStart(Query(Ring(), Wand()), grown));
+        // A shared-item query still filters the full, uncapped set.
+        var narrowed = Query(Ring()); narrowed.MaximumDepth = 5;
+        Assert.Equal(StartMode.TargetFilter, SearchPlan.DecideStart(narrowed, grown));
+        // Only exhausted coverage makes a continuation filter-only in
+        // practice; the mode stays TargetRefine and its scan phase is empty.
+        var exhausted = Target(Query(Ring()), seeds: 1500, remaining: 0);
+        Assert.Equal(StartMode.TargetRefine, SearchPlan.DecideStart(Query(Ring()), exhausted));
+    }
+
+    [Fact]
     public void AnImportedTargetIsFilterOnly()
     {
         // Imports carry no coverage (Remaining = 0): a continuation still

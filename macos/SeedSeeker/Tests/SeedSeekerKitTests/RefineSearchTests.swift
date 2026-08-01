@@ -624,6 +624,41 @@ final class RefineSearchTests: XCTestCase {
         XCTAssertEqual(engine.freshCalls, 0)
     }
 
+    /// A run can deliver more seeds than the display holds — the list caps at
+    /// `resultCap` rows (an uncapped table is what the 5,000-row UI hang was
+    /// made of) while the full set stays the Target and the refine base, so a
+    /// follow-up refine still filters every seed.
+    func testDisplayCapsAtResultCapWhileTheFullSetStaysTheRefineBase() async throws {
+        let engine = FakeEngine()
+        let controller = SearchController(engine: engine)
+        let base = try wandRequest(count: 1)
+        let seeds = (0..<1_500).map { String(format: "SEED-%04d", $0) }
+
+        engine.startSessions = [FakeSearchSession(
+            batches: [seeds.map { result($0) }],
+            hint: ResumeHint(position: 500, remaining: 100))]
+        controller.start(base)
+        try await waitUntilIdle(controller)
+        XCTAssertEqual(controller.results.count, SearchController.resultCap)
+        XCTAssertTrue(controller.reachedResultCap)
+        XCTAssertEqual(controller.target?.seeds.count, 1_500,
+                       "the Target Set keeps every delivered seed, not just the displayed rows")
+
+        // An unchanged query refines the full 1,500-seed set — and still
+        // resumes the scan for more, display cap notwithstanding.
+        engine.filterResult = seeds
+        engine.resumedSessions = [FakeSearchSession(
+            batches: [], hint: ResumeHint(position: 600, remaining: 0))]
+        controller.start(base)
+        try await waitUntilIdle(controller)
+        XCTAssertEqual(engine.filteredSeeds.last?.count, 1_500)
+        XCTAssertEqual(controller.refinedKept, 1_500)
+        XCTAssertEqual(controller.refinedOf, 1_500)
+        XCTAssertEqual(controller.results.count, SearchController.resultCap)
+        XCTAssertEqual(engine.resumedCalls.count, 1,
+                       "a continuation with coverage left scans for more even at the display cap")
+    }
+
     func testClearResultsAlsoDiscardsImportedResults() throws {
         let controller = SearchController(engine: FakeEngine())
         let requirement = try ItemRequirement(key: 1, item: nil, upgrade: 3, kind: .wand)

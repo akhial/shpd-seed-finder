@@ -54,6 +54,10 @@ public struct TargetState: Sendable {
 @MainActor @Observable
 public final class SearchController {
     public private(set) var state: SearchState?
+    /// The listed results, capped at `resultCap` rows: a refine of a grown
+    /// Target Set can keep far more survivors than the display holds, and an
+    /// uncapped SwiftUI table is what a 5,000-row hang is made of. The run's
+    /// full result set lives in `collected`.
     public private(set) var results: [SeedResult] = []
     public private(set) var scannedSeeds: Int64 = 0
     public private(set) var totalSeeds: Int64 = 0
@@ -89,17 +93,24 @@ public final class SearchController {
     /// Shared import rule on every platform: results are deduplicated
     /// (keeping first occurrences) and capped at the result limit.
     public static let importCap = 1_024
+    /// How many rows the displayed list holds at most.
+    public static let resultCap = 1_024
 
     private let engine: any SeedFinderEngine
     private var session: (any SeedFinderSearchSession)?
     private var task: Task<Void, Never>?
+    /// Every unique seed of the current run — filter survivors plus scanned
+    /// finds — in discovery order and uncapped, unlike the displayed
+    /// `results`. This is what settles into the Target and what a detached
+    /// continuation filters.
+    private var collected: [String] = []
 
     public init(engine: any SeedFinderEngine = ProductionSeedFinderEngine()) { self.engine = engine }
     public var timeToSeed: TimeInterval? {
         guard let matchProbability, seedsPerSecond > 0 else { return nil }
         return 1 / matchProbability / seedsPerSecond
     }
-    public var reachedResultCap: Bool { results.count >= 1_024 }
+    public var reachedResultCap: Bool { results.count >= Self.resultCap }
     /// The engine completes an unsatisfiable plan before scanning any seed,
     /// which would otherwise be indistinguishable from a malfunction.
     public var isImpossibleQuery: Bool {
@@ -117,6 +128,7 @@ public final class SearchController {
             unique.append(seed)
         }
         results = unique.map { SeedResult(seed: $0, matchedRequirements: query.requirements.count) }
+        collected = unique
         importedDropped = seeds.count - unique.count
         exportQuery = query
         scannedSeeds = 0; totalSeeds = 0; matchProbability = nil; seedsPerSecond = 0; elapsed = 0
@@ -178,7 +190,7 @@ public final class SearchController {
     /// results. An `.anchor` run establishes the Target when it concludes; a
     /// `.detached` run leaves the existing Target untouched.
     private func freshSearch(_ request: SearchRequest, as kind: RunKind) {
-        task?.cancel(); results = []; refinedKept = nil; refinedOf = nil; baseRun = nil; resetProgress()
+        task?.cancel(); results = []; collected = []; refinedKept = nil; refinedOf = nil; baseRun = nil; resetProgress()
         isImported = false; importedDropped = 0
         runKind = kind
         exportQuery = SavedQuery(
@@ -217,7 +229,7 @@ public final class SearchController {
     /// while a search or filter phase is running.
     public func clearResults() {
         guard !isRunning else { return }
-        results = []; selectedSeed = nil; exportQuery = nil
+        results = []; collected = []; selectedSeed = nil; exportQuery = nil
         isImported = false; importedDropped = 0
         baseRun = nil; refinedKept = nil; refinedOf = nil
         target = nil; runKind = .anchor
@@ -259,7 +271,8 @@ public final class SearchController {
                 self.runKind = restoreKind; self.isRunning = false
                 return
             }
-            self.results = kept.map { SeedResult(seed: $0, matchedRequirements: request.requirements.count) }
+            self.collected = kept
+            self.results = kept.prefix(Self.resultCap).map { SeedResult(seed: $0, matchedRequirements: request.requirements.count) }
             self.refinedKept = kept.count; self.refinedOf = baseSeeds.count
             // From here on the listed results match the refined request, so
             // that is what an export must claim. A cancel or failure above
@@ -291,7 +304,9 @@ public final class SearchController {
     private func continueDetached(_ request: SearchRequest) {
         guard canRefine(with: request), let base = baseRun else { return }
         task?.cancel(); resetProgress()
-        let previousSeeds = results.map(\.seed)
+        // The last run's full result set, not the capped display: finds
+        // beyond the display cap belong to the continuation's filter base.
+        let previousSeeds = collected
         task = Task { [weak self] in
             guard let self else { return }
             let kept: [String]
@@ -309,7 +324,8 @@ public final class SearchController {
                 self.refinedKept = nil; self.refinedOf = nil; self.isRunning = false
                 return
             }
-            self.results = kept.map { SeedResult(seed: $0, matchedRequirements: request.requirements.count) }
+            self.collected = kept
+            self.results = kept.prefix(Self.resultCap).map { SeedResult(seed: $0, matchedRequirements: request.requirements.count) }
             self.refinedKept = kept.count; self.refinedOf = previousSeeds.count
             self.exportQuery = SavedQuery(
                 requirements: request.requirements, maximumDepth: request.maximumDepth,
@@ -411,11 +427,11 @@ public final class SearchController {
         case .targetFilter, .detached:
             return
         case .anchor:
-            target = TargetState(request: request, seeds: results.map(\.seed),
+            target = TargetState(request: request, seeds: collected,
                                  resumeFrom: hint?.position ?? 0, remaining: hint?.remaining ?? 0)
         case .targetRefine:
             guard var updated = target else {
-                target = TargetState(request: request, seeds: results.map(\.seed),
+                target = TargetState(request: request, seeds: collected,
                                      resumeFrom: hint?.position ?? 0, remaining: hint?.remaining ?? 0)
                 return
             }
@@ -423,7 +439,7 @@ public final class SearchController {
             // from the resumed scan grow the set. The stored set is never
             // capped, and the Target Query stays the original one.
             var seen = Set(updated.seeds)
-            updated.seeds += results.map(\.seed).filter { seen.insert($0).inserted }
+            updated.seeds += collected.filter { seen.insert($0).inserted }
             if let hint { updated.resumeFrom = hint.position; updated.remaining = hint.remaining }
             target = updated
         }
@@ -431,7 +447,14 @@ public final class SearchController {
 
     private func append(_ batch: [SeedResult], excluding shown: inout Set<String>) {
         guard !batch.isEmpty else { return }
-        results.append(contentsOf: batch.filter { shown.insert($0.seed).inserted })
+        let fresh = batch.filter { shown.insert($0.seed).inserted }
+        guard !fresh.isEmpty else { return }
+        collected.append(contentsOf: fresh.map(\.seed))
+        // Only the display is capped; everything delivered stays collected
+        // for the Target and later refines.
+        if results.count < Self.resultCap {
+            results.append(contentsOf: fresh.prefix(Self.resultCap - results.count))
+        }
     }
 }
 

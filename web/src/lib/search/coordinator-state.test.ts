@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyProgress, calculateRate, importedResultsState, initialCoordinatorState, markWorkerDone, mergeMatches, settleRun, type CoordinatorState } from './coordinator-state'
+import { applyProgress, calculateRate, importedResultsState, initialCoordinatorState, markWorkerDone, mergeMatches, runSaturated, settleRun, type CoordinatorState } from './coordinator-state'
 
 const match = (value: number) => ({ value, code: value.toString().padStart(9, 'A') })
 
@@ -163,5 +163,62 @@ describe('imported results as Target', () => {
     expect(state.target?.matches.map((item) => item.value)).toEqual([5, 6])
     expect(state.target?.query).toEqual({ requirements: [{ kind: 'wand' }] })
     expect(state.target?.remainder).toEqual([])
+  })
+})
+
+describe('per-run accept quota', () => {
+  it('keeps a refine running past the display cap until it adds a full quota of new finds', () => {
+    // 1,024 survivors already fill the display; the resumed scan must still
+    // run until it has found RESULT_CAP additional seeds.
+    const survivors = Array.from({ length: 1_024 }, (_, value) => match(value))
+    const base: CoordinatorState = {
+      ...initialCoordinatorState(1_000_000),
+      state: 'running',
+      sessionId: 1,
+      workerCount: 1,
+      startedAt: 0,
+      matches: survivors,
+      sessionBaseline: survivors.length,
+      capped: true,
+      runKind: 'target-refine',
+    }
+    const partial = applyProgress(base, {
+      sessionId: 1,
+      workerId: 0,
+      scanned: [500],
+      matches: Array.from({ length: 500 }, (_, value) => match(2_000 + value)),
+      now: 1_000,
+    })
+    expect(partial.state).toBe('running')
+    expect(runSaturated(partial)).toBe(false)
+
+    const saturated = applyProgress(partial, {
+      sessionId: 1,
+      workerId: 0,
+      scanned: [1_100],
+      matches: Array.from({ length: 524 }, (_, value) => match(3_000 + value)),
+      now: 2_000,
+    })
+    expect(runSaturated(saturated)).toBe(true)
+    expect(saturated.state).toBe('completed')
+    expect(saturated.matches).toHaveLength(2_048)
+  })
+
+  it('still ends a fresh scan at the cap, whose baseline is zero', () => {
+    const base: CoordinatorState = {
+      ...initialCoordinatorState(1_000_000),
+      state: 'running',
+      sessionId: 1,
+      workerCount: 1,
+      startedAt: 0,
+    }
+    const updated = applyProgress(base, {
+      sessionId: 1,
+      workerId: 0,
+      scanned: [5_000],
+      matches: Array.from({ length: 1_024 }, (_, value) => match(value)),
+      now: 1_000,
+    })
+    expect(updated.state).toBe('completed')
   })
 })

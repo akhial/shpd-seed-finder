@@ -6,6 +6,18 @@ import dev.seedseeker.app.model.SeedResult
 import dev.seedseeker.app.model.isRefinementOf
 
 /**
+ * How many rows the displayed results list holds at most. A run's full collection — filter
+ * survivors plus scanned finds — is uncapped and is what feeds the Target Set and any later
+ * refine's filter base; only the LazyColumn's rows stop here (an uncapped list is what a
+ * several-thousand-row UI hang is made of).
+ */
+internal const val RESULT_CAP = 1_024
+
+/** The displayed slice of a run's collected results: discovery order, at most [RESULT_CAP] rows. */
+internal fun displayedResults(collected: List<SeedResult>): List<SeedResult> =
+    if (collected.size <= RESULT_CAP) collected else collected.subList(0, RESULT_CAP)
+
+/**
  * Which half of an in-flight refine run is executing. Only [FILTERING] is "refining" to the user;
  * once the kept seeds have been re-verified the run is an ordinary search over the resumed window.
  */
@@ -24,7 +36,11 @@ internal data class RefineSpec(
     val keepSeeds: List<SeedResult>,
 )
 
-/** A finished (completed or cancelled) run that a follow-up query may refine or continue. */
+/**
+ * A finished (completed or cancelled) run that a follow-up query may refine or continue.
+ * [results] is the run's full collected set — never the [RESULT_CAP]-row display slice — so a
+ * detached continuation's filter base keeps the finds the screen had no room for.
+ */
 internal data class FinishedRun(
     val request: SearchRequest,
     val resumeFrom: Long,
@@ -35,9 +51,10 @@ internal data class FinishedRun(
 /**
  * The session's anchor, per docs/search-semantics.md: the first concluded (completed or
  * cancelled) search — or an import — establishes it, and only Clear discards it. [results] is
- * every seed the Target Query's traversal has delivered; refines always filter this full set,
- * never the last run's survivors, which is what lets a loosened query bring seeds back.
- * [remaining] is zero for imports, which carry no coverage.
+ * every seed the Target Query's traversal has delivered, uncapped ([RESULT_CAP] limits only the
+ * displayed list); refines always filter this full set, never the last run's survivors, which is
+ * what lets a loosened query bring seeds back. [remaining] is zero for imports, which carry no
+ * coverage.
  */
 internal data class TargetState(
     val request: SearchRequest,
