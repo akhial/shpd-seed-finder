@@ -147,34 +147,32 @@ private struct ContentView: View {
                                resultPosition: resultPosition, onNavigateResult: { _ = navigateResult($0) })
                     .navigationSplitViewColumnWidth(min: 360, ideal: 450)
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                // Finder-style status bar for transient search notes; hidden
-                // when empty so it doesn't stack a second permanent bar on
-                // top of the attribution strip below.
+            Divider()
+            // One permanent bottom bar: attribution on the left, transient
+            // search status on the right. A bar that only existed once there
+            // was status text resized the split view when it appeared,
+            // clipping the sidebar's pinned Start Search button.
+            HStack(spacing: 8) {
+                // The bundled item artwork is GPL-3.0-or-later, so its
+                // attribution and the full license text have to be reachable
+                // from the app.
+                Button { showingAbout = true } label: {
+                    Text("Shattered Pixel Dungeon v3.3.8 · Artwork & licenses")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .padding(.vertical, 5)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .layoutPriority(1)
+                .help("Item artwork attribution and license")
+                Spacer(minLength: 8)
                 if let text = statusBarText {
-                    VStack(spacing: 0) {
-                        Divider()
-                        HStack {
-                            Spacer()
-                            Text(text).font(.caption).foregroundStyle(.secondary)
-                        }
-                        .padding(.horizontal, 10)
-                        .frame(height: 24)
-                        .background(.bar)
-                    }
+                    Text(text)
+                        .font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.tail)
                 }
             }
-            Divider()
-            // The bundled item artwork is GPL-3.0-or-later, so its attribution
-            // and the full license text have to be reachable from the app.
-            Button { showingAbout = true } label: {
-                Text("Shattered Pixel Dungeon v3.3.8 · Artwork & licenses")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity).padding(5)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help("Item artwork attribution and license")
+            .padding(.horizontal, 10)
         }
         .sheet(isPresented: $showingAbout) { AboutView() }
         .fileExporter(
