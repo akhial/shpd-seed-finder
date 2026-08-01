@@ -691,9 +691,10 @@ public sealed partial class MainWindow : Window
             ApplyQuery(imported.Query);
             searchedQuery = imported.Query.Clone();
             // Imported results carry no traversal state, so the previous
-            // search's refine base no longer describes the listed seeds.
+            // search's refine base — and the seeds collected as its filter
+            // input — no longer describe the listed seeds.
             baseRun = null;
-            results.Clear();
+            results.Clear(); collected.Clear(); collectedSet.Clear();
             // Deduplicate then cap, the shared import rule on every platform.
             foreach (var seed in imported.Seeds.Distinct())
                 if (results.Count < ResultCap) results.Add(new(seed, results.Count + 1));

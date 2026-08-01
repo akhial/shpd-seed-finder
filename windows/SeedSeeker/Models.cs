@@ -1,11 +1,12 @@
 using System.Collections.ObjectModel;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Microsoft.UI;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Media;
 
 namespace SeedSeeker;
+
+// This file must stay free of Windows App SDK types: SeedSeeker.Tests links it
+// to run on any host. Members that need XAML types live in the partial halves
+// in Models.Presentation.cs.
 
 // MeleeWeapon and ThrownWeapon narrow a weapon requirement to one weapon
 // class; the enum value doubles as the SSF7 wire kind ID (0..=5), so they
@@ -50,10 +51,9 @@ public enum ScoutItemSource
 /// The generic Fluent glyph and tint, kept only for wildcard requirements that pin
 /// no concrete item and so have no sprite to draw.
 /// </summary>
-public static class KindStyle
+public static partial class KindStyle
 {
     public static string Glyph(ItemKind kind) => kind.Family() switch { ItemKind.Weapon => "", ItemKind.Armor => "", ItemKind.Wand => "", _ => "" };
-    public static Brush Tint(ItemKind kind) => new SolidColorBrush(kind.Family() switch { ItemKind.Weapon => Colors.DarkOrange, ItemKind.Armor => Colors.DodgerBlue, ItemKind.Wand => Colors.MediumPurple, _ => Colors.Goldenrod });
 }
 
 public static class Labels
@@ -71,7 +71,7 @@ public static class Labels
     };
 }
 
-public sealed class ItemRequirement
+public sealed partial class ItemRequirement
 {
     public long Key { get; set; } = Random.Shared.NextInt64(1, long.MaxValue);
     public CatalogItem? Item { get; set; }
@@ -86,19 +86,8 @@ public sealed class ItemRequirement
     public int? MaximumDepth { get; set; }
     public bool RequireUncursed { get; set; }
     [JsonIgnore] public string Glyph => KindStyle.Glyph(Kind);
-    [JsonIgnore] public Brush Tint => KindStyle.Tint(Kind);
     /// <summary>Row-major index into the upstream item atlas, or -1 for a wildcard.</summary>
     [JsonIgnore] public int SpriteIndex => Item?.SpriteIndex ?? -1;
-    [JsonIgnore] public Visibility SpriteVisibility => Item is null ? Visibility.Collapsed : Visibility.Visible;
-    /// <summary>The generic glyph shows only where there is genuinely no concrete item.</summary>
-    [JsonIgnore] public Visibility FallbackVisibility => Item is null ? Visibility.Visible : Visibility.Collapsed;
-    /// <summary>
-    /// Glow for the pinned enchantment or curse, with the bare-effect-name semantics
-    /// of the web's <c>effectGlow</c>: an unrecognised effect is a curse and glows
-    /// black. There is nothing to tint without a sprite, so wildcards never glow.
-    /// </summary>
-    [JsonIgnore] public Windows.UI.Color GlowColor => ItemGlow.ForEffect(Modifier)?.Color ?? default;
-    [JsonIgnore] public double GlowPeriod => Item is null ? 0 : ItemGlow.ForEffect(Modifier)?.Period ?? 0;
     [JsonIgnore] public string Title => Item?.Name ?? (TierMatch switch { TierMatch.Exactly => $"Any Tier {Tier} {Labels.Singular(Kind)}", TierMatch.AtLeast => $"Any Tier {Tier}+ {Labels.Singular(Kind)}", TierMatch.AtMost => $"Any Tier {Tier} or lower {Labels.Singular(Kind)}", _ => $"Any {Labels.Singular(Kind)}" });
     [JsonIgnore] public string Description
     {

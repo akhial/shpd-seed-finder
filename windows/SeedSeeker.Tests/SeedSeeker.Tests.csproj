@@ -1,8 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- Plain net8.0 on purpose: the WinUI app only compiles on Windows, but
-         the navigation logic is pure C#, so these tests run anywhere the SDK
-         does (including the macOS/Linux development hosts and CI). -->
+         the linked sources are pure C# (Models.cs keeps its XAML-bound members
+         in Models.Presentation.cs for exactly this reason), so these tests run
+         anywhere the SDK does (including the macOS/Linux development hosts
+         and CI). -->
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>SeedSeeker.Tests</RootNamespace>
     <Nullable>enable</Nullable>
@@ -11,6 +13,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\SeedSeeker\ResultNavigation.cs" Link="ResultNavigation.cs" />
+    <Compile Include="..\SeedSeeker\Models.cs" Link="Models.cs" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
