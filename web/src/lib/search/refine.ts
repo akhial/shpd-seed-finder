@@ -1,22 +1,7 @@
-import type { QueryDocument, RequirementDocument } from '../wasm/types'
+import type { QueryDocument } from '../wasm/types'
+import { queryContinues } from '../wasm'
 import type { CoordinatorState, SearchStatus } from './coordinator-state'
 import type { SeedRange } from './traversal'
-
-/** Canonical fingerprint for one requirement, independent of key order. */
-function requirementSignature(requirement: RequirementDocument): string {
-  return JSON.stringify(
-    Object.fromEntries(Object.entries(requirement).sort(([left], [right]) => left.localeCompare(right))),
-  )
-}
-
-function requirementCounts(requirements: RequirementDocument[]): Map<string, number> {
-  const counts = new Map<string, number>()
-  for (const requirement of requirements) {
-    const signature = requirementSignature(requirement)
-    counts.set(signature, (counts.get(signature) ?? 0) + 1)
-  }
-  return counts
-}
 
 /**
  * Whether a run of `candidate` can continue one of `base`: identical scope
@@ -30,21 +15,18 @@ function requirementCounts(requirements: RequirementDocument[]): Map<string, num
  * filter phase trivially keeps every previous match. That is what lets a
  * cancelled search be resumed by pressing Start again — results only ever
  * disappear when the query genuinely changes, or on an explicit clear.
+ *
+ * The rule itself lives in the engine and is shared with every other
+ * frontend; this only feeds it the two documents. A query the engine cannot
+ * decode continues nothing: an invalid query has no world set to compare, so
+ * the only sound answer is a fresh scan. The UI never starts one anyway.
  */
 export function isContinuationOf(candidate: QueryDocument, base: QueryDocument): boolean {
-  if ((candidate.max_depth ?? 24) !== (base.max_depth ?? 24)) return false
-  if ((candidate.require_blacksmith ?? false) !== (base.require_blacksmith ?? false)) return false
-  if ((candidate.exclude_blacksmith_rewards ?? false) !== (base.exclude_blacksmith_rewards ?? false)) return false
-  if ((candidate.fast_mode ?? false) !== (base.fast_mode ?? false)) return false
-  const candidateChallenges = [...(candidate.challenges ?? [])].sort()
-  const baseChallenges = [...(base.challenges ?? [])].sort()
-  if (candidateChallenges.length !== baseChallenges.length) return false
-  if (candidateChallenges.some((name, index) => name !== baseChallenges[index])) return false
-  const available = requirementCounts(candidate.requirements)
-  for (const [signature, needed] of requirementCounts(base.requirements)) {
-    if ((available.get(signature) ?? 0) < needed) return false
+  try {
+    return queryContinues(JSON.stringify(candidate), JSON.stringify(base))
+  } catch {
+    return false
   }
-  return true
 }
 
 /** The finished-run facts the refine decision reads out of the search store. */

@@ -1,8 +1,20 @@
-import { describe, expect, it } from 'vitest'
+import { readFile } from 'node:fs/promises'
+import { beforeAll, describe, expect, it } from 'vitest'
+import init from '../wasm/pkg/seedfinder.js'
 import type { ParsedSeed, QueryDocument } from '../wasm/types'
 import { decideStart, distributeSegments, isContinuationOf, remainingSegments, segmentsLength, sharesRequirement, shouldRefine } from './refine'
 import { initialCoordinatorState, type CoordinatorState, type SearchStatus, type TargetState } from './coordinator-state'
 import type { SeedRange } from './traversal'
+
+/**
+ * The continuation rule lives in the engine, so these are conformance tests
+ * against the real wasm module rather than against a TypeScript restatement
+ * of it. Node has no `fetch` for `file:` URLs, so the module is instantiated
+ * from bytes instead of the browser's URL form.
+ */
+beforeAll(async () => {
+  await init({ module_or_path: await readFile(new URL('../wasm/pkg/seedfinder_bg.wasm', import.meta.url)) })
+})
 
 const base: QueryDocument = {
   requirements: [{ kind: 'ring', upgrade: { at_least: 2 } }],
@@ -48,6 +60,20 @@ describe('isContinuationOf', () => {
     expect(isContinuationOf({ ...added, challenges: ['on_diet'] }, { ...base, challenges: ['on_diet'] })).toBe(true)
     // Even an otherwise unchanged query restarts when the scope moves.
     expect(isContinuationOf({ ...base, max_depth: 9 }, base)).toBe(false)
+  })
+  it('compares requirements as the engine decodes them, not as they are written', () => {
+    // Two spellings of the same requirement are the same requirement, which
+    // a structural comparison over the JSON could not see.
+    const shorthand: QueryDocument = { requirements: [{ kind: 'weapon', upgrade: 3 }] }
+    const spelledOut: QueryDocument = { requirements: [{ kind: 'weapon', upgrade: { exact: 3 }, tier: 'any' }] }
+    expect(isContinuationOf(shorthand, spelledOut)).toBe(true)
+    expect(isContinuationOf(spelledOut, shorthand)).toBe(true)
+  })
+  it('continues nothing when a query does not decode', () => {
+    // An unreadable query describes no world set, so there is no coverage
+    // argument to make and the only sound answer is a fresh scan.
+    expect(isContinuationOf({ requirements: [{ item: 'no_such_item' }] }, base)).toBe(false)
+    expect(isContinuationOf(base, { requirements: [{ item: 'no_such_item' }] })).toBe(false)
   })
 })
 

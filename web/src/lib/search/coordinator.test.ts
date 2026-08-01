@@ -1,4 +1,6 @@
+import { readFile } from 'node:fs/promises'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import init from '../wasm/pkg/seedfinder.js'
 import type { QueryDocument } from '../wasm/types'
 import { SearchCoordinator, clearResults, searchStore } from './coordinator'
 import { canClearResults, initialCoordinatorState, type CoordinatorState } from './coordinator-state'
@@ -31,6 +33,13 @@ class StubWorker {
 
 const postedTypes = () => StubWorker.posted.map((message) => message.type)
 
+// The start decision asks the engine whether a query continues the Target, so
+// the wasm module has to be live before any coordinator test runs. Node has no
+// `fetch` for `file:` URLs, so it is instantiated from bytes; the app uses the
+// browser's URL form and builds its coordinator only after that resolves.
+beforeAll(async () => {
+  await init({ module_or_path: await readFile(new URL('../wasm/pkg/seedfinder_bg.wasm', import.meta.url)) })
+})
 beforeAll(() => vi.stubGlobal('Worker', StubWorker))
 afterAll(() => vi.unstubAllGlobals())
 beforeEach(() => {
