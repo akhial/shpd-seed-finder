@@ -15,20 +15,8 @@ class ResultsHeaderTextTest {
     }
 
     @Test
-    fun refineShowsKeptOfPreviousCounts() {
-        assertEquals(
-            "Results — 7 · kept 5 of 12",
-            header(7, state = SearchState.COMPLETED, refineSummary = 5 to 12),
-        )
-        assertEquals(
-            "Results — 6 · kept 5 of 12 · cancelled",
-            header(6, state = SearchState.CANCELLED, refineSummary = 5 to 12),
-        )
-    }
-
-    @Test
-    fun refineFilterPhaseHasNoCountsYet() {
-        // While the previous seeds are being re-verified there is no summary yet.
+    fun refineFilterPhaseSaysRefining() {
+        // The kept-of counts live in a snackbar now, so the header only carries the phase.
         assertEquals(
             "Results — 12 · refining",
             header(12, state = null, isSearching = true, refinePhase = RefinePhase.FILTERING),
@@ -38,15 +26,14 @@ class ResultsHeaderTextTest {
     @Test
     fun onlyTheFilterPhaseSaysRefining() {
         // Once the kept seeds are settled the resumed scan is an ordinary search,
-        // so the header stops claiming to be refining but keeps the kept counts.
+        // so the header stops claiming to be refining.
         assertEquals(
-            "Results — 39 · kept 23 of 329 · searching",
+            "Results — 39 · searching",
             header(
                 39,
                 state = SearchState.RUNNING,
                 isSearching = true,
                 refinePhase = RefinePhase.SCANNING,
-                refineSummary = 23 to 329,
             ),
         )
     }
@@ -56,6 +43,5 @@ class ResultsHeaderTextTest {
         state: SearchState?,
         isSearching: Boolean = false,
         refinePhase: RefinePhase? = null,
-        refineSummary: Pair<Int, Int>? = null,
-    ) = resultsHeaderText(resultCount, state, isSearching, refinePhase, refineSummary)
+    ) = resultsHeaderText(resultCount, state, isSearching, refinePhase)
 }

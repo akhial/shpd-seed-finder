@@ -43,6 +43,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -87,8 +89,8 @@ fun FinderScreen(
     elapsedSeconds: Long,
     isSearching: Boolean,
     refinePhase: RefinePhase?,
-    refineSummary: Pair<Int, Int>?,
     error: String?,
+    snackbarHostState: SnackbarHostState,
     onAbout: () -> Unit,
     onChallenges: () -> Unit,
     onApplyPreset: (QueryPreset) -> Unit,
@@ -116,6 +118,7 @@ fun FinderScreen(
     var showOverflowMenu by remember { mutableStateOf(false) }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Seed Seeker") },
@@ -207,7 +210,6 @@ fun FinderScreen(
                     status = status,
                     isSearching = isSearching,
                     refinePhase = refinePhase,
-                    refineSummary = refineSummary,
                     error = error,
                     onAdd = onAdd,
                     onEdit = onEdit,
@@ -257,19 +259,6 @@ fun FinderScreen(
                         items(results, key = { it.seed }) { result ->
                             ResultRow(result = result, onScout = { onScoutSeed(result.seed) })
                         }
-                        if (results.size >= 1_024) {
-                            item {
-                                Text(
-                                    "Result limit reached (1,024 seeds).",
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 4.dp),
-                                    textAlign = TextAlign.Center,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
                     }
                 }
             }
@@ -299,7 +288,6 @@ private fun QueryHeader(
     status: SearchStatus?,
     isSearching: Boolean,
     refinePhase: RefinePhase?,
-    refineSummary: Pair<Int, Int>?,
     error: String?,
     onAdd: () -> Unit,
     onEdit: (ItemRequirement) -> Unit,
@@ -365,7 +353,6 @@ private fun QueryHeader(
                 state = status?.state,
                 isSearching = isSearching,
                 refinePhase = refinePhase,
-                refineSummary = refineSummary,
             ),
             style = MaterialTheme.typography.titleSmall,
         )

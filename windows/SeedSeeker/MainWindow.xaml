@@ -5,7 +5,7 @@
     xmlns:local="using:SeedSeeker"
     Title="Seed Seeker">
   <Grid>
-    <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition/></Grid.RowDefinitions>
+    <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition/><RowDefinition Height="28"/></Grid.RowDefinitions>
 
     <!-- Unified title bar drawn over Mica -->
     <Grid x:Name="AppTitleBar">
@@ -320,6 +320,14 @@
           </Grid>
         </Grid>
       </Grid>
+    </Grid>
+
+    <!-- Window-bottom status bar for transient refine and result-cap notices,
+         drawn directly on Mica like the sidebar so it reads as window chrome.
+         It stays in place when empty, the native pattern, which also spares the
+         content island a layout jump whenever a notice appears. -->
+    <Grid Grid.Row="2" Padding="24,0" BorderThickness="0,1,0,0" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
+      <TextBlock x:Name="StatusBarText" Style="{StaticResource Caption}" HorizontalAlignment="Right" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
     </Grid>
   </Grid>
 </Window>

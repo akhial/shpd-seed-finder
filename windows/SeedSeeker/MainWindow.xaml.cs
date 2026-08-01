@@ -506,7 +506,7 @@ public sealed partial class MainWindow : Window
         // and the status line reports what happened. Clear Results drops the
         // base run when a fresh scan is wanted.
         if (baseRun is BaseRun previous && QueryRefinement.CanRefine(query, previous.Query)) { await RefineSearch(previous); return; }
-        busy = true; collected.Clear(); collectedSet.Clear(); results.Clear(); SearchStatus.Text = "Starting search…"; SetStartButton(running: true);
+        busy = true; collected.Clear(); collectedSet.Clear(); results.Clear(); SearchStatus.Text = "Starting search…"; SetStatusBar(null); SetStartButton(running: true);
         try
         {
             var snapshot = query.Clone();
@@ -528,7 +528,7 @@ public sealed partial class MainWindow : Window
     private async Task RefineSearch(BaseRun previous)
     {
         busy = true;
-        var snapshot = query.Clone(); SearchStatus.Text = "Verifying previous results…"; SetStartButton(running: true); StartButton.IsEnabled = false;
+        var snapshot = query.Clone(); SetStatusBar("Verifying previous results…"); SetStartButton(running: true); StartButton.IsEnabled = false;
         try
         {
             // Filter before touching the displayed results, so a failure here
@@ -540,27 +540,27 @@ public sealed partial class MainWindow : Window
             // that is what an export must claim. A failure above leaves the
             // previous results — and their snapshot — untouched.
             searchedQuery = snapshot;
-            var prefix = $"Refined: kept {kept.Count} of {previous.Seeds.Count} previous seed{(previous.Seeds.Count == 1 ? "" : "s")}";
+            var summary = $"Refined: kept {kept.Count} of {previous.Seeds.Count} previous seed{(previous.Seeds.Count == 1 ? "" : "s")}";
             if (previous.Remaining > 0 && kept.Count < ResultCap)
             {
-                SearchStatus.Text = $"{prefix} — searching for more…";
+                SetStatusBar($"{summary} — searching for more…");
                 search = await Task.Run(() => engine.StartResumed(snapshot, previous.ResumeFrom, previous.Remaining));
                 StartButton.IsEnabled = true;
-                await RunSearch(search, prefix); await CaptureBaseRun(snapshot, search);
+                await RunSearch(search, summary); await CaptureBaseRun(snapshot, search);
             }
             else if (previous.Remaining > 0)
             {
                 // The kept subset already fills the display, so a scan could
                 // surface nothing visible. Keep the unscanned window so a
                 // further refine continues from the same place.
-                SearchStatus.Text = $"{prefix}\nResult limit reached (1,024 seeds).";
+                SearchStatus.Text = "Completed"; SetStatusBar($"{summary} · Result limit reached (1,024 seeds).");
                 baseRun = new(snapshot, [.. collected], previous.ResumeFrom, previous.Remaining);
             }
-            else { SearchStatus.Text = $"{prefix}\nCompleted"; baseRun = new(snapshot, [.. collected], previous.ResumeFrom, 0); }
+            else { SearchStatus.Text = "Completed"; SetStatusBar(summary); baseRun = new(snapshot, [.. collected], previous.ResumeFrom, 0); }
         }
         // The previous base run stays valid on failure: nothing of its
         // coverage was consumed, so the refine can simply be retried.
-        catch (Exception ex) { SearchStatus.Text = $"Refine failed: {ex.Message}"; }
+        catch (Exception ex) { SearchStatus.Text = $"Refine failed: {ex.Message}"; SetStatusBar(null); }
         finally { busy = false; search?.Dispose(); search = null; SetStartButton(running: false); StartButton.IsEnabled = query.Requirements.Count != 0; }
     }
     /// <summary>
@@ -591,6 +591,12 @@ public sealed partial class MainWindow : Window
         var (resumeFrom, remaining) = await Task.Run(active.ResumeHint);
         baseRun = new(ranQuery, [.. collected], resumeFrom, remaining);
     }
+    /// <summary>
+    /// Writes the window-bottom status bar, the sole home of the transient
+    /// refine-progress, refined-summary, and result-cap notices; null clears
+    /// the text while the bar itself stays put, so the layout never jumps.
+    /// </summary>
+    private void SetStatusBar(string? text) => StatusBarText.Text = text ?? "";
     private void SetStartButton(bool running)
     {
         StartIcon.Glyph = running ? "" : "";
@@ -623,7 +629,7 @@ public sealed partial class MainWindow : Window
         if (busy || search is not null) return;
         results.Clear(); collected.Clear(); collectedSet.Clear();
         baseRun = null; searchedQuery = null;
-        SearchStatus.Text = "Add requirements, then press Start Search.";
+        SearchStatus.Text = "Add requirements, then press Start Search."; SetStatusBar(null);
         UpdateTransferButtons();
     }
 
@@ -694,7 +700,7 @@ public sealed partial class MainWindow : Window
             // search's refine base — and the seeds collected as its filter
             // input — no longer describe the listed seeds.
             baseRun = null;
-            results.Clear(); collected.Clear(); collectedSet.Clear();
+            results.Clear(); collected.Clear(); collectedSet.Clear(); SetStatusBar(null);
             // Deduplicate then cap, the shared import rule on every platform.
             foreach (var seed in imported.Seeds.Distinct())
                 if (results.Count < ResultCap) results.Add(new(seed, results.Count + 1));
@@ -723,7 +729,12 @@ public sealed partial class MainWindow : Window
         await dialog.ShowAsync();
     }
 
-    private async Task RunSearch(NativeSearch active, string? prefix = null)
+    /// <summary>
+    /// Polls the running session into <see cref="SearchStatus"/>. A resumed
+    /// refine passes its summary so the status bar keeps reporting the refine
+    /// while the scan runs, and so the result-cap notice can join it.
+    /// </summary>
+    private async Task RunSearch(NativeSearch active, string? summary = null)
     {
         var timer = Stopwatch.StartNew(); long lastScanned = 0; var lastTime = 0d;
         while (true)
@@ -731,14 +742,16 @@ public sealed partial class MainWindow : Window
             await Task.Delay(150); var batch = await Task.Run(() => active.Poll(128)); Collect(batch);
             var status = await Task.Run(active.Status); var seconds = timer.Elapsed.TotalSeconds; var rate = seconds > lastTime ? (status.Scanned - lastScanned) / (seconds - lastTime) : 0; lastScanned = status.Scanned; lastTime = seconds;
             var probability = status.Probability > 0 ? $"{status.Probability:P4}" : "calculating"; var tts = status.Probability > 0 && rate > 0 ? FormatDuration(1 / status.Probability / rate) : "calculating";
-            var line = status.State == SearchState.Running ? $"Seed match probability: {probability}   •   TTS @ {rate:N0} seeds/s: {tts}\nTime elapsed: {FormatDuration(seconds)}" : status.State switch { SearchState.Completed => "Completed", SearchState.Cancelled => "Cancelled", _ => $"Failed (error {status.ErrorCode})" };
-            SearchStatus.Text = prefix is null ? line : $"{prefix}\n{line}";
-            if (results.Count >= ResultCap) { active.Cancel(); SearchStatus.Text += "\nResult limit reached (1,024 seeds)."; }
+            SearchStatus.Text = status.State == SearchState.Running ? $"Seed match probability: {probability}   •   TTS @ {rate:N0} seeds/s: {tts}\nTime elapsed: {FormatDuration(seconds)}" : status.State switch { SearchState.Completed => "Completed", SearchState.Cancelled => "Cancelled", _ => $"Failed (error {status.ErrorCode})" };
+            if (results.Count >= ResultCap) { active.Cancel(); SetStatusBar(summary is null ? "Result limit reached (1,024 seeds)." : $"{summary} · Result limit reached (1,024 seeds)."); }
             // The engine reports a terminal state only once every queued match
             // has been drained, so breaking here never leaves seeds behind —
             // even right after the display-cap cancel above.
             if (status.State != SearchState.Running) break;
         }
+        // Settle the bar on the summary alone once "searching for more…" is
+        // over; when the cap fired, its joined notice above is the final word.
+        if (results.Count < ResultCap) SetStatusBar(summary);
     }
     private static string FormatDuration(double seconds) => seconds switch { < 1 => "less than a second", < 60 => $"{seconds:N0}s", < 3600 => $"{seconds / 60:N1}m", < 86400 => $"{seconds / 3600:N1}h", _ => $"{seconds / 86400:N1}d" };
 

@@ -74,6 +74,17 @@ private struct ContentView: View {
     @State private var showingImporter = false
     @State private var transferError: String?
 
+    /// Transient search notes shown in the window-bottom status bar rather
+    /// than inside the results list.
+    private var statusBarText: String? {
+        var parts: [String] = []
+        if let kept = controller.refinedKept {
+            parts.append("Refined: kept \(kept) previous seed\(kept == 1 ? "" : "s")")
+        }
+        if controller.reachedResultCap { parts.append("Result limit reached (1,024 seeds).") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             NavigationSplitView {
@@ -126,6 +137,23 @@ private struct ContentView: View {
                                excludeBlacksmithRewards: excludeBlacksmithRewards, challenges: challenges,
                                resultPosition: resultPosition, onNavigateResult: { _ = navigateResult($0) })
                     .navigationSplitViewColumnWidth(min: 360, ideal: 450)
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                // Finder-style status bar for transient search notes; hidden
+                // when empty so it doesn't stack a second permanent bar on
+                // top of the attribution strip below.
+                if let text = statusBarText {
+                    VStack(spacing: 0) {
+                        Divider()
+                        HStack {
+                            Spacer()
+                            Text(text).font(.caption).foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 10)
+                        .frame(height: 24)
+                        .background(.bar)
+                    }
+                }
             }
             Divider()
             // The bundled item artwork is GPL-3.0-or-later, so its attribution
@@ -894,8 +922,7 @@ private struct ResultsView: View {
     let scout: (String) -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            status.padding([.horizontal, .top])
-            if controller.reachedResultCap { Text("Result limit reached (1,024 seeds).").font(.caption).foregroundStyle(.secondary).padding(.horizontal) }
+            statusBody.padding([.horizontal, .top])
             Table(controller.results, selection: Bindable(controller).selectedSeed) {
                 TableColumn("#") { result in Text("\((controller.results.firstIndex(of: result) ?? 0) + 1)").foregroundStyle(.secondary) }.width(45)
                 TableColumn("Seed") { result in
@@ -906,15 +933,6 @@ private struct ResultsView: View {
             Button("Copy Selected") { if let seed = controller.selectedSeed { copy(seed) } }
                 .keyboardShortcut("c", modifiers: .command).hidden()
         }.navigationTitle("Results")
-    }
-    @ViewBuilder private var status: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            statusBody
-            if let kept = controller.refinedKept {
-                Text("Refined: kept \(kept) previous seed\(kept == 1 ? "" : "s")")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-        }
     }
     @ViewBuilder private var statusBody: some View {
         if controller.isImported {

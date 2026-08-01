@@ -21,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -145,12 +146,11 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
     var run by remember { mutableStateOf<SearchRun?>(null) }
     var nextRunId by remember { mutableLongStateOf(1L) }
     var lastFinishedRun by remember { mutableStateOf<FinishedRun?>(null) }
-    // (kept, of) counts from the latest refine's re-verification of on-screen seeds.
-    var refineSummary by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     // Null unless a refine run is in flight; distinguishes its filter phase from the resumed scan.
     var refinePhase by remember { mutableStateOf<RefinePhase?>(null) }
     var isSearching by remember { mutableStateOf(false) }
     var searchError by remember { mutableStateOf<String?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
     var scoutInput by remember { mutableStateOf("") }
     var scoutResult by remember { mutableStateOf<ScoutWorld?>(null) }
     var scoutRun by remember { mutableStateOf<ScoutRun?>(null) }
@@ -274,11 +274,18 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
         isSearching = true
         searchError = null
         searchStatus = null
-        refineSummary = null
         // Set together with isSearching so the header never reads one without the other.
         refinePhase = if (currentRun.refine != null) RefinePhase.FILTERING else null
         searchSeedsPerSecond = 0.0
         searchElapsedSeconds = 0L
+        // Local to the effect so the limit snackbar fires once per run, never per recomposition.
+        var resultLimitNotified = false
+        fun notifyIfResultLimitReached() {
+            if (resultLimitNotified || results.size < 1_024) return
+            resultLimitNotified = true
+            // Launched on the app scope so the queued snackbar never suspends the search loop.
+            scope.launch { snackbarHostState.showSnackbar("Result limit reached (1,024 seeds).") }
+        }
 
         val searchStartedAt = System.nanoTime()
         var previousScannedSeeds = 0L
@@ -307,7 +314,12 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                     fastMode = currentRun.request.fastMode,
                     challenges = currentRun.request.challenges,
                 )
-                refineSummary = kept.size to refine.keepSeeds.size
+                scope.launch {
+                    snackbarHostState.showSnackbar(
+                        "Kept ${kept.size} of ${refine.keepSeeds.size} previous seeds.",
+                    )
+                }
+                notifyIfResultLimitReached()
                 if (refine.remaining == 0L) {
                     searchStatus = SearchStatus(SearchState.COMPLETED, 0, 0)
                     lastFinishedRun = FinishedRun(currentRun.request, refine.resumeFrom, 0, results)
@@ -338,6 +350,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                 val newResults = batch.results.filter { seenSeeds.add(it.seed) }
                 if (newResults.isNotEmpty()) {
                     results = results + newResults
+                    notifyIfResultLimitReached()
                 }
                 val statusTime = System.nanoTime()
                 searchElapsedSeconds = (statusTime - searchStartedAt) / 1_000_000_000L
@@ -466,8 +479,8 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                 elapsedSeconds = searchElapsedSeconds,
                 isSearching = isSearching,
                 refinePhase = refinePhase,
-                refineSummary = refineSummary,
                 error = searchError,
+                snackbarHostState = snackbarHostState,
                 onAbout = {
                     aboutReturnDestination = Destination.FINDER
                     destination = Destination.ABOUT
@@ -564,7 +577,6 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                     run = null
                     results = emptyList()
                     lastFinishedRun = null
-                    refineSummary = null
                     refinePhase = null
                     searchStatus = null
                     searchError = null

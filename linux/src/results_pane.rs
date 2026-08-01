@@ -577,12 +577,14 @@ impl ResultsPane {
                 ),
             );
         } else {
-            self.stats_line.set_label(&format!(
-                "Refined · kept {} of {} previous seed{} · every seed was already scanned",
+            self.stats_line
+                .set_label("Completed · every seed was already scanned");
+            self.toasts.add_toast(adw::Toast::new(&format!(
+                "Refined: kept {} of {} previous seed{}",
                 group_digits(kept),
                 group_digits(previous),
                 if previous == 1 { "" } else { "s" },
-            ));
+            )));
         }
         self.finish();
     }
@@ -734,25 +736,35 @@ impl ResultsPane {
                 } else {
                     "Stopped"
                 };
-                let cap_notice = if matches >= MAX_ACCEPTED_RESULTS as u64 {
-                    " · result limit reached"
-                } else {
-                    ""
-                };
-                let refined_notice = refined.map_or(String::new(), |(kept, previous)| {
-                    format!(
-                        " · kept {} of {} previous",
-                        group_digits(kept),
-                        group_digits(previous)
-                    )
-                });
                 self.stats_line.set_label(&format!(
-                    "{summary} · tested {} · {} match{}{refined_notice}{cap_notice}",
+                    "{summary} · tested {} · {} match{}",
                     group_digits(tested),
                     group_digits(matches),
                     if matches == 1 { "" } else { "es" },
                 ));
                 self.progress_line.set_visible(false);
+                let capped = matches >= MAX_ACCEPTED_RESULTS as u64;
+                let refined_notice = refined.map(|(kept, previous)| {
+                    format!(
+                        "Refined: kept {} of {} previous seed{}",
+                        group_digits(kept),
+                        group_digits(previous),
+                        if previous == 1 { "" } else { "s" },
+                    )
+                });
+                // A single toast even when both notices apply; stacked toasts
+                // would hide one behind the other.
+                match (refined_notice, capped) {
+                    (Some(notice), true) => self.toasts.add_toast(adw::Toast::new(&format!(
+                        "{notice} · result limit reached"
+                    ))),
+                    (Some(notice), false) => self.toasts.add_toast(adw::Toast::new(&notice)),
+                    (None, true) => self.toasts.add_toast(adw::Toast::new(&format!(
+                        "Result limit reached ({} seeds)",
+                        group_digits(MAX_ACCEPTED_RESULTS as u64)
+                    ))),
+                    (None, false) => {}
+                }
             }
         }
         self.finish();

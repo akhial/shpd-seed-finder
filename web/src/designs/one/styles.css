@@ -1690,6 +1690,46 @@ input[type='range']::-moz-range-thumb {
 
 .d1-footer-narrow { display: none; }
 
+/* Search status notes live on the footer's right on desktop; small layouts
+   hide this region and surface the same notes as a snackbar instead. */
+.d1-footer-status {
+  margin-left: auto;
+  display: flex;
+  column-gap: 5px;
+  text-align: right;
+  color: var(--d1-text-2);
+}
+
+.d1-footer-status-cap { color: var(--d1-warn); }
+
+.d1-snackbar {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(46px + env(safe-area-inset-bottom, 0px));
+  z-index: 60;
+  max-width: min(92vw, 480px);
+  padding: 9px 14px;
+  border: 1px solid var(--d1-border-strong);
+  border-radius: 8px;
+  background: var(--d1-panel-2);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 45%);
+  font-size: 12.5px;
+  color: var(--d1-text);
+  animation: d1-snackbar-in 160ms ease-out;
+  display: none;
+}
+
+@keyframes d1-snackbar-in {
+  from { opacity: 0; transform: translate(-50%, 6px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@media (max-width: 999px) {
+  .d1-footer-status { display: none; }
+  .d1-snackbar { display: block; }
+}
+
 @media (max-width: 999px) {
   .d1-footer { padding-bottom: 10px; }
   .d1-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

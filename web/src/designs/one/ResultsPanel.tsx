@@ -220,14 +220,9 @@ export function ResultsPanel({
         {fileInfo && <div className="d1-banner d1-banner-info" role="status">{fileInfo}</div>}
 
         {running && search.filtering && (
-          <>
-            <div className="d1-progress" role="progressbar" aria-label="Verifying previous results">
-              <div className="d1-progress-sweep" />
-            </div>
-            <p className="d1-caption">
-              Verifying {search.refined?.of.toLocaleString() ?? ''} previously found seed{search.refined?.of === 1 ? '' : 's'} against the combined requirements…
-            </p>
-          </>
+          <div className="d1-progress" role="progressbar" aria-label="Verifying previous results">
+            <div className="d1-progress-sweep" />
+          </div>
         )}
 
         {running && !search.filtering && (
@@ -253,11 +248,6 @@ export function ResultsPanel({
                 <span className="d1-stat-value d1-mono">{estimateDuration(timeToSeed)}</span>
               </div>
             </div>
-            {search.refined && (
-              <p className="d1-caption">
-                Kept {search.refined.kept.toLocaleString()} of {search.refined.of.toLocaleString()} previous seed{search.refined.of === 1 ? '' : 's'} — searching the remaining range…
-              </p>
-            )}
             <p className="d1-caption">{search.state === 'stopping' ? 'Stopping…' : probabilityLabel(probability)}</p>
           </>
         )}
@@ -278,14 +268,6 @@ export function ResultsPanel({
             </span>
           </div>
         )}
-
-        {!running && search.refined && (
-          <p className="d1-caption">
-            Refined: kept {search.refined.kept.toLocaleString()} of {search.refined.of.toLocaleString()} previous seed{search.refined.of === 1 ? '' : 's'}.
-          </p>
-        )}
-
-        {search.capped && <p className="d1-caption d1-capped">Result limit reached (1,024 seeds).</p>}
       </div>
 
       <div className="d1-pane-body">

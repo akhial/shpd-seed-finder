@@ -1,0 +1,42 @@
+import type { CoordinatorState } from './coordinator-state'
+
+/** One relocated status note: refine progress or the result-cap notice.
+ * `kind` lets the footer tint the cap warning without re-parsing the text. */
+export interface StatusNote {
+  kind: 'refine' | 'cap'
+  text: string
+}
+
+const plural = (count: number) => (count === 1 ? '' : 's')
+
+/**
+ * The transient status notes that live outside the results pane: desktop
+ * layouts render them joined in the footer's status region, small layouts
+ * surface changes as a snackbar. The "Impossible query" warning and the live
+ * search stats are not status notes and stay in their panes.
+ */
+export function searchStatusNotes(state: CoordinatorState): StatusNote[] {
+  const notes: StatusNote[] = []
+  const running = state.state === 'running' || state.state === 'stopping'
+  if (running && state.filtering && state.refined) {
+    notes.push({
+      kind: 'refine',
+      text: `Verifying ${state.refined.of.toLocaleString()} previously found seed${plural(state.refined.of)} against the combined requirements…`,
+    })
+  } else if (running && state.refined) {
+    notes.push({
+      kind: 'refine',
+      text: `Kept ${state.refined.kept.toLocaleString()} of ${state.refined.of.toLocaleString()} previous seed${plural(state.refined.of)} — searching the remaining range…`,
+    })
+  } else if (state.refined && (state.state === 'completed' || state.state === 'cancelled')) {
+    notes.push({
+      kind: 'refine',
+      text: `Refined: kept ${state.refined.kept.toLocaleString()} of ${state.refined.of.toLocaleString()} previous seed${plural(state.refined.of)}.`,
+    })
+  }
+  // While the filter phase runs, `capped` still describes the previous run —
+  // the verified subset may well come in under the cap — so hold the notice
+  // until the filter lands and the flag is recomputed.
+  if (state.capped && !state.filtering) notes.push({ kind: 'cap', text: 'Result limit reached (1,024 seeds).' })
+  return notes
+}

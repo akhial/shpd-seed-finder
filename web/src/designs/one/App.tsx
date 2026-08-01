@@ -11,6 +11,7 @@ import { DownloadMenu } from './DownloadMenu'
 import { QueryPanel } from './QueryPanel'
 import { ResultsPanel } from './ResultsPanel'
 import { ScoutPanel } from './ScoutPanel'
+import { FooterStatus, StatusSnackbar } from './StatusBar'
 import { Sprite } from './parts'
 import './styles.css'
 
@@ -394,7 +395,9 @@ export default function App() {
           <span className="d1-footer-wide">Asset attribution</span>
           <span className="d1-footer-narrow">Attribution</span>
         </a>
+        <FooterStatus />
       </footer>
+      <StatusSnackbar />
     </div>
   )
 }

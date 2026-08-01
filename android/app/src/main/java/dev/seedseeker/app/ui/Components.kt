@@ -392,20 +392,14 @@ internal fun resultsHeaderText(
     state: SearchState?,
     isSearching: Boolean,
     refinePhase: RefinePhase?,
-    refineSummary: Pair<Int, Int>?,
-): String {
-    // (kept, of) counts from a refine's re-verification of the previous run's seeds.
-    val kept = refineSummary?.let { (keptCount, of) -> " · kept $keptCount of $of" }.orEmpty()
-    return when {
-        // "refining" is the filter phase only; the resumed scan that follows is a search.
-        isSearching && refinePhase == RefinePhase.FILTERING -> "Results — $resultCount$kept · refining"
-        isSearching && refinePhase == RefinePhase.SCANNING -> "Results — $resultCount$kept · searching"
-        isSearching -> "Results — $resultCount · live"
-        state == SearchState.COMPLETED && refineSummary != null -> "Results — $resultCount$kept"
-        state == SearchState.COMPLETED -> "Results — $resultCount found"
-        state == SearchState.CANCELLED -> "Results — $resultCount$kept · cancelled"
-        else -> "Results"
-    }
+): String = when {
+    // "refining" is the filter phase only; the resumed scan that follows is a search.
+    isSearching && refinePhase == RefinePhase.FILTERING -> "Results — $resultCount · refining"
+    isSearching && refinePhase == RefinePhase.SCANNING -> "Results — $resultCount · searching"
+    isSearching -> "Results — $resultCount · live"
+    state == SearchState.COMPLETED -> "Results — $resultCount found"
+    state == SearchState.CANCELLED -> "Results — $resultCount · cancelled"
+    else -> "Results"
 }
 
 internal fun searchEstimateText(status: SearchStatus?, seedsPerSecond: Double): String {
