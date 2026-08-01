@@ -3,7 +3,6 @@ package dev.seedseeker.app.ui
 
 import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.SeedResult
-import dev.seedseeker.app.model.isRefinementOf
 
 /**
  * How many rows the displayed results list holds at most. A run's full collection — filter
@@ -112,15 +111,21 @@ internal fun sharesRequirement(candidate: SearchRequest, base: SearchRequest): B
  * [lastRun] instead when that run was itself detached and the query continues it. An empty
  * Target Set holds nothing worth preserving, so a non-continuing query re-anchors on this
  * search instead of filtering nothing.
+ *
+ * [queryContinues] is the engine's continuation predicate — `NativeSeedFinder.queryContinues`,
+ * i.e. `SearchQuery::continues` over the wire — passed in so this policy stays a pure function
+ * over the session's state. Only the engine decides whether a query may reuse a run; this
+ * function decides what to do with that answer.
  */
 internal fun startPlanFor(
     request: SearchRequest,
     target: TargetState?,
     lastRun: FinishedRun?,
     lastRunKind: StartMode?,
+    queryContinues: (SearchRequest, SearchRequest) -> Boolean,
 ): StartPlan {
     if (target == null) return StartPlan(StartMode.ANCHOR)
-    val continuesTarget = request.isRefinementOf(target.request)
+    val continuesTarget = queryContinues(request, target.request)
     if (target.results.isEmpty() && !(continuesTarget && target.remaining > 0)) {
         return StartPlan(StartMode.ANCHOR)
     }
@@ -133,7 +138,7 @@ internal fun startPlanFor(
     if (sharesRequirement(request, target.request)) {
         return StartPlan(StartMode.TARGET_FILTER, RefineSpec(target.resumeFrom, 0, target.results))
     }
-    if (lastRunKind == StartMode.DETACHED && lastRun != null && request.isRefinementOf(lastRun.request)) {
+    if (lastRunKind == StartMode.DETACHED && lastRun != null && queryContinues(request, lastRun.request)) {
         return StartPlan(
             StartMode.CONTINUE_DETACHED,
             RefineSpec(lastRun.resumeFrom, lastRun.remaining, lastRun.results),

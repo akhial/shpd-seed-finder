@@ -30,6 +30,20 @@ interface NativeSeedFinder {
     fun startResumedSearch(request: SearchRequest, resumeFrom: Long, scanLen: Long): NativeSearchSession
     fun filterSeeds(request: SearchRequest, seeds: List<String>): List<String>
     fun scoutSeed(seed: String, challenges: Int = 0): ScoutWorld
+
+    /**
+     * Whether [candidate] never widens [base]: identical scope (depth, challenges, blacksmith
+     * flags, fast mode) and a multiset of requirements equal to or a superset of the base run's
+     * (UI list keys are not part of the wire query, so re-keying is invisible here). Only such a
+     * query may reuse the base run's results and finish by rescanning the seeds it never reached,
+     * which is what makes filter-and-resume sound; per docs/search-semantics.md the engine owns
+     * this predicate and frontends call it rather than re-derive it.
+     *
+     * An unchanged query qualifies on purpose: filtering then keeps every seed and the resumed
+     * scan simply continues the base run, which is what a second Search tap after a cancel must
+     * do. Only an explicit Clear starts over.
+     */
+    fun queryContinues(candidate: SearchRequest, base: SearchRequest): Boolean
 }
 
 interface NativeSearchSession : AutoCloseable {
@@ -72,6 +86,26 @@ class DemoNativeSeedFinder : NativeSeedFinder {
 
     override fun filterSeeds(request: SearchRequest, seeds: List<String>): List<String> =
         seeds.filterIndexed { index, _ -> index % 2 == 0 }
+
+    /**
+     * The one demo answer that is not a stand-in shape but the real rule: a demo APK ships no
+     * `.so`, and a wrong continuation verdict would send every demo search down a refine branch
+     * the shipped app would never take. It mirrors `SearchQuery::continues` — identical scope and
+     * a requirement multiset containing the base's, ignoring UI list keys.
+     */
+    override fun queryContinues(candidate: SearchRequest, base: SearchRequest): Boolean {
+        if (candidate.maximumDepth != base.maximumDepth ||
+            candidate.challenges != base.challenges ||
+            candidate.requireBlacksmith != base.requireBlacksmith ||
+            candidate.excludeBlacksmithRewards != base.excludeBlacksmithRewards ||
+            candidate.fastMode != base.fastMode
+        ) {
+            return false
+        }
+        if (candidate.requirements.size < base.requirements.size) return false
+        val unmatched = candidate.requirements.mapTo(mutableListOf()) { it.copy(key = 0) }
+        return base.requirements.all { unmatched.remove(it.copy(key = 0)) }
+    }
 
     override fun scoutSeed(seed: String, challenges: Int): ScoutWorld {
         require(SeedCode.isCanonical(seed)) { "Seed must use XXX-XXX-XXX format" }
@@ -224,6 +258,8 @@ class DemoNativeSeedFinder : NativeSeedFinder {
  *    scan to finish this session's coverage; exact once the session has stopped.
  * 9. `filterSeeds(requestBytes, seedValues) -> resultBytes` re-verifies numeric seed values
  *    against the full query and returns the survivors, in input order, as a result packet.
+ * 10. `queryContinues(candidateBytes, baseBytes) -> boolean` reports whether the candidate query
+ *    may reuse a run of the base query, throwing for an undecodable packet.
  *
  * Search requests always use `SSF7`: magic, maxDepth:u8, flags:u8, challenges:u16 little-endian,
  * requirementCount:u16 big-endian, followed by repeated
@@ -274,6 +310,10 @@ class JniNativeSeedFinder(
         val packet = bindings.filterSeeds(QueryCodec.encode(request), values)
         return ResultCodec.decode(packet, request.requirements.size).map { it.seed }
     }
+
+    /** Asks the engine, so the refine soundness rule has exactly one implementation. */
+    override fun queryContinues(candidate: SearchRequest, base: SearchRequest): Boolean =
+        bindings.queryContinues(QueryCodec.encode(candidate), QueryCodec.encode(base))
 
     private class JniSession(
         private val handle: Long,
@@ -340,6 +380,7 @@ interface NativeBindings {
     fun close(handle: Long)
     fun scoutSeed(request: ByteArray): ByteArray
     fun filterSeeds(request: ByteArray, seeds: LongArray): ByteArray
+    fun queryContinues(candidate: ByteArray, base: ByteArray): Boolean
 }
 
 /** Exact class and static method names are retained by ProGuard for Rust's exported JNI symbols. */
@@ -357,6 +398,7 @@ object JniBindings {
     @JvmStatic external fun close(handle: Long)
     @JvmStatic external fun scoutSeed(request: ByteArray): ByteArray
     @JvmStatic external fun filterSeeds(request: ByteArray, seeds: LongArray): ByteArray
+    @JvmStatic external fun queryContinues(candidate: ByteArray, base: ByteArray): Boolean
 }
 
 private object JniBindingsAdapter : NativeBindings {
@@ -371,6 +413,8 @@ private object JniBindingsAdapter : NativeBindings {
     override fun scoutSeed(request: ByteArray) = JniBindings.scoutSeed(request)
     override fun filterSeeds(request: ByteArray, seeds: LongArray) =
         JniBindings.filterSeeds(request, seeds)
+    override fun queryContinues(candidate: ByteArray, base: ByteArray) =
+        JniBindings.queryContinues(candidate, base)
 }
 
 object SeedCode {

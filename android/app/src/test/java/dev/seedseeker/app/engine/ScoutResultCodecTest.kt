@@ -253,5 +253,7 @@ class ScoutResultCodecTest {
         override fun cancel(handle: Long) = error("not used")
         override fun close(handle: Long) = error("not used")
         override fun filterSeeds(request: ByteArray, seeds: LongArray): ByteArray = error("not used")
+        override fun queryContinues(candidate: ByteArray, base: ByteArray): Boolean =
+            error("not used")
     }
 }

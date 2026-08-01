@@ -165,29 +165,6 @@ data class SearchRequest(
     }
 }
 
-/**
- * True when this request never widens [base]: identical scope and a multiset of requirements that
- * is equal to or a superset of the base run's (ignoring UI list keys). Such a query can reuse the
- * base run's results and finish by rescanning only the seeds the base run never reached.
- *
- * An unchanged query qualifies on purpose: filtering then keeps every seed and the resumed scan
- * simply continues the base run, which is what a second Search tap after a cancel must do. Only
- * an explicit Clear starts over.
- */
-fun SearchRequest.isRefinementOf(base: SearchRequest): Boolean {
-    if (maximumDepth != base.maximumDepth ||
-        challenges != base.challenges ||
-        requireBlacksmith != base.requireBlacksmith ||
-        excludeBlacksmithRewards != base.excludeBlacksmithRewards ||
-        fastMode != base.fastMode
-    ) {
-        return false
-    }
-    if (requirements.size < base.requirements.size) return false
-    val unmatched = requirements.mapTo(mutableListOf()) { it.copy(key = 0) }
-    return base.requirements.all { unmatched.remove(it.copy(key = 0)) }
-}
-
 enum class Challenge(
     val bit: Int,
     val displayName: String,

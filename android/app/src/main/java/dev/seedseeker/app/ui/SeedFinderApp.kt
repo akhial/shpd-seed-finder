@@ -622,7 +622,9 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                         // the Target refines its full set and resumes its coverage, one
                         // sharing an item filters that set, and anything else scans
                         // detached — continuing the previous detached run when sound.
-                        val plan = startPlanFor(currentRequest, target, lastFinishedRun, lastRunKind)
+                        val plan = startPlanFor(
+                            currentRequest, target, lastFinishedRun, lastRunKind, engine::queryContinues,
+                        )
                         if (plan.refine == null) {
                             searchedQuery = PresetQuery(
                                 requirements = requirements,

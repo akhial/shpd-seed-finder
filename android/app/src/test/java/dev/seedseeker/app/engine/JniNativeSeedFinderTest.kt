@@ -122,6 +122,22 @@ class JniNativeSeedFinderTest {
         assertEquals(listOf("AAA-AAA-AAB"), kept)
     }
 
+    @Test
+    fun queryContinuesHandsBothQueriesToTheEngineAsRequestPackets() {
+        // The verdict itself is the engine's (QueryContinuationTest asserts it against the real
+        // library); this only pins the two packets the adapter sends and which side is which.
+        val bindings = RecordingBindings()
+        val finder = JniNativeSeedFinder(bindings)
+        val base = SearchRequest(listOf(ItemRequirement(1, ItemCatalog.rings.first(), 2, null)))
+        val candidate = base.copy(
+            requirements = base.requirements + ItemRequirement(2, ItemCatalog.armor.first(), 1, null),
+        )
+
+        assertTrue(finder.queryContinues(candidate, base))
+        assertTrue(bindings.continuesCandidate.contentEquals(QueryCodec.encode(candidate)))
+        assertTrue(bindings.continuesBase.contentEquals(QueryCodec.encode(base)))
+    }
+
     private class RecordingBindings : NativeBindings {
         var request = byteArrayOf()
         var statusPacket = longArrayOf(1, 123, 456, 0, 0.125.toBits())
@@ -131,6 +147,8 @@ class JniNativeSeedFinderTest {
         var resumedScanLen = -1L
         var filterRequest = byteArrayOf()
         var filterValues = longArrayOf()
+        var continuesCandidate = byteArrayOf()
+        var continuesBase = byteArrayOf()
         var cancelCalls = 0
         var closeCalls = 0
 
@@ -187,6 +205,12 @@ class JniNativeSeedFinderTest {
             '1'.code.toByte(),
             11,
         ) + "AAA-AAA-AAA".encodeToByteArray() + byteArrayOf(0, 0)
+
+        override fun queryContinues(candidate: ByteArray, base: ByteArray): Boolean {
+            continuesCandidate = candidate.copyOf()
+            continuesBase = base.copyOf()
+            return true
+        }
 
         override fun filterSeeds(request: ByteArray, seeds: LongArray): ByteArray {
             filterRequest = request.copyOf()
