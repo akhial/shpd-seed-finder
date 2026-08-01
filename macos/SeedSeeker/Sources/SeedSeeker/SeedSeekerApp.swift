@@ -78,8 +78,15 @@ private struct ContentView: View {
     /// than inside the results list.
     private var statusBarText: String? {
         var parts: [String] = []
-        if let kept = controller.refinedKept {
-            parts.append("Refined: kept \(kept) previous seed\(kept == 1 ? "" : "s")")
+        if let kept = controller.refinedKept, let of = controller.refinedOf {
+            parts.append("Refined: kept \(kept) of \(of) previous seed\(of == 1 ? "" : "s")")
+        }
+        // A fresh detached scan is the one moment the display and the kept
+        // Target Set diverge, so say what happened to the earlier results. A
+        // continued detached scan tells its own story through the refined
+        // caption above.
+        if controller.runKind == .detached && controller.refinedKept == nil && controller.target != nil {
+            parts.append("Unrelated query — detached search from previous results.")
         }
         if controller.reachedResultCap { parts.append("Result limit reached (1,024 seeds).") }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")

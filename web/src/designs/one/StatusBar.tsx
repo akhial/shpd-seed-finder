@@ -34,19 +34,26 @@ export function StatusSnackbar() {
 
   // Previous-state trackers keyed to the session, so a later run's events
   // fire again while re-renders within one run do not.
-  const seen = useRef({ sessionId: 0, filterDone: false, capped: false })
+  const seen = useRef({ sessionId: 0, filterDone: false, capped: false, detached: false })
   useEffect(() => {
     if (search.sessionId !== seen.current.sessionId) {
-      seen.current = { sessionId: search.sessionId, filterDone: false, capped: false }
+      seen.current = { sessionId: search.sessionId, filterDone: false, capped: false, detached: false }
     }
     const running = search.state === 'running' || search.state === 'stopping'
     const filterDone = search.refined !== undefined && !search.filtering && (running || search.state === 'completed' || search.state === 'cancelled')
     const events: string[] = []
+    // A fresh detached scan replaces the display while the kept results
+    // survive off-screen; announce that once, when it starts.
+    const detached = search.runKind === 'detached' && search.target !== undefined && search.refined === undefined && running
+    if (detached && !seen.current.detached) {
+      events.push('Unrelated query — detached search from previous results.')
+    }
+    seen.current.detached = seen.current.detached || detached
     if (filterDone && !seen.current.filterDone && search.refined) {
       const plural = search.refined.of === 1 ? '' : 's'
       events.push(
         running
-          ? `Kept ${search.refined.kept.toLocaleString()} of ${search.refined.of.toLocaleString()} previous seed${plural} — searching the remaining range…`
+          ? `Kept ${search.refined.kept.toLocaleString()} of ${search.refined.of.toLocaleString()} previous seed${plural} — searching for more…`
           : `Refined: kept ${search.refined.kept.toLocaleString()} of ${search.refined.of.toLocaleString()} previous seed${plural}.`,
       )
     }

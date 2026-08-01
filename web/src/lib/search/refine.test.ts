@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { QueryDocument } from '../wasm/types'
-import { distributeSegments, isContinuationOf, remainingSegments, segmentsLength, shouldRefine } from './refine'
-import type { SearchStatus } from './coordinator-state'
+import type { ParsedSeed, QueryDocument } from '../wasm/types'
+import { decideStart, distributeSegments, isContinuationOf, remainingSegments, segmentsLength, sharesRequirement, shouldRefine } from './refine'
+import { initialCoordinatorState, type CoordinatorState, type SearchStatus, type TargetState } from './coordinator-state'
 import type { SeedRange } from './traversal'
 
 const base: QueryDocument = {
@@ -135,5 +135,74 @@ describe('distributeSegments', () => {
     expect(shares).toHaveLength(4)
     expect(segmentsLength(shares.flat())).toBe(2)
     expect(distributeSegments([], 3).every((share) => share.length === 0)).toBe(true)
+  })
+})
+
+describe('sharesRequirement', () => {
+  it('shares on an identical kind-level requirement', () => {
+    expect(sharesRequirement(base, { requirements: [{ kind: 'ring' }] })).toBe(true)
+  })
+  it('a kind-level requirement subsumes any item of its kind', () => {
+    expect(sharesRequirement({ requirements: [{ kind: 'ring', item: 'ring_wealth' }] }, { requirements: [{ kind: 'ring' }] })).toBe(true)
+    expect(sharesRequirement({ requirements: [{ kind: 'ring' }] }, { requirements: [{ kind: 'ring', item: 'ring_wealth' }] })).toBe(true)
+  })
+  it('two different items of the same kind do not share', () => {
+    expect(sharesRequirement(
+      { requirements: [{ kind: 'ring', item: 'ring_wealth' }] },
+      { requirements: [{ kind: 'ring', item: 'ring_tenacity' }] },
+    )).toBe(false)
+  })
+  it('different kinds do not share, and scope differences are ignored', () => {
+    expect(sharesRequirement({ requirements: [{ kind: 'wand' }] }, base)).toBe(false)
+    expect(sharesRequirement({ requirements: [{ kind: 'ring' }], max_depth: 5, challenges: ['on_diet'] }, base)).toBe(true)
+  })
+})
+
+describe('decideStart', () => {
+  const target = (query: QueryDocument, matches: ParsedSeed[], remainder: SeedRange[]): TargetState => ({
+    queryJson: JSON.stringify(query),
+    query,
+    matches,
+    remainder,
+  })
+  const seeds = [{ value: 1, code: 'AAA-AAA-AAB' }]
+  const withTarget = (overrides: Partial<CoordinatorState>): CoordinatorState => ({
+    ...initialCoordinatorState(1_000),
+    state: 'completed',
+    target: target(base, seeds, [{ startSeed: 400, endSeedExclusive: 1_000 }]),
+    ...overrides,
+  })
+
+  it('anchors when no Target exists', () => {
+    expect(decideStart(initialCoordinatorState(1_000), base)).toBe('anchor')
+  })
+  it('refines a continuation of the Target Query', () => {
+    expect(decideStart(withTarget({}), added)).toBe('target-refine')
+    expect(decideStart(withTarget({}), base)).toBe('target-refine')
+  })
+  it('filters when the query shares an item without continuing', () => {
+    // Editing the ring's upgrade is not a continuation, but it is still about rings.
+    expect(decideStart(withTarget({}), { requirements: [{ kind: 'ring', upgrade: { at_least: 3 } }] })).toBe('target-filter')
+  })
+  it('detaches an unrelated query, continuing a detached run when sound', () => {
+    const wands: QueryDocument = { requirements: [{ kind: 'wand' }] }
+    expect(decideStart(withTarget({}), wands)).toBe('detached')
+    const afterDetached = withTarget({
+      runKind: 'detached',
+      queryJson: JSON.stringify(wands),
+      matches: seeds,
+    })
+    expect(decideStart(afterDetached, wands)).toBe('continue-detached')
+    expect(decideStart(afterDetached, { requirements: [...wands.requirements, { kind: 'armor' }] })).toBe('continue-detached')
+    // A detached run that failed (or is somehow not concluded) cannot be continued.
+    expect(decideStart(withTarget({ runKind: 'detached', queryJson: JSON.stringify(wands), state: 'failed' }), wands)).toBe('detached')
+  })
+  it('re-anchors on an empty Target Set unless the query resumes its coverage', () => {
+    const empty = withTarget({ target: target(base, [], [{ startSeed: 400, endSeedExclusive: 1_000 }]) })
+    expect(decideStart(empty, added)).toBe('target-refine')
+    expect(decideStart(empty, { requirements: [{ kind: 'wand' }] })).toBe('anchor')
+    // Fully covered and empty: nothing to resume, nothing to keep.
+    const covered = withTarget({ target: target(base, [], []) })
+    expect(decideStart(covered, added)).toBe('anchor')
   })
 })

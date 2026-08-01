@@ -269,25 +269,83 @@ pub fn extends_query(candidate: &SearchQuery, base: &SearchQuery) -> bool {
     })
 }
 
-/// What the search action does for the current query.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StartMode {
-    /// Scan the whole seed range from the beginning.
-    Fresh,
-    /// Filter the previous run's seeds and resume where it stopped.
-    Refine,
+/// Whether two queries name a common item: some requirement of each has the
+/// same kind, and either both name the same item or at least one names none
+/// (a kind-level requirement subsumes every item of its kind). Scope and
+/// challenge differences are irrelevant — a filter re-verifies seeds from
+/// scratch — so this deliberately checks nothing else: it only estimates
+/// whether the Target Set is enriched for the candidate query's matches.
+#[must_use]
+pub fn shares_item(candidate: &SearchQuery, base: &SearchQuery) -> bool {
+    candidate.requirements.iter().any(|left| {
+        base.requirements.iter().any(|right| {
+            left.kind == right.kind
+                && (left.item.is_none() || right.item.is_none() || left.item == right.item)
+        })
+    })
 }
 
-/// Decides how a start request is served: refining is implicit, so a query
-/// that extends — or simply repeats — the last finished run reuses its results
-/// instead of rescanning from zero. `refine_base` is the finished run's query,
-/// or `None` when there is nothing to refine — no run yet, results imported or
-/// cleared, or the run failed.
+/// What pressing Start Search does with a query, per docs/search-semantics.md.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StartMode {
+    /// Fresh full-range scan that establishes the Target on conclusion.
+    Anchor,
+    /// Filter the Target Set, then resume the target's uncovered remainder.
+    TargetRefine,
+    /// Filter the Target Set only; the set and its coverage stay untouched.
+    TargetFilter,
+    /// Continue the previous detached scan (filter its results, resume its
+    /// remainder). The Target is untouched.
+    ContinueDetached,
+    /// Fresh full-range scan that leaves the Target untouched.
+    Detached,
+}
+
+/// The facts about the session's Target that the start decision reads.
+pub struct TargetFacts<'a> {
+    pub query: &'a SearchQuery,
+    /// How many seeds the Target Set holds.
+    pub set_size: usize,
+    /// How many seeds the target traversal has not covered yet.
+    pub remaining: u64,
+}
+
+/// The single gate for what Start Search does. The Target Set is the anchor:
+/// a continuation of the Target Query refines it, a query sharing an item
+/// filters it (always from the full set, so loosening a requirement brings
+/// seeds back), and anything else scans the full range without touching it —
+/// continuing the last detached run when `detached_base` says that is sound.
+/// An empty Target Set holds nothing worth preserving, so a non-continuing
+/// query re-anchors on this search instead of filtering nothing.
+///
+/// `detached_base` is the last concluded run's query when — and only when —
+/// that run was itself detached; a failed run is never a continuation base.
 #[must_use]
-pub fn start_mode(candidate: &SearchQuery, refine_base: Option<&SearchQuery>) -> StartMode {
-    match refine_base {
-        Some(base) if extends_query(candidate, base) => StartMode::Refine,
-        _ => StartMode::Fresh,
+pub fn start_mode(
+    candidate: &SearchQuery,
+    target: Option<&TargetFacts<'_>>,
+    detached_base: Option<&SearchQuery>,
+) -> StartMode {
+    let Some(target) = target else {
+        return StartMode::Anchor;
+    };
+    let continues_target = extends_query(candidate, target.query);
+    if target.set_size == 0 {
+        return if continues_target && target.remaining > 0 {
+            StartMode::TargetRefine
+        } else {
+            StartMode::Anchor
+        };
+    }
+    if continues_target {
+        return StartMode::TargetRefine;
+    }
+    if shares_item(candidate, target.query) {
+        return StartMode::TargetFilter;
+    }
+    match detached_base {
+        Some(base) if extends_query(candidate, base) => StartMode::ContinueDetached,
+        _ => StartMode::Detached,
     }
 }
 
@@ -428,7 +486,9 @@ mod tests {
     use shpd_seedfinder_core::catalog::{ItemId, ItemKind};
     use shpd_seedfinder_core::query::{TierRequirement, UpgradeRequirement};
 
-    use super::{AppState, StartMode, UiRequirement, extends_query, start_mode};
+    use super::{
+        AppState, StartMode, TargetFacts, UiRequirement, extends_query, shares_item, start_mode,
+    };
 
     #[test]
     fn refinement_requires_identical_scope_and_no_fewer_requirements() {
@@ -475,8 +535,17 @@ mod tests {
         assert!(!extends_query(&extended, &doubled_base));
     }
 
+    /// A populated Target with plenty of uncovered range.
+    fn facts(query: &shpd_seedfinder_core::query::SearchQuery) -> TargetFacts<'_> {
+        TargetFacts {
+            query,
+            set_size: 3,
+            remaining: 1_000,
+        }
+    }
+
     #[test]
-    fn starting_refines_an_extended_finished_run_without_asking() {
+    fn starting_refines_an_extension_of_the_target_without_asking() {
         let mut base_state = AppState::default();
         let mut first = UiRequirement::new(base_state.claim_key());
         first.kind = ItemKind::Ring;
@@ -490,70 +559,189 @@ mod tests {
         extended_state.requirements.push(added);
         let extended = extended_state.to_query().unwrap();
 
-        // Adding a requirement after a finished run refines it implicitly.
+        // Adding a requirement after a concluded run refines it implicitly.
         assert_eq!(
-            start_mode(&extended, Some(&base)),
-            StartMode::Refine,
-            "an extending query must reuse the finished run"
+            start_mode(&extended, Some(&facts(&base)), None),
+            StartMode::TargetRefine,
+            "an extending query must reuse the Target"
         );
 
         // Starting again with the query unchanged continues the session: the
         // filter keeps every seed and the scan picks up where it stopped. This
         // is the stop-then-start-again case, which must never wipe results.
         assert_eq!(
-            start_mode(&base, Some(&base)),
-            StartMode::Refine,
+            start_mode(&base, Some(&facts(&base)), None),
+            StartMode::TargetRefine,
             "an unchanged query must continue the previous run"
         );
-        assert_eq!(start_mode(&extended, Some(&extended)), StartMode::Refine);
+        assert_eq!(
+            start_mode(&extended, Some(&facts(&extended)), None),
+            StartMode::TargetRefine
+        );
 
-        // Anything the finished run cannot vouch for starts fresh: a narrower
-        // query, an edited requirement, and any scope change.
-        assert_eq!(start_mode(&base, Some(&extended)), StartMode::Fresh);
-        let mut edited = extended.clone();
-        edited.requirements[0].kind = ItemKind::Armor;
-        assert_eq!(start_mode(&edited, Some(&base)), StartMode::Fresh);
-        let mut deeper = extended.clone();
-        deeper.max_depth = 9;
-        assert_eq!(start_mode(&deeper, Some(&base)), StartMode::Fresh);
-
-        // Clearing the results drops the base, so even an extending query
-        // scans from the beginning again.
-        assert_eq!(start_mode(&extended, None), StartMode::Fresh);
+        // Clearing the results drops the Target, so even an extending query
+        // anchors a fresh session.
+        assert_eq!(start_mode(&extended, None, None), StartMode::Anchor);
     }
 
-    /// QA repro: finish a search, add a requirement, start (refines), stop it,
-    /// then start again without touching the query. A cancelled run still
-    /// leaves a refine base behind, so the second start must continue the
-    /// session rather than wipe the results — only "Clear Results" does that.
     #[test]
-    fn restarting_a_cancelled_run_with_an_unchanged_query_keeps_the_session() {
+    fn queries_sharing_an_item_filter_the_target_set_without_scanning() {
         let mut base_state = AppState::default();
         let mut first = UiRequirement::new(base_state.claim_key());
         first.kind = ItemKind::Ring;
         base_state.requirements.push(first);
-        let finished = base_state.to_query().unwrap();
+        let base = base_state.to_query().unwrap();
 
+        // A narrower scope breaks the continuation rule but still names a
+        // ring, so the full Target Set is filtered instead of rescanned.
+        let mut deeper_state = base_state.clone();
+        deeper_state.max_depth = 9;
+        let deeper = deeper_state.to_query().unwrap();
+        assert!(!extends_query(&deeper, &base));
+        assert_eq!(
+            start_mode(&deeper, Some(&facts(&base)), None),
+            StartMode::TargetFilter
+        );
+
+        // Dropping back to fewer requirements is a filter too — the base is
+        // the full Target Set, so loosening brings seeds back.
         let mut extended_state = base_state.clone();
         let mut added = UiRequirement::new(extended_state.claim_key());
         added.kind = ItemKind::Weapon;
-        added.upgrade = UpgradeRequirement::AtLeast(2);
         extended_state.requirements.push(added);
-        let refined = extended_state.to_query().unwrap();
-
-        // First start after adding the requirement: a refine.
-        assert_eq!(start_mode(&refined, Some(&finished)), StartMode::Refine);
-
-        // Cancelling that refine keeps its query as the base. Starting again
-        // with the very same query must refine, not rescan from zero.
+        let extended = extended_state.to_query().unwrap();
         assert_eq!(
-            start_mode(&refined, Some(&refined)),
-            StartMode::Refine,
-            "a cancelled run plus an unchanged query must not wipe the results"
+            start_mode(&base, Some(&facts(&extended)), None),
+            StartMode::TargetFilter
         );
 
-        // Only an explicit clear (which drops the base) starts over.
-        assert_eq!(start_mode(&refined, None), StartMode::Fresh);
+        // An unrelated kind shares nothing and scans detached.
+        let mut armor_state = AppState::default();
+        let mut armor = UiRequirement::new(armor_state.claim_key());
+        armor.kind = ItemKind::Armor;
+        armor_state.requirements.push(armor);
+        let armor_query = armor_state.to_query().unwrap();
+        assert_eq!(
+            start_mode(&armor_query, Some(&facts(&base)), None),
+            StartMode::Detached
+        );
+    }
+
+    #[test]
+    fn sharing_compares_kinds_and_named_items_only() {
+        let build = |configure: fn(&mut UiRequirement)| {
+            let mut state = AppState::default();
+            let mut requirement = UiRequirement::new(state.claim_key());
+            configure(&mut requirement);
+            state.requirements.push(requirement);
+            state.to_query().unwrap()
+        };
+        let any_ring = build(|r| r.kind = ItemKind::Ring);
+        let tenacity = build(|r| {
+            r.kind = ItemKind::Ring;
+            r.item = Some(ItemId::RingTenacity);
+        });
+        let greatsword = build(|r| {
+            r.kind = ItemKind::Weapon;
+            r.item = Some(ItemId::Greatsword);
+        });
+
+        // A kind-level requirement subsumes every item of its kind.
+        assert!(shares_item(&any_ring, &tenacity));
+        assert!(shares_item(&tenacity, &any_ring));
+        assert!(shares_item(&tenacity, &tenacity));
+        // Different kinds never share, and neither do two distinct named
+        // items of the same kind.
+        assert!(!shares_item(&greatsword, &any_ring));
+        let sword = build(|r| {
+            r.kind = ItemKind::Weapon;
+            r.item = Some(ItemId::Sword);
+        });
+        assert!(!shares_item(&greatsword, &sword));
+
+        // Scope differences are irrelevant: a filter re-verifies from scratch.
+        let mut deep_ring = any_ring.clone();
+        deep_ring.max_depth = 5;
+        deep_ring.fast_mode = true;
+        assert!(shares_item(&deep_ring, &tenacity));
+    }
+
+    #[test]
+    fn unrelated_queries_continue_only_the_detached_thread() {
+        let mut ring_state = AppState::default();
+        let mut ring = UiRequirement::new(ring_state.claim_key());
+        ring.kind = ItemKind::Ring;
+        ring_state.requirements.push(ring);
+        let target = ring_state.to_query().unwrap();
+
+        let mut armor_state = AppState::default();
+        let mut armor = UiRequirement::new(armor_state.claim_key());
+        armor.kind = ItemKind::Armor;
+        armor_state.requirements.push(armor);
+        let detached = armor_state.to_query().unwrap();
+
+        // First unrelated query: a fresh detached scan.
+        assert_eq!(
+            start_mode(&detached, Some(&facts(&target)), None),
+            StartMode::Detached
+        );
+        // Extending the detached run continues it instead of rescanning.
+        let mut narrowed_state = armor_state.clone();
+        let mut added = UiRequirement::new(narrowed_state.claim_key());
+        added.kind = ItemKind::Armor;
+        added.upgrade = UpgradeRequirement::AtLeast(2);
+        narrowed_state.requirements.push(added);
+        let narrowed = narrowed_state.to_query().unwrap();
+        assert_eq!(
+            start_mode(&narrowed, Some(&facts(&target)), Some(&detached)),
+            StartMode::ContinueDetached
+        );
+        // But never when the last concluded run was not detached (or failed):
+        // without a detached base, an unrelated query rescans.
+        assert_eq!(
+            start_mode(&narrowed, Some(&facts(&target)), None),
+            StartMode::Detached
+        );
+        // And the Target always wins: a query continuing the Target refines
+        // it even when it would also continue the detached run.
+        assert_eq!(
+            start_mode(&target, Some(&facts(&target)), Some(&target)),
+            StartMode::TargetRefine
+        );
+    }
+
+    #[test]
+    fn an_empty_target_set_resumes_a_continuation_and_reanchors_otherwise() {
+        let mut ring_state = AppState::default();
+        let mut ring = UiRequirement::new(ring_state.claim_key());
+        ring.kind = ItemKind::Ring;
+        ring_state.requirements.push(ring);
+        let target = ring_state.to_query().unwrap();
+        let empty = |remaining: u64| TargetFacts {
+            query: &target,
+            set_size: 0,
+            remaining,
+        };
+
+        // A continuing query still resumes the uncovered remainder.
+        assert_eq!(
+            start_mode(&target, Some(&empty(1_000)), None),
+            StartMode::TargetRefine
+        );
+        // With nothing left to scan either, the search re-anchors.
+        assert_eq!(
+            start_mode(&target, Some(&empty(0)), None),
+            StartMode::Anchor
+        );
+        // Any other query re-anchors: an empty set holds nothing worth
+        // preserving, even for a query that shares the ring kind.
+        let mut deeper_state = ring_state.clone();
+        deeper_state.max_depth = 9;
+        let deeper = deeper_state.to_query().unwrap();
+        assert_eq!(
+            start_mode(&deeper, Some(&empty(1_000)), None),
+            StartMode::Anchor
+        );
     }
 
     #[test]

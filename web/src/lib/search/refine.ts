@@ -1,5 +1,5 @@
 import type { QueryDocument, RequirementDocument } from '../wasm/types'
-import type { SearchStatus } from './coordinator-state'
+import type { CoordinatorState, SearchStatus } from './coordinator-state'
 import type { SeedRange } from './traversal'
 
 /** Canonical fingerprint for one requirement, independent of key order. */
@@ -72,6 +72,58 @@ export function shouldRefine(base: RefineBase, query: QueryDocument): boolean {
   } catch {
     return false
   }
+}
+
+/**
+ * Whether two queries name a common item: some requirement of each has the
+ * same kind, and either both name the same item or at least one names none
+ * (a kind-level requirement subsumes every item of its kind). Scope and
+ * challenge differences are irrelevant — a filter re-verifies seeds from
+ * scratch — so this deliberately checks nothing else: it only estimates
+ * whether the Target Set is enriched for the candidate query's matches.
+ */
+export function sharesRequirement(candidate: QueryDocument, base: QueryDocument): boolean {
+  return candidate.requirements.some((left) =>
+    base.requirements.some(
+      (right) =>
+        (left.kind == null || right.kind == null || left.kind === right.kind) &&
+        (left.item == null || right.item == null || left.item === right.item),
+    ),
+  )
+}
+
+/** What pressing Start Search does with a query, per docs/search-semantics.md. */
+export type StartMode =
+  /** Fresh full-range scan that establishes the Target on conclusion. */
+  | 'anchor'
+  /** Filter the Target Set, then resume the target's uncovered remainder. */
+  | 'target-refine'
+  /** Filter the Target Set only; coverage and set stay untouched. */
+  | 'target-filter'
+  /** Continue the previous detached scan (filter its results, resume its remainder). */
+  | 'continue-detached'
+  /** Fresh full-range scan that leaves the Target untouched. */
+  | 'detached'
+
+/**
+ * The single gate for what Start Search does. The Target Set is the anchor:
+ * a continuation of the Target Query refines it, a query sharing an item
+ * filters it (always from the full set, so loosening a requirement brings
+ * seeds back), and anything else scans the full range without touching it.
+ * An empty Target Set holds nothing worth preserving, so a non-continuing
+ * query re-anchors on this search instead of filtering nothing.
+ */
+export function decideStart(state: CoordinatorState, query: QueryDocument): StartMode {
+  const target = state.target
+  if (!target) return 'anchor'
+  const continuesTarget = isContinuationOf(query, target.query)
+  if (target.matches.length === 0) {
+    return continuesTarget && segmentsLength(target.remainder) > 0 ? 'target-refine' : 'anchor'
+  }
+  if (continuesTarget) return 'target-refine'
+  if (sharesRequirement(query, target.query)) return 'target-filter'
+  if (state.runKind === 'detached' && shouldRefine(state, query)) return 'continue-detached'
+  return 'detached'
 }
 
 /**

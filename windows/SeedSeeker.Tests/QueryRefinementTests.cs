@@ -103,11 +103,49 @@ public sealed class QueryRefinementTests
     [Fact]
     public void PinnedItemsAreComparedByIdentity()
     {
-        ItemRequirement Pinned(string id) => new()
-        {
-            Kind = ItemKind.Ring, Item = new CatalogItem(id, id, ItemKind.Ring, 0, 3),
-        };
         Assert.True(QueryRefinement.CanRefine(Query(Pinned("ring_wealth")), Query(Pinned("ring_wealth"))));
         Assert.False(QueryRefinement.CanRefine(Query(Pinned("ring_force")), Query(Pinned("ring_wealth"))));
+    }
+
+    private static ItemRequirement Pinned(string id) => new()
+    {
+        Kind = ItemKind.Ring, Item = new CatalogItem(id, id, ItemKind.Ring, 0, 3),
+    };
+
+    [Fact]
+    public void SharingNeedsOnlyOneCommonKind()
+    {
+        Assert.True(QueryRefinement.SharesRequirement(Query(Wand()), Query(Wand(), Ring())));
+        Assert.True(QueryRefinement.SharesRequirement(Query(Ring(), Wand()), Query(Wand())));
+        Assert.False(QueryRefinement.SharesRequirement(Query(Wand()), Query(Ring())));
+        Assert.False(QueryRefinement.SharesRequirement(Query(), Query(Wand())));
+        Assert.False(QueryRefinement.SharesRequirement(Query(Wand()), Query()));
+    }
+
+    [Fact]
+    public void AKindLevelRequirementSubsumesEveryItemOfItsKind()
+    {
+        Assert.True(QueryRefinement.SharesRequirement(Query(Pinned("ring_wealth")), Query(Ring())));
+        Assert.True(QueryRefinement.SharesRequirement(Query(Ring()), Query(Pinned("ring_wealth"))));
+        Assert.True(QueryRefinement.SharesRequirement(Query(Pinned("ring_wealth")), Query(Pinned("ring_wealth"))));
+        Assert.False(QueryRefinement.SharesRequirement(Query(Pinned("ring_force")), Query(Pinned("ring_wealth"))));
+    }
+
+    [Fact]
+    public void SharingIgnoresScopeChallengesAndOtherPredicates()
+    {
+        // A filter re-verifies seeds from scratch under the candidate query,
+        // so only the kind/item overlap matters — never scope or predicates.
+        var narrowed = Query(Ring(4)); narrowed.MaximumDepth = 5; narrowed.Challenges = 4; narrowed.FastMode = true;
+        Assert.True(QueryRefinement.SharesRequirement(narrowed, Query(Ring())));
+    }
+
+    [Fact]
+    public void WeaponClassesAreDistinctKindsForSharing()
+    {
+        // Mirrors the web rule: 'weapon' and 'melee_weapon' are different kinds.
+        static ItemRequirement Of(ItemKind kind) => new() { Kind = kind };
+        Assert.True(QueryRefinement.SharesRequirement(Query(Of(ItemKind.MeleeWeapon)), Query(Of(ItemKind.MeleeWeapon))));
+        Assert.False(QueryRefinement.SharesRequirement(Query(Of(ItemKind.Weapon)), Query(Of(ItemKind.MeleeWeapon))));
     }
 }

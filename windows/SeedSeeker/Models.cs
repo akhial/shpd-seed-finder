@@ -149,6 +149,73 @@ public static class QueryRefinement
 
     private static string Signature(ItemRequirement r) =>
         $"{r.Item?.Id}|{r.Upgrade}|{r.Modifier}|{r.Kind}|{r.Tier}|{r.TierMatch}|{r.UpgradeMatch}|{r.Source}|{r.IdentityGroup}|{r.MaximumDepth}|{r.RequireUncursed}";
+
+    /// <summary>
+    /// Whether two queries name a common item: some requirement of each has the
+    /// same kind, and either both name the same item or at least one names none
+    /// (a kind-level requirement subsumes every item of its kind). Scope and
+    /// challenge differences are irrelevant — a filter re-verifies seeds from
+    /// scratch — so this deliberately checks nothing else: it only estimates
+    /// whether the Target Set is enriched for the candidate query's matches.
+    /// </summary>
+    public static bool SharesRequirement(QuerySettings candidate, QuerySettings baseline) =>
+        candidate.Requirements.Any(left => baseline.Requirements.Any(right =>
+            left.Kind == right.Kind
+            && (left.Item is null || right.Item is null || left.Item.Id == right.Item.Id)));
+}
+
+/// <summary>What pressing Start Search does with a query, per docs/search-semantics.md.</summary>
+public enum StartMode
+{
+    /// <summary>Fresh full-range scan that establishes the Target on conclusion.</summary>
+    Anchor,
+    /// <summary>Filter the Target Set, then resume the target's uncovered remainder.</summary>
+    TargetRefine,
+    /// <summary>Filter the Target Set only; coverage and set stay untouched.</summary>
+    TargetFilter,
+    /// <summary>Continue the previous detached scan (filter its results, resume its remainder).</summary>
+    ContinueDetached,
+    /// <summary>Fresh full-range scan that leaves the Target untouched.</summary>
+    Detached,
+}
+
+/// <summary>
+/// The session's anchor: established by the first concluded search (or an
+/// import) and reset only by Clear Results. <see cref="Seeds"/> is uncapped and
+/// a superset of any related run's display, which is what lets a loosened query
+/// bring seeds back. <see cref="Remaining"/> is zero for imports, whose refines
+/// are filter-only.
+/// </summary>
+public sealed record TargetRun(QuerySettings Query, IReadOnlyList<string> Seeds, long ResumeFrom, long Remaining);
+
+/// <summary>
+/// The single gate for what Start Search does (docs/search-semantics.md). The
+/// Target Set is the anchor: a continuation of the Target Query refines it, a
+/// query sharing an item filters it (always from the full set, so loosening a
+/// requirement brings seeds back), and anything else scans the full range
+/// without touching it — continuing the previous detached scan when that is
+/// sound. An empty Target Set holds nothing worth preserving, so a
+/// non-continuing query re-anchors on this search instead of filtering nothing.
+/// </summary>
+public static class SearchPlan
+{
+    /// <param name="query">The query about to run.</param>
+    /// <param name="target">The session's Target, if one has been established.</param>
+    /// <param name="lastDetachedQuery">The query of the previous run when that
+    /// run was a detached scan that concluded (completed or cancelled), null
+    /// otherwise. Only such a run may be continued by a query unrelated to the
+    /// Target; a failed run is never a continuation base.</param>
+    public static StartMode DecideStart(QuerySettings query, TargetRun? target, QuerySettings? lastDetachedQuery = null)
+    {
+        if (target is null) return StartMode.Anchor;
+        var continuesTarget = QueryRefinement.CanRefine(query, target.Query);
+        if (target.Seeds.Count == 0)
+            return continuesTarget && target.Remaining > 0 ? StartMode.TargetRefine : StartMode.Anchor;
+        if (continuesTarget) return StartMode.TargetRefine;
+        if (QueryRefinement.SharesRequirement(query, target.Query)) return StartMode.TargetFilter;
+        if (lastDetachedQuery is not null && QueryRefinement.CanRefine(query, lastDetachedQuery)) return StartMode.ContinueDetached;
+        return StartMode.Detached;
+    }
 }
 
 public sealed class QueryPreset

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyProgress, calculateRate, importedResultsState, initialCoordinatorState, markWorkerDone, mergeMatches, type CoordinatorState } from './coordinator-state'
+import { applyProgress, calculateRate, importedResultsState, initialCoordinatorState, markWorkerDone, mergeMatches, settleRun, type CoordinatorState } from './coordinator-state'
 
 const match = (value: number) => ({ value, code: value.toString().padStart(9, 'A') })
 
@@ -95,5 +95,73 @@ describe('stop bookkeeping', () => {
   it('ignores terminal reports from stale sessions', () => {
     const state = running()
     expect(markWorkerDone(state, { sessionId: 2, workerId: 0, scanned: [10], kind: 'done', now: 2_000 })).toBe(state)
+  })
+})
+
+describe('settleRun', () => {
+  const query = { requirements: [{ kind: 'ring' as const }] }
+  const concluded = (overrides: Partial<CoordinatorState>): CoordinatorState => ({
+    ...initialCoordinatorState(1_000),
+    state: 'completed',
+    query,
+    queryJson: JSON.stringify(query),
+    matches: [match(11), match(22)],
+    segments: [[{ startSeed: 0, endSeedExclusive: 1_000 }]],
+    workerScanned: { 0: [400] },
+    ...overrides,
+  })
+
+  it('establishes the Target from a concluded anchor run', () => {
+    const settled = settleRun(concluded({ runKind: 'anchor' }))
+    expect(settled.target).toEqual({
+      queryJson: JSON.stringify(query),
+      query,
+      matches: [match(11), match(22)],
+      remainder: [{ startSeed: 400, endSeedExclusive: 1_000 }],
+    })
+  })
+
+  it('grows the Target Set and advances coverage after a target refine', () => {
+    const target = {
+      queryJson: JSON.stringify(query),
+      query,
+      matches: [match(11), match(22), match(33)],
+      remainder: [{ startSeed: 400, endSeedExclusive: 1_000 }],
+    }
+    // The refined run kept 11 and found 44 while scanning 400..700 of the remainder.
+    const settled = settleRun(concluded({
+      runKind: 'target-refine',
+      target,
+      matches: [match(11), match(44)],
+      segments: [[{ startSeed: 400, endSeedExclusive: 1_000 }]],
+      workerScanned: { 0: [300] },
+    }))
+    expect(settled.target?.matches.map((item) => item.value)).toEqual([11, 22, 33, 44])
+    expect(settled.target?.remainder).toEqual([{ startSeed: 700, endSeedExclusive: 1_000 }])
+    expect(settled.target?.query).toEqual(query)
+  })
+
+  it('leaves the Target alone after a target filter or a detached run', () => {
+    const target = { queryJson: JSON.stringify(query), query, matches: [match(11)], remainder: [] }
+    for (const runKind of ['target-filter', 'detached'] as const) {
+      const settled = settleRun(concluded({ runKind, target, matches: [match(99)] }))
+      expect(settled.target).toBe(target)
+    }
+  })
+
+  it('does nothing for a run that has not concluded, or that failed', () => {
+    for (const state of ['running', 'stopping', 'failed', 'idle'] as const) {
+      const input = concluded({ state, runKind: 'anchor' })
+      expect(settleRun(input).target).toBeUndefined()
+    }
+  })
+})
+
+describe('imported results as Target', () => {
+  it('makes the imported query and seeds the Target with no coverage', () => {
+    const state = importedResultsState(initialCoordinatorState(1_000), [match(5), match(6)], { requirements: [{ kind: 'wand' }] })
+    expect(state.target?.matches.map((item) => item.value)).toEqual([5, 6])
+    expect(state.target?.query).toEqual({ requirements: [{ kind: 'wand' }] })
+    expect(state.target?.remainder).toEqual([])
   })
 })

@@ -18,7 +18,7 @@ use shpd_seedfinder_session::MAX_ACCEPTED_RESULTS;
 const MAX_RESULTS_FILE_BYTES: usize = 2 * 1024 * 1024;
 
 use crate::config::APP_NAME;
-use crate::state::{AppState, StartMode, UiRequirement};
+use crate::state::{AppState, UiRequirement};
 use crate::{
     challenges_dialog, detail_pane, persist, presets_dialog, query_pane, requirement_editor,
     results_pane, update,
@@ -296,14 +296,11 @@ pub fn present(app: &adw::Application) {
             }
             match state.borrow().to_query() {
                 Ok(search_query) => {
-                    // Refining is implicit: when the edited query only adds
-                    // requirements to the finished search, its found seeds are
-                    // filtered and the scan resumes where it stopped. Anything
-                    // else scans the whole range again.
-                    match results.start_mode(&search_query) {
-                        StartMode::Refine => results.refine(search_query.clone()),
-                        StartMode::Fresh => results.start(search_query.clone()),
-                    }
+                    // The pane dispatches on the query's relationship to the
+                    // session's Target (docs/search-semantics.md): related
+                    // queries refine or filter the Target Set, unrelated ones
+                    // scan detached without touching it.
+                    results.start_search(search_query.clone());
                     if results.is_running() {
                         exported_query.replace(Some(search_query));
                         query.set_running(true);
@@ -479,10 +476,12 @@ pub fn present(app: &adw::Application) {
                                 MAX_ACCEPTED_RESULTS,
                             );
                             *state.borrow_mut() = AppState::from_query(&imported.query);
-                            exported_query.replace(Some(imported.query));
                             let codes: Vec<String> =
                                 kept.iter().map(|seed| seed.to_code()).collect();
-                            results.load_imported(&codes);
+                            // The import becomes the session's Target: the
+                            // imported query plus seeds, with no coverage.
+                            results.load_imported(&codes, &imported.query);
+                            exported_query.replace(Some(imported.query));
                             refresh_all();
                             let mut message = format!(
                                 "Imported {} seed{}",

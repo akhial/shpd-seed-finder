@@ -347,6 +347,31 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertFalse(try SearchRequest(requirements: added.requirements, challenges: 32).isRefinement(of: base))
     }
 
+    func testSearchRequestSharedItemRules() throws {
+        func request(_ kind: ItemKind, item: CatalogItem? = nil, maximumDepth: Int = 24,
+                     challenges: Int = 0) throws -> SearchRequest {
+            try SearchRequest(requirements: [
+                ItemRequirement(key: 1, item: item, upgrade: 0, kind: kind, upgradeMatch: .any)],
+                maximumDepth: maximumDepth, challenges: challenges)
+        }
+        let anyWand = try request(.wand)
+        let missile = try request(.wand, item: ItemCatalog.wands[0])
+        let fireblast = try request(.wand, item: ItemCatalog.wands[1])
+        // Same kind: a kind-level requirement subsumes every item of its kind.
+        XCTAssertTrue(anyWand.sharesRequirement(with: missile))
+        XCTAssertTrue(missile.sharesRequirement(with: anyWand))
+        XCTAssertTrue(missile.sharesRequirement(with: missile))
+        // Same kind but two different named items share nothing.
+        XCTAssertFalse(missile.sharesRequirement(with: fireblast))
+        // Different kinds never share, and the narrowed weapon kinds count as
+        // kinds of their own (matching the other platforms).
+        XCTAssertFalse(anyWand.sharesRequirement(with: try request(.ring)))
+        XCTAssertFalse(try request(.weapon).sharesRequirement(with: try request(.meleeWeapon)))
+        // Scope and challenge differences are irrelevant to sharing.
+        XCTAssertTrue(anyWand.sharesRequirement(with: try request(.wand, maximumDepth: 12)))
+        XCTAssertTrue(anyWand.sharesRequirement(with: try request(.wand, challenges: 32)))
+    }
+
     func testRealFFIScout() async throws {
         let world = try await ProductionSeedFinderEngine().scoutSeed("AAA-AAA-AAA", challenges: 0)
         XCTAssertFalse(world.items.isEmpty)

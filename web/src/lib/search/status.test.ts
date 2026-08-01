@@ -24,10 +24,10 @@ describe('searchStatusNotes', () => {
     ])
   })
 
-  it('reports the kept count while a refined search scans the remaining range', () => {
+  it('reports the kept count while a refined search scans for more', () => {
     const notes = searchStatusNotes(state({ state: 'running', refined: { kept: 96, of: 128 } }))
     expect(notes).toEqual([
-      { kind: 'refine', text: 'Kept 96 of 128 previous seeds — searching the remaining range…' },
+      { kind: 'refine', text: 'Kept 96 of 128 previous seeds — searching for more…' },
     ])
   })
 

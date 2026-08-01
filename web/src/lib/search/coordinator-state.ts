@@ -1,9 +1,28 @@
 import type { ParsedSeed, QueryDocument } from '../wasm/types'
+// Type-only in the other direction, so this runtime import is not a cycle.
+import { remainingSegments } from './refine'
 import type { SeedRange } from './traversal'
 
 export type SearchStatus = 'idle' | 'running' | 'stopping' | 'completed' | 'cancelled' | 'failed' | 'imported'
 export interface RateSample { at: number; tested: number }
 export interface RefineSummary { kept: number; of: number }
+
+/** How the current (or last) run relates to the Target — see
+ * docs/search-semantics.md. A continued detached scan stays 'detached'. */
+export type RunKind = 'anchor' | 'target-refine' | 'target-filter' | 'detached'
+
+/** The session's anchor: established by the first concluded search (or an
+ * import) and reset only by Clear. `matches` is uncapped and a superset of
+ * any related run's display, which is what lets a loosened query bring
+ * seeds back. */
+export interface TargetState {
+  queryJson: string
+  query: QueryDocument
+  /** Every unique match delivered for the Target Query, sorted by value. */
+  matches: ParsedSeed[]
+  /** Seed ranges the target traversal has not covered; empty for imports. */
+  remainder: SeedRange[]
+}
 export interface CoordinatorState {
   sessionId: number
   state: SearchStatus
@@ -38,6 +57,9 @@ export interface CoordinatorState {
   query?: QueryDocument
   /** Imported entries dropped as duplicates or beyond the result cap. */
   importedDropped?: number
+  /** The session's Target, if one has been established. */
+  target?: TargetState
+  runKind: RunKind
 }
 
 export const RESULT_CAP = 1_024
@@ -58,6 +80,7 @@ export const initialCoordinatorState = (total = 0): CoordinatorState => ({
   segments: [],
   queryJson: '',
   filtering: false,
+  runKind: 'anchor',
 })
 
 /**
@@ -68,7 +91,7 @@ export const initialCoordinatorState = (total = 0): CoordinatorState => ({
  */
 export function canClearResults(state: CoordinatorState): boolean {
   if (state.state === 'running' || state.state === 'stopping') return false
-  return state.state !== 'idle' || state.matches.length > 0
+  return state.state !== 'idle' || state.matches.length > 0 || state.target !== undefined
 }
 
 export function mergeMatches(existing: ParsedSeed[], incoming: ParsedSeed[], cap = RESULT_CAP): { matches: ParsedSeed[]; capped: boolean } {
@@ -97,8 +120,9 @@ export function calculateRate(samples: RateSample[]): number {
  * Replaces the whole search state with results restored from a file.
  * Matching every other platform, imported seeds are deduplicated (keeping the
  * first occurrence) and capped at the result limit, with the dropped count
- * reported for the UI. The fresh base state carries no segments or scanned
- * regions, so an imported result set is never offered for refining.
+ * reported for the UI. The import becomes the session's Target with empty
+ * coverage — related queries filter it, but nothing ever resumes a scan
+ * from it.
  */
 export function importedResultsState(state: CoordinatorState, matches: ParsedSeed[], query: QueryDocument): CoordinatorState {
   const seen = new Set<string>()
@@ -118,7 +142,33 @@ export function importedResultsState(state: CoordinatorState, matches: ParsedSee
     capped: kept.length === RESULT_CAP && matches.length > RESULT_CAP,
     query,
     importedDropped: matches.length - kept.length,
+    // The imported query and seeds become the session's Target, with no
+    // coverage: refines of an import are filter-only.
+    target: { queryJson: JSON.stringify(query), query, matches: kept, remainder: [] },
   }
+}
+
+/**
+ * Folds a run that just reached a terminal state into the Target, per
+ * docs/search-semantics.md: an anchor run (or the first run of a session)
+ * establishes the Target from its own results and coverage; a target refine
+ * grows the set with its new finds and advances the coverage; a target
+ * filter or detached run leaves the Target exactly as it was. Every
+ * transition into 'completed' or 'cancelled' must pass through here.
+ * A failed run establishes nothing — its coverage is unknown.
+ */
+export function settleRun(state: CoordinatorState): CoordinatorState {
+  if (state.state !== 'completed' && state.state !== 'cancelled') return state
+  if (state.runKind === 'target-filter' || state.runKind === 'detached') return state
+  const remainder = remainingSegments(state.segments, state.workerScanned)
+  if (state.runKind === 'anchor' || !state.target) {
+    if (!state.query) return state
+    return { ...state, target: { queryJson: state.queryJson, query: state.query, matches: state.matches, remainder } }
+  }
+  // The refined run's survivors were already members; only new finds from
+  // the resumed scan grow the set. The stored set is never capped.
+  const merged = mergeMatches(state.target.matches, state.matches, Number.POSITIVE_INFINITY)
+  return { ...state, target: { ...state.target, matches: merged.matches, remainder } }
 }
 
 const sumScanned = (workerScanned: Record<number, number[]>): number =>
@@ -134,7 +184,7 @@ export function applyProgress(state: CoordinatorState, update: ProgressUpdate): 
   const tested = sumScanned(workerScanned)
   const merged = mergeMatches(state.matches, update.matches)
   const rateSamples = [...state.rateSamples, { at: update.now, tested }].filter((sample) => update.now - sample.at <= 5_000)
-  return {
+  return settleRun({
     ...state,
     workerScanned,
     tested,
@@ -144,7 +194,7 @@ export function applyProgress(state: CoordinatorState, update: ProgressUpdate): 
     elapsed: update.now - state.startedAt,
     rateSamples,
     rate: calculateRate(rateSamples),
-  }
+  })
 }
 
 export interface WorkerTerminal { sessionId: number; workerId: number; scanned: number[]; kind: 'done' | 'stopped'; now: number }
@@ -154,12 +204,12 @@ export function markWorkerDone(state: CoordinatorState, update: WorkerTerminal):
   const workerScanned = { ...state.workerScanned, [update.workerId]: update.scanned }
   const completedWorkers = state.completedWorkers + 1
   const finished = completedWorkers >= state.workerCount
-  return {
+  return settleRun({
     ...state,
     workerScanned,
     tested: sumScanned(workerScanned),
     completedWorkers,
     state: finished ? (state.state === 'stopping' ? 'cancelled' : 'completed') : state.state,
     elapsed: update.now - state.startedAt,
-  }
+  })
 }

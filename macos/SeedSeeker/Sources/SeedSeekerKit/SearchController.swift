@@ -13,6 +13,44 @@ public struct BaseRun: Sendable {
     }
 }
 
+/// How the current (or last) run relates to the session's Target — see
+/// docs/search-semantics.md. A continued detached scan stays `.detached`.
+public enum RunKind: Sendable {
+    case anchor, targetRefine, targetFilter, detached
+}
+
+/// What pressing Start Search does with a request, per docs/search-semantics.md.
+public enum StartMode: Sendable {
+    /// Fresh full-range scan that establishes the Target on conclusion.
+    case anchor
+    /// Filter the full Target Set, then resume the target's uncovered remainder.
+    case targetRefine
+    /// Filter the full Target Set only; coverage and set stay untouched.
+    case targetFilter
+    /// Continue the previous detached scan (filter its results, resume its remainder).
+    case continueDetached
+    /// Fresh full-range scan that leaves the Target untouched.
+    case detached
+}
+
+/// The session's anchor: established by the first concluded search (or an
+/// import) and reset only by Clear. `seeds` is uncapped and a superset of any
+/// related run's display, which is what lets a loosened query bring seeds
+/// back. `resumeFrom`/`remaining` are the coverage the target traversal has
+/// not completed; imports carry none.
+public struct TargetState: Sendable {
+    public let request: SearchRequest
+    /// Every unique seed the Target Query's traversal has delivered, in
+    /// discovery order.
+    public var seeds: [String]
+    public var resumeFrom: Int64
+    public var remaining: Int64
+    public init(request: SearchRequest, seeds: [String], resumeFrom: Int64, remaining: Int64) {
+        self.request = request; self.seeds = seeds
+        self.resumeFrom = resumeFrom; self.remaining = remaining
+    }
+}
+
 @MainActor @Observable
 public final class SearchController {
     public private(set) var state: SearchState?
@@ -27,8 +65,17 @@ public final class SearchController {
     public private(set) var isRunning = false
     /// The last finished (completed or cancelled) run, ready to be refined.
     public private(set) var baseRun: BaseRun?
+    /// The session's Target, if one has been established — see
+    /// docs/search-semantics.md. Only `clearResults()` discards it.
+    public private(set) var target: TargetState?
+    /// How the current (or last) run relates to the Target.
+    public private(set) var runKind: RunKind = .anchor
     /// How many previous results survived the last refine; nil after a fresh search.
     public private(set) var refinedKept: Int?
+    /// The size of the set the last refine filtered (the "of Y" in "kept X of
+    /// Y"): the full Target Set for a target refine or filter, the previous
+    /// run's results for a continued detached scan. Nil after a fresh search.
+    public private(set) var refinedOf: Int?
     /// Whether the current results were restored from an imported file
     /// rather than produced by a search.
     public private(set) var isImported = false
@@ -76,21 +123,64 @@ public final class SearchController {
         errorCode = 0; message = nil; state = nil; isImported = true; selectedSeed = nil
         // Imported results carry no traversal state, so the previous
         // search's base run no longer describes the listed seeds.
-        baseRun = nil; refinedKept = nil
+        baseRun = nil; refinedKept = nil; refinedOf = nil; runKind = .anchor
+        // The imported query and seeds replace the session's Target, with no
+        // coverage: refines of an import are filter-only.
+        let request = try? SearchRequest(
+            requirements: query.requirements, maximumDepth: query.maximumDepth,
+            requireBlacksmith: query.requireBlacksmith,
+            excludeBlacksmithRewards: query.excludeBlacksmithRewards,
+            fastMode: query.fastMode, challenges: query.challenges)
+        target = request.map { TargetState(request: $0, seeds: unique, resumeFrom: 0, remaining: 0) }
     }
 
-    /// Starts `request`. When it narrows — or simply repeats — the last
-    /// finished run this silently refines that run: filtering the seeds
-    /// already found and resuming the scan instead of rescanning from zero.
-    /// There is no user-facing choice: eligibility alone decides. Results
-    /// therefore survive until the query widens or `clearResults()` is used.
+    /// Starts `request`, dispatching on its relationship to the session's
+    /// Target (docs/search-semantics.md): a continuation of the Target Query
+    /// refines the Target Set and resumes its coverage, a request sharing an
+    /// item filters the full set, and an unrelated request scans the whole
+    /// range without touching the Target — continuing the previous detached
+    /// scan when that is sound. There is no user-facing choice: eligibility
+    /// alone decides, and only `clearResults()` discards anything.
     public func start(_ request: SearchRequest) {
-        if canRefine(with: request) { refine(request) } else { freshSearch(request) }
+        switch decideStart(request) {
+        case .targetRefine: refineTarget(request, resumesScan: true)
+        case .targetFilter: refineTarget(request, resumesScan: false)
+        case .continueDetached: continueDetached(request)
+        case .anchor: freshSearch(request, as: .anchor)
+        case .detached: freshSearch(request, as: .detached)
+        }
     }
 
-    private func freshSearch(_ request: SearchRequest) {
-        task?.cancel(); results = []; refinedKept = nil; baseRun = nil; resetProgress()
+    /// The single gate for what Start Search does. The Target Set is the
+    /// anchor: a continuation of the Target Query refines it, a request
+    /// sharing an item filters it (always from the full set, so loosening a
+    /// requirement brings seeds back), and anything else scans the full range
+    /// without touching it. An empty Target Set holds nothing worth
+    /// preserving, so a non-continuing request re-anchors on this search
+    /// instead of filtering nothing.
+    public func decideStart(_ request: SearchRequest) -> StartMode {
+        guard let target else { return .anchor }
+        // A start while a search is running restarts from scratch (the UI
+        // offers Cancel instead); only an idle controller can filter the
+        // Target Set or resume a scan soundly.
+        guard !isRunning else { return .detached }
+        let continuesTarget = request.isRefinement(of: target.request)
+        if target.seeds.isEmpty {
+            return continuesTarget && target.remaining > 0 ? .targetRefine : .anchor
+        }
+        if continuesTarget { return .targetRefine }
+        if request.sharesRequirement(with: target.request) { return .targetFilter }
+        if runKind == .detached, canRefine(with: request) { return .continueDetached }
+        return .detached
+    }
+
+    /// Scans the whole seed space from scratch, replacing the displayed
+    /// results. An `.anchor` run establishes the Target when it concludes; a
+    /// `.detached` run leaves the existing Target untouched.
+    private func freshSearch(_ request: SearchRequest, as kind: RunKind) {
+        task?.cancel(); results = []; refinedKept = nil; refinedOf = nil; baseRun = nil; resetProgress()
         isImported = false; importedDropped = 0
+        runKind = kind
         exportQuery = SavedQuery(
             requirements: request.requirements, maximumDepth: request.maximumDepth,
             requireBlacksmith: request.requireBlacksmith,
@@ -104,9 +194,11 @@ public final class SearchController {
         }
     }
 
-    /// Whether starting `request` would refine the last finished run rather
+    /// Whether starting `request` could continue the last finished run rather
     /// than rescan: nothing running, a base run on record, and the same
-    /// requirements or more at identical scope.
+    /// requirements or more at identical scope. `decideStart(_:)` consults
+    /// this for the detached thread only; a continuation of the Target Query
+    /// always refines the Target instead.
     public func canRefine(with request: SearchRequest) -> Bool {
         guard !isRunning, let baseRun else { return false }
         return request.isRefinement(of: baseRun.request)
@@ -114,26 +206,89 @@ public final class SearchController {
 
     /// Whether there is anything for `clearResults()` to discard.
     public var canClearResults: Bool {
-        !isRunning && (!results.isEmpty || state != nil || baseRun != nil || exportQuery != nil)
+        !isRunning && (!results.isEmpty || state != nil || baseRun != nil
+            || exportQuery != nil || target != nil)
     }
 
-    /// Empties the results area and forgets the finished run, so the next
-    /// search is a fresh full scan rather than a refine. Ignored while a
-    /// search or filter phase is running.
+    /// Empties the results area along with the Target behind it — the Target
+    /// Query, the Target Set, and the coverage a later start would otherwise
+    /// refine or resume — so the next search anchors a new session from
+    /// scratch. This is the only action that discards the Target. Ignored
+    /// while a search or filter phase is running.
     public func clearResults() {
         guard !isRunning else { return }
         results = []; selectedSeed = nil; exportQuery = nil
         isImported = false; importedDropped = 0
-        baseRun = nil; refinedKept = nil
+        baseRun = nil; refinedKept = nil; refinedOf = nil
+        target = nil; runKind = .anchor
         scannedSeeds = 0; totalSeeds = 0; matchProbability = nil; seedsPerSecond = 0; elapsed = 0
         errorCode = 0; message = nil; state = nil
     }
 
-    /// Continues the finished base run: re-verifies the seeds already found
-    /// against `request` — which may be identical, in which case every seed
-    /// survives — then completes the base run's remaining seed-space coverage
-    /// with a resumed scan, deduplicating by seed.
-    private func refine(_ request: SearchRequest) {
+    /// Refines against the Target: the full Target Set is re-verified against
+    /// `request`, the survivors become the displayed results, and — when
+    /// `resumesScan` — the scan then continues over the target's uncovered
+    /// remainder, deduplicating by seed. The base is always the full Target
+    /// Set rather than the last run's survivors, so loosening back toward the
+    /// Target Query brings previously dropped seeds back. A cancelled or
+    /// failed filter phase leaves the previous results and the Target intact.
+    private func refineTarget(_ request: SearchRequest, resumesScan: Bool) {
+        guard let target else { return }
+        // Re-assert the equal-or-superset invariant here rather than trusting
+        // the decision: the soundness of resuming depends on it.
+        if resumesScan { guard request.isRefinement(of: target.request) else { return } }
+        task?.cancel(); resetProgress()
+        let restoreKind = runKind
+        runKind = resumesScan ? .targetRefine : .targetFilter
+        let baseSeeds = target.seeds
+        task = Task { [weak self] in
+            guard let self else { return }
+            let kept: [String]
+            do {
+                kept = try await engine.filterSeeds(request, seeds: baseSeeds)
+            } catch is CancellationError {
+                // The user backed out before the filter finished; the Target
+                // was never consumed, so it stays refinable as-is.
+                self.state = .cancelled; self.refinedKept = nil; self.refinedOf = nil
+                self.runKind = restoreKind; self.isRunning = false
+                return
+            } catch {
+                // The Target is still intact — keep it so the user can retry.
+                self.state = .failed; self.message = error.localizedDescription
+                self.refinedKept = nil; self.refinedOf = nil
+                self.runKind = restoreKind; self.isRunning = false
+                return
+            }
+            self.results = kept.map { SeedResult(seed: $0, matchedRequirements: request.requirements.count) }
+            self.refinedKept = kept.count; self.refinedOf = baseSeeds.count
+            // From here on the listed results match the refined request, so
+            // that is what an export must claim. A cancel or failure above
+            // leaves the previous results — and their snapshot — untouched.
+            self.exportQuery = SavedQuery(
+                requirements: request.requirements, maximumDepth: request.maximumDepth,
+                requireBlacksmith: request.requireBlacksmith,
+                excludeBlacksmithRewards: request.excludeBlacksmithRewards,
+                fastMode: request.fastMode, challenges: request.challenges)
+            // A filter never scans; a refine resumes the target's remainder.
+            if resumesScan && target.remaining > 0 {
+                await self.run(request, alreadyShown: Set(kept)) { engine in
+                    try await engine.startResumedSearch(request, resumeFrom: target.resumeFrom,
+                                                        scanLen: target.remaining)
+                }
+            } else {
+                self.state = .completed
+                self.baseRun = BaseRun(request: request, resumeFrom: target.resumeFrom, remaining: 0)
+                self.isRunning = false
+            }
+        }
+    }
+
+    /// Continues the previous detached scan (the classic pre-Target refine
+    /// behaviour, scoped to the detached thread): its displayed results are
+    /// re-verified against `request` and the scan resumes over the range it
+    /// never covered. The Target is untouched throughout, and `runKind` stays
+    /// `.detached`.
+    private func continueDetached(_ request: SearchRequest) {
         guard canRefine(with: request), let base = baseRun else { return }
         task?.cancel(); resetProgress()
         let previousSeeds = results.map(\.seed)
@@ -145,19 +300,17 @@ public final class SearchController {
             } catch is CancellationError {
                 // The user backed out before the filter finished; the base run
                 // was never consumed, so it stays refinable as-is.
-                self.state = .cancelled; self.refinedKept = nil; self.isRunning = false
+                self.state = .cancelled; self.refinedKept = nil; self.refinedOf = nil
+                self.isRunning = false
                 return
             } catch {
                 // The base run is still intact — keep it so the user can retry.
                 self.state = .failed; self.message = error.localizedDescription
-                self.refinedKept = nil; self.isRunning = false
+                self.refinedKept = nil; self.refinedOf = nil; self.isRunning = false
                 return
             }
             self.results = kept.map { SeedResult(seed: $0, matchedRequirements: request.requirements.count) }
-            self.refinedKept = kept.count
-            // From here on the listed results match the refined request, so
-            // that is what an export must claim. A cancel or failure above
-            // leaves the base results — and their snapshot — untouched.
+            self.refinedKept = kept.count; self.refinedOf = previousSeeds.count
             self.exportQuery = SavedQuery(
                 requirements: request.requirements, maximumDepth: request.maximumDepth,
                 requireBlacksmith: request.requireBlacksmith,
@@ -230,9 +383,11 @@ public final class SearchController {
                 try await Task.sleep(for: .milliseconds(150))
             }
             if finalState == .completed || finalState == .cancelled {
-                self.baseRun = (try? await session.resumeHint()).map {
+                let hint = try? await session.resumeHint()
+                self.baseRun = hint.map {
                     BaseRun(request: request, resumeFrom: $0.position, remaining: $0.remaining)
                 }
+                self.settleConcludedRun(request: request, hint: hint)
             }
             await session.close()
         } catch is CancellationError {
@@ -243,6 +398,35 @@ public final class SearchController {
             self.baseRun = nil
         }
         self.session = nil; self.isRunning = false
+    }
+
+    /// Folds a concluded (completed or cancelled) run into the Target, per
+    /// docs/search-semantics.md: an anchor run establishes it from its own
+    /// results and coverage, a target refine grows the set with its new finds
+    /// and advances the coverage, and a target filter or detached run leaves
+    /// it exactly as it was. A failed run never reaches here — its coverage
+    /// is unknown.
+    private func settleConcludedRun(request: SearchRequest, hint: ResumeHint?) {
+        switch runKind {
+        case .targetFilter, .detached:
+            return
+        case .anchor:
+            target = TargetState(request: request, seeds: results.map(\.seed),
+                                 resumeFrom: hint?.position ?? 0, remaining: hint?.remaining ?? 0)
+        case .targetRefine:
+            guard var updated = target else {
+                target = TargetState(request: request, seeds: results.map(\.seed),
+                                     resumeFrom: hint?.position ?? 0, remaining: hint?.remaining ?? 0)
+                return
+            }
+            // The filter's survivors were already members; only new finds
+            // from the resumed scan grow the set. The stored set is never
+            // capped, and the Target Query stays the original one.
+            var seen = Set(updated.seeds)
+            updated.seeds += results.map(\.seed).filter { seen.insert($0).inserted }
+            if let hint { updated.resumeFrom = hint.position; updated.remaining = hint.remaining }
+            target = updated
+        }
     }
 
     private func append(_ batch: [SeedResult], excluding shown: inout Set<String>) {

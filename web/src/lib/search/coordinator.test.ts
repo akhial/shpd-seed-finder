@@ -44,8 +44,9 @@ const unrelated: QueryDocument = { requirements: [{ kind: 'wand' }] }
 
 const match = (value: number) => ({ value, code: value.toString().padStart(9, 'A') })
 
-/** Leaves the store as a finished run of `query` that covered the first 400
- * of 1,000 seeds and found two matches — a valid refine base. */
+/** Leaves the store as a finished anchor run of `query` that covered the
+ * first 400 of 1,000 seeds and found two matches, with the Target that
+ * settleRun would have established from it. */
 function seedFinishedRun(query: QueryDocument, state: 'completed' | 'cancelled' = 'completed'): void {
   searchStore.setState((current) => ({
     ...current,
@@ -58,6 +59,12 @@ function seedFinishedRun(query: QueryDocument, state: 'completed' | 'cancelled' 
     workerScanned: { 0: [400] },
     workerCount: 1,
     completedWorkers: 1,
+    target: {
+      queryJson: JSON.stringify(query),
+      query,
+      matches: [match(11), match(22)],
+      remainder: [{ startSeed: 400, endSeedExclusive: TOTAL }],
+    },
   }))
 }
 
@@ -117,20 +124,44 @@ describe('implicit refine on start', () => {
     expect(postedTypes()).toEqual(['filter', 'filter', 'filter'])
   })
 
-  it('starts fresh when the query is not a refinement', () => {
+  it('runs an unrelated query as a detached scan that keeps the Target', () => {
     const coordinator = new SearchCoordinator(TOTAL)
     seedFinishedRun(baseQuery)
     coordinator.start(unrelated, 2)
 
     const state = searchStore.state
     expect(state.state).toBe('running')
+    expect(state.runKind).toBe('detached')
     expect(state.filtering).toBe(false)
     expect(state.refined).toBeUndefined()
     expect(state.matches).toEqual([])
     expect(state.workerScanned).toEqual({})
-    // A fresh scan covers the whole seed space, not just the untouched tail.
+    // A detached scan covers the whole seed space, not just the untouched
+    // tail — and the Target survives it for later related searches.
     expect(state.segments.flat().reduce((sum, range) => sum + (range.endSeedExclusive - range.startSeed), 0)).toBe(TOTAL)
+    expect(state.target?.matches.map((item) => item.value)).toEqual([11, 22])
+    expect(state.target?.query).toEqual(baseQuery)
     expect(postedTypes()).toEqual(['search:start', 'search:start'])
+  })
+
+  it('filters the full Target Set when the query shares an item without continuing it', () => {
+    const coordinator = new SearchCoordinator(TOTAL)
+    // Target query: ring and weapon. Dropping the weapon requirement is not
+    // a continuation, but it still shares the ring — so the search filters
+    // the original Target Set rather than rescanning or chaining off the
+    // last run's survivors.
+    const targetQuery: QueryDocument = { requirements: [{ kind: 'ring' }, { kind: 'weapon' }] }
+    seedFinishedRun(targetQuery)
+    coordinator.start(baseQuery, 2)
+
+    const state = searchStore.state
+    expect(state.state).toBe('running')
+    expect(state.runKind).toBe('target-filter')
+    expect(state.filtering).toBe(true)
+    expect(state.refined).toEqual({ kept: 0, of: 2 })
+    expect(StubWorker.posted).toEqual([
+      { type: 'filter', queryJson: JSON.stringify(baseQuery), seeds: [11, 22], requestId: expect.any(Number) },
+    ])
   })
 
   it('starts fresh once the results have been cleared', () => {
@@ -142,6 +173,7 @@ describe('implicit refine on start', () => {
     expect(searchStore.state.state).toBe('idle')
     expect(searchStore.state.matches).toEqual([])
     expect(searchStore.state.queryJson).toBe('')
+    expect(searchStore.state.target).toBeUndefined()
     // The session counter survives so a late message from the cleared run is
     // still recognised as stale.
     expect(searchStore.state.sessionId).toBe(1)
