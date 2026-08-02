@@ -12,6 +12,8 @@ Open `SeedSeeker.slnx` in Visual Studio and select ARM64, or run `.\scripts\buil
 
 The app is unpackaged and framework-dependent. The Windows App SDK 1.8 runtime must be installed; Visual Studio installs it on development machines.
 
+On first launch the app registers the `seedseeker://` link scheme for the current user (per-user `HKCU` entries, refreshed on every launch), so shared query links open in the app — in the already-running instance when there is one.
+
 ## Item artwork
 
 Scouted items and requirements render the real Shattered Pixel Dungeon sprites, pulsing with the game's enchantment and curse glow colours. The atlas geometry and the glow table mirror `web/src/lib/sprites.ts` and `web/src/lib/glow.ts`; the Fluent palette itself is unchanged, and the only new colours are the per-enchantment glows, which are item data from the game rather than app chrome.

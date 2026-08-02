@@ -32,10 +32,28 @@ fn main() -> glib::ExitCode {
     let app = adw::Application::builder()
         .application_id(APP_ID)
         .resource_base_path(RESOURCE_BASE_PATH)
+        .flags(gio::ApplicationFlags::HANDLES_OPEN)
         .build();
     app.connect_startup(|_| load_stylesheet());
     application::configure(&app);
     app.connect_activate(window::present);
+    // A seedseeker:// share link arrives here as a `gio::File`, at cold start
+    // or routed from a second invocation by GApplication's single-instance
+    // handling. The window action does the decoding so it can reach the
+    // window-local query state.
+    app.connect_open(|app, files, _hint| {
+        window::present(app);
+        let Some(window) = app.active_window() else {
+            return;
+        };
+        for file in files {
+            let _ = WidgetExt::activate_action(
+                &window,
+                "win.open-share-link",
+                Some(&file.uri().to_variant()),
+            );
+        }
+    });
     app.run()
 }
 

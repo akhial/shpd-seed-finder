@@ -24,6 +24,7 @@ written in Rust — with native apps for Android, Linux, macOS, and Windows.
 
 - ⚡️ **16–30× faster** than the established Java seed finder
 - 🔍 **Rich queries**: multiple requirements across melee and thrown weapons, armor, wands, and rings
+- 🔗 **Share links**: any search fits in a short link that fills in the query on every platform
 - 🔮 **Seed scouting**: paste a seed code, get every item with floor, upgrade, enchantment, cursed state and source
 - 📱 **Android app** beautiful Material 3 interface
 - 🐧 **Native Linux app** GTK 4 and libadwaita
@@ -183,6 +184,22 @@ cargo run --release -p shpd-seedfinder-cli -- -i requirements.json -b 1000 --wor
 ### Fast Mode
 
 This mode adds one lossy shortcut: +3 weapon/armor requirements consider only Ghost and Blacksmith rewards, skipping the rare Crypt and Sacrificial-fire prizes, so those searches end at floor 14.
+
+### Share links
+
+Every app can encode the current query as a short link like
+`https://shpd-seed-seeker.web.app/#q=EAGWhMA` (the **Share** button on the
+web, **Copy Link** on desktop, **Share search…** on Android). Opening a share
+link fills in the search form:
+
+- **Web** — the link opens the web app directly.
+- **Android** — links to `shpd-seed-seeker.web.app` open in the app when it
+  is installed (Android App Links).
+- **Windows, macOS, and Linux** — the apps register the `seedseeker://` URI
+  scheme; a pasted web link decodes through the same codec.
+
+The compact payload format is documented in
+[`docs/share-link-format.md`](docs/share-link-format.md).
 
 ## Benchmarks<a id="benchmarks"></a>
 

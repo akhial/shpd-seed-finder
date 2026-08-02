@@ -17,6 +17,8 @@ internal static partial class Native
     [LibraryImport(Library)] internal static partial int seedfinder_scout(byte[] request, nuint length, out nint packet, out nuint outputLength);
     [LibraryImport(Library)] internal static partial int seedfinder_filter_seeds(byte[] request, nuint length, ulong[] seeds, nuint seedsLength, out nint packet, out nuint outputLength);
     [LibraryImport(Library)] internal static partial int seedfinder_query_continues(byte[] candidate, nuint candidateLength, byte[] baseline, nuint baselineLength);
+    [LibraryImport(Library)] internal static partial int seedfinder_share_encode(byte[] queryJson, nuint length, out nint packet, out nuint outputLength);
+    [LibraryImport(Library)] internal static partial int seedfinder_share_decode(byte[] text, nuint length, out nint packet, out nuint outputLength);
     [LibraryImport(Library)] internal static partial void seedfinder_buffer_free(nint packet, nuint length);
 }
 
@@ -148,6 +150,22 @@ public sealed class NativeEngine
         }
         if (r.Remaining != 0) throw new InvalidDataException("Trailing native data");
         return new(returnedSeed, quests, items);
+    }
+
+    /// <summary>The full web share link for a canonical JSON query document, or null when the engine rejects the query.</summary>
+    public static string? TryEncodeShareLink(string queryJson)
+    {
+        var bytes = Encoding.UTF8.GetBytes(queryJson);
+        return Native.seedfinder_share_encode(bytes, (nuint)bytes.Length, out var ptr, out var len) == 0
+            ? Encoding.UTF8.GetString(CopyAndFree(ptr, len)) : null;
+    }
+
+    /// <summary>The canonical JSON query document carried by share-link text (web link, seedseeker:// link, or bare code), or null when there is none.</summary>
+    public static string? TryDecodeShareText(string text)
+    {
+        var bytes = Encoding.UTF8.GetBytes(text);
+        return Native.seedfinder_share_decode(bytes, (nuint)bytes.Length, out var ptr, out var len) == 0
+            ? Encoding.UTF8.GetString(CopyAndFree(ptr, len)) : null;
     }
 
     internal static byte[] CopyAndFree(nint ptr, nuint len)

@@ -49,6 +49,13 @@ int32_t seedfinder_scout(const uint8_t *request, size_t request_len, uint8_t **o
 // Re-verifies seeds_len numeric seed values against the SSF8 query in request
 // and returns the surviving seeds as an SSR1 packet in input order.
 int32_t seedfinder_filter_seeds(const uint8_t *request, size_t request_len, const uint64_t *seeds, size_t seeds_len, uint8_t **out_packet, size_t *out_len);
+// Share links carry a query as a compact code. Encode takes the canonical
+// UTF-8 JSON query document and returns the full UTF-8 web link; decode takes
+// any link form (web link, seedseeker:// link, or bare code) and returns the
+// canonical UTF-8 JSON query document. Both return packets are freed with
+// seedfinder_buffer_free.
+int32_t seedfinder_share_encode(const uint8_t *query_json, size_t query_json_len, uint8_t **out_packet, size_t *out_len);
+int32_t seedfinder_share_decode(const uint8_t *text, size_t text_len, uint8_t **out_packet, size_t *out_len);
 void    seedfinder_buffer_free(uint8_t *ptr, size_t len);
 
 #ifdef __cplusplus

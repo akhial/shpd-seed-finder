@@ -69,6 +69,10 @@ APPIMAGE_VERSION=dev bash scripts/build-linux-appimage.sh
 ./dist/seed-seeker-dev-"$(uname -m)".AppImage
 ```
 
+Opening `seedseeker://` share links requires the bundled desktop entry to be installed, so
+AppImage users need desktop integration (for example through AppImageLauncher or `--install`
+tooling) before such links launch the app.
+
 The Release workflow runs the same builder for both architectures when a `v*` tag is pushed and
 publishes the AppImages with the other GitHub Release assets. Release builds first compile the
 pinned GTK and libadwaita stack against Ubuntu 24.04 so they retain an older glibc baseline;

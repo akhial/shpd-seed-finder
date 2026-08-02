@@ -11,6 +11,7 @@ name = "shpd_seedfinder_ffi"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
+shpd-seedfinder-core = { path = "../seedfinder-core", features = ["json-query"] }
 shpd-seedfinder-session = { path = "../seedfinder-session" }
 
 [lints]
