@@ -291,6 +291,10 @@
                         <Border Visibility="{Binding CurseVisibility}" Background="{ThemeResource SystemFillColorCriticalBackgroundBrush}" CornerRadius="8" Padding="7,1" VerticalAlignment="Center">
                           <TextBlock Text="cursed" FontSize="11" Foreground="{ThemeResource SystemFillColorCriticalBrush}"/>
                         </Border>
+                        <Border Visibility="{Binding SecretVisibility}" Background="{ThemeResource SystemFillColorAttentionBackgroundBrush}" CornerRadius="8" Padding="7,1" VerticalAlignment="Center"
+                                ToolTipService.ToolTip="Hidden in a secret room — search to reveal it">
+                          <TextBlock Text="secret" FontSize="11" Foreground="{ThemeResource SystemFillColorAttentionBrush}"/>
+                        </Border>
                       </StackPanel>
                       <StackPanel Orientation="Horizontal" Spacing="6">
                         <TextBlock Text="{Binding Effect}" Visibility="{Binding EffectVisibility}" Foreground="{Binding EffectBrush}" FontSize="12"/>

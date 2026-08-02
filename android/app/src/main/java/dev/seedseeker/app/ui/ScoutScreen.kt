@@ -77,6 +77,7 @@ import dev.seedseeker.app.model.ScoutWorld
 import dev.seedseeker.app.ui.theme.SpdCurse
 import dev.seedseeker.app.ui.theme.SpdDanger
 import dev.seedseeker.app.ui.theme.SpdGreen
+import dev.seedseeker.app.ui.theme.SpdSecret
 import dev.seedseeker.app.ui.theme.SpdTeal
 import dev.seedseeker.app.ui.theme.SpdUpgrade
 import kotlin.math.abs
@@ -538,6 +539,20 @@ private fun ScoutItemCard(
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = SpdCurse,
+                            )
+                        }
+                    }
+                    if (scoutItem.secret) {
+                        Spacer(Modifier.width(8.dp))
+                        Surface(
+                            shape = MaterialTheme.shapes.extraSmall,
+                            color = SpdSecret.copy(alpha = 0.14f),
+                        ) {
+                            Text(
+                                "secret",
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = SpdSecret,
                             )
                         }
                     }

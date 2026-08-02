@@ -16,7 +16,8 @@ custom-seed run under the canonical profile:
 - tutorial/journal progression complete (`SPDSettings.intro() == false`);
 - no player-caused drops or inventory-dependent mutations;
 - weapons, armor, wands, rings, their true upgrade, cursed flag, enchantment/glyph,
-  floor, source, container, and mutually exclusive choice group.
+  floor, source, container, secret-room placement, and mutually exclusive choice
+  group.
 
 Normal monster death loot is excluded. It is rolled during play after the level
 generator has been popped and is generally based on the unseeded base RNG.

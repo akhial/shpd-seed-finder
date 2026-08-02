@@ -178,7 +178,8 @@ public static class BuiltInPresets
 
 public sealed record SeedResult(string Seed, int Number);
 public sealed record ScoutItem(CatalogItem Item, int Depth, int Upgrade, string? Effect, bool Cursed,
-    ScoutItemSource Source, byte AccessibilityTag, int AccessibilityGroup, ulong AccessibilityValue);
+    ScoutItemSource Source, byte AccessibilityTag, int AccessibilityGroup, ulong AccessibilityValue,
+    bool Secret = false);
 public sealed record ScoutWorld(string Seed, IReadOnlyList<ScoutItem> Items);
 public sealed record SearchStatus(SearchState State, long Scanned, long Total, long ErrorCode, double Probability);
 

@@ -121,6 +121,7 @@ struct ScoutItemOutput {
     upgrade: u8,
     effect: Option<EffectOutput>,
     cursed: bool,
+    secret: bool,
     depth: u8,
     source: &'static str,
     accessibility: AccessibilityOutput,
@@ -393,6 +394,7 @@ fn scout_item_output(world_item: &WorldItem, matched: bool) -> ScoutItemOutput {
         upgrade: world_item.upgrade,
         effect: world_item.effect.map(effect_output),
         cursed: world_item.cursed,
+        secret: world_item.secret,
         depth: world_item.depth,
         source: item_source_name(world_item.source),
         accessibility: accessibility_output(world_item.accessibility),
@@ -698,11 +700,14 @@ mod tests {
             let definition = item(world_item.item);
             assert_eq!(output_item["id"], definition.stable_id);
             assert_eq!(output_item["depth"], world_item.depth);
+            assert_eq!(output_item["secret"], world_item.secret);
             assert_eq!(
                 output_item["spriteIndex"],
                 sprites.get(definition.stable_id).copied().unwrap()
             );
         }
+        // The canonical seed hides part of its loot behind secret rooms.
+        assert!(output_items.iter().any(|item| item["secret"] == true));
 
         // The asset's melee/thrown classes mirror the core catalog exactly.
         for entry in &catalog.entries {

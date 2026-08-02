@@ -288,7 +288,7 @@ pub fn decode_scout_seed(request: &[u8]) -> Result<DungeonSeed, WireError> {
 /// magic[4], seed:utf8_u8, item_count:u16,
 /// repeated {
 ///   stable_item_id:utf8_u16, depth:u8, exact_upgrade:u8,
-///   flags:u8 (bit 0 = cursed), effect_wire_name:utf8_u16,
+///   flags:u8 (bit 0 = cursed, bit 1 = in a secret room), effect_wire_name:utf8_u16,
 ///   source:u8, accessibility_tag:u8, accessibility_payload
 /// }
 /// ```
@@ -323,7 +323,7 @@ pub fn encode_scout_world(world: &GeneratedWorld) -> Result<Vec<u8>, WireError> 
         push_utf8_u16(&mut output, definition.stable_id)?;
         output.push(world_item.depth);
         output.push(world_item.upgrade);
-        output.push(u8::from(world_item.cursed));
+        output.push(u8::from(world_item.cursed) | (u8::from(world_item.secret) << 1));
         push_utf8_u16(&mut output, world_item.effect.map_or("", Effect::wire_name))?;
         output.push(source_wire_id(world_item.source));
         match world_item.accessibility {
@@ -378,7 +378,7 @@ pub fn decode_scout_world(packet: &[u8]) -> Result<GeneratedWorld, WireError> {
             return Err(WireError::InvalidItemUpgrade);
         }
         let flags = input.u8()?;
-        if flags & !1 != 0 {
+        if flags & !0b11 != 0 {
             return Err(WireError::InvalidFlags);
         }
         let effect_name = input.utf8_u16()?;
@@ -419,6 +419,7 @@ pub fn decode_scout_world(packet: &[u8]) -> Result<GeneratedWorld, WireError> {
             depth,
             source,
             accessibility,
+            secret: flags & 0b10 != 0,
         });
     }
     if !input.is_empty() {
@@ -839,6 +840,7 @@ mod tests {
                     group: 0x1234,
                     option: 2,
                 },
+                secret: false,
             }],
         };
         let packet = encode_scout_world(&world).unwrap();
@@ -865,6 +867,7 @@ mod tests {
                 depth: 17,
                 source: ItemSource::ImpReward,
                 accessibility: Accessibility::Independent,
+                secret: true,
             }],
         };
         let packet = encode_scout_world(&world).unwrap();
@@ -905,6 +908,7 @@ mod tests {
                     depth: u8::try_from(index % 24 + 1).unwrap(),
                     source: SOURCES[index % SOURCES.len()],
                     accessibility,
+                    secret: index % 3 == 0,
                 }
             })
             .collect();
@@ -939,6 +943,14 @@ mod tests {
                 && item.item == ItemId::ScaleArmor
                 && item.upgrade == 0
                 && item.source == ItemSource::Chest
+        }));
+        assert_eq!(decoded.items.iter().filter(|item| item.secret).count(), 4);
+        assert!(decoded.items.iter().any(|item| {
+            item.depth == 2
+                && item.item == ItemId::LeatherArmor
+                && item.upgrade == 1
+                && item.source == ItemSource::LockedChest
+                && item.secret
         }));
         assert!(decoded.items.iter().any(|item| {
             item.depth == 7
@@ -1009,6 +1021,7 @@ mod tests {
                     group: 501,
                     mask: 0x8000_0000_0000_0001,
                 },
+                secret: true,
             }],
         };
         let packet = encode_scout_world(&world).unwrap();
@@ -1033,13 +1046,14 @@ mod tests {
                 depth: 1,
                 source: ItemSource::Heap,
                 accessibility: Accessibility::Independent,
+                secret: false,
             }],
         };
         let packet = encode_scout_world(&world).unwrap();
 
         let mut bad_flags = packet.clone();
         // Header (18), ID length (2), "wand_frost" (10), depth, upgrade.
-        bad_flags[32] = 2;
+        bad_flags[32] = 4;
         assert_eq!(decode_scout_world(&bad_flags), Err(WireError::InvalidFlags));
 
         let mut bad_depth = packet.clone();
@@ -1120,6 +1134,7 @@ mod tests {
             depth: 1,
             source: ItemSource::Heap,
             accessibility: Accessibility::Independent,
+            secret: false,
         };
         let world = GeneratedWorld {
             seed: DungeonSeed::MIN,

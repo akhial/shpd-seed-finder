@@ -418,6 +418,7 @@ mod tests {
             depth: 3,
             source: ItemSource::GhostReward,
             accessibility,
+            secret: false,
         }
     }
 
@@ -871,6 +872,7 @@ mod tests {
             depth,
             source,
             accessibility: Accessibility::Independent,
+            secret: false,
         };
         let world = GeneratedWorld {
             seed: DungeonSeed::MIN,
@@ -912,6 +914,7 @@ mod tests {
             depth: 13,
             source,
             accessibility: Accessibility::Independent,
+            secret: false,
         };
         let smith_only = GeneratedWorld {
             seed: DungeonSeed::MIN,

@@ -83,7 +83,7 @@ public sealed class NativeEngine
             var depth = r.U8(); var upgrade = r.U8(); var flags = r.U8(); var effect = r.Text();
             var source = (ScoutItemSource)r.U8(); var tag = r.U8(); var group = 0; ulong value = 0;
             if (tag == 1) { group = r.U16(); value = r.U8(); } else if (tag == 2) { group = r.U16(); value = r.U64(); } else if (tag != 0) throw new InvalidDataException("Unknown accessibility tag");
-            items.Add(new(item, depth, upgrade, effect.Length == 0 ? null : effect, (flags & 1) != 0, source, tag, group, value));
+            items.Add(new(item, depth, upgrade, effect.Length == 0 ? null : effect, (flags & 1) != 0, source, tag, group, value, Secret: (flags & 2) != 0));
         }
         if (r.Remaining != 0) throw new InvalidDataException("Trailing native data");
         return new(returnedSeed, items);

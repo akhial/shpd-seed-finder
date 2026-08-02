@@ -34,6 +34,9 @@ val SpdUpgrade = Color(0xFF83FC64)
 /** Curse text/badge tint, lighter than [SpdDanger] so it reads on a dark fill. */
 val SpdCurse = Color(0xFFF2958A)
 
+/** Secret-room badge tint, a violet light enough to read on a dark fill. */
+val SpdSecret = Color(0xFFB388FF)
+
 // Region accents, mirrored from `web/src/lib/region.ts`.
 val RegionSewers = Color(0xFF7FE2B8)
 val RegionPrison = Color(0xFF8FB7E8)
