@@ -298,8 +298,86 @@ public struct SeedResult: Hashable, Identifiable, Sendable {
 
 public struct ScoutWorld: Sendable {
     public let seed: String
+    public let quests: [ScoutQuest]
     public let items: [ScoutItem]
-    public init(seed: String, items: [ScoutItem]) { self.seed = seed; self.items = items }
+    public init(seed: String, quests: [ScoutQuest] = [], items: [ScoutItem]) {
+        self.seed = seed; self.quests = quests; self.items = items
+    }
+}
+
+/// The quest giver a scouted world rolled on one of its quest floors.
+public enum ScoutQuestKind: Int, CaseIterable, Sendable {
+    // The raw value doubles as the SSC2 wire quest ID.
+    case ghost = 1, wandmaker, blacksmith, imp
+
+    public var giverLabel: String {
+        switch self {
+        case .ghost: "Sad ghost"
+        case .wandmaker: "Wandmaker"
+        case .blacksmith: "Blacksmith"
+        case .imp: "Imp"
+        }
+    }
+    /// Floors on which this quest can appear.
+    public var depthRange: ClosedRange<Int> {
+        switch self {
+        case .ghost: 2...4
+        case .wandmaker: 7...9
+        case .blacksmith: 12...14
+        case .imp: 17...19
+        }
+    }
+    /// Wire variants in SSC2 order; a quest's variant byte is a 1-based index.
+    public var variants: [ScoutQuestVariant] {
+        switch self {
+        case .ghost: [.fetidRat, .gnollTrickster, .greatCrab]
+        case .wandmaker: [.corpseDust, .elementalEmbers, .rotberry]
+        case .blacksmith: [.crystal, .gnoll]
+        case .imp: [.monk, .golem]
+        }
+    }
+}
+
+/// The concrete variant a quest giver rolled.
+public enum ScoutQuestVariant: Hashable, Sendable {
+    case fetidRat, gnollTrickster, greatCrab
+    case corpseDust, elementalEmbers, rotberry
+    case crystal, gnoll
+    case monk, golem
+
+    public var kind: ScoutQuestKind {
+        switch self {
+        case .fetidRat, .gnollTrickster, .greatCrab: .ghost
+        case .corpseDust, .elementalEmbers, .rotberry: .wandmaker
+        case .crystal, .gnoll: .blacksmith
+        case .monk, .golem: .imp
+        }
+    }
+    public var label: String {
+        switch self {
+        case .fetidRat: "Fetid rat"
+        case .gnollTrickster: "Gnoll trickster"
+        case .greatCrab: "Great crab"
+        case .corpseDust: "Corpse dust"
+        case .elementalEmbers: "Elemental embers"
+        case .rotberry: "Rotberry"
+        case .crystal: "Crystal"
+        case .gnoll: "Gnoll"
+        case .monk: "Monk"
+        case .golem: "Golem"
+        }
+    }
+}
+
+/// One rolled quest in a scouted world: the variant identifies the giver.
+public struct ScoutQuest: Hashable, Identifiable, Sendable {
+    public let variant: ScoutQuestVariant
+    public let depth: Int
+    public var kind: ScoutQuestKind { variant.kind }
+    public var id: Int { kind.rawValue }
+    public init(variant: ScoutQuestVariant, depth: Int) {
+        self.variant = variant; self.depth = depth
+    }
 }
 
 public struct ScoutItem: Identifiable, Sendable {

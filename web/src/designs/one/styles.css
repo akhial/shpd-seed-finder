@@ -1356,6 +1356,71 @@ input[type='range']::-moz-range-thumb {
 
 .d1-match-full { color: var(--d1-green); }
 
+/* ---------- Quest summary strip ----------
+   One card-chip per quest, tinted with the region color of its floor via the
+   same `--region` variable the floor sections use. Plain `var(--region)`
+   declarations are fallbacks for browsers without color-mix(). */
+
+.d1-quest-strip {
+  list-style: none;
+  margin: 0;
+  padding: 10px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  border-bottom: 1px solid var(--d1-border);
+}
+
+.d1-quest-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 3px 11px 4px;
+  border-radius: 999px;
+  border: 1px solid var(--d1-border-strong);
+  border-color: color-mix(in srgb, var(--region) 34%, transparent);
+  background: color-mix(in srgb, var(--region) 9%, transparent);
+}
+
+.d1-quest-chip-variant {
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  color: var(--region);
+  color: color-mix(in srgb, var(--region) 84%, var(--d1-text));
+}
+
+.d1-quest-chip-giver {
+  font-size: 11.5px;
+  color: var(--d1-text-3);
+  white-space: nowrap;
+}
+
+.d1-quest-chip-floor {
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--region);
+  color: color-mix(in srgb, var(--region) 70%, var(--d1-text-2));
+}
+
+/* Variant chip in the header of a floor that hosts the quest. */
+.d1-floor-quest {
+  margin-left: auto;
+  padding: 0 8px;
+  line-height: 17px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+  color: var(--region);
+  color: color-mix(in srgb, var(--region) 84%, var(--d1-text));
+  background: color-mix(in srgb, var(--region) 11%, transparent);
+  border: 1px solid transparent;
+  border-color: color-mix(in srgb, var(--region) 30%, transparent);
+}
+
 .d1-floor { border-bottom: 1px solid var(--d1-border); }
 
 .d1-floor-head {

@@ -14,7 +14,7 @@ use shpd_seedfinder_core::seed::DungeonSeed;
 use shpd_seedfinder_session::production_scout_world;
 
 use crate::scout_match::scout_match_indices;
-use crate::state::{AppState, region, source_label};
+use crate::state::{AppState, QuestRow, quest_rows, region, source_label};
 use crate::{glow, sprites};
 
 pub struct DetailPane {
@@ -300,10 +300,22 @@ impl DetailPane {
         while let Some(child) = self.manifest_box.first_child() {
             self.manifest_box.remove(&child);
         }
+        let quests = quest_rows(world.quests);
+        if !quests.is_empty() {
+            let group = adw::PreferencesGroup::builder().title("Quests").build();
+            for quest in &quests {
+                group.add(&quest_row(quest));
+            }
+            self.manifest_box.append(&group);
+        }
         for (depth, indices) in &by_depth {
+            let mut description = region(*depth).to_owned();
+            if let Some(quest) = quests.iter().find(|quest| quest.depth == *depth) {
+                let _ = write!(description, " · {}", quest.variant);
+            }
             let group = adw::PreferencesGroup::builder()
                 .title(format!("Floor {depth}"))
-                .description(region(*depth))
+                .description(description)
                 .build();
             for index in indices {
                 group.add(&item_row(&world.items[*index], matches.contains(index)));
@@ -311,6 +323,23 @@ impl DetailPane {
             self.manifest_box.append(&group);
         }
     }
+}
+
+/// One "Quests" overview row: the rolled variant, given by whom and where.
+fn quest_row(quest: &QuestRow) -> adw::ActionRow {
+    let row = adw::ActionRow::builder()
+        .title(quest.variant)
+        .subtitle(format!(
+            "{} · Floor {} · {}",
+            quest.giver,
+            quest.depth,
+            region(quest.depth)
+        ))
+        .build();
+    let giver = gtk::Image::from_icon_name("avatar-default-symbolic");
+    giver.add_css_class("dim-label");
+    row.add_prefix(&giver);
+    row
 }
 
 fn item_row(world_item: &WorldItem, matched: bool) -> adw::ActionRow {

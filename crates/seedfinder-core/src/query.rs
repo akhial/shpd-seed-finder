@@ -695,11 +695,13 @@ mod tests {
             fast_mode: false,
         };
         let one = GeneratedWorld {
+            quests: crate::quests::QuestSummary::default(),
             seed: DungeonSeed::MIN,
             items: vec![world_item(ItemId::Sword, Accessibility::Independent)],
         };
         assert!(!query.matches(&one));
         let two = GeneratedWorld {
+            quests: crate::quests::QuestSummary::default(),
             seed: DungeonSeed::MIN,
             items: vec![
                 world_item(ItemId::Sword, Accessibility::Independent),
@@ -725,6 +727,7 @@ mod tests {
     #[test]
     fn requirement_floor_limit_is_inclusive() {
         let world = GeneratedWorld {
+            quests: crate::quests::QuestSummary::default(),
             seed: DungeonSeed::MIN,
             items: vec![world_item(ItemId::Sword, Accessibility::Independent)],
         };
@@ -754,6 +757,7 @@ mod tests {
             fast_mode: false,
         };
         let world = GeneratedWorld {
+            quests: crate::quests::QuestSummary::default(),
             seed: DungeonSeed::MIN,
             items: vec![
                 world_item(
@@ -786,6 +790,7 @@ mod tests {
             fast_mode: false,
         };
         let world = GeneratedWorld {
+            quests: crate::quests::QuestSummary::default(),
             seed: DungeonSeed::MIN,
             items: vec![
                 world_item(
@@ -831,6 +836,7 @@ mod tests {
             },
         );
         let world = GeneratedWorld {
+            quests: crate::quests::QuestSummary::default(),
             seed: DungeonSeed::MIN,
             items: vec![sword, armor, wand],
         };
@@ -1122,6 +1128,7 @@ mod tests {
             secret: false,
         };
         let world = GeneratedWorld {
+            quests: crate::quests::QuestSummary::default(),
             seed: DungeonSeed::MIN,
             items: vec![
                 make(ItemId::WandFrost, 3, 7, ItemSource::WandmakerReward),
@@ -1164,6 +1171,7 @@ mod tests {
             secret: false,
         };
         let smith_only = GeneratedWorld {
+            quests: crate::quests::QuestSummary::default(),
             seed: DungeonSeed::MIN,
             items: vec![make(ItemSource::BlacksmithReward)],
         };
@@ -1176,6 +1184,7 @@ mod tests {
 
         query.require_blacksmith = false;
         let no_blacksmith = GeneratedWorld {
+            quests: crate::quests::QuestSummary::default(),
             seed: DungeonSeed::MIN,
             items: vec![make(ItemSource::Heap)],
         };

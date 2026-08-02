@@ -17,6 +17,7 @@
   <ItemGroup>
     <Compile Include="..\SeedSeeker\ResultNavigation.cs" Link="ResultNavigation.cs" />
     <Compile Include="..\SeedSeeker\Models.cs" Link="Models.cs" />
+    <Compile Include="..\SeedSeeker\ScoutQuests.cs" Link="ScoutQuests.cs" />
     <!-- Refine eligibility is the engine's own predicate, reached through the
          P/Invokes here, so the tests exercise the shipping path rather than a
          second implementation of it. -->

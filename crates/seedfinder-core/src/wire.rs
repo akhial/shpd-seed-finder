@@ -6,12 +6,16 @@ use crate::catalog::{Effect, ItemKind, WeaponCategory, item, item_by_stable_id};
 use crate::challenges::Challenges;
 use crate::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
 use crate::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
+use crate::quests::{
+    BlacksmithQuestType, GhostQuestType, ImpTarget, QuestSummary, ScheduledQuest,
+    WandmakerQuestType,
+};
 use crate::seed::DungeonSeed;
 
 const REQUEST_MAGIC: &[u8; 4] = b"SSF7";
 const SCOUT_REQUEST_MAGIC_V2: &[u8; 4] = b"SSQ2";
 const RESULT_MAGIC: &[u8; 4] = b"SSR1";
-const SCOUT_RESULT_MAGIC: &[u8; 4] = b"SSC1";
+const SCOUT_RESULT_MAGIC: &[u8; 4] = b"SSC2";
 const MAX_REQUIREMENTS: usize = 64;
 
 /// Decodes an `SSF7` search request. The flags byte uses bit 0 for required
@@ -282,16 +286,26 @@ pub fn decode_scout_seed(request: &[u8]) -> Result<DungeonSeed, WireError> {
 
 /// Encodes every searchable item in one generated world for scouting mode.
 ///
-/// `SSC1` is big-endian and self-delimiting:
+/// `SSC2` is big-endian and self-delimiting:
 ///
 /// ```text
-/// magic[4], seed:utf8_u8, item_count:u16,
+/// magic[4], seed:utf8_u8,
+/// quest_count:u8,
+/// repeated { quest:u8, variant:u8, depth:u8 },
+/// item_count:u16,
 /// repeated {
 ///   stable_item_id:utf8_u16, depth:u8, exact_upgrade:u8,
 ///   flags:u8 (bit 0 = cursed, bit 1 = in a secret room), effect_wire_name:utf8_u16,
 ///   source:u8, accessibility_tag:u8, accessibility_payload
 /// }
 /// ```
+///
+/// Quest entries are emitted in strictly ascending quest order — Ghost `1`,
+/// Wandmaker `2`, Blacksmith `3`, Imp `4` — and each quest appears at most
+/// once. Variants reuse the game's one-based values: Ghost fetid rat `1`,
+/// gnoll trickster `2`, great crab `3`; Wandmaker corpse dust `1`, elemental
+/// embers `2`, rotberry `3`; Blacksmith crystal `1`, gnoll `2`; Imp monk `1`,
+/// golem `2`. The depth byte is the quest giver's canonical floor.
 ///
 /// Accessibility payloads are empty for independent items, `group:u16,
 /// option:u8` for choices, and `group:u16, mask:u64` for explicit scenarios.
@@ -300,7 +314,8 @@ pub fn decode_scout_seed(request: &[u8]) -> Result<DungeonSeed, WireError> {
 /// # Errors
 ///
 /// Returns an error if the item count or a UTF-8 field exceeds its declared
-/// protocol width. Catalog fields in the pinned game version always fit.
+/// protocol width, or a quest depth leaves its canonical floor range. Catalog
+/// fields in the pinned game version always fit.
 pub fn encode_scout_world(world: &GeneratedWorld) -> Result<Vec<u8>, WireError> {
     let count = u16::try_from(world.items.len()).map_err(|_| WireError::TooManyWorldItems)?;
     let seed = world.seed.to_code();
@@ -310,6 +325,7 @@ pub fn encode_scout_world(world: &GeneratedWorld) -> Result<Vec<u8>, WireError> 
     output.extend_from_slice(SCOUT_RESULT_MAGIC);
     output.push(seed_length);
     output.extend_from_slice(seed.as_bytes());
+    encode_quest_summary(world.quests, &mut output)?;
     output.extend_from_slice(&count.to_be_bytes());
 
     for world_item in &world.items {
@@ -349,7 +365,122 @@ pub fn encode_scout_world(world: &GeneratedWorld) -> Result<Vec<u8>, WireError> 
     Ok(output)
 }
 
-/// Decodes an `SSC1` scouting response.
+fn encode_quest_summary(quests: QuestSummary, output: &mut Vec<u8>) -> Result<(), WireError> {
+    let entries = [
+        quests
+            .ghost
+            .map(|quest| (GHOST_QUEST_WIRE_ID, quest.variant as u8, quest.depth)),
+        quests
+            .wandmaker
+            .map(|quest| (WANDMAKER_QUEST_WIRE_ID, quest.variant as u8, quest.depth)),
+        quests
+            .blacksmith
+            .map(|quest| (BLACKSMITH_QUEST_WIRE_ID, quest.variant as u8, quest.depth)),
+        quests.imp.map(|quest| {
+            (
+                IMP_QUEST_WIRE_ID,
+                imp_target_wire_id(quest.variant),
+                quest.depth,
+            )
+        }),
+    ];
+    let scheduled = entries.iter().flatten();
+    output.push(u8::try_from(scheduled.clone().count()).expect("at most four quests"));
+    for &(quest, variant, depth) in scheduled {
+        if !quest_depth_range(quest).contains(&depth) {
+            return Err(WireError::InvalidQuestDepth);
+        }
+        output.extend_from_slice(&[quest, variant, depth]);
+    }
+    Ok(())
+}
+
+fn decode_quest_summary(input: &mut Input<'_>) -> Result<QuestSummary, WireError> {
+    let mut quests = QuestSummary::default();
+    let count = input.u8()?;
+    if count > 4 {
+        return Err(WireError::InvalidQuestCount);
+    }
+    let mut previous_quest = 0;
+    for _ in 0..count {
+        let quest = input.u8()?;
+        let variant = input.u8()?;
+        let depth = input.u8()?;
+        // Strictly ascending quest IDs keep the encoding canonical and rule
+        // out duplicates.
+        if quest <= previous_quest {
+            return Err(WireError::InvalidQuestOrder);
+        }
+        previous_quest = quest;
+        if !quest_depth_range(quest).contains(&depth) {
+            return Err(WireError::InvalidQuestDepth);
+        }
+        match quest {
+            GHOST_QUEST_WIRE_ID => {
+                let variant = match variant {
+                    1 => GhostQuestType::FetidRat,
+                    2 => GhostQuestType::GnollTrickster,
+                    3 => GhostQuestType::GreatCrab,
+                    _ => return Err(WireError::UnknownQuestVariant),
+                };
+                quests.ghost = Some(ScheduledQuest { variant, depth });
+            }
+            WANDMAKER_QUEST_WIRE_ID => {
+                let variant = match variant {
+                    1 => WandmakerQuestType::CorpseDust,
+                    2 => WandmakerQuestType::ElementalEmbers,
+                    3 => WandmakerQuestType::Rotberry,
+                    _ => return Err(WireError::UnknownQuestVariant),
+                };
+                quests.wandmaker = Some(ScheduledQuest { variant, depth });
+            }
+            BLACKSMITH_QUEST_WIRE_ID => {
+                let variant = match variant {
+                    1 => BlacksmithQuestType::Crystal,
+                    2 => BlacksmithQuestType::Gnoll,
+                    _ => return Err(WireError::UnknownQuestVariant),
+                };
+                quests.blacksmith = Some(ScheduledQuest { variant, depth });
+            }
+            IMP_QUEST_WIRE_ID => {
+                let variant = match variant {
+                    1 => ImpTarget::Monk,
+                    2 => ImpTarget::Golem,
+                    _ => return Err(WireError::UnknownQuestVariant),
+                };
+                quests.imp = Some(ScheduledQuest { variant, depth });
+            }
+            _ => return Err(WireError::UnknownQuest),
+        }
+    }
+    Ok(quests)
+}
+
+const GHOST_QUEST_WIRE_ID: u8 = 1;
+const WANDMAKER_QUEST_WIRE_ID: u8 = 2;
+const BLACKSMITH_QUEST_WIRE_ID: u8 = 3;
+const IMP_QUEST_WIRE_ID: u8 = 4;
+
+const fn imp_target_wire_id(target: ImpTarget) -> u8 {
+    match target {
+        ImpTarget::Monk => 1,
+        ImpTarget::Golem => 2,
+    }
+}
+
+/// Canonical floors that can host each quest giver in v3.3.8.
+const fn quest_depth_range(quest: u8) -> std::ops::RangeInclusive<u8> {
+    match quest {
+        GHOST_QUEST_WIRE_ID => 2..=4,
+        WANDMAKER_QUEST_WIRE_ID => 7..=9,
+        BLACKSMITH_QUEST_WIRE_ID => 12..=14,
+        IMP_QUEST_WIRE_ID => 17..=19,
+        // Unknown quests are rejected before their depth is range-checked.
+        _ => 1..=24,
+    }
+}
+
+/// Decodes an `SSC2` scouting response.
 ///
 /// This is primarily the executable protocol specification and makes native
 /// round-trip tests cover every source/accessibility branch. Android uses the
@@ -358,13 +489,14 @@ pub fn encode_scout_world(world: &GeneratedWorld) -> Result<Vec<u8>, WireError> 
 /// # Errors
 ///
 /// Returns [`WireError`] for malformed lengths, identifiers, flags, enum
-/// values, accessibility constraints, or trailing bytes.
+/// values, accessibility constraints, quest entries, or trailing bytes.
 pub fn decode_scout_world(packet: &[u8]) -> Result<GeneratedWorld, WireError> {
     let mut input = Input::new(packet);
     if input.take(4)? != SCOUT_RESULT_MAGIC {
         return Err(WireError::BadMagic);
     }
     let seed = DungeonSeed::from_code(input.utf8_u8()?).map_err(|_| WireError::InvalidSeedCode)?;
+    let quests = decode_quest_summary(&mut input)?;
     let count = usize::from(input.u16()?);
     let mut items = Vec::with_capacity(count);
     for _ in 0..count {
@@ -425,7 +557,11 @@ pub fn decode_scout_world(packet: &[u8]) -> Result<GeneratedWorld, WireError> {
     if !input.is_empty() {
         return Err(WireError::TrailingData);
     }
-    Ok(GeneratedWorld { seed, items })
+    Ok(GeneratedWorld {
+        seed,
+        items,
+        quests,
+    })
 }
 
 fn push_utf8_u16(output: &mut Vec<u8>, value: &str) -> Result<(), WireError> {
@@ -558,6 +694,11 @@ pub enum WireError {
     InvalidItemUpgrade,
     UnknownItemSource,
     InvalidAccessibility,
+    InvalidQuestCount,
+    InvalidQuestOrder,
+    InvalidQuestDepth,
+    UnknownQuest,
+    UnknownQuestVariant,
 }
 
 impl fmt::Display for WireError {
@@ -584,6 +725,11 @@ impl fmt::Display for WireError {
             Self::InvalidItemUpgrade => "scouted item upgrade must be in 0..=3",
             Self::UnknownItemSource => "packet names an unknown item source",
             Self::InvalidAccessibility => "packet contains an invalid accessibility constraint",
+            Self::InvalidQuestCount => "scouted world lists more than four quests",
+            Self::InvalidQuestOrder => "packet quest entries must have ascending unique IDs",
+            Self::InvalidQuestDepth => "packet quest depth leaves its canonical floor range",
+            Self::UnknownQuest => "packet names an unknown quest",
+            Self::UnknownQuestVariant => "packet names an unknown quest variant",
         };
         formatter.write_str(message)
     }
@@ -765,10 +911,12 @@ mod tests {
     fn result_packet_matches_android_big_endian_codec() {
         let worlds = vec![
             GeneratedWorld {
+                quests: crate::quests::QuestSummary::default(),
                 seed: DungeonSeed::MIN,
                 items: Vec::new(),
             },
             GeneratedWorld {
+                quests: crate::quests::QuestSummary::default(),
                 seed: DungeonSeed::new(1).unwrap(),
                 items: Vec::new(),
             },
@@ -828,6 +976,7 @@ mod tests {
     #[test]
     fn scout_packet_has_a_fixed_android_big_endian_fixture() {
         let world = GeneratedWorld {
+            quests: crate::quests::QuestSummary::default(),
             seed: DungeonSeed::MIN,
             items: vec![WorldItem {
                 item: ItemId::WandFrost,
@@ -844,7 +993,7 @@ mod tests {
             }],
         };
         let packet = encode_scout_world(&world).unwrap();
-        let mut expected = b"SSC1\x0bAAA-AAA-AAA\0\x01\0\x0awand_frost".to_vec();
+        let mut expected = b"SSC2\x0bAAA-AAA-AAA\0\0\x01\0\x0awand_frost".to_vec();
         expected.extend_from_slice(&[
             7, 2, 1, // depth, upgrade, cursed flag
             0, 0, // no effect
@@ -856,8 +1005,117 @@ mod tests {
     }
 
     #[test]
+    fn scout_packet_quest_block_has_a_fixed_big_endian_fixture() {
+        use crate::quests::{
+            BlacksmithQuestType, GhostQuestType, ImpTarget, QuestSummary, ScheduledQuest,
+            WandmakerQuestType,
+        };
+
+        let world = GeneratedWorld {
+            quests: QuestSummary {
+                ghost: Some(ScheduledQuest {
+                    variant: GhostQuestType::GreatCrab,
+                    depth: 4,
+                }),
+                wandmaker: Some(ScheduledQuest {
+                    variant: WandmakerQuestType::Rotberry,
+                    depth: 8,
+                }),
+                blacksmith: Some(ScheduledQuest {
+                    variant: BlacksmithQuestType::Crystal,
+                    depth: 13,
+                }),
+                imp: Some(ScheduledQuest {
+                    variant: ImpTarget::Golem,
+                    depth: 18,
+                }),
+            },
+            seed: DungeonSeed::MIN,
+            items: Vec::new(),
+        };
+        let packet = encode_scout_world(&world).unwrap();
+        let mut expected = b"SSC2\x0bAAA-AAA-AAA".to_vec();
+        expected.extend_from_slice(&[
+            4, // quest count
+            1, 3, 4, // ghost: great crab on floor 4
+            2, 3, 8, // wandmaker: rotberry on floor 8
+            3, 1, 13, // blacksmith: crystal on floor 13
+            4, 2, 18, // imp: golem on floor 18
+            0, 0, // item count
+        ]);
+        assert_eq!(packet, expected);
+        assert_eq!(decode_scout_world(&packet), Ok(world));
+    }
+
+    #[test]
+    fn scout_decoder_rejects_malformed_quest_blocks() {
+        use crate::quests::{QuestSummary, ScheduledQuest, WandmakerQuestType};
+
+        let world = GeneratedWorld {
+            quests: QuestSummary {
+                wandmaker: Some(ScheduledQuest {
+                    variant: WandmakerQuestType::CorpseDust,
+                    depth: 7,
+                }),
+                ..QuestSummary::default()
+            },
+            seed: DungeonSeed::MIN,
+            items: Vec::new(),
+        };
+        let packet = encode_scout_world(&world).unwrap();
+        // Header (16), then quest count and one entry (quest, variant, depth).
+        assert_eq!(&packet[16..], &[1, 2, 1, 7, 0, 0]);
+
+        let mut bad_count = packet.clone();
+        bad_count[16] = 5;
+        assert_eq!(
+            decode_scout_world(&bad_count),
+            Err(WireError::InvalidQuestCount)
+        );
+
+        let mut bad_quest = packet.clone();
+        bad_quest[17] = 9;
+        assert_eq!(decode_scout_world(&bad_quest), Err(WireError::UnknownQuest));
+
+        let mut bad_variant = packet.clone();
+        bad_variant[18] = 4;
+        assert_eq!(
+            decode_scout_world(&bad_variant),
+            Err(WireError::UnknownQuestVariant)
+        );
+
+        let mut bad_depth = packet.clone();
+        bad_depth[19] = 12;
+        assert_eq!(
+            decode_scout_world(&bad_depth),
+            Err(WireError::InvalidQuestDepth)
+        );
+
+        let mut duplicated = packet;
+        duplicated[16] = 2;
+        let entry_start = 17;
+        let entry = duplicated[entry_start..entry_start + 3].to_vec();
+        duplicated.splice(entry_start + 3..entry_start + 3, entry);
+        assert_eq!(
+            decode_scout_world(&duplicated),
+            Err(WireError::InvalidQuestOrder)
+        );
+
+        let mut out_of_range = world;
+        out_of_range.quests.wandmaker = Some(ScheduledQuest {
+            variant: WandmakerQuestType::CorpseDust,
+            depth: 12,
+        });
+        assert_eq!(
+            encode_scout_world(&out_of_range),
+            Err(WireError::InvalidQuestDepth)
+        );
+    }
+
+    #[test]
     fn scout_packet_round_trips_a_plus_four_ring() {
         let world = GeneratedWorld {
+            quests: crate::quests::QuestSummary::default(),
             seed: DungeonSeed::from_code("AAA-AAA-AAF").unwrap(),
             items: vec![WorldItem {
                 item: ItemId::RingSharpshooting,
@@ -913,19 +1171,57 @@ mod tests {
             })
             .collect();
         let world = GeneratedWorld {
+            quests: crate::quests::QuestSummary {
+                ghost: Some(crate::quests::ScheduledQuest {
+                    variant: crate::quests::GhostQuestType::FetidRat,
+                    depth: 2,
+                }),
+                imp: Some(crate::quests::ScheduledQuest {
+                    variant: crate::quests::ImpTarget::Monk,
+                    depth: 17,
+                }),
+                ..crate::quests::QuestSummary::default()
+            },
             seed: DungeonSeed::MAX,
             items,
         };
 
         let packet = encode_scout_world(&world).unwrap();
-        assert_eq!(&packet[..4], b"SSC1");
+        assert_eq!(&packet[..4], b"SSC2");
         assert_eq!(decode_scout_world(&packet), Ok(world));
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)] // One golden packet: quests, then every official item.
     fn canonical_aaa_scout_response_contains_all_official_depth_twenty_four_items() {
+        use crate::quests::{
+            BlacksmithQuestType, GhostQuestType, ImpTarget, QuestSummary, ScheduledQuest,
+            WandmakerQuestType,
+        };
+
         let generated = CanonicalMainWorldGenerator.generate(DungeonSeed::MIN, 24);
         assert_eq!(generated.items.len(), 67);
+        assert_eq!(
+            generated.quests,
+            QuestSummary {
+                ghost: Some(ScheduledQuest {
+                    variant: GhostQuestType::GreatCrab,
+                    depth: 4,
+                }),
+                wandmaker: Some(ScheduledQuest {
+                    variant: WandmakerQuestType::ElementalEmbers,
+                    depth: 9,
+                }),
+                blacksmith: Some(ScheduledQuest {
+                    variant: BlacksmithQuestType::Crystal,
+                    depth: 13,
+                }),
+                imp: Some(ScheduledQuest {
+                    variant: ImpTarget::Golem,
+                    depth: 19,
+                }),
+            }
+        );
         assert_eq!(
             generated
                 .items
@@ -1009,6 +1305,13 @@ mod tests {
     #[test]
     fn every_truncated_scout_fixture_prefix_is_rejected() {
         let world = GeneratedWorld {
+            quests: crate::quests::QuestSummary {
+                imp: Some(crate::quests::ScheduledQuest {
+                    variant: crate::quests::ImpTarget::Golem,
+                    depth: 19,
+                }),
+                ..crate::quests::QuestSummary::default()
+            },
             seed: DungeonSeed::MIN,
             items: vec![WorldItem {
                 item: ItemId::Sword,
@@ -1037,6 +1340,7 @@ mod tests {
     #[test]
     fn scout_decoder_rejects_reserved_values_and_trailing_data() {
         let world = GeneratedWorld {
+            quests: crate::quests::QuestSummary::default(),
             seed: DungeonSeed::MIN,
             items: vec![WorldItem {
                 item: ItemId::WandFrost,
@@ -1052,33 +1356,34 @@ mod tests {
         let packet = encode_scout_world(&world).unwrap();
 
         let mut bad_flags = packet.clone();
-        // Header (18), ID length (2), "wand_frost" (10), depth, upgrade.
-        bad_flags[32] = 4;
+        // Header (19, incl. empty quest block), ID length (2), "wand_frost"
+        // (10), depth, upgrade.
+        bad_flags[33] = 4;
         assert_eq!(decode_scout_world(&bad_flags), Err(WireError::InvalidFlags));
 
         let mut bad_depth = packet.clone();
-        bad_depth[30] = 0;
+        bad_depth[31] = 0;
         assert_eq!(
             decode_scout_world(&bad_depth),
             Err(WireError::InvalidItemDepth)
         );
 
         let mut bad_upgrade = packet.clone();
-        bad_upgrade[31] = 4;
+        bad_upgrade[32] = 4;
         assert_eq!(
             decode_scout_world(&bad_upgrade),
             Err(WireError::InvalidItemUpgrade)
         );
 
         let mut bad_source = packet.clone();
-        bad_source[35] = u8::MAX;
+        bad_source[36] = u8::MAX;
         assert_eq!(
             decode_scout_world(&bad_source),
             Err(WireError::UnknownItemSource)
         );
 
         let mut bad_accessibility = packet.clone();
-        bad_accessibility[36] = u8::MAX;
+        bad_accessibility[37] = u8::MAX;
         assert_eq!(
             decode_scout_world(&bad_accessibility),
             Err(WireError::InvalidAccessibility)
@@ -1137,6 +1442,7 @@ mod tests {
             secret: false,
         };
         let world = GeneratedWorld {
+            quests: crate::quests::QuestSummary::default(),
             seed: DungeonSeed::MIN,
             items: vec![item; usize::from(u16::MAX) + 1],
         };

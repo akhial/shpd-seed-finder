@@ -202,9 +202,9 @@ class JniNativeSeedFinderTest {
             'S'.code.toByte(),
             'S'.code.toByte(),
             'C'.code.toByte(),
-            '1'.code.toByte(),
+            '2'.code.toByte(),
             11,
-        ) + "AAA-AAA-AAA".encodeToByteArray() + byteArrayOf(0, 0)
+        ) + "AAA-AAA-AAA".encodeToByteArray() + byteArrayOf(0, 0, 0)
 
         override fun queryContinues(candidate: ByteArray, base: ByteArray): Boolean {
             continuesCandidate = candidate.copyOf()

@@ -835,7 +835,11 @@ mod tests {
             } else {
                 Vec::new()
             };
-            GeneratedWorld { seed, items }
+            GeneratedWorld {
+                quests: crate::quests::QuestSummary::default(),
+                seed,
+                items,
+            }
         }
     }
 
@@ -903,6 +907,7 @@ mod tests {
                     .iter()
                     .copied()
                     .map(|seed| GeneratedWorld {
+                        quests: crate::quests::QuestSummary::default(),
                         seed,
                         items: (seed.value() % 17 == 0)
                             .then_some(WorldItem {
@@ -982,6 +987,7 @@ mod tests {
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .push(seed.value());
                 GeneratedWorld {
+                    quests: crate::quests::QuestSummary::default(),
                     seed,
                     items: Vec::new(),
                 }
@@ -1127,6 +1133,7 @@ mod tests {
                     upgrade: 2,
                     effect: None,
                     cursed: false,
+                    secret: false,
                     depth: 1,
                     source: ItemSource::Heap,
                     accessibility: Accessibility::Independent,
@@ -1134,7 +1141,11 @@ mod tests {
             } else {
                 Vec::new()
             };
-            GeneratedWorld { seed, items }
+            GeneratedWorld {
+                seed,
+                items,
+                quests: crate::quests::QuestSummary::default(),
+            }
         }
     }
 
@@ -1158,6 +1169,7 @@ mod tests {
                 GeneratedWorld {
                     seed,
                     items: Vec::new(),
+                    quests: crate::quests::QuestSummary::default(),
                 }
             }
         }
@@ -1425,10 +1437,12 @@ mod tests {
                         upgrade: 2,
                         effect: None,
                         cursed: false,
+                        secret: false,
                         depth: 1,
                         source: ItemSource::Heap,
                         accessibility: Accessibility::Independent,
                     }],
+                    quests: crate::quests::QuestSummary::default(),
                 }
             }
         }
@@ -1465,6 +1479,7 @@ mod tests {
             fn generate(&self, seed: crate::seed::DungeonSeed, _max_depth: u8) -> GeneratedWorld {
                 assert_ne!(seed.value(), 6, "fixture panic at seed six");
                 GeneratedWorld {
+                    quests: crate::quests::QuestSummary::default(),
                     seed,
                     items: Vec::new(),
                 }

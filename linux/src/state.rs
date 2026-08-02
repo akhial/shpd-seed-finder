@@ -8,6 +8,9 @@ use shpd_seedfinder_core::catalog::{Effect, ItemId, ItemKind, WeaponCategory, it
 use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::model::ItemSource;
 use shpd_seedfinder_core::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
+use shpd_seedfinder_core::quests::{
+    BlacksmithQuestType, GhostQuestType, ImpTarget, QuestSummary, WandmakerQuestType,
+};
 
 /// Every user-facing item source, in the wire order shared with the other
 /// frontends.
@@ -398,6 +401,80 @@ pub const fn region(depth: u8) -> &'static str {
     }
 }
 
+pub const fn ghost_quest_label(variant: GhostQuestType) -> &'static str {
+    match variant {
+        GhostQuestType::FetidRat => "Fetid rat",
+        GhostQuestType::GnollTrickster => "Gnoll trickster",
+        GhostQuestType::GreatCrab => "Great crab",
+    }
+}
+
+pub const fn wandmaker_quest_label(variant: WandmakerQuestType) -> &'static str {
+    match variant {
+        WandmakerQuestType::CorpseDust => "Corpse dust",
+        WandmakerQuestType::ElementalEmbers => "Elemental embers",
+        WandmakerQuestType::Rotberry => "Rotberry",
+    }
+}
+
+pub const fn blacksmith_quest_label(variant: BlacksmithQuestType) -> &'static str {
+    match variant {
+        BlacksmithQuestType::Crystal => "Crystal",
+        BlacksmithQuestType::Gnoll => "Gnoll",
+    }
+}
+
+pub const fn imp_target_label(target: ImpTarget) -> &'static str {
+    match target {
+        ImpTarget::Monk => "Monk",
+        ImpTarget::Golem => "Golem",
+    }
+}
+
+/// One scheduled quest prepared for presentation: the giver's name, the rolled
+/// variant's label, and the giver's floor.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct QuestRow {
+    pub giver: &'static str,
+    pub variant: &'static str,
+    pub depth: u8,
+}
+
+/// The quests scheduled in one world, in dungeon order.
+#[must_use]
+pub fn quest_rows(quests: QuestSummary) -> Vec<QuestRow> {
+    let mut rows = Vec::with_capacity(4);
+    if let Some(quest) = quests.ghost {
+        rows.push(QuestRow {
+            giver: "Sad ghost",
+            variant: ghost_quest_label(quest.variant),
+            depth: quest.depth,
+        });
+    }
+    if let Some(quest) = quests.wandmaker {
+        rows.push(QuestRow {
+            giver: "Wandmaker",
+            variant: wandmaker_quest_label(quest.variant),
+            depth: quest.depth,
+        });
+    }
+    if let Some(quest) = quests.blacksmith {
+        rows.push(QuestRow {
+            giver: "Blacksmith",
+            variant: blacksmith_quest_label(quest.variant),
+            depth: quest.depth,
+        });
+    }
+    if let Some(quest) = quests.imp {
+        rows.push(QuestRow {
+            giver: "Imp",
+            variant: imp_target_label(quest.variant),
+            depth: quest.depth,
+        });
+    }
+    rows
+}
+
 /// One upstream challenge with presentation data.
 pub struct ChallengeInfo {
     pub challenge: Challenges,
@@ -458,8 +535,16 @@ pub const ALL_CHALLENGES: &[ChallengeInfo] = &[
 mod tests {
     use shpd_seedfinder_core::catalog::{ItemId, ItemKind};
     use shpd_seedfinder_core::query::{TierRequirement, UpgradeRequirement};
+    use shpd_seedfinder_core::quests::{
+        BlacksmithQuestType, GhostQuestType, ImpTarget, QuestSummary, ScheduledQuest,
+        WandmakerQuestType,
+    };
 
-    use super::{AppState, StartMode, TargetFacts, UiRequirement, shares_item, start_mode};
+    use super::{
+        AppState, QuestRow, StartMode, TargetFacts, UiRequirement, blacksmith_quest_label,
+        ghost_quest_label, imp_target_label, quest_rows, shares_item, start_mode,
+        wandmaker_quest_label,
+    };
 
     #[test]
     fn refinement_requires_identical_scope_and_no_fewer_requirements() {
@@ -766,6 +851,101 @@ mod tests {
         requirement.weapon_category = Some(WeaponCategory::Melee);
         requirement.tier = TierRequirement::Any;
         assert_eq!(requirement.title(), "Any melee weapon");
+    }
+
+    #[test]
+    fn quest_labels_name_every_variant() {
+        assert_eq!(ghost_quest_label(GhostQuestType::FetidRat), "Fetid rat");
+        assert_eq!(
+            ghost_quest_label(GhostQuestType::GnollTrickster),
+            "Gnoll trickster"
+        );
+        assert_eq!(ghost_quest_label(GhostQuestType::GreatCrab), "Great crab");
+        assert_eq!(
+            wandmaker_quest_label(WandmakerQuestType::CorpseDust),
+            "Corpse dust"
+        );
+        assert_eq!(
+            wandmaker_quest_label(WandmakerQuestType::ElementalEmbers),
+            "Elemental embers"
+        );
+        assert_eq!(
+            wandmaker_quest_label(WandmakerQuestType::Rotberry),
+            "Rotberry"
+        );
+        assert_eq!(
+            blacksmith_quest_label(BlacksmithQuestType::Crystal),
+            "Crystal"
+        );
+        assert_eq!(blacksmith_quest_label(BlacksmithQuestType::Gnoll), "Gnoll");
+        assert_eq!(imp_target_label(ImpTarget::Monk), "Monk");
+        assert_eq!(imp_target_label(ImpTarget::Golem), "Golem");
+    }
+
+    #[test]
+    fn quest_rows_keep_dungeon_order_and_skip_missing_quests() {
+        assert!(quest_rows(QuestSummary::default()).is_empty());
+
+        // Seed AAA-AAA-AAA's canonical schedule.
+        let summary = QuestSummary {
+            ghost: Some(ScheduledQuest {
+                variant: GhostQuestType::GreatCrab,
+                depth: 4,
+            }),
+            wandmaker: Some(ScheduledQuest {
+                variant: WandmakerQuestType::ElementalEmbers,
+                depth: 9,
+            }),
+            blacksmith: Some(ScheduledQuest {
+                variant: BlacksmithQuestType::Crystal,
+                depth: 13,
+            }),
+            imp: Some(ScheduledQuest {
+                variant: ImpTarget::Golem,
+                depth: 19,
+            }),
+        };
+        assert_eq!(
+            quest_rows(summary),
+            vec![
+                QuestRow {
+                    giver: "Sad ghost",
+                    variant: "Great crab",
+                    depth: 4,
+                },
+                QuestRow {
+                    giver: "Wandmaker",
+                    variant: "Elemental embers",
+                    depth: 9,
+                },
+                QuestRow {
+                    giver: "Blacksmith",
+                    variant: "Crystal",
+                    depth: 13,
+                },
+                QuestRow {
+                    giver: "Imp",
+                    variant: "Golem",
+                    depth: 19,
+                },
+            ]
+        );
+
+        let partial = QuestSummary {
+            wandmaker: Some(ScheduledQuest {
+                variant: WandmakerQuestType::Rotberry,
+                depth: 8,
+            }),
+            ..QuestSummary::default()
+        };
+        assert_eq!(
+            quest_rows(partial),
+            vec![QuestRow {
+                giver: "Wandmaker",
+                variant: "Rotberry",
+                depth: 8,
+            }]
+        );
     }
 
     #[test]

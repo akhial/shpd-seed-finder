@@ -134,9 +134,30 @@ export interface ScoutRequest {
   query?: QueryDocument
 }
 
+export type QuestName = 'ghost' | 'wandmaker' | 'blacksmith' | 'imp'
+
+export type QuestVariant =
+  | 'fetid_rat'
+  | 'gnoll_trickster'
+  | 'great_crab'
+  | 'corpse_dust'
+  | 'elemental_embers'
+  | 'rotberry'
+  | 'crystal'
+  | 'gnoll'
+  | 'monk'
+  | 'golem'
+
+export interface ScoutQuest {
+  quest: QuestName
+  variant: QuestVariant
+  depth: number
+}
+
 export interface ScoutResult {
   seed: ParsedSeed
   items: ScoutItem[]
+  quests: ScoutQuest[]
   matchedRequirements: number
   totalRequirements: number
 }

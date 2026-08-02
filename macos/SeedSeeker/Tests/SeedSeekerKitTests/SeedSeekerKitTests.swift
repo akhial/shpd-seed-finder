@@ -266,6 +266,42 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertThrowsError(try ScoutCodec.decode(packet + Data([0])))
     }
 
+    func testScoutCodecGoldenQuestBlock() throws {
+        let world = try ScoutCodec.decode(questPacket(
+            [1, 3, 4], [2, 3, 8], [3, 1, 13], [4, 2, 18]))
+        XCTAssertEqual(world.seed, "AAA-AAA-AAA")
+        XCTAssertTrue(world.items.isEmpty)
+        XCTAssertEqual(world.quests.map(\.kind), [.ghost, .wandmaker, .blacksmith, .imp])
+        XCTAssertEqual(world.quests.map(\.variant), [.greatCrab, .rotberry, .crystal, .golem])
+        XCTAssertEqual(world.quests.map(\.depth), [4, 8, 13, 18])
+        XCTAssertEqual(world.quests.map(\.kind.giverLabel),
+                       ["Sad ghost", "Wandmaker", "Blacksmith", "Imp"])
+        XCTAssertEqual(world.quests.map(\.variant.label),
+                       ["Great crab", "Rotberry", "Crystal", "Golem"])
+        XCTAssertTrue(try ScoutCodec.decode(questPacket()).quests.isEmpty)
+    }
+
+    func testScoutCodecRejectsMalformedQuestBlocks() throws {
+        // Unknown quest id, and unknown variants (zero, too large, wrong quest).
+        XCTAssertThrowsError(try ScoutCodec.decode(questPacket([5, 1, 3])))
+        XCTAssertThrowsError(try ScoutCodec.decode(questPacket([0, 1, 3])))
+        XCTAssertThrowsError(try ScoutCodec.decode(questPacket([1, 0, 3])))
+        XCTAssertThrowsError(try ScoutCodec.decode(questPacket([1, 4, 3])))
+        XCTAssertThrowsError(try ScoutCodec.decode(questPacket([3, 3, 13])))
+        // Depth outside the quest's floor range.
+        XCTAssertThrowsError(try ScoutCodec.decode(questPacket([1, 1, 5])))
+        XCTAssertThrowsError(try ScoutCodec.decode(questPacket([2, 1, 6])))
+        XCTAssertThrowsError(try ScoutCodec.decode(questPacket([4, 2, 16])))
+        // Duplicate and descending quest ids, and an over-limit count.
+        XCTAssertThrowsError(try ScoutCodec.decode(questPacket([1, 1, 2], [1, 2, 3])))
+        XCTAssertThrowsError(try ScoutCodec.decode(questPacket([2, 1, 8], [1, 1, 3])))
+        XCTAssertThrowsError(try ScoutCodec.decode(questPacket(
+            count: 5, [1, 1, 2], [2, 1, 7], [3, 1, 12], [4, 1, 17], [4, 2, 18])))
+        // Truncated quest block.
+        XCTAssertThrowsError(try ScoutCodec.decode(Data(
+            Array("SSC2".utf8) + [11] + Array("AAA-AAA-AAA".utf8) + [1, 1, 3])))
+    }
+
     func testSeedCodeFormatting() {
         XCTAssertEqual(SeedCode.formatInput("abc"), "ABC")
         XCTAssertEqual(SeedCode.formatInput("abcd efgh ijk!"), "ABC-DEF-GHI")
@@ -354,6 +390,10 @@ final class SeedSeekerKitTests: XCTestCase {
         let world = try await ProductionSeedFinderEngine().scoutSeed("AAA-AAA-AAA", challenges: 0)
         XCTAssertFalse(world.items.isEmpty)
         XCTAssertTrue(world.items.allSatisfy { (1...24).contains($0.depth) })
+        XCTAssertEqual(world.quests.map(\.kind), [.ghost, .wandmaker, .blacksmith, .imp])
+        XCTAssertEqual(world.quests.map(\.variant),
+                       [.greatCrab, .elementalEmbers, .crystal, .golem])
+        XCTAssertEqual(world.quests.map(\.depth), [4, 9, 13, 19])
     }
 
     func testRealFFIStartCancelCloseLifecycle() async throws {
@@ -413,7 +453,7 @@ final class SeedSeekerKitTests: XCTestCase {
     }
 
     private func scoutPacket(depth: UInt8, flags: UInt8, effect: String, option: UInt8) -> Data {
-        var bytes = Array("SSC1".utf8) + [11] + Array("AAA-AAA-AAA".utf8) + [0, 1]
+        var bytes = Array("SSC2".utf8) + [11] + Array("AAA-AAA-AAA".utf8) + [0] + [0, 1]
         let id = Array("dagger".utf8); bytes += [0, UInt8(id.count)] + id
         bytes += [depth, 2, flags, 0, UInt8(effect.utf8.count)] + Array(effect.utf8)
         bytes += [UInt8(ScoutItemSource.chest.rawValue), 1, 0, 3, option]
@@ -421,10 +461,17 @@ final class SeedSeekerKitTests: XCTestCase {
     }
 
     private func scenarioPacket(mask: UInt64) -> Data {
-        var bytes = Array("SSC1".utf8) + [11] + Array("AAA-AAA-AAA".utf8) + [0, 1]
+        var bytes = Array("SSC2".utf8) + [11] + Array("AAA-AAA-AAA".utf8) + [0] + [0, 1]
         let id = Array("ring_haste".utf8); bytes += [0, UInt8(id.count)] + id
         bytes += [4, 1, 0, 0, 0, UInt8(ScoutItemSource.heap.rawValue), 2, 0, 2]
         bytes += (0..<8).reversed().map { UInt8((mask >> UInt64($0 * 8)) & 0xff) }
+        return Data(bytes)
+    }
+
+    /// An SSC2 packet with the given raw quest triples and zero items.
+    private func questPacket(count: UInt8? = nil, _ quests: [UInt8]...) -> Data {
+        var bytes = Array("SSC2".utf8) + [11] + Array("AAA-AAA-AAA".utf8)
+        bytes += [count ?? UInt8(quests.count)] + quests.flatMap { $0 } + [0, 0]
         return Data(bytes)
     }
 }

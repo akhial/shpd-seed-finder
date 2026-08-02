@@ -4,6 +4,7 @@ import { sourceLabel } from '../../lib/catalog'
 import { formatSeedInput } from '../../lib/format'
 import { itemGlow } from '../../lib/glow'
 import { CheckIcon, CopyIcon, FlagIcon, ForkIcon } from '../../lib/icons'
+import { questLabel, questVariantLabel } from '../../lib/quests'
 import { regionForDepth } from '../../lib/region'
 import type { ResultPosition } from '../../lib/scout-nav'
 import { queryStore } from '../../lib/store'
@@ -52,6 +53,10 @@ export function ScoutPanel({
     }
     return [...byDepth.entries()].sort(([left], [right]) => left - right)
   }, [result])
+
+  // `?? []` guards against cached worker responses from before quests existed.
+  const quests = result?.quests ?? []
+  const questByDepth = new Map(quests.map((quest) => [quest.depth, quest]))
 
   const copySeed = () => {
     if (!result) return
@@ -177,14 +182,40 @@ export function ScoutPanel({
               </p>
             </div>
 
+            {quests.length > 0 && (
+              <ul className="d1-quest-strip" aria-label="Quests">
+                {quests.map((quest) => {
+                  const region = regionForDepth(quest.depth)
+                  return (
+                    <li
+                      className="d1-quest-chip"
+                      key={quest.quest}
+                      style={{ ['--region' as string]: region.color }}
+                      title={`${questLabel(quest.quest)} quest on floor ${quest.depth} (${region.name})`}
+                    >
+                      <span className="d1-quest-chip-variant">{questVariantLabel(quest.variant)}</span>
+                      <span className="d1-quest-chip-giver">{questLabel(quest.quest)}</span>
+                      <span className="d1-quest-chip-floor d1-mono">F{quest.depth}</span>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+
             {floors.map(([depth, items]) => {
               const region = regionForDepth(depth)
+              const quest = questByDepth.get(depth)
               return (
                 <section className="d1-floor" key={depth} style={{ ['--region' as string]: region.color }}>
                   <header className="d1-floor-head">
                     <span className="d1-floor-bar" aria-hidden="true" />
                     <span className="d1-floor-label">Floor {depth}</span>
                     <span className="d1-floor-region">{region.name}</span>
+                    {quest && (
+                      <span className="d1-floor-quest" title={`${questLabel(quest.quest)} quest`}>
+                        {questVariantLabel(quest.variant)}
+                      </span>
+                    )}
                   </header>
                   <ul className="d1-item-list">
                     {items.map((item, index) => {

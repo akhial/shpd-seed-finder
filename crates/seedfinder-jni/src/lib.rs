@@ -42,7 +42,7 @@ fn android_error(_message: &str) {}
 
 #[unsafe(no_mangle)]
 /// Scouts a seed from `SSQ2` bytes (`magic`, little-endian `u16` challenge
-/// mask, UTF-8 seed code) or a legacy raw UTF-8 seed code, returning `SSC1`.
+/// mask, UTF-8 seed code) or a legacy raw UTF-8 seed code, returning `SSC2`.
 pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_scoutSeed<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,

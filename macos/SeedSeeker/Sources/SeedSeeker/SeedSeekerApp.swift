@@ -1111,6 +1111,24 @@ private struct SeedDetailView: View {
             }
             .font(.caption).foregroundStyle(.secondary)
             .padding(.horizontal).padding(.vertical, 6)
+            if !world.quests.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(world.quests) { quest in
+                            HStack(spacing: 4) {
+                                Image(systemName: Self.questSymbol(quest.kind))
+                                    .font(.caption2)
+                                    .foregroundStyle(Self.questTint(quest.kind))
+                                Text(quest.variant.label).font(.caption.bold())
+                                Text("\(quest.kind.giverLabel) · F\(quest.depth)")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            .padding(.horizontal, 7).padding(.vertical, 2)
+                            .background(Self.questTint(quest.kind).opacity(0.12), in: Capsule())
+                        }
+                    }.padding(.horizontal)
+                }.padding(.bottom, 6)
+            }
             List {
                 ForEach(depths, id: \.self) { depth in
                     Section {
@@ -1121,10 +1139,31 @@ private struct SeedDetailView: View {
                         HStack {
                             Text("Floor \(depth)")
                             Text(Self.region(depth)).foregroundStyle(.tertiary)
+                            if let quest = world.quests.first(where: { $0.depth == depth }) {
+                                Text("· \(quest.variant.label)").foregroundStyle(.tertiary)
+                            }
                         }
                     }
                 }
             }
+        }
+    }
+
+    private static func questTint(_ kind: ScoutQuestKind) -> Color {
+        switch kind {
+        case .ghost: .teal
+        case .wandmaker: .purple
+        case .blacksmith: .orange
+        case .imp: .yellow
+        }
+    }
+
+    private static func questSymbol(_ kind: ScoutQuestKind) -> String {
+        switch kind {
+        case .ghost: "eye"
+        case .wandmaker: "wand.and.stars"
+        case .blacksmith: "hammer"
+        case .imp: "flame"
         }
     }
 

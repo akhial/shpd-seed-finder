@@ -817,6 +817,64 @@ impl QuestState {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// Player-visible variant summary of the quests scheduled so far.
+    #[must_use]
+    pub fn summary(&self) -> QuestSummary {
+        QuestSummary {
+            ghost: match (self.ghost.spawned, self.ghost.quest_type, self.ghost.depth) {
+                (true, Some(variant), Some(depth)) => Some(ScheduledQuest { variant, depth }),
+                _ => None,
+            },
+            wandmaker: match (
+                self.wandmaker.spawned,
+                self.wandmaker.quest_type,
+                self.wandmaker.depth,
+            ) {
+                (true, Some(variant), Some(depth)) => Some(ScheduledQuest { variant, depth }),
+                _ => None,
+            },
+            // A Blacksmith or Imp room lost to a failed painter attempt never
+            // appears in the final level, so its NPC and quest do not exist.
+            blacksmith: match (
+                self.blacksmith.spawned && self.blacksmith.room_accessible,
+                self.blacksmith.quest_type,
+                self.blacksmith.depth,
+            ) {
+                (true, Some(variant), Some(depth)) => Some(ScheduledQuest { variant, depth }),
+                _ => None,
+            },
+            imp: match (
+                self.imp.spawned && self.imp.room_accessible,
+                self.imp.target,
+                self.imp.depth,
+            ) {
+                (true, Some(variant), Some(depth)) => Some(ScheduledQuest { variant, depth }),
+                _ => None,
+            },
+        }
+    }
+}
+
+/// One quest scheduled in a generated world: its rolled variant and the depth
+/// hosting the quest giver's floor.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct ScheduledQuest<V> {
+    pub variant: V,
+    pub depth: u8,
+}
+
+/// Player-visible quest variants rolled for one generated world.
+///
+/// Each entry is present exactly when the corresponding quest exists in the
+/// generated prefix: the Ghost and Wandmaker once their NPC spawns, the
+/// Blacksmith and Imp only when their quest room survived level painting.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct QuestSummary {
+    pub ghost: Option<ScheduledQuest<GhostQuestType>>,
+    pub wandmaker: Option<ScheduledQuest<WandmakerQuestType>>,
+    pub blacksmith: Option<ScheduledQuest<BlacksmithQuestType>>,
+    pub imp: Option<ScheduledQuest<ImpTarget>>,
 }
 
 const fn clean_roll(upgrade: u8) -> EquipmentRoll {
