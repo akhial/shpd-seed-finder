@@ -3,12 +3,13 @@ import { useStore } from '@tanstack/react-store'
 import { challenges as challengeOptions, wildcardSprites } from '../../lib/catalog'
 import { probabilityLabel } from '../../lib/format'
 import { effectGlow } from '../../lib/glow'
-import { CommandIcon, PlusIcon, ReturnIcon, XIcon } from '../../lib/icons'
+import { CheckIcon, CommandIcon, LinkIcon, PlusIcon, ReturnIcon, XIcon } from '../../lib/icons'
 import { FLOOR_LIMIT_OPTIONS, emptyRequirement, fromQueryJson, toQueryJson, validateRequirement } from '../../lib/query'
 import type { ValidationResult } from '../../lib/query'
 import { questVariantLabel } from '../../lib/quests'
 import { builtInPresets, loadPresets, maxWorkers, queryStore, savePresets, setWorkerCount, workerCountStore } from '../../lib/store'
 import type { Preset } from '../../lib/store'
+import { encodeShareLink } from '../../lib/wasm'
 import { WANDMAKER_QUESTS } from '../../lib/wasm/types'
 import type { AnalysisResult, ChallengeName, ItemCategory, QueryState, RequirementState, WandmakerQuest } from '../../lib/wasm/types'
 import { RequirementEditor } from './RequirementEditor'
@@ -30,6 +31,8 @@ export function QueryPanel({
   engineReady,
   onToggleSearch,
   isMac,
+  shareNotice,
+  onDismissShareNotice,
 }: {
   analysis: AnalysisResult | undefined
   validation: ValidationResult
@@ -37,6 +40,8 @@ export function QueryPanel({
   engineReady: boolean
   onToggleSearch: () => void
   isMac: boolean
+  shareNotice: string | undefined
+  onDismissShareNotice: () => void
 }) {
   const query = useStore(queryStore)
   const workerCount = useStore(workerCountStore)
@@ -45,6 +50,17 @@ export function QueryPanel({
   const [namingPreset, setNamingPreset] = useState(false)
   const [presetName, setPresetName] = useState('')
   const [editor, setEditor] = useState<EditorSession | null>(null)
+  const [linkCopied, setLinkCopied] = useState(false)
+
+  const shareQuery = () => {
+    void encodeShareLink(toQueryJson(query))
+      .then((link) => navigator.clipboard.writeText(link))
+      .then(() => {
+        setLinkCopied(true)
+        window.setTimeout(() => setLinkCopied(false), 1_200)
+      })
+      .catch(() => undefined)
+  }
 
   const applyPreset = (preset: Preset) => {
     queryStore.setState(() => cloneQuery(preset.query))
@@ -118,11 +134,32 @@ export function QueryPanel({
     <>
       <div className="d1-pane-head">
         <span>Query</span>
-        <span className="d1-pane-head-info">
-          {hasRequirements ? `${query.requirements.length} requirement${query.requirements.length === 1 ? '' : 's'}` : ''}
+        <span className="d1-pane-head-side">
+          <span className="d1-pane-head-info">
+            {hasRequirements ? `${query.requirements.length} requirement${query.requirements.length === 1 ? '' : 's'}` : ''}
+          </span>
+          <button
+            type="button"
+            className="d1-io-btn"
+            title="Copy a shareable link to this search"
+            aria-label="Copy a shareable link to this search"
+            disabled={!engineReady || !validation.valid}
+            onClick={shareQuery}
+          >
+            {linkCopied ? <CheckIcon size={13} /> : <LinkIcon size={13} />}
+            {linkCopied ? 'Copied' : 'Share'}
+          </button>
         </span>
       </div>
       <div className="d1-pane-body">
+        {shareNotice && (
+          <div className="d1-banner d1-banner-bleed" role="alert">
+            <span className="d1-grow">This share link couldn't be loaded: {shareNotice}</span>
+            <button type="button" className="d1-banner-dismiss" aria-label="Dismiss" title="Dismiss" onClick={onDismissShareNotice}>
+              <XIcon size={14} />
+            </button>
+          </div>
+        )}
         <section className="d1-section">
           <div className="d1-section-head"><h3>Presets</h3></div>
           <div className="d1-preset-row">

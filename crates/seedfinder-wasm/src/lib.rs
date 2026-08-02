@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use shpd_seedfinder_core::catalog::{Effect, ItemId, ItemKind, item};
 use shpd_seedfinder_core::challenges::Challenges;
+use shpd_seedfinder_core::deep_link;
 use shpd_seedfinder_core::feasibility::QueryPlan;
 use shpd_seedfinder_core::json_query;
 use shpd_seedfinder_core::main_world::{
@@ -200,6 +201,27 @@ pub fn format_seed_code(input: &str) -> String {
 #[wasm_bindgen]
 pub fn parse_seed_code(input: &str) -> Result<String, JsError> {
     parse_seed_code_impl(input).map_err(|error| JsError::new(&error))
+}
+
+/// Encodes a canonical query document as a full shareable web link.
+///
+/// # Errors
+///
+/// Returns a JavaScript error for malformed documents and invalid queries.
+#[wasm_bindgen]
+pub fn encode_share_link(query_json: &str) -> Result<String, JsError> {
+    encode_share_link_impl(query_json).map_err(|error| JsError::new(&error))
+}
+
+/// Decodes share-link text — a full link, custom-scheme link, or bare code —
+/// into the canonical query JSON document.
+///
+/// # Errors
+///
+/// Returns a JavaScript error when the text carries no valid share code.
+#[wasm_bindgen]
+pub fn decode_share_text(text: &str) -> Result<String, JsError> {
+    decode_share_text_impl(text).map_err(|error| JsError::new(&error))
 }
 
 /// Decodes and analyzes a query without throwing or panicking on bad input.
@@ -413,6 +435,16 @@ fn filter_seeds_impl(query_json: &str, seed_values: &[f64]) -> Result<String, St
         .map(|world| SeedOutput::from(world.seed))
         .collect::<Vec<_>>();
     Ok(to_json(&matches))
+}
+
+fn encode_share_link_impl(query_json: &str) -> Result<String, String> {
+    let query = json_query::decode(query_json)?;
+    deep_link::encode_link(&query)
+}
+
+fn decode_share_text_impl(text: &str) -> Result<String, String> {
+    let query = deep_link::decode_text(text)?;
+    Ok(json_query::encode(&query).to_string())
 }
 
 fn parse_seed_code_impl(input: &str) -> Result<String, String> {
@@ -728,8 +760,9 @@ mod tests {
     use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
 
     use super::{
-        MAX_RESULTS, SearchSession, analyze_query, engine_info, filter_seeds_impl,
-        format_seed_code, parse_seed_code_impl, query_continues_impl, scout_impl,
+        MAX_RESULTS, SearchSession, analyze_query, decode_share_text_impl, encode_share_link_impl,
+        engine_info, filter_seeds_impl, format_seed_code, parse_seed_code_impl,
+        query_continues_impl, scout_impl,
     };
 
     #[test]
@@ -743,6 +776,19 @@ mod tests {
         assert!(!query_continues_impl(base, narrowed).unwrap());
         assert!(!query_continues_impl(rescoped, base).unwrap());
         assert!(query_continues_impl("not json", base).is_err());
+    }
+
+    #[test]
+    fn share_links_round_trip_the_canonical_document() {
+        let document = r#"{"requirements":[{"item":"wand_fireblast","upgrade":{"at_least":3}}]}"#;
+        let link = encode_share_link_impl(document).unwrap();
+        assert_eq!(link, "https://shpd-seed-seeker.web.app/#q=EAGWhMA");
+        // Decoding returns the canonical document, which spells out the kind.
+        let canonical = r#"{"requirements":[{"item":"wand_fireblast","kind":"wand","upgrade":{"at_least":3}}]}"#;
+        assert_eq!(decode_share_text_impl(&link).unwrap(), canonical);
+        assert_eq!(decode_share_text_impl("EAGWhMA").unwrap(), canonical);
+        assert!(encode_share_link_impl(r#"{"requirements":[]}"#).is_err());
+        assert!(decode_share_text_impl("https://example.com/").is_err());
     }
 
     #[test]

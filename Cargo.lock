@@ -994,6 +994,7 @@ dependencies = [
 name = "shpd-seedfinder-ffi"
 version = "0.7.0"
 dependencies = [
+ "shpd-seedfinder-core",
  "shpd-seedfinder-session",
 ]
 

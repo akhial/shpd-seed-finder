@@ -74,6 +74,9 @@ private struct ContentView: View {
     @State private var exportDocument: ResultsFileDocument?
     @State private var showingImporter = false
     @State private var transferError: String?
+    @State private var pendingLink: URL?
+    @State private var linkCopied = false
+    @State private var linkCopiedReset: Task<Void, Never>?
 
     /// Transient search notes shown in the window-bottom status bar rather
     /// than inside the results list.
@@ -141,6 +144,15 @@ private struct ContentView: View {
                             .labelStyle(ToolbarActionLabelStyle(trailingEllipsis: false))
                             .help("Clear the results, so the next search starts from scratch")
                             .disabled(!controller.canClearResults)
+                            Button {
+                                copyQueryLink()
+                            } label: {
+                                Label("Copy Link",
+                                      systemImage: linkCopied ? "checkmark" : "link")
+                            }
+                            .labelStyle(ToolbarActionLabelStyle())
+                            .help("Copy a shareable link to the current query")
+                            .disabled(controller.isRunning)
                         }
                     }
             } detail: {
@@ -192,7 +204,13 @@ private struct ContentView: View {
         .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.json]) { result in
             if case .success(let url) = result { importResults(from: url) }
         }
-        .alert("Results file", isPresented: Binding(
+        .onOpenURL { url in
+            // On a cold launch the URL can arrive before .onAppear has
+            // restored the saved query; applying it then would be clobbered
+            // by the restore, so it waits its turn.
+            if restored { openQueryLink(url) } else { pendingLink = url }
+        }
+        .alert("Seed Seeker", isPresented: Binding(
             get: { transferError != nil },
             set: { if !$0 { transferError = nil } })
         ) {
@@ -212,6 +230,7 @@ private struct ContentView: View {
             wandmakerQuest = saved.wandmakerQuest
             fastMode = saved.fastMode
             userPresets = PresetPersistence.decode(savedPresetsJSON)
+            if let link = pendingLink { pendingLink = nil; openQueryLink(link) }
         }
         .onDisappear {
             if let monitor = resultKeyMonitor { NSEvent.removeMonitor(monitor); resultKeyMonitor = nil }
@@ -320,6 +339,47 @@ private struct ContentView: View {
         exportDocument = ResultsFileDocument(
             text: ResultsExport.encode(query, seeds: controller.results.map(\.seed),
                                        appVersion: appVersion))
+    }
+
+    /// Applies the query carried by a `seedseeker://` link (URL-scheme
+    /// registration only works from the built app bundle, not `swift run`).
+    private func openQueryLink(_ url: URL) {
+        guard !controller.isRunning else {
+            transferError = "Stop the search before opening a query link."
+            return
+        }
+        do {
+            apply(try DeepLink.decode(url.absoluteString))
+        } catch {
+            transferError = (error as? LocalizedError)?.errorDescription
+                ?? "This link does not contain a valid Seed Seeker query."
+        }
+    }
+
+    /// Encodes the query as currently edited (unlike export, which snapshots
+    /// the query behind the results) and puts the web link on the pasteboard.
+    private func copyQueryLink() {
+        do {
+            let link = try DeepLink.encodeLink(for: SavedQuery(
+                requirements: requirements, maximumDepth: maximumDepth,
+                requireBlacksmith: requireBlacksmith,
+                excludeBlacksmithRewards: excludeBlacksmithRewards,
+                wandmakerQuest: wandmakerQuest,
+                fastMode: fastMode, challenges: challenges))
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(link, forType: .string)
+            // Brief checkmark in the toolbar icon as the "copied" feedback.
+            linkCopied = true
+            linkCopiedReset?.cancel()
+            linkCopiedReset = Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                guard !Task.isCancelled else { return }
+                linkCopied = false
+            }
+        } catch {
+            transferError = (error as? LocalizedError)?.errorDescription
+                ?? "The current query could not be turned into a link."
+        }
     }
 
     private func importResults(from url: URL) {

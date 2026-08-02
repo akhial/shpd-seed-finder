@@ -154,7 +154,9 @@ public enum ResultsExport {
         return true
     }
 
-    private static func encodeQuery(_ query: SavedQuery) -> [String: Any] {
+    // Internal, not private: the share-link codec (`DeepLink`) exchanges the
+    // same canonical query document with the Rust core.
+    static func encodeQuery(_ query: SavedQuery) -> [String: Any] {
         var output: [String: Any] = ["requirements": query.requirements.map(encodeRequirement)]
         if query.maximumDepth != 24 { output["max_depth"] = query.maximumDepth }
         if query.requireBlacksmith { output["require_blacksmith"] = true }
@@ -190,7 +192,7 @@ public enum ResultsExport {
         return output
     }
 
-    private static func decodeQuery(_ value: [String: Any]) throws -> SavedQuery {
+    static func decodeQuery(_ value: [String: Any]) throws -> SavedQuery {
         for key in value.keys where !queryKeys.contains(key) {
             throw ResultsExportError(
                 "The query in this results file uses an unknown field \"\(key)\". " +

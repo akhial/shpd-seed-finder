@@ -108,6 +108,26 @@ public static partial class ResultsExport
     private static string? TolerantString(JsonObject document, string key) =>
         document[key] is JsonValue value && value.TryGetValue(out string? text) ? text : null;
 
+    /// <summary>The bare canonical JSON query document, the share-link codec's input.</summary>
+    public static string EncodeQueryDocument(QuerySettings query) => EncodeQuery(query).ToJsonString();
+
+    /// <summary>Decodes a bare canonical JSON query document, the share-link codec's output.</summary>
+    /// <exception cref="ResultsExportException">With a user-facing message.</exception>
+    public static QuerySettings DecodeQueryDocument(string text)
+    {
+        JsonObject document;
+        try
+        {
+            document = JsonNode.Parse(text) as JsonObject
+                ?? throw new ResultsExportException("The shared query could not be read.");
+        }
+        catch (JsonException)
+        {
+            throw new ResultsExportException("The shared query could not be read.");
+        }
+        return DecodeQuery(document);
+    }
+
     private static JsonObject EncodeQuery(QuerySettings query)
     {
         var output = new JsonObject

@@ -1041,6 +1041,52 @@ mod tests {
     }
 
     #[test]
+    fn share_links_round_trip_the_whole_editor_state() {
+        use shpd_seedfinder_core::catalog::{ItemKind, WeaponCategory};
+        use shpd_seedfinder_core::challenges::Challenges;
+        use shpd_seedfinder_core::deep_link;
+
+        let mut state = AppState::default();
+        let key = state.claim_key();
+        state.requirements.push(UiRequirement {
+            weapon_category: Some(WeaponCategory::Melee),
+            tier: TierRequirement::AtLeast(4),
+            upgrade: UpgradeRequirement::Exact(2),
+            require_uncursed: true,
+            max_depth: Some(9),
+            ..UiRequirement::new(key)
+        });
+        let key = state.claim_key();
+        state.requirements.push(UiRequirement {
+            kind: ItemKind::Ring,
+            item: Some(ItemId::RingTenacity),
+            identity_group: Some(2),
+            ..UiRequirement::new(key)
+        });
+        state.max_depth = 13;
+        state.require_blacksmith = true;
+        state.wandmaker_quest = Some(WandmakerQuestType::ElementalEmbers);
+        state.fast_mode = true;
+        state.challenges = Challenges::NO_SCROLLS;
+
+        let query = state.to_query().unwrap();
+        let link = deep_link::encode_link(&query).unwrap();
+        assert!(link.starts_with(deep_link::WEB_LINK_PREFIX));
+        let decoded = deep_link::decode_text(&link).unwrap();
+        assert_eq!(decoded, query);
+
+        // A received link restores editor state that produces the identical
+        // query, so copying the link again shares the same search.
+        let restored = AppState::from_query(&decoded);
+        assert_eq!(restored.to_query().unwrap(), query);
+
+        // The custom-scheme form the desktop handler receives decodes too.
+        let code = link.strip_prefix(deep_link::WEB_LINK_PREFIX).unwrap();
+        let uri = format!("{}://q/{code}", deep_link::URI_SCHEME);
+        assert_eq!(deep_link::decode_text(&uri).unwrap(), query);
+    }
+
+    #[test]
     fn query_drops_blacksmith_requirement_at_depth_fourteen() {
         let mut state = AppState::default();
         let key = state.claim_key();
