@@ -1,11 +1,12 @@
 using System.Collections.ObjectModel;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Microsoft.UI;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Media;
 
 namespace SeedSeeker;
+
+// This file must stay free of Windows App SDK types: SeedSeeker.Tests links it
+// to run on any host. Members that need XAML types live in the partial halves
+// in Models.Presentation.cs.
 
 // MeleeWeapon and ThrownWeapon narrow a weapon requirement to one weapon
 // class; the enum value doubles as the SSF7 wire kind ID (0..=5), so they
@@ -50,10 +51,9 @@ public enum ScoutItemSource
 /// The generic Fluent glyph and tint, kept only for wildcard requirements that pin
 /// no concrete item and so have no sprite to draw.
 /// </summary>
-public static class KindStyle
+public static partial class KindStyle
 {
     public static string Glyph(ItemKind kind) => kind.Family() switch { ItemKind.Weapon => "", ItemKind.Armor => "", ItemKind.Wand => "", _ => "" };
-    public static Brush Tint(ItemKind kind) => new SolidColorBrush(kind.Family() switch { ItemKind.Weapon => Colors.DarkOrange, ItemKind.Armor => Colors.DodgerBlue, ItemKind.Wand => Colors.MediumPurple, _ => Colors.Goldenrod });
 }
 
 public static class Labels
@@ -71,7 +71,7 @@ public static class Labels
     };
 }
 
-public sealed class ItemRequirement
+public sealed partial class ItemRequirement
 {
     public long Key { get; set; } = Random.Shared.NextInt64(1, long.MaxValue);
     public CatalogItem? Item { get; set; }
@@ -86,19 +86,8 @@ public sealed class ItemRequirement
     public int? MaximumDepth { get; set; }
     public bool RequireUncursed { get; set; }
     [JsonIgnore] public string Glyph => KindStyle.Glyph(Kind);
-    [JsonIgnore] public Brush Tint => KindStyle.Tint(Kind);
     /// <summary>Row-major index into the upstream item atlas, or -1 for a wildcard.</summary>
     [JsonIgnore] public int SpriteIndex => Item?.SpriteIndex ?? -1;
-    [JsonIgnore] public Visibility SpriteVisibility => Item is null ? Visibility.Collapsed : Visibility.Visible;
-    /// <summary>The generic glyph shows only where there is genuinely no concrete item.</summary>
-    [JsonIgnore] public Visibility FallbackVisibility => Item is null ? Visibility.Visible : Visibility.Collapsed;
-    /// <summary>
-    /// Glow for the pinned enchantment or curse, with the bare-effect-name semantics
-    /// of the web's <c>effectGlow</c>: an unrecognised effect is a curse and glows
-    /// black. There is nothing to tint without a sprite, so wildcards never glow.
-    /// </summary>
-    [JsonIgnore] public Windows.UI.Color GlowColor => ItemGlow.ForEffect(Modifier)?.Color ?? default;
-    [JsonIgnore] public double GlowPeriod => Item is null ? 0 : ItemGlow.ForEffect(Modifier)?.Period ?? 0;
     [JsonIgnore] public string Title => Item?.Name ?? (TierMatch switch { TierMatch.Exactly => $"Any Tier {Tier} {Labels.Singular(Kind)}", TierMatch.AtLeast => $"Any Tier {Tier}+ {Labels.Singular(Kind)}", TierMatch.AtMost => $"Any Tier {Tier} or lower {Labels.Singular(Kind)}", _ => $"Any {Labels.Singular(Kind)}" });
     [JsonIgnore] public string Description
     {
@@ -131,6 +120,100 @@ public sealed class QuerySettings
         FastMode = FastMode,
         Challenges = Challenges,
     };
+}
+
+/// <summary>
+/// Decides whether a query can continue a finished run instead of rescanning it:
+/// identical scope, and every baseline requirement still present (counting
+/// duplicates). Extra requirements are allowed but not required — an unchanged
+/// query qualifies too, and continuing it is exactly right: its filter trivially
+/// keeps every seed the run delivered and the scan resumes where it stopped. A
+/// search session therefore survives until the user explicitly clears it.
+/// The continuation rule itself belongs to the engine and is asked of it, since
+/// soundness of the resumed scan depends on the two agreeing exactly.
+/// <see cref="SharesRequirement"/> stays local by contrast: it gates nothing but
+/// a re-verifying filter, so it is a UI heuristic rather than a soundness rule.
+/// </summary>
+public static class QueryRefinement
+{
+    /// <summary>
+    /// True when every requirement of <paramref name="baseline"/> is covered by
+    /// a distinct requirement of <paramref name="candidate"/> at least as strict
+    /// (equal or strengthened) under an identical scope.
+    /// Deliberately not strict: an equal query is a continuation, not a rescan.
+    /// The engine decides — this encodes both queries and asks
+    /// <c>seedfinder_query_continues</c>, so refine eligibility here is the very
+    /// predicate the resumed scan relies on and cannot drift from it.
+    /// </summary>
+    public static bool CanRefine(QuerySettings candidate, QuerySettings baseline) =>
+        NativeEngine.QueryContinues(candidate, baseline);
+
+    /// <summary>
+    /// Whether two queries name a common item: some requirement of each has the
+    /// same kind, and either both name the same item or at least one names none
+    /// (a kind-level requirement subsumes every item of its kind). Scope and
+    /// challenge differences are irrelevant — a filter re-verifies seeds from
+    /// scratch — so this deliberately checks nothing else: it only estimates
+    /// whether the Target Set is enriched for the candidate query's matches.
+    /// </summary>
+    public static bool SharesRequirement(QuerySettings candidate, QuerySettings baseline) =>
+        candidate.Requirements.Any(left => baseline.Requirements.Any(right =>
+            left.Kind == right.Kind
+            && (left.Item is null || right.Item is null || left.Item.Id == right.Item.Id)));
+}
+
+/// <summary>What pressing Start Search does with a query, per docs/search-semantics.md.</summary>
+public enum StartMode
+{
+    /// <summary>Fresh full-range scan that establishes the Target on conclusion.</summary>
+    Anchor,
+    /// <summary>Filter the Target Set, then resume the target's uncovered remainder.</summary>
+    TargetRefine,
+    /// <summary>Filter the Target Set only; coverage and set stay untouched.</summary>
+    TargetFilter,
+    /// <summary>Continue the previous detached scan (filter its results, resume its remainder).</summary>
+    ContinueDetached,
+    /// <summary>Fresh full-range scan that leaves the Target untouched.</summary>
+    Detached,
+}
+
+/// <summary>
+/// The session's anchor: established by the first concluded search (or an
+/// import) and reset only by Clear Results. <see cref="Seeds"/> is uncapped and
+/// a superset of any related run's display, which is what lets a loosened query
+/// bring seeds back. <see cref="Remaining"/> is zero for imports, whose refines
+/// are filter-only.
+/// </summary>
+public sealed record TargetRun(QuerySettings Query, IReadOnlyList<string> Seeds, long ResumeFrom, long Remaining);
+
+/// <summary>
+/// The single gate for what Start Search does (docs/search-semantics.md). The
+/// Target Set is the anchor: a continuation of the Target Query refines it, a
+/// query sharing an item filters it (always from the full set, so loosening a
+/// requirement brings seeds back), and anything else scans the full range
+/// without touching it — continuing the previous detached scan when that is
+/// sound. An empty Target Set holds nothing worth preserving, so a
+/// non-continuing query re-anchors on this search instead of filtering nothing.
+/// </summary>
+public static class SearchPlan
+{
+    /// <param name="query">The query about to run.</param>
+    /// <param name="target">The session's Target, if one has been established.</param>
+    /// <param name="lastDetachedQuery">The query of the previous run when that
+    /// run was a detached scan that concluded (completed or cancelled), null
+    /// otherwise. Only such a run may be continued by a query unrelated to the
+    /// Target; a failed run is never a continuation base.</param>
+    public static StartMode DecideStart(QuerySettings query, TargetRun? target, QuerySettings? lastDetachedQuery = null)
+    {
+        if (target is null) return StartMode.Anchor;
+        var continuesTarget = QueryRefinement.CanRefine(query, target.Query);
+        if (target.Seeds.Count == 0)
+            return continuesTarget && target.Remaining > 0 ? StartMode.TargetRefine : StartMode.Anchor;
+        if (continuesTarget) return StartMode.TargetRefine;
+        if (QueryRefinement.SharesRequirement(query, target.Query)) return StartMode.TargetFilter;
+        if (lastDetachedQuery is not null && QueryRefinement.CanRefine(query, lastDetachedQuery)) return StartMode.ContinueDetached;
+        return StartMode.Detached;
+    }
 }
 
 public sealed class QueryPreset

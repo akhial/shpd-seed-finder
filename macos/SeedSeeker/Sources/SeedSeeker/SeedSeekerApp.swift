@@ -74,6 +74,26 @@ private struct ContentView: View {
     @State private var showingImporter = false
     @State private var transferError: String?
 
+    /// Transient search notes shown in the window-bottom status bar rather
+    /// than inside the results list.
+    private var statusBarText: String? {
+        var parts: [String] = []
+        if let kept = controller.refinedKept, let of = controller.refinedOf {
+            parts.append("Refined: kept \(kept) of \(of) previous seed\(of == 1 ? "" : "s")")
+        }
+        // A fresh detached scan is the one moment the display and the kept
+        // Target Set diverge, so say what happened to the earlier results. A
+        // continued detached scan tells its own story through the refined
+        // caption above.
+        if controller.runKind == .detached && controller.refinedKept == nil && controller.target != nil {
+            parts.append("Unrelated query — detached search from previous results.")
+        }
+        // Only a concluded run announces the cap: while an accumulating scan
+        // runs, a full display is the expected state, not news.
+        if controller.reachedResultCap && !controller.isRunning { parts.append("Result limit reached (1,024 seeds).") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             NavigationSplitView {
@@ -111,6 +131,14 @@ private struct ContentView: View {
                             .help("Export the results and the query that produced them to a file")
                             .disabled(controller.isRunning || controller.results.isEmpty
                                 || controller.exportQuery == nil)
+                            Button {
+                                controller.clearResults()
+                            } label: {
+                                Label("Clear", systemImage: "trash")
+                            }
+                            .labelStyle(ToolbarActionLabelStyle(trailingEllipsis: false))
+                            .help("Clear the results, so the next search starts from scratch")
+                            .disabled(!controller.canClearResults)
                         }
                     }
             } detail: {
@@ -120,16 +148,31 @@ private struct ContentView: View {
                     .navigationSplitViewColumnWidth(min: 360, ideal: 450)
             }
             Divider()
-            // The bundled item artwork is GPL-3.0-or-later, so its attribution
-            // and the full license text have to be reachable from the app.
-            Button { showingAbout = true } label: {
-                Text("Shattered Pixel Dungeon v3.3.8 · Artwork & licenses")
-                    .font(.caption).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity).padding(5)
-                    .contentShape(Rectangle())
+            // One permanent bottom bar: attribution on the left, transient
+            // search status on the right. A bar that only existed once there
+            // was status text resized the split view when it appeared,
+            // clipping the sidebar's pinned Start Search button.
+            HStack(spacing: 8) {
+                // The bundled item artwork is GPL-3.0-or-later, so its
+                // attribution and the full license text have to be reachable
+                // from the app.
+                Button { showingAbout = true } label: {
+                    Text("Shattered Pixel Dungeon v3.3.8 · Artwork & licenses")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .padding(.vertical, 5)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .layoutPriority(1)
+                .help("Item artwork attribution and license")
+                Spacer(minLength: 8)
+                if let text = statusBarText {
+                    Text(text)
+                        .font(.caption).foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.tail)
+                }
             }
-            .buttonStyle(.plain)
-            .help("Item artwork attribution and license")
+            .padding(.horizontal, 16)
         }
         .sheet(isPresented: $showingAbout) { AboutView() }
         .fileExporter(
@@ -499,12 +542,12 @@ private struct QueryView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal).padding(.top, 8)
             }
+            // Starting a search that narrows — or just repeats — the last
+            // finished run refines it automatically; the controller decides,
+            // so there is no second button here.
             Button {
                 if controller.isRunning { controller.cancel() }
-                else if let request = try? SearchRequest(requirements: requirements,
-                    maximumDepth: maximumDepth, requireBlacksmith: requireBlacksmith,
-                    excludeBlacksmithRewards: excludeBlacksmithRewards,
-                    fastMode: fastMode, challenges: challenges) { controller.start(request) }
+                else if let request = builtRequest { controller.start(request) }
             } label: {
                 Label(controller.isRunning ? "Cancel Search" : "Start Search",
                       systemImage: controller.isRunning ? "stop.fill" : "play.fill")
@@ -534,6 +577,13 @@ private struct QueryView: View {
         } message: {
             Text("Save the current requirements and search settings.")
         }
+    }
+
+    private var builtRequest: SearchRequest? {
+        try? SearchRequest(requirements: requirements, maximumDepth: maximumDepth,
+                           requireBlacksmith: requireBlacksmith,
+                           excludeBlacksmithRewards: excludeBlacksmithRewards,
+                           fastMode: fastMode, challenges: challenges)
     }
 
     @ViewBuilder private var requirementSections: some View {
@@ -832,17 +882,31 @@ private struct RequirementEditor: View {
 /// `square.and.arrow.up`/`down` carry more empty space above the glyph than
 /// below it, so a toolbar label leaves them looking low against their capsule.
 /// Lifting only the icon optically centres it without moving the title.
-/// The inset has to be symmetric: hover highlights each button separately, and
-/// padding only one side draws the highlight hard against the title's ellipsis.
-/// Padding both sides also keeps the pair's shared Liquid Glass container off
-/// the outer labels.
+/// Both sides need an inset: hover highlights each button separately, so
+/// padding one side alone draws the highlight hard against the other end of
+/// the label. It also keeps the group's shared Liquid Glass container off the
+/// outer labels.
+///
+/// The 6pt was tuned against "Import…"/"Export…", whose trailing dots sit on
+/// the baseline and read as extra room on the right — enough to balance the
+/// icon's own side bearing on the left. A title without an ellipsis ("Clear")
+/// ends hard against the inset, so the same value leaves it visibly
+/// left-heavy; `trailingEllipsis: false` trims the leading side by the
+/// ellipsis's optical width to even the two gaps back out.
 private struct ToolbarActionLabelStyle: LabelStyle {
+    /// Room a trailing ellipsis contributes on the right, which a title
+    /// without one has to reclaim from the leading inset instead.
+    private static let ellipsisAllowance: CGFloat = 2
+    /// Whether this label's title ends in an ellipsis.
+    var trailingEllipsis = true
+
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 5) {
             configuration.icon.offset(y: -1)
             configuration.title
         }
-        .padding(.horizontal, 6)
+        .padding(.leading, trailingEllipsis ? 6 : 6 - Self.ellipsisAllowance)
+        .padding(.trailing, 6)
     }
 }
 
@@ -860,25 +924,34 @@ private struct ResultsFileDocument: FileDocument {
     }
 }
 
+/// A displayed result with its 1-based row number precomputed: numbering via
+/// `firstIndex(of:)` in the cell is quadratic over the table, which a
+/// cap-sized list turns into visible main-thread stalls.
+private struct NumberedResult: Identifiable {
+    let number: Int
+    let result: SeedResult
+    var id: String { result.id }
+}
+
 private struct ResultsView: View {
     let controller: SearchController
     let scout: (String) -> Void
     var body: some View {
+        let rows = controller.results.enumerated().map { NumberedResult(number: $0.offset + 1, result: $0.element) }
         VStack(alignment: .leading, spacing: 10) {
-            status.padding([.horizontal, .top])
-            if controller.reachedResultCap { Text("Result limit reached (1,024 seeds).").font(.caption).foregroundStyle(.secondary).padding(.horizontal) }
-            Table(controller.results, selection: Bindable(controller).selectedSeed) {
-                TableColumn("#") { result in Text("\((controller.results.firstIndex(of: result) ?? 0) + 1)").foregroundStyle(.secondary) }.width(45)
-                TableColumn("Seed") { result in
-                    Text(result.seed).font(.system(.body, design: .monospaced))
-                        .contextMenu { Button("Copy Seed") { copy(result.seed) }; Button("Scout Seed") { scout(result.seed) } }
+            statusBody.padding([.horizontal, .top])
+            Table(rows, selection: Bindable(controller).selectedSeed) {
+                TableColumn("#") { row in Text("\(row.number)").foregroundStyle(.secondary) }.width(45)
+                TableColumn("Seed") { row in
+                    Text(row.result.seed).font(.system(.body, design: .monospaced))
+                        .contextMenu { Button("Copy Seed") { copy(row.result.seed) }; Button("Scout Seed") { scout(row.result.seed) } }
                 }
             }
             Button("Copy Selected") { if let seed = controller.selectedSeed { copy(seed) } }
                 .keyboardShortcut("c", modifiers: .command).hidden()
         }.navigationTitle("Results")
     }
-    @ViewBuilder private var status: some View {
+    @ViewBuilder private var statusBody: some View {
         if controller.isImported {
             HStack(spacing: 8) {
                 Text("Imported").font(.caption.bold())

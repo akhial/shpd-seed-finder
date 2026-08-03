@@ -95,18 +95,21 @@ pub fn present(app: &adw::Application) {
     // Actions and cross-pane wiring.
 
     let start_action = gio::SimpleAction::new("start-search", None);
+    let clear_action = gio::SimpleAction::new("clear-results", None);
     let refresh_all: Rc<dyn Fn()> = Rc::new({
         let state = Rc::clone(&state);
         let query = Rc::clone(&query);
         let detail = Rc::clone(&detail);
         let results = Rc::clone(&results);
         let start_action = start_action.clone();
+        let clear_action = clear_action.clone();
         move || {
             let snapshot = state.borrow();
             persist::save(&snapshot);
             query.refresh(&snapshot);
             detail.render(&snapshot);
             start_action.set_enabled(!snapshot.requirements.is_empty() || results.is_running());
+            clear_action.set_enabled(results.can_clear());
         }
     });
 
@@ -185,11 +188,12 @@ pub fn present(app: &adw::Application) {
     });
     results.connect_finished({
         let query = Rc::clone(&query);
-        let state = Rc::clone(&state);
-        let start_action = start_action.clone();
+        let refresh_all = Rc::clone(&refresh_all);
         move || {
             query.set_running(false);
-            start_action.set_enabled(!state.borrow().requirements.is_empty());
+            // Re-derives the enabled actions, including whether the finished
+            // search left anything to clear.
+            refresh_all();
         }
     });
     detail.connect_scout({
@@ -284,6 +288,7 @@ pub fn present(app: &adw::Application) {
         let toasts = toasts.clone();
         let inner_split = inner_split.clone();
         let outer_split = outer_split.clone();
+        let refresh_all = Rc::clone(&refresh_all);
         move |_, _| {
             if results.is_running() {
                 results.cancel();
@@ -291,12 +296,17 @@ pub fn present(app: &adw::Application) {
             }
             match state.borrow().to_query() {
                 Ok(search_query) => {
-                    results.start(search_query.clone());
+                    // The pane dispatches on the query's relationship to the
+                    // session's Target (docs/search-semantics.md): related
+                    // queries refine or filter the Target Set, unrelated ones
+                    // scan detached without touching it.
+                    results.start_search(search_query.clone());
                     if results.is_running() {
                         exported_query.replace(Some(search_query));
                         query.set_running(true);
                         outer_split.set_show_content(true);
                         inner_split.set_show_content(false);
+                        refresh_all();
                     }
                 }
                 Err(message) => toasts.add_toast(adw::Toast::new(&message)),
@@ -304,6 +314,22 @@ pub fn present(app: &adw::Application) {
         }
     });
     window.add_action(&start_action);
+
+    clear_action.connect_activate({
+        let results = Rc::clone(&results);
+        let exported_query = Rc::clone(&exported_query);
+        let refresh_all = Rc::clone(&refresh_all);
+        move |_, _| {
+            if results.is_running() {
+                return;
+            }
+            results.clear();
+            // Nothing is listed any more, so no query describes an export.
+            exported_query.replace(None);
+            refresh_all();
+        }
+    });
+    window.add_action(&clear_action);
 
     let add_action = gio::SimpleAction::new("add-requirement", None);
     add_action.connect_activate({
@@ -450,10 +476,12 @@ pub fn present(app: &adw::Application) {
                                 MAX_ACCEPTED_RESULTS,
                             );
                             *state.borrow_mut() = AppState::from_query(&imported.query);
-                            exported_query.replace(Some(imported.query));
                             let codes: Vec<String> =
                                 kept.iter().map(|seed| seed.to_code()).collect();
-                            results.load_imported(&codes);
+                            // The import becomes the session's Target: the
+                            // imported query plus seeds, with no coverage.
+                            results.load_imported(&codes, &imported.query);
+                            exported_query.replace(Some(imported.query));
                             refresh_all();
                             let mut message = format!(
                                 "Imported {} seed{}",

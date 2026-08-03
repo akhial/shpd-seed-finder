@@ -241,6 +241,54 @@ public struct SearchRequest: Codable, Sendable {
     }
 }
 
+extension SearchRequest {
+    /// Whether this request refines `base`: identical scope (floor limit,
+    /// blacksmith settings, fast mode, and challenges) plus, for every base
+    /// requirement, a distinct requirement of this request at least as strict
+    /// — equal, added-to, or strengthened (a named item, a tightened bound).
+    ///
+    /// Equality qualifies deliberately: restarting an unchanged query must
+    /// continue the session — the filter keeps every seed and the scan resumes
+    /// where it stopped — rather than throw the results away and rescan.
+    ///
+    /// The rule itself is the engine's (`SearchQuery::continues`, bridged as
+    /// `seedfinder_query_continues`): both queries go over the same SSF7 wire
+    /// the search takes, so refine eligibility is decided once for every
+    /// platform instead of being re-derived here. Row identity (`key`) drops
+    /// out for free — it is not part of the wire format. A query too large to
+    /// encode continues nothing.
+    public func isRefinement(of base: SearchRequest) -> Bool {
+        guard let candidate = try? QueryCodec.encode(self),
+              let encodedBase = try? QueryCodec.encode(base) else { return false }
+        return QueryContinuation.continues(candidate, base: encodedBase)
+    }
+
+    /// Whether this request and `base` name a common item: some requirement of
+    /// each has the same kind, and either both name the same item or at least
+    /// one names none (a kind-level requirement subsumes every item of its
+    /// kind). Scope and challenge differences are deliberately ignored — a
+    /// filter re-verifies seeds from scratch — so this only estimates whether
+    /// `base`'s results are enriched for this request's matches.
+    public func sharesRequirement(with base: SearchRequest) -> Bool {
+        requirements.contains { candidate in
+            base.requirements.contains { other in
+                candidate.kind == other.kind
+                    && (candidate.item == nil || other.item == nil || candidate.item?.id == other.item?.id)
+            }
+        }
+    }
+}
+
+/// Where a follow-up search must pick up to complete a stopped session's
+/// seed-space coverage: `remaining` seeds starting at numeric seed `position`.
+public struct ResumeHint: Sendable {
+    public let position: Int64
+    public let remaining: Int64
+    public init(position: Int64, remaining: Int64) {
+        self.position = position; self.remaining = remaining
+    }
+}
+
 public struct SeedResult: Hashable, Identifiable, Sendable {
     public let seed: String
     public let matchedRequirements: Int

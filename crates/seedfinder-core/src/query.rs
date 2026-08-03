@@ -38,6 +38,20 @@ impl TierRequirement {
             Self::AtMost(maximum) => tier.is_some_and(|tier| tier <= maximum),
         }
     }
+
+    /// Whether every tier this predicate accepts is also accepted by `base`.
+    /// `Any` additionally accepts untiered items, so nothing but `Any`
+    /// implies it from the untiered side; conservative `false` answers only
+    /// cost a fresh scan, never soundness.
+    const fn implies(self, base: Self) -> bool {
+        match (self, base) {
+            (_, Self::Any) => true,
+            (Self::Exact(tier), Self::Exact(base_tier)) => tier == base_tier,
+            (Self::Exact(tier) | Self::AtLeast(tier), Self::AtLeast(minimum)) => tier >= minimum,
+            (Self::Exact(tier) | Self::AtMost(tier), Self::AtMost(maximum)) => tier <= maximum,
+            _ => false,
+        }
+    }
 }
 
 impl UpgradeRequirement {
@@ -46,6 +60,19 @@ impl UpgradeRequirement {
             Self::Any => true,
             Self::Exact(wanted) => upgrade == wanted,
             Self::AtLeast(minimum) => upgrade >= minimum,
+        }
+    }
+
+    /// Whether every upgrade level this predicate accepts is also accepted
+    /// by `base`.
+    const fn implies(self, base: Self) -> bool {
+        match (self, base) {
+            (_, Self::Any) => true,
+            (Self::Exact(upgrade), Self::Exact(base_upgrade)) => upgrade == base_upgrade,
+            (Self::Exact(upgrade) | Self::AtLeast(upgrade), Self::AtLeast(minimum)) => {
+                upgrade >= minimum
+            }
+            _ => false,
         }
     }
 }
@@ -97,6 +124,42 @@ impl Requirement {
             && (!self.require_uncursed || !candidate.cursed)
             && self.source.is_none_or(|wanted| wanted == candidate.source))
         .then_some(identity)
+    }
+
+    /// Whether every item this requirement accepts is also accepted by
+    /// `base`, assuming both live in queries of identical scope. This is the
+    /// per-requirement half of the continuation rule: a requirement may be
+    /// *strengthened* — an item named where `base` had only a kind, a bound
+    /// tightened, uncursed demanded — and still cover `base`, because every
+    /// world it admits was already admitted before.
+    ///
+    /// Identity groups compare by label: a base group constrains its members
+    /// to one item, so a covering requirement must carry the same label (its
+    /// group then imposes at least the same constraint), while a base with no
+    /// group constrains nothing and the covering side may add one freely.
+    /// A per-item floor limit of `None` means the query's own limit, which is
+    /// identical on both sides under equal scope, so `None` on the base side
+    /// is implied by everything and on the candidate side implies only
+    /// `None`.
+    fn implies(self, base: &Self) -> bool {
+        self.kind == base.kind
+            && base
+                .weapon_category
+                .is_none_or(|wanted| self.weapon_category == Some(wanted))
+            && base.item.is_none_or(|wanted| self.item == Some(wanted))
+            && self.tier.implies(base.tier)
+            && self.upgrade.implies(base.upgrade)
+            && base.effect.is_none_or(|wanted| self.effect == Some(wanted))
+            && (self.require_uncursed || !base.require_uncursed)
+            && base.source.is_none_or(|wanted| self.source == Some(wanted))
+            && base
+                .identity_group
+                .is_none_or(|group| self.identity_group == Some(group))
+            && match (self.max_depth, base.max_depth) {
+                (_, None) => true,
+                (Some(depth), Some(base_depth)) => depth <= base_depth,
+                (None, Some(_)) => false,
+            }
     }
 
     /// Checks that an item/effect/upgrade combination is meaningful.
@@ -221,6 +284,67 @@ impl SearchQuery {
             }
         }
         Ok(())
+    }
+
+    /// Whether this query *continues* `base`: identical scope (floor limit,
+    /// challenges, blacksmith flags, fast mode) and, for every requirement
+    /// of `base`, a *distinct* requirement of this query at least as strict
+    /// ([`Requirement::implies`] — equality included, but so is naming a
+    /// specific item where `base` wanted any of its kind, or tightening an
+    /// upgrade bound). Only then is every match of this query within
+    /// `base`'s covered region already among `base`'s matches, which is the
+    /// soundness precondition for refining a search — filtering the
+    /// delivered results and resuming the uncovered remainder (see
+    /// `docs/search-semantics.md`). Frontends must consult this single
+    /// predicate rather than re-deriving it.
+    #[must_use]
+    pub fn continues(&self, base: &SearchQuery) -> bool {
+        if self.max_depth != base.max_depth
+            || self.challenges != base.challenges
+            || self.require_blacksmith != base.require_blacksmith
+            || self.exclude_blacksmith_rewards != base.exclude_blacksmith_rewards
+            || self.fast_mode != base.fast_mode
+            || self.requirements.len() < base.requirements.len()
+        {
+            return false;
+        }
+        // Implication is many-to-many (a named ring covers both "that ring"
+        // and "any ring"), so covering every base requirement with a distinct
+        // candidate is a bipartite matching problem; claiming greedily could
+        // give "any ring" the lone Arcana and then fail "Arcana" against the
+        // remaining "any ring". Augmenting paths keep the answer exact.
+        let mut owner: Vec<Option<usize>> = vec![None; self.requirements.len()];
+        (0..base.requirements.len()).all(|base_index| {
+            let mut visited = vec![false; self.requirements.len()];
+            self.cover_requirement(base, base_index, &mut owner, &mut visited)
+        })
+    }
+
+    /// Finds an augmenting path assigning `base`'s requirement `base_index`
+    /// to some candidate requirement of `self`, displacing earlier
+    /// assignments when they can re-settle elsewhere.
+    fn cover_requirement(
+        &self,
+        base: &SearchQuery,
+        base_index: usize,
+        owner: &mut [Option<usize>],
+        visited: &mut [bool],
+    ) -> bool {
+        for (candidate_index, candidate) in self.requirements.iter().enumerate() {
+            if visited[candidate_index] || !candidate.implies(&base.requirements[base_index]) {
+                continue;
+            }
+            visited[candidate_index] = true;
+            let free = match owner[candidate_index] {
+                None => true,
+                Some(displaced) => self.cover_requirement(base, displaced, owner, visited),
+            };
+            if free {
+                owner[candidate_index] = Some(base_index);
+                return true;
+            }
+        }
+        false
     }
 
     /// Matches requirements as an AND query while respecting distinct item
@@ -434,6 +558,129 @@ mod tests {
             identity_group: None,
             max_depth: None,
         }
+    }
+
+    #[test]
+    fn continuation_needs_identical_scope_and_a_requirement_superset() {
+        let base = SearchQuery {
+            requirements: vec![requirement(ItemId::Sword), requirement(ItemId::Sword)],
+            max_depth: 4,
+            challenges: crate::challenges::Challenges::NONE,
+            require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
+            fast_mode: false,
+        };
+
+        // Equality and supersets continue, in any requirement order.
+        assert!(base.continues(&base));
+        let mut narrowed = base.clone();
+        narrowed
+            .requirements
+            .insert(0, requirement(ItemId::WandFrost));
+        assert!(narrowed.continues(&base));
+        assert!(!base.continues(&narrowed));
+
+        // The multiset counts duplicates: one Sword does not cover two.
+        let mut single = base.clone();
+        single.requirements.pop();
+        assert!(base.continues(&single));
+        assert!(!single.continues(&base));
+
+        // Any scope difference breaks continuation.
+        let mut deeper = base.clone();
+        deeper.max_depth = 5;
+        assert!(!deeper.continues(&base));
+        let mut challenged = base.clone();
+        challenged.challenges = crate::challenges::Challenges::DARKNESS;
+        assert!(!challenged.continues(&base));
+        let mut smith = base.clone();
+        smith.require_blacksmith = true;
+        assert!(!smith.continues(&base));
+        let mut excluded = base.clone();
+        excluded.exclude_blacksmith_rewards = true;
+        assert!(!excluded.continues(&base));
+        let mut fast = base.clone();
+        fast.fast_mode = true;
+        assert!(!fast.continues(&base));
+    }
+
+    #[test]
+    fn continuation_accepts_strengthened_requirements() {
+        let any_ring = Requirement {
+            kind: ItemKind::Ring,
+            weapon_category: None,
+            item: None,
+            tier: TierRequirement::Any,
+            upgrade: UpgradeRequirement::AtLeast(3),
+            effect: None,
+            require_uncursed: false,
+            source: None,
+            identity_group: None,
+            max_depth: None,
+        };
+        let arcana = Requirement {
+            item: Some(ItemId::RingArcana),
+            ..any_ring
+        };
+        let query = |requirements: Vec<Requirement>| SearchQuery {
+            requirements,
+            max_depth: 24,
+            challenges: crate::challenges::Challenges::NONE,
+            require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
+            fast_mode: false,
+        };
+        let base = query(vec![any_ring]);
+
+        // Naming the item strengthens "any ring": every Arcana +3 world is
+        // an any-ring +3 world, so filter-and-resume stays sound. This is
+        // the narrowing that must refine, not merely filter (the 274-seed
+        // stall): the reverse widening must rescan.
+        assert!(query(vec![arcana]).continues(&base));
+        assert!(!base.continues(&query(vec![arcana])));
+
+        // Tightening bounds strengthens; loosening them does not.
+        let stricter = Requirement {
+            upgrade: UpgradeRequirement::AtLeast(4),
+            require_uncursed: true,
+            max_depth: Some(10),
+            ..arcana
+        };
+        assert!(query(vec![stricter]).continues(&base));
+        assert!(
+            !query(vec![Requirement {
+                upgrade: UpgradeRequirement::AtLeast(2),
+                ..any_ring
+            }])
+            .continues(&base)
+        );
+        assert!(
+            !query(vec![Requirement {
+                upgrade: UpgradeRequirement::Any,
+                ..any_ring
+            }])
+            .continues(&base)
+        );
+
+        // Distinct requirements must cover distinct base requirements: one
+        // Arcana cannot stand in for both rings, and greedy assignment must
+        // not strand "Arcana against any-ring" when the candidate lists the
+        // named ring first.
+        let two_rings = query(vec![any_ring, any_ring]);
+        assert!(query(vec![arcana, any_ring]).continues(&two_rings));
+        assert!(!query(vec![arcana]).continues(&two_rings));
+        let mixed_base = query(vec![any_ring, arcana]);
+        assert!(query(vec![arcana, any_ring]).continues(&mixed_base));
+        assert!(!query(vec![any_ring, any_ring]).continues(&mixed_base));
+
+        // A base identity group must be carried; adding one is fine.
+        let grouped = Requirement {
+            identity_group: Some(1),
+            ..any_ring
+        };
+        assert!(query(vec![grouped]).continues(&query(vec![grouped])));
+        assert!(query(vec![grouped]).continues(&base));
+        assert!(!base.continues(&query(vec![grouped])));
     }
 
     #[test]

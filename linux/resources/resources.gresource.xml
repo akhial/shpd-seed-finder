@@ -10,6 +10,12 @@
     <file preprocess="xml-stripblanks">icons/scalable/actions/kind-ring-symbolic.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/actions/results-import-symbolic.svg</file>
     <file preprocess="xml-stripblanks">icons/scalable/actions/results-export-symbolic.svg</file>
+    <!--
+      GTK bundles no x-in-a-square glyph and edit-clear-all-symbolic only
+      exists in adwaita-icon-theme, which is not guaranteed to be installed,
+      so "Clear Results" ships its own.
+    -->
+    <file preprocess="xml-stripblanks">icons/scalable/actions/clear-results-symbolic.svg</file>
     <file>style/style.css</file>
 
     <!--

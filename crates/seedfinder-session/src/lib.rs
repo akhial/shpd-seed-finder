@@ -9,13 +9,15 @@ use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use shpd_seedfinder_core::challenges::Challenges;
+use shpd_seedfinder_core::feasibility::QueryPlan;
 use shpd_seedfinder_core::main_world::{CanonicalMainWorldGenerator, ConfiguredMainWorldGenerator};
 use shpd_seedfinder_core::model::GeneratedWorld;
 use shpd_seedfinder_core::probability::estimate_match_probability;
 use shpd_seedfinder_core::query::SearchQuery;
+pub use shpd_seedfinder_core::search::SearchError;
 use shpd_seedfinder_core::search::{
-    SearchError, SearchOptions, StreamingSearchHandle, StreamingSearchState, WorldGenerator,
-    spawn_rotated_streaming_search, spawn_streaming_search,
+    SearchOptions, StreamingSearchHandle, StreamingSearchState, WorldGenerator,
+    spawn_partial_streaming_search, spawn_rotated_streaming_search, spawn_streaming_search,
 };
 use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
 use shpd_seedfinder_core::wire::{
@@ -152,6 +154,119 @@ pub fn production_scout_world(
         .map_err(|_| ScoutCallError::Panicked)
 }
 
+/// Re-verifies specific seeds against a full query, returning the matching
+/// worlds in input order. This is the "filter existing results" half of
+/// refining a search: frontends pass the seeds already on screen together with
+/// the combined (old plus added requirements) query.
+///
+/// Generation runs on every available core; input order is preserved.
+///
+/// # Errors
+///
+/// Returns [`SearchError`] for an invalid query or a seed value outside the
+/// seed space.
+pub fn filter_matching_seeds(
+    query: &SearchQuery,
+    seed_values: &[u64],
+) -> Result<Vec<GeneratedWorld>, SearchError> {
+    query.validate()?;
+    let seeds = seed_values
+        .iter()
+        .map(|&value| DungeonSeed::new(value).map_err(|_| SearchError::InvalidSeedRange))
+        .collect::<Result<Vec<_>, _>>()?;
+    let plan = QueryPlan::analyze(query);
+    if plan.is_unsatisfiable() || seeds.is_empty() {
+        return Ok(Vec::new());
+    }
+    let generator = canonical_generator(query.challenges);
+    let depth = plan.generation_depth();
+    let workers = SearchOptions::available_parallelism()
+        .get()
+        .min(seeds.len());
+    let slice_len = seeds.len().div_ceil(workers);
+    std::thread::scope(|scope| {
+        let handles = seeds
+            .chunks(slice_len)
+            .map(|slice| {
+                let generator = &generator;
+                let plan = &plan;
+                scope.spawn(move || {
+                    // The catch keeps the panic on this side of the scope:
+                    // an unwinding scoped thread would make `thread::scope`
+                    // itself panic on exit, turning the error path below into
+                    // a panic whenever more than one slice trips it.
+                    catch_unwind(AssertUnwindSafe(|| {
+                        generator
+                            .generate_batch_gated(slice, depth, plan)
+                            .into_iter()
+                            .flatten()
+                            .filter(|world| query.matches(world))
+                            .collect::<Vec<_>>()
+                    }))
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut matched = Vec::new();
+        for handle in handles {
+            // A generator panic must surface as an error: silently treating
+            // its slice as empty would drop genuine matches from the filter.
+            matched.extend(
+                handle
+                    .join()
+                    .ok()
+                    .and_then(Result::ok)
+                    .ok_or(SearchError::WorkerPanicked)?,
+            );
+        }
+        Ok(matched)
+    })
+}
+
+/// Packet form of [`filter_matching_seeds`] for wire frontends: decodes an
+/// `SSF7` query request, filters `seed_values`, and encodes the surviving
+/// seeds as an `SSR1` result packet. Generation panics are contained.
+///
+/// # Errors
+///
+/// Returns a request error, a spawn-shaped error for invalid seeds, or a
+/// response encoding error.
+pub fn production_filter_packet(
+    request: &[u8],
+    seed_values: &[u64],
+) -> Result<Vec<u8>, FilterPacketError> {
+    let query = decode_query(request).map_err(FilterPacketError::Request)?;
+    let worlds = catch_unwind(AssertUnwindSafe(|| {
+        filter_matching_seeds(&query, seed_values)
+    }))
+    .map_err(|_| FilterPacketError::Panicked)?
+    .map_err(FilterPacketError::Filter)?;
+    encode_results(&worlds).map_err(FilterPacketError::Response)
+}
+
+/// Failure modes of [`production_filter_packet`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FilterPacketError {
+    Request(WireError),
+    Filter(SearchError),
+    Response(WireError),
+    Panicked,
+}
+
+/// Decodes two `SSF7` query requests and reports whether `candidate`
+/// continues `base`: identical scope (depth, challenges, blacksmith flags,
+/// fast mode) and every requirement of `base` covered by a distinct
+/// candidate requirement at least as strict (equal or strengthened).
+/// This is the soundness precondition for refining a search — only a
+/// continuing query may filter a stopped session's delivered results and
+/// resume its uncovered remainder. See [`SearchQuery::continues`].
+///
+/// # Errors
+///
+/// Returns the decode error of the first undecodable packet.
+pub fn queries_continue(candidate: &[u8], base: &[u8]) -> Result<bool, WireError> {
+    Ok(decode_query(candidate)?.continues(&decode_query(base)?))
+}
+
 pub struct NativeSession {
     search: StreamingSearchHandle,
     match_probability: f64,
@@ -209,6 +324,68 @@ impl NativeSession {
     pub fn production_from_packet(request: &[u8]) -> Result<Self, StartSessionError> {
         let query = decode_query(request).map_err(StartSessionError::Request)?;
         Self::production(query).map_err(StartSessionError::Spawn)
+    }
+
+    /// Starts a production search which resumes a previous traversal: it scans
+    /// only the `scan_len` seeds starting at `resume_from`, wrapping at the end
+    /// of the seed space. Frontends refine a stopped or completed search by
+    /// passing the previous session's [`Self::resume_hint`] values together
+    /// with a strictly narrower query (the old requirements plus new ones).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SearchError`] for an invalid query, a resume position outside
+    /// the seed space, or a scan length beyond it.
+    pub fn production_resumed(
+        query: SearchQuery,
+        resume_from: u64,
+        scan_len: u64,
+    ) -> Result<Self, SearchError> {
+        let match_probability = estimate_match_probability(&query);
+        let options = SearchOptions {
+            start_seed: 0,
+            end_seed_exclusive: TOTAL_SEEDS,
+            workers: SearchOptions::available_parallelism(),
+            chunk_size: NonZeroUsize::new(SEARCH_CHUNK_SIZE).unwrap_or(NonZeroUsize::MIN),
+            max_results: NonZeroUsize::new(MAX_ACCEPTED_RESULTS).unwrap_or(NonZeroUsize::MIN),
+        };
+        let generator = canonical_generator(query.challenges);
+        spawn_partial_streaming_search(&generator, query, options, resume_from, scan_len).map(
+            |search| Self {
+                search,
+                match_probability,
+                diagnostic_claimed: AtomicBool::new(false),
+            },
+        )
+    }
+
+    /// Decodes an `SSF7` request and starts a resumed production search.
+    ///
+    /// # Errors
+    ///
+    /// Distinguishes invalid wire requests from worker spawn failures.
+    pub fn production_resumed_from_packet(
+        request: &[u8],
+        resume_from: u64,
+        scan_len: u64,
+    ) -> Result<Self, StartSessionError> {
+        let query = decode_query(request).map_err(StartSessionError::Request)?;
+        Self::production_resumed(query, resume_from, scan_len).map_err(StartSessionError::Spawn)
+    }
+
+    /// Where and how much a follow-up traversal must scan to finish this
+    /// session's coverage of the seed space: `[resume_position, remaining]`.
+    /// Exact once the session has stopped (any terminal status implies the
+    /// workers have exited); meaningless while it is running — a running
+    /// session's hint can overshoot the work actually done and must never be
+    /// resumed from.
+    #[must_use]
+    pub fn resume_hint(&self) -> [i64; 2] {
+        let coverage = self.search.resume_coverage();
+        [
+            i64::try_from(coverage.position).unwrap_or(i64::MAX),
+            i64::try_from(coverage.remaining).unwrap_or(i64::MAX),
+        ]
     }
 
     /// Drains at most `maximum` matches into an `SSR1` packet.
@@ -608,6 +785,193 @@ mod tests {
         }
         assert!(session.drain_worlds(3).is_empty());
         assert_eq!(session.status()[0], STATE_COMPLETED);
+    }
+
+    #[test]
+    fn filtering_reverifies_seeds_against_the_full_query() {
+        // Seed AAA-AAA-AAF's canonical world is the fixture used by the scout
+        // tests below; filter it against a query built from one of its own
+        // items so the test does not depend on rare drops.
+        let seed = DungeonSeed::from_code("AAA-AAA-AAF").unwrap();
+        let world = production_scout_world(seed, Challenges::NONE).unwrap();
+        let known = world.items.first().cloned().unwrap();
+        let definition = shpd_seedfinder_core::catalog::item(known.item);
+        let satisfiable = SearchQuery {
+            requirements: vec![Requirement {
+                kind: definition.kind,
+                weapon_category: None,
+                item: Some(known.item),
+                tier: TierRequirement::Any,
+                upgrade: UpgradeRequirement::Any,
+                effect: None,
+                source: None,
+                identity_group: None,
+                max_depth: None,
+                require_uncursed: false,
+            }],
+            max_depth: known.depth,
+            challenges: Challenges::NONE,
+            require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
+            fast_mode: false,
+        };
+
+        let matches = filter_matching_seeds(&satisfiable, &[seed.value()]).unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].seed, seed);
+
+        // A stricter variant of the same query rejects the seed: no copy of
+        // this item in the canonical world carries the missing upgrade level.
+        let missing_upgrade = (1..=definition.kind.maximum_search_upgrade())
+            .find(|&candidate| {
+                world
+                    .items
+                    .iter()
+                    .filter(|item| item.item == known.item)
+                    .all(|item| item.upgrade != candidate)
+            })
+            .expect("the fixture world does not use every upgrade level");
+        let mut rejecting = satisfiable.clone();
+        rejecting.requirements[0].upgrade = UpgradeRequirement::Exact(missing_upgrade);
+        assert!(
+            filter_matching_seeds(&rejecting, &[seed.value()])
+                .unwrap()
+                .is_empty()
+        );
+
+        assert_eq!(
+            filter_matching_seeds(&satisfiable, &[TOTAL_SEEDS]).unwrap_err(),
+            shpd_seedfinder_core::search::SearchError::InvalidSeedRange
+        );
+        assert!(filter_matching_seeds(&satisfiable, &[]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn filter_packet_round_trips_ssr1_and_preserves_input_order() {
+        let seed = DungeonSeed::from_code("AAA-AAA-AAF").unwrap();
+        let world = production_scout_world(seed, Challenges::NONE).unwrap();
+        let known = world.items.first().cloned().unwrap();
+        let mut request = b"SSF7".to_vec();
+        request.push(known.depth); // max_depth
+        request.push(0); // flags
+        request.extend_from_slice(&[0, 0]); // challenges
+        request.extend_from_slice(&[0, 1]); // one requirement
+        let definition = shpd_seedfinder_core::catalog::item(known.item);
+        let kind_byte = match definition.kind {
+            shpd_seedfinder_core::catalog::ItemKind::Weapon => 0,
+            shpd_seedfinder_core::catalog::ItemKind::Armor => 1,
+            shpd_seedfinder_core::catalog::ItemKind::Wand => 2,
+            shpd_seedfinder_core::catalog::ItemKind::Ring => 3,
+        };
+        request.push(kind_byte);
+        let id = definition.stable_id.as_bytes();
+        request.extend_from_slice(&u16::try_from(id.len()).unwrap().to_be_bytes());
+        request.extend_from_slice(id);
+        request.extend_from_slice(&[0, 0]); // tier any
+        request.extend_from_slice(&[0, 0]); // upgrade any
+        request.extend_from_slice(&[0, 0]); // no effect
+        request.extend_from_slice(&[0, 0, 0, 0]); // source, group, depth, flags
+
+        let packet = production_filter_packet(&request, &[seed.value()]).unwrap();
+        assert_eq!(&packet[..4], b"SSR1");
+        assert_eq!(u16::from_be_bytes([packet[4], packet[5]]), 1);
+        assert_eq!(
+            production_filter_packet(&request, &[]).unwrap(),
+            b"SSR1\0\0"
+        );
+        assert_eq!(
+            production_filter_packet(b"bad!????????", &[seed.value()]),
+            Err(FilterPacketError::Request(WireError::BadMagic))
+        );
+    }
+
+    #[test]
+    fn unsatisfiable_resumed_session_hands_back_its_whole_arc() {
+        // A +4 ring cannot exist by depth sixteen. The session completes
+        // instantly without scanning, and the hint must return the entire
+        // requested arc so a later satisfiable continuation still covers it.
+        let impossible = SearchQuery {
+            requirements: vec![Requirement {
+                kind: shpd_seedfinder_core::catalog::ItemKind::Ring,
+                weapon_category: None,
+                item: None,
+                tier: TierRequirement::Any,
+                upgrade: UpgradeRequirement::Exact(4),
+                effect: None,
+                require_uncursed: false,
+                source: None,
+                identity_group: None,
+                max_depth: None,
+            }],
+            max_depth: 16,
+            challenges: Challenges::NONE,
+            require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
+            fast_mode: false,
+        };
+        let session = NativeSession::production_resumed(impossible, 42, 1_000).unwrap();
+        wait(&session);
+        assert_eq!(session.status()[0], STATE_COMPLETED);
+        assert_eq!(session.resume_hint(), [42, 1_000]);
+    }
+
+    #[test]
+    fn resumed_sessions_continue_a_stopped_traversal_without_losing_seeds() {
+        let generator = Arc::new(MatchingGenerator);
+        let session = NativeSession::start(&generator, query(), options(64, 16)).unwrap();
+        wait(&session);
+        // The result cap stopped the session early; the hint points at the
+        // first seed whose outcome was not delivered.
+        let [resume_from, remaining] = session.resume_hint();
+        let resume_from = u64::try_from(resume_from).unwrap();
+        let remaining = u64::try_from(remaining).unwrap();
+        assert_eq!(resume_from, 16);
+        assert_eq!(remaining, 48);
+        let mut seen: Vec<u64> = session
+            .drain_worlds(64)
+            .into_iter()
+            .map(|world| world.seed.value())
+            .collect();
+
+        let resumed = NativeSession::start(
+            &generator,
+            query(),
+            SearchOptions {
+                start_seed: 0,
+                end_seed_exclusive: 64,
+                workers: NonZeroUsize::MIN,
+                chunk_size: NonZeroUsize::new(4).unwrap(),
+                max_results: NonZeroUsize::new(64).unwrap(),
+            },
+        )
+        .unwrap();
+        drop(resumed);
+        // Production-shaped resume path: scan only the remaining arc.
+        let continued = {
+            let options = SearchOptions {
+                start_seed: 0,
+                end_seed_exclusive: 64,
+                workers: NonZeroUsize::MIN,
+                chunk_size: NonZeroUsize::new(4).unwrap(),
+                max_results: NonZeroUsize::new(64).unwrap(),
+            };
+            let handle = shpd_seedfinder_core::search::spawn_partial_streaming_search(
+                &generator,
+                query(),
+                options,
+                resume_from,
+                remaining,
+            )
+            .unwrap();
+            while !handle.is_finished() {
+                std::thread::yield_now();
+            }
+            handle.drain_results(64)
+        };
+        seen.extend(continued.into_iter().map(|world| world.seed.value()));
+        seen.sort_unstable();
+        seen.dedup();
+        assert_eq!(seen, (0..64).collect::<Vec<_>>());
     }
 
     #[test]
