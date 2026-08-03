@@ -266,12 +266,53 @@ pub enum WandmakerQuestType {
 }
 
 impl WandmakerQuestType {
+    /// Every variant the Prison can roll, in wire-identifier order.
+    pub const ALL: [Self; 3] = [Self::CorpseDust, Self::ElementalEmbers, Self::Rotberry];
+
+    /// Inclusive floors that can host the Wandmaker. The spawn chance reaches
+    /// certainty on the last of them, so every run reaching floor nine has
+    /// exactly one Wandmaker quest.
+    pub const WINDOW: std::ops::RangeInclusive<u8> = 7..=9;
+
     fn from_java_value(value: i32) -> Self {
         match value {
             1 => Self::CorpseDust,
             2 => Self::ElementalEmbers,
             _ => Self::Rotberry,
         }
+    }
+
+    /// The game's own one-based quest value, reused as the protocol id.
+    #[must_use]
+    pub const fn wire_id(self) -> u8 {
+        self as u8
+    }
+
+    #[must_use]
+    pub const fn from_wire_id(id: u8) -> Option<Self> {
+        Some(match id {
+            1 => Self::CorpseDust,
+            2 => Self::ElementalEmbers,
+            3 => Self::Rotberry,
+            _ => return None,
+        })
+    }
+
+    /// Stable `snake_case` name used by JSON query documents.
+    #[must_use]
+    pub const fn document_name(self) -> &'static str {
+        match self {
+            Self::CorpseDust => "corpse_dust",
+            Self::ElementalEmbers => "elemental_embers",
+            Self::Rotberry => "rotberry",
+        }
+    }
+
+    #[must_use]
+    pub fn from_document_name(name: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|variant| variant.document_name() == name)
     }
 }
 

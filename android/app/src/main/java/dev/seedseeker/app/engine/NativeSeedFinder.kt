@@ -106,6 +106,7 @@ class DemoNativeSeedFinder : NativeSeedFinder {
             candidate.challenges != base.challenges ||
             candidate.requireBlacksmith != base.requireBlacksmith ||
             candidate.excludeBlacksmithRewards != base.excludeBlacksmithRewards ||
+            candidate.wandmakerQuest != base.wandmakerQuest ||
             candidate.fastMode != base.fastMode
         ) {
             return false
@@ -325,8 +326,9 @@ class DemoNativeSeedFinder : NativeSeedFinder {
  * 10. `queryContinues(candidateBytes, baseBytes) -> boolean` reports whether the candidate query
  *    may reuse a run of the base query, throwing for an undecodable packet.
  *
- * Search requests always use `SSF7`: magic, maxDepth:u8, flags:u8, challenges:u16 little-endian,
- * requirementCount:u16 big-endian, followed by repeated
+ * Search requests always use `SSF8`: magic, maxDepth:u8, flags:u8, challenges:u16 little-endian,
+ * wandmakerQuest:u8 (0 any, else the 1-based variant), requirementCount:u16 big-endian,
+ * followed by repeated
  * kind:u8, optionalItemId:utf8_u16, tierMode:u8, tierValue:u8, upgradeMode:u8,
  * upgradeValue:u8, modifier:utf8_u16,
  * optionalSource:u8, sameItemGroup:u8, requirementMaxDepth:u8 (0 uses the request limit),
@@ -511,7 +513,7 @@ object SeedCode {
 object QueryCodec {
     fun encode(request: SearchRequest): ByteArray = ByteArrayOutputStream().use { bytes ->
         DataOutputStream(bytes).use { output ->
-            output.write("SSF7".toByteArray(StandardCharsets.US_ASCII))
+            output.write("SSF8".toByteArray(StandardCharsets.US_ASCII))
             output.writeByte(request.maximumDepth)
             output.writeByte(
                 (if (request.requireBlacksmith) 1 else 0) or
@@ -520,6 +522,7 @@ object QueryCodec {
             )
             output.writeByte(request.challenges and 0xff)
             output.writeByte(request.challenges ushr 8)
+            output.writeByte(request.wandmakerQuest?.wireId ?: 0)
             output.writeShort(request.requirements.size)
             request.requirements.forEach { requirement -> writeRequirement(output, requirement) }
         }

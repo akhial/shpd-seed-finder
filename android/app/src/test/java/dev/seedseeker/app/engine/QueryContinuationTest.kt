@@ -7,6 +7,7 @@ import dev.seedseeker.app.model.ItemKind
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.UpgradeMatch
+import dev.seedseeker.app.model.WandmakerQuest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -82,7 +83,14 @@ class QueryContinuationTest {
         assertContinues(false, request(frost, fireblast, challenges = Challenge.DARKNESS.bit), base)
         assertContinues(false, request(frost, fireblast, requireBlacksmith = true), base)
         assertContinues(false, request(frost, fireblast, excludeBlacksmithRewards = true), base)
+        assertContinues(false, request(frost, fireblast, wandmakerQuest = WandmakerQuest.ROTBERRY), base)
         assertContinues(false, request(frost, fireblast, fastMode = true), base)
+
+        // Matching quests continue each other, so an unchanged filter still
+        // resumes rather than rescanning.
+        val quested = request(frost, wandmakerQuest = WandmakerQuest.ROTBERRY)
+        assertContinues(true, request(frost, fireblast, wandmakerQuest = WandmakerQuest.ROTBERRY), quested)
+        assertContinues(false, request(frost, fireblast, wandmakerQuest = WandmakerQuest.CORPSE_DUST), quested)
     }
 
     @Test
@@ -130,6 +138,7 @@ class QueryContinuationTest {
         challenges: Int = 0,
         requireBlacksmith: Boolean = false,
         excludeBlacksmithRewards: Boolean = false,
+        wandmakerQuest: WandmakerQuest? = null,
         fastMode: Boolean = false,
     ) = SearchRequest(
         requirements = requirements.toList(),
@@ -137,6 +146,7 @@ class QueryContinuationTest {
         challenges = challenges,
         requireBlacksmith = requireBlacksmith,
         excludeBlacksmithRewards = excludeBlacksmithRewards,
+        wandmakerQuest = wandmakerQuest,
         fastMode = fastMode,
     )
 }

@@ -111,7 +111,7 @@ pub extern "C" fn seedfinder_resume_hint(handle: i64, out_hint: *mut i64) -> i32
     .unwrap_or(INTERNAL)
 }
 
-/// Re-verifies `seeds_len` seed values against the `SSF7` query in `request`
+/// Re-verifies `seeds_len` seed values against the `SSF8` query in `request`
 /// and returns the surviving seeds as an `SSR1` packet in input order. This is
 /// the "filter existing results" half of refining a search.
 #[unsafe(no_mangle)]
@@ -153,7 +153,7 @@ pub extern "C" fn seedfinder_filter_seeds(
     .unwrap_or(INTERNAL)
 }
 
-/// Reports whether the `SSF7` query in `candidate` continues the one in
+/// Reports whether the `SSF8` query in `candidate` continues the one in
 /// `base`: identical scope and every base requirement covered by a distinct
 /// candidate requirement at least as strict (equal or strengthened).
 /// Only a continuing query may reuse a stopped session's results and resume
@@ -279,8 +279,8 @@ mod tests {
     use super::*;
 
     fn query_packet() -> Vec<u8> {
-        let mut packet = b"SSF7".to_vec();
-        packet.extend_from_slice(&[24, 0, 0, 0, 0, 1, 2, 0, 10]);
+        let mut packet = b"SSF8".to_vec();
+        packet.extend_from_slice(&[24, 0, 0, 0, 0, 0, 1, 2, 0, 10]);
         packet.extend_from_slice(b"wand_frost");
         packet.extend_from_slice(&[0, 0, 1, 2, 0, 0, 0, 0, 0, 0]);
         packet

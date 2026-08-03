@@ -1,6 +1,7 @@
 import packageJson from '../../package.json'
 import { effectNamesForCategory, getItem, isCurseForCategory } from './catalog'
 import { fromQueryJson } from './query'
+import { WANDMAKER_QUESTS } from './wasm/types'
 import type { ParsedSeed, QueryDocument, QueryState } from './wasm/types'
 
 // The versioned results-export document shared by every Seed Seeker frontend.
@@ -9,13 +10,14 @@ import type { ParsedSeed, QueryDocument, QueryState } from './wasm/types'
 // docs/results-export-format.md. Keep this codec schema-compatible with it.
 
 export const RESULTS_FILE_FORMAT = 'seed-seeker-results'
-export const RESULTS_FILE_VERSION = 1
+/** Newest results-file version this build can read. */
+export const RESULTS_FILE_VERSION = 2
 export const RESULTS_FILE_NAME = 'seed-seeker-results.json'
 /** Import size cap; a maximal legal file is far below this. */
 export const MAX_RESULTS_FILE_BYTES = 2 * 1024 * 1024
 
 const SEED_CODE = /^[A-Z]{3}-[A-Z]{3}-[A-Z]{3}$/
-const QUERY_KEYS = new Set(['requirements', 'max_depth', 'require_blacksmith', 'exclude_blacksmith_rewards', 'fast_mode', 'challenges'])
+const QUERY_KEYS = new Set(['requirements', 'max_depth', 'require_blacksmith', 'exclude_blacksmith_rewards', 'wandmaker_quest', 'fast_mode', 'challenges'])
 const REQUIREMENT_KEYS = new Set(['kind', 'item', 'tier', 'upgrade', 'effect', 'uncursed', 'source', 'identity_group', 'max_depth'])
 const KIND_NAMES = new Set(['weapon', 'melee_weapon', 'thrown_weapon', 'armor', 'wand', 'ring'])
 const SOURCE_NAMES = new Set([
@@ -40,12 +42,21 @@ export function parsedSeedFromCode(code: string): ParsedSeed {
   return { code, value: seedCodeValue(code) }
 }
 
+/**
+ * The lowest version able to express `query`. Version 2 added
+ * `wandmaker_quest`; a document without it is still exactly a version-1 file,
+ * and declaring 2 anyway would stop older apps from importing it.
+ */
+export function requiredResultsFileVersion(query: QueryDocument): number {
+  return query.wandmaker_quest ? 2 : 1
+}
+
 /** Encodes the query document that produced `seeds` (a search-time snapshot). */
 export function encodeResultsFile(query: QueryDocument, seeds: string[], shpdVersion: string): string {
   return JSON.stringify(
     {
       format: RESULTS_FILE_FORMAT,
-      format_version: RESULTS_FILE_VERSION,
+      format_version: requiredResultsFileVersion(query),
       app_version: packageJson.version,
       shpd_version: shpdVersion,
       query,
@@ -113,6 +124,10 @@ function validateQueryDocument(query: Record<string, unknown>): void {
   boolField(query, 'require_blacksmith')
   boolField(query, 'exclude_blacksmith_rewards')
   boolField(query, 'fast_mode')
+  const wandmakerQuest = stringField(query, 'wandmaker_quest')
+  if (wandmakerQuest !== undefined && !(WANDMAKER_QUESTS as readonly string[]).includes(wandmakerQuest)) {
+    throw new Error(`The query in this results file uses an unknown Wandmaker quest "${wandmakerQuest}".`)
+  }
   if (query.challenges !== undefined) {
     if (!Array.isArray(query.challenges)) throw new Error('"challenges" must be a list of challenge names.')
     for (const name of query.challenges as unknown[]) {
@@ -161,7 +176,7 @@ function validateRequirementDocument(entry: unknown): void {
  * Decodes and validates a results-export document.
  *
  * Unknown envelope and per-result fields are ignored so files written by
- * future releases of format version 1 keep importing; files declaring a newer
+ * future releases of a known version keep importing; files declaring a newer
  * `format_version` are rejected with an "update the app" message. Unknown or
  * wrong-typed query content fails instead of silently changing the query's
  * meaning. Callers should additionally validate `queryDocument` with the

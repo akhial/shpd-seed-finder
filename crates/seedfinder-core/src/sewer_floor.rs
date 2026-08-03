@@ -1397,6 +1397,7 @@ mod tests {
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         };
         let options = SearchOptions {

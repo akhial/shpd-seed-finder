@@ -6,6 +6,7 @@ use std::fmt;
 use crate::catalog::{Effect, ItemId, ItemKind, WeaponCategory, item};
 use crate::challenges::Challenges;
 use crate::model::{GeneratedWorld, ItemSource, WorldItem};
+use crate::quests::WandmakerQuestType;
 
 type CandidateMatch = (usize, ItemId);
 type RequirementCandidates = (Option<u8>, Vec<CandidateMatch>);
@@ -239,6 +240,12 @@ pub struct SearchQuery {
     /// Whether Blacksmith "Smith" rewards are ineligible to satisfy item
     /// requirements. The room may still be required separately for reforging.
     pub exclude_blacksmith_rewards: bool,
+    /// Which Wandmaker quest the run must roll, or `None` for any. The quest
+    /// item — corpse dust, an elemental ember, or a rotberry seed — is usable
+    /// in the dungeon instead of being handed in, so which one a seed offers
+    /// is worth searching for on its own; the other three givers' variants
+    /// change nothing but the fight, and are reported rather than filtered.
+    pub wandmaker_quest: Option<WandmakerQuestType>,
     /// Trades exhaustiveness for speed: +3 weapon/armor requirements are
     /// assumed to come from quest rewards, ignoring the far rarer Crypt and
     /// Sacrificial-fire prizes. Matches are still always genuine, but seeds
@@ -287,7 +294,7 @@ impl SearchQuery {
     }
 
     /// Whether this query *continues* `base`: identical scope (floor limit,
-    /// challenges, blacksmith flags, fast mode) and, for every requirement
+    /// challenges, blacksmith flags, Wandmaker quest, fast mode) and, for every requirement
     /// of `base`, a *distinct* requirement of this query at least as strict
     /// ([`Requirement::implies`] — equality included, but so is naming a
     /// specific item where `base` wanted any of its kind, or tightening an
@@ -303,6 +310,7 @@ impl SearchQuery {
             || self.challenges != base.challenges
             || self.require_blacksmith != base.require_blacksmith
             || self.exclude_blacksmith_rewards != base.exclude_blacksmith_rewards
+            || self.wandmaker_quest != base.wandmaker_quest
             || self.fast_mode != base.fast_mode
             || self.requirements.len() < base.requirements.len()
         {
@@ -352,6 +360,17 @@ impl SearchQuery {
     #[must_use]
     pub fn matches(&self, world: &GeneratedWorld) -> bool {
         if self.requirements.len() > world.items.len() {
+            return false;
+        }
+        // A quest is reported only once its giver's floor is generated, so a
+        // world whose prefix stops short of the Wandmaker simply has none and
+        // cannot satisfy a variant filter.
+        if let Some(wanted) = self.wandmaker_quest
+            && !world
+                .quests
+                .wandmaker
+                .is_some_and(|quest| quest.variant == wanted && quest.depth <= self.max_depth)
+        {
             return false;
         }
         if self.require_blacksmith
@@ -569,6 +588,7 @@ mod tests {
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         };
 
@@ -603,6 +623,10 @@ mod tests {
         let mut fast = base.clone();
         fast.fast_mode = true;
         assert!(!fast.continues(&base));
+        let mut quested = base.clone();
+        quested.wandmaker_quest = Some(crate::quests::WandmakerQuestType::CorpseDust);
+        assert!(!quested.continues(&base));
+        assert!(!base.continues(&quested));
     }
 
     #[test]
@@ -629,6 +653,7 @@ mod tests {
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         };
         let base = query(vec![any_ring]);
@@ -692,6 +717,7 @@ mod tests {
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         };
         let one = GeneratedWorld {
@@ -709,6 +735,52 @@ mod tests {
             ],
         };
         assert!(query.matches(&two));
+    }
+
+    #[test]
+    fn wandmaker_filter_needs_the_quest_itself_inside_the_floor_limit() {
+        use crate::quests::{QuestSummary, ScheduledQuest, WandmakerQuestType};
+
+        let mut query = SearchQuery {
+            requirements: vec![requirement(ItemId::Sword)],
+            max_depth: 24,
+            challenges: crate::challenges::Challenges::NONE,
+            require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
+            wandmaker_quest: Some(WandmakerQuestType::Rotberry),
+            fast_mode: false,
+        };
+        let world = |wandmaker| GeneratedWorld {
+            quests: QuestSummary {
+                wandmaker,
+                ..QuestSummary::default()
+            },
+            seed: DungeonSeed::MIN,
+            items: vec![world_item(ItemId::Sword, Accessibility::Independent)],
+        };
+        let rotberry = ScheduledQuest {
+            variant: WandmakerQuestType::Rotberry,
+            depth: 8,
+        };
+
+        assert!(query.matches(&world(Some(rotberry))));
+        assert!(!query.matches(&world(Some(ScheduledQuest {
+            variant: WandmakerQuestType::CorpseDust,
+            depth: 8,
+        }))));
+        // A prefix that never reached the Prison has no Wandmaker at all.
+        assert!(!query.matches(&world(None)));
+
+        // The item requirement is unaffected either way.
+        query.wandmaker_quest = None;
+        assert!(query.matches(&world(None)));
+
+        // A quest below the floor limit still counts; one above cannot.
+        query.wandmaker_quest = Some(WandmakerQuestType::Rotberry);
+        query.max_depth = 8;
+        assert!(query.matches(&world(Some(rotberry))));
+        query.max_depth = 7;
+        assert!(!query.matches(&world(Some(rotberry))));
     }
 
     #[test]
@@ -739,6 +811,7 @@ mod tests {
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         };
         assert!(!query.matches(&world));
@@ -754,6 +827,7 @@ mod tests {
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         };
         let world = GeneratedWorld {
@@ -787,6 +861,7 @@ mod tests {
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         };
         let world = GeneratedWorld {
@@ -847,6 +922,7 @@ mod tests {
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         };
         assert!(compatible.matches(&world));
@@ -857,6 +933,7 @@ mod tests {
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         };
         assert!(!incompatible.matches(&world));
@@ -1115,6 +1192,7 @@ mod tests {
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: true,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         };
         let make = |item, upgrade, depth, source| WorldItem {
@@ -1158,6 +1236,7 @@ mod tests {
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: true,
             exclude_blacksmith_rewards: true,
+            wandmaker_quest: None,
             fast_mode: false,
         };
         let make = |source| WorldItem {
@@ -1215,6 +1294,7 @@ mod tests {
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         };
 

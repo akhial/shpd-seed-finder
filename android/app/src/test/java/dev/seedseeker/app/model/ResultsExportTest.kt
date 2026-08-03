@@ -135,6 +135,57 @@ class ResultsExportTest {
         )
     }
 
+    /** The frozen version-2 fixture: the same shared file, with a quest. */
+    private val version2Fixture: String by lazy {
+        val fixture = java.io.File(
+            "../../crates/seedfinder-core/tests/fixtures/results-export-v2.json",
+        )
+        check(fixture.exists()) { "version-2 fixture not found at ${fixture.absolutePath}" }
+        fixture.readText()
+    }
+
+    @Test
+    fun version2FixtureCarriesTheWandmakerQuest() {
+        val imported = ResultsExport.decode(version2Fixture)
+        assertEquals(WandmakerQuest.ROTBERRY, imported.query.wandmakerQuest)
+        assertEquals(9, imported.query.maximumDepth)
+        assertEquals(listOf("AAA-AAA-BUH", "ABC-DEF-GHI"), imported.seeds)
+
+        // Re-encoding keeps both the quest and the version it forces.
+        val document = JSONObject(ResultsExport.encode(imported.query, imported.seeds, "0.6.1"))
+        assertEquals(2, document.getInt("format_version"))
+        assertEquals("rotberry", document.getJSONObject("query").getString("wandmaker_quest"))
+    }
+
+    /**
+     * A query without a quest is still exactly a version-1 document, so it
+     * keeps declaring 1 and already-shipped apps can still import it.
+     */
+    @Test
+    fun onlyAWandmakerQuestRaisesTheDeclaredVersion() {
+        assertEquals(1, ResultsExport.requiredFormatVersion(loadedQuery))
+        assertEquals(
+            2,
+            ResultsExport.requiredFormatVersion(
+                loadedQuery.copy(wandmakerQuest = WandmakerQuest.CORPSE_DUST),
+            ),
+        )
+    }
+
+    @Test
+    fun unknownWandmakerQuestIsRejected() {
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            ResultsExport.decode(
+                """
+                {"format":"seed-seeker-results","format_version":2,
+                 "query":{"requirements":[{"item":"sword"}],"wandmaker_quest":"moon_cheese"},
+                 "results":[]}
+                """.trimIndent(),
+            )
+        }
+        assertTrue(failure.message!!.contains("moon_cheese"))
+    }
+
     @Test
     fun unknownEnvelopeAndResultFieldsAreIgnored() {
         val imported = ResultsExport.decode(
@@ -157,10 +208,10 @@ class ResultsExportTest {
     fun futureFormatVersionsFailWithAnUpdateMessage() {
         val failure = assertThrows(IllegalArgumentException::class.java) {
             ResultsExport.decode(
-                """{"format":"seed-seeker-results","format_version":2,"query":{"requirements":[]},"results":[]}""",
+                """{"format":"seed-seeker-results","format_version":3,"query":{"requirements":[]},"results":[]}""",
             )
         }
-        assertTrue(failure.message!!.contains("format version 2"))
+        assertTrue(failure.message!!.contains("format version 3"))
         assertTrue(failure.message!!.contains("Update Seed Seeker"))
     }
 

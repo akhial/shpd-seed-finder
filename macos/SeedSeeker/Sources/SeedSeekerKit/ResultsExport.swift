@@ -19,7 +19,8 @@ public struct ResultsExportError: Error, LocalizedError, Equatable {
 /// changing the query's meaning.
 public enum ResultsExport {
     public static let fileFormat = "seed-seeker-results"
-    public static let formatVersion = 1
+    /// Newest results-file version this build can read.
+    public static let formatVersion = 2
     public static let suggestedFileName = "seed-seeker-results"
     /// Mirrors the Rust core's `SHPD_VERSION`, the source of truth.
     public static let shpdVersion = "3.3.8"
@@ -54,8 +55,15 @@ public enum ResultsExport {
     ]
     private static let queryKeys: Set<String> = [
         "requirements", "max_depth", "require_blacksmith",
-        "exclude_blacksmith_rewards", "fast_mode", "challenges",
+        "exclude_blacksmith_rewards", "wandmaker_quest", "fast_mode", "challenges",
     ]
+
+    /// The lowest version able to express `query`. Version 2 added
+    /// `wandmaker_quest`; a query without it is still exactly a version-1
+    /// document, and declaring 2 anyway would stop older apps importing it.
+    public static func requiredFormatVersion(_ query: SavedQuery) -> Int {
+        query.wandmakerQuest == nil ? 1 : 2
+    }
     private static let requirementKeys: Set<String> = [
         "kind", "item", "tier", "upgrade", "effect", "uncursed", "source",
         "identity_group", "max_depth",
@@ -64,7 +72,7 @@ public enum ResultsExport {
     public static func encode(_ query: SavedQuery, seeds: [String], appVersion: String) -> String {
         let document: [String: Any] = [
             "format": fileFormat,
-            "format_version": formatVersion,
+            "format_version": requiredFormatVersion(query),
             "app_version": appVersion,
             "shpd_version": shpdVersion,
             "query": encodeQuery(query),
@@ -175,6 +183,7 @@ public enum ResultsExport {
         if query.maximumDepth != 24 { output["max_depth"] = query.maximumDepth }
         if query.requireBlacksmith { output["require_blacksmith"] = true }
         if query.excludeBlacksmithRewards { output["exclude_blacksmith_rewards"] = true }
+        if let quest = query.wandmakerQuest { output["wandmaker_quest"] = quest.documentName }
         if query.fastMode { output["fast_mode"] = true }
         let challenges = challengeNames
             .filter { query.challenges & $0.challenge.rawValue != 0 }
@@ -246,11 +255,20 @@ public enum ResultsExport {
                 challenges |= match.challenge.rawValue
             }
         }
+        var wandmakerQuest: WandmakerQuest?
+        if let name = try stringField(value, "wandmaker_quest") {
+            guard let quest = WandmakerQuest.named(name) else {
+                throw ResultsExportError(
+                    "The query in this results file uses an unknown Wandmaker quest \"\(name)\".")
+            }
+            wandmakerQuest = quest
+        }
         return try SavedQuery(
             requirements: requirements,
             maximumDepth: maximumDepth,
             requireBlacksmith: boolField(value, "require_blacksmith"),
             excludeBlacksmithRewards: boolField(value, "exclude_blacksmith_rewards"),
+            wandmakerQuest: wandmakerQuest,
             fastMode: boolField(value, "fast_mode"),
             challenges: challenges)
     }

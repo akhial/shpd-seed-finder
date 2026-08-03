@@ -33,6 +33,7 @@
 use crate::catalog::{Effect, ItemKind, WeaponCategory};
 use crate::model::{ItemSource, WorldItem};
 use crate::query::{Requirement, SearchQuery, UpgradeRequirement};
+use crate::quests::{QuestSummary, WandmakerQuestType};
 use crate::search::FloorGate;
 
 /// The four one-per-run reward quests, each offering a mutually exclusive
@@ -251,6 +252,9 @@ pub struct QueryPlan {
     generation_depth: u8,
     /// Latest depth by which a required Blacksmith must have appeared.
     blacksmith_deadline: Option<u8>,
+    /// Required Wandmaker variant paired with the latest depth by which its
+    /// quest must have appeared.
+    wandmaker_deadline: Option<(WandmakerQuestType, u8)>,
     unsatisfiable: bool,
 }
 
@@ -314,13 +318,31 @@ impl QueryPlan {
             None
         };
 
+        // The Wandmaker's variant is fixed when its quest room is scheduled,
+        // so the filter is decided by the giver's own floor and needs the
+        // prefix to reach it — even when every requirement was satisfied long
+        // before.
+        let wandmaker_deadline = query.wandmaker_quest.map(|variant| {
+            let deadline = if *WandmakerQuestType::WINDOW.start() <= max_depth {
+                let deadline = (*WandmakerQuestType::WINDOW.end()).min(max_depth);
+                generation_depth = generation_depth.max(deadline);
+                deadline
+            } else {
+                // The window cannot open at all; a deadline of zero no
+                // completed floor precedes marks the query impossible below.
+                0
+            };
+            (variant, deadline)
+        });
+
         let mut plan = Self {
             requirements,
             generation_depth,
             blacksmith_deadline,
+            wandmaker_deadline,
             unsatisfiable: false,
         };
-        plan.unsatisfiable = !plan.viable_after_floor(0, &[]);
+        plan.unsatisfiable = !plan.viable_after_floor(0, &[], &QuestSummary::default());
         plan
     }
 
@@ -339,11 +361,31 @@ impl QueryPlan {
         self.generation_depth.clamp(1, 24)
     }
 
-    /// Whether a seed whose floors `1..=completed_depth` produced `items` can
-    /// still satisfy every requirement. Conservative: `false` is proof that
-    /// the final matcher would reject the seed, while `true` promises nothing.
+    /// Whether a seed whose floors `1..=completed_depth` produced `items` and
+    /// scheduled `quests` can still satisfy every requirement. Conservative:
+    /// `false` is proof that the final matcher would reject the seed, while
+    /// `true` promises nothing.
     #[must_use]
-    pub fn viable_after_floor(&self, completed_depth: u8, items: &[WorldItem]) -> bool {
+    pub fn viable_after_floor(
+        &self,
+        completed_depth: u8,
+        items: &[WorldItem],
+        quests: &QuestSummary,
+    ) -> bool {
+        if let Some((wanted, deadline)) = self.wandmaker_deadline {
+            match quests.wandmaker {
+                // The variant is rolled once per run and never revised, so a
+                // mismatch kills the seed on the Wandmaker's own floor.
+                Some(scheduled) => {
+                    if scheduled.variant != wanted {
+                        return false;
+                    }
+                }
+                None if completed_depth >= deadline => return false,
+                None => {}
+            }
+        }
+
         // Requirements that only quests can still satisfy, grouped by their
         // live quest bit set. Each quest offers a mutually exclusive choice,
         // so it can cover at most one requirement; Hall's condition over the
@@ -422,8 +464,13 @@ impl QueryPlan {
 }
 
 impl FloorGate for QueryPlan {
-    fn continue_after_floor(&self, completed_depth: u8, items_so_far: &[WorldItem]) -> bool {
-        self.viable_after_floor(completed_depth, items_so_far)
+    fn continue_after_floor(
+        &self,
+        completed_depth: u8,
+        items_so_far: &[WorldItem],
+        quests_so_far: &QuestSummary,
+    ) -> bool {
+        self.viable_after_floor(completed_depth, items_so_far, quests_so_far)
     }
 }
 
@@ -432,6 +479,8 @@ mod tests {
     use crate::catalog::{ArmorEffect, Effect, ItemId, ItemKind, WeaponEffect};
     use crate::model::{Accessibility, ItemSource, WorldItem};
     use crate::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
+
+    use crate::quests::QuestSummary;
 
     use super::QueryPlan;
 
@@ -457,8 +506,15 @@ mod tests {
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         }
+    }
+
+    /// No plan in these cases carries a quest filter, so the summary is
+    /// irrelevant and the assertions stay about the item horizon.
+    fn viable(plan: &QueryPlan, completed_depth: u8, items: &[WorldItem]) -> bool {
+        plan.viable_after_floor(completed_depth, items, &QuestSummary::default())
     }
 
     fn item(kind_item: ItemId, upgrade: u8, depth: u8, source: ItemSource) -> WorldItem {
@@ -501,13 +557,13 @@ mod tests {
         assert_eq!(plan.generation_depth(), 9);
         // A resolved Wandmaker without a +3 wand kills the seed immediately.
         let mismatched = [item(ItemId::WandFrost, 2, 7, ItemSource::WandmakerReward)];
-        assert!(!plan.viable_after_floor(7, &mismatched));
+        assert!(!viable(&plan, 7, &mismatched));
         // An unresolved Wandmaker stays alive through depth eight.
-        assert!(plan.viable_after_floor(8, &[]));
-        assert!(!plan.viable_after_floor(9, &[]));
+        assert!(viable(&plan, 8, &[]));
+        assert!(!viable(&plan, 9, &[]));
         // A matching reward keeps the seed alive permanently.
         let matched = [item(ItemId::WandFrost, 3, 8, ItemSource::WandmakerReward)];
-        assert!(plan.viable_after_floor(9, &matched));
+        assert!(viable(&plan, 9, &matched));
     }
 
     #[test]
@@ -561,13 +617,13 @@ mod tests {
             item(ItemId::Sword, 1, 3, ItemSource::GhostReward),
             item(ItemId::MailArmor, 1, 3, ItemSource::GhostReward),
         ];
-        assert!(!fast.viable_after_floor(4, &ghost_missed));
+        assert!(!viable(&fast, 4, &ghost_missed));
         // A +3 Ghost weapon leaves the armor to the Blacksmith.
         let ghost_hit = [
             item(ItemId::Sword, 3, 3, ItemSource::GhostReward),
             item(ItemId::MailArmor, 3, 3, ItemSource::GhostReward),
         ];
-        assert!(fast.viable_after_floor(4, &ghost_hit));
+        assert!(viable(&fast, 4, &ghost_hit));
     }
 
     #[test]
@@ -674,9 +730,9 @@ mod tests {
         assert!(!fast.is_unsatisfiable());
         assert_eq!(fast.generation_depth(), 14);
         let ghost_resolved = [item(ItemId::Sword, 3, 3, ItemSource::GhostReward)];
-        assert!(fast.viable_after_floor(4, &ghost_resolved));
+        assert!(viable(&fast, 4, &ghost_resolved));
         let blacksmith_resolved = [item(ItemId::Sword, 3, 13, ItemSource::BlacksmithReward)];
-        assert!(!fast.viable_after_floor(14, &blacksmith_resolved));
+        assert!(!viable(&fast, 14, &blacksmith_resolved));
     }
 
     #[test]
@@ -731,7 +787,7 @@ mod tests {
         let plan = QueryPlan::analyze(&query(vec![thrown], 24));
         assert!(!plan.is_unsatisfiable());
         assert_eq!(plan.generation_depth(), 24);
-        assert!(plan.viable_after_floor(14, &[]));
+        assert!(viable(&plan, 14, &[]));
     }
 
     #[test]
@@ -745,11 +801,57 @@ mod tests {
         assert!(!plan.is_unsatisfiable());
         assert_eq!(plan.generation_depth(), 14);
         let wand = [item(ItemId::WandFrost, 3, 8, ItemSource::WandmakerReward)];
-        assert!(plan.viable_after_floor(13, &wand));
-        assert!(!plan.viable_after_floor(14, &wand));
+        assert!(viable(&plan, 13, &wand));
+        assert!(!viable(&plan, 14, &wand));
 
         base.max_depth = 11;
         assert!(QueryPlan::analyze(&base).is_unsatisfiable());
+    }
+
+    #[test]
+    fn wandmaker_quest_filter_bounds_depth_and_prunes_on_the_rolled_variant() {
+        use crate::quests::{ScheduledQuest, WandmakerQuestType};
+
+        let quested = |max_depth| SearchQuery {
+            wandmaker_quest: Some(WandmakerQuestType::Rotberry),
+            ..query(
+                vec![requirement(ItemKind::Weapon, UpgradeRequirement::Any)],
+                max_depth,
+            )
+        };
+        let scheduled = |variant| QuestSummary {
+            wandmaker: Some(ScheduledQuest { variant, depth: 8 }),
+            ..QuestSummary::default()
+        };
+
+        // Open weapon drops alone would run to depth 24; the filter only ever
+        // extends generation, never shortens it.
+        let plan = QueryPlan::analyze(&quested(24));
+        assert!(!plan.is_unsatisfiable());
+        assert_eq!(plan.generation_depth(), 24);
+
+        // A wrong variant kills the seed the moment the Wandmaker appears,
+        // long before the item horizon runs out.
+        assert!(!plan.viable_after_floor(8, &[], &scheduled(WandmakerQuestType::ElementalEmbers)));
+        assert!(plan.viable_after_floor(8, &[], &scheduled(WandmakerQuestType::Rotberry)));
+        // No Wandmaker yet is fine until its window closes.
+        assert!(plan.viable_after_floor(8, &[], &QuestSummary::default()));
+        assert!(!plan.viable_after_floor(9, &[], &QuestSummary::default()));
+
+        // A shallow query that stops before the Prison must still reach the
+        // Wandmaker's floor, and one that cannot is impossible.
+        let shallow = QueryPlan::analyze(&SearchQuery {
+            requirements: vec![Requirement {
+                max_depth: Some(3),
+                ..requirement(ItemKind::Weapon, UpgradeRequirement::Any)
+            }],
+            ..quested(24)
+        });
+        assert_eq!(shallow.generation_depth(), 9);
+        assert!(QueryPlan::analyze(&quested(6)).is_unsatisfiable());
+        // Floors seven and eight can host the giver, so they stay possible.
+        assert!(!QueryPlan::analyze(&quested(7)).is_unsatisfiable());
+        assert_eq!(QueryPlan::analyze(&quested(7)).generation_depth(), 7);
     }
 
     #[test]
@@ -760,7 +862,7 @@ mod tests {
         ));
         assert!(!plan.is_unsatisfiable());
         assert_eq!(plan.generation_depth(), 24);
-        assert!(plan.viable_after_floor(23, &[]));
+        assert!(viable(&plan, 23, &[]));
     }
 
     #[test]
@@ -771,12 +873,12 @@ mod tests {
         };
         let plan = QueryPlan::analyze(&query(vec![limited], 24));
         assert_eq!(plan.generation_depth(), 5);
-        assert!(plan.viable_after_floor(4, &[]));
-        assert!(!plan.viable_after_floor(5, &[]));
+        assert!(viable(&plan, 4, &[]));
+        assert!(!viable(&plan, 5, &[]));
 
         let in_time = [item(ItemId::Sword, 0, 5, ItemSource::Heap)];
-        assert!(plan.viable_after_floor(5, &in_time));
+        assert!(viable(&plan, 5, &in_time));
         let too_late = [item(ItemId::Sword, 0, 6, ItemSource::Heap)];
-        assert!(!plan.viable_after_floor(6, &too_late));
+        assert!(!viable(&plan, 6, &too_late));
     }
 }

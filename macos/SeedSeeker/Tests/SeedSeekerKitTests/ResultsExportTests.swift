@@ -34,6 +34,19 @@ final class ResultsExportTests: XCTestCase {
     }()
     private var version1Fixture: String { Self.version1Fixture }
 
+    /// The canonical frozen version-2 fixture, read from the same place.
+    private static let version2Fixture: String = {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let fixture = repoRoot.appendingPathComponent(
+            "crates/seedfinder-core/tests/fixtures/results-export-v2.json")
+        return (try? String(contentsOf: fixture, encoding: .utf8)) ?? ""
+    }()
+
     func testEncodeThenDecodeRoundTripsQueryAndSeeds() throws {
         let query = try loadedQuery()
         let text = ResultsExport.encode(query, seeds: ["AAA-AAA-BUH", "ABC-DEF-GHI"],
@@ -176,12 +189,49 @@ final class ResultsExportTests: XCTestCase {
 
     func testFutureFormatVersionsFailWithAnUpdateMessage() {
         XCTAssertThrowsError(try ResultsExport.decode("""
-            {"format":"seed-seeker-results","format_version":2,
+            {"format":"seed-seeker-results","format_version":3,
              "query":{"requirements":[{"item":"sword"}]},"results":[]}
             """)) { error in
             let message = (error as? ResultsExportError)?.message ?? ""
-            XCTAssertTrue(message.contains("format version 2"), message)
+            XCTAssertTrue(message.contains("format version 3"), message)
             XCTAssertTrue(message.contains("Update Seed Seeker"), message)
+        }
+    }
+
+    /// Only a query that uses a version-2 field declares version 2, so
+    /// ordinary exports stay importable by already-shipped apps.
+    func testOnlyAWandmakerQuestRaisesTheDeclaredVersion() throws {
+        let plain = try loadedQuery()
+        XCTAssertEqual(ResultsExport.requiredFormatVersion(plain), 1)
+        var quested = plain
+        quested.wandmakerQuest = .corpseDust
+        XCTAssertEqual(ResultsExport.requiredFormatVersion(quested), 2)
+
+        let text = ResultsExport.encode(quested, seeds: ["AAA-AAA-BUH"], appVersion: "0.6.1")
+        let document = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+        XCTAssertEqual(document["format_version"] as? Int, 2)
+        let query = try XCTUnwrap(document["query"] as? [String: Any])
+        XCTAssertEqual(query["wandmaker_quest"] as? String, "corpse_dust")
+        XCTAssertEqual(try ResultsExport.decode(text).query.wandmakerQuest, .corpseDust)
+    }
+
+    func testVersionTwoFixtureCarriesTheWandmakerQuest() throws {
+        XCTAssertFalse(Self.version2Fixture.isEmpty, "canonical v2 fixture file not found")
+        let imported = try ResultsExport.decode(Self.version2Fixture)
+        XCTAssertEqual(imported.query.wandmakerQuest, .rotberry)
+        XCTAssertEqual(imported.query.maximumDepth, 9)
+        XCTAssertEqual(imported.seeds, ["AAA-AAA-BUH", "ABC-DEF-GHI"])
+    }
+
+    func testUnknownWandmakerQuestIsRejected() {
+        XCTAssertThrowsError(try ResultsExport.decode("""
+            {"format":"seed-seeker-results","format_version":2,
+             "query":{"requirements":[{"item":"sword"}],"wandmaker_quest":"seed_of_rotberry"},
+             "results":[]}
+            """)) { error in
+            let message = (error as? ResultsExportError)?.message ?? ""
+            XCTAssertTrue(message.contains("Wandmaker quest"), message)
         }
     }
 

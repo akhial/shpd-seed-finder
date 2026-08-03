@@ -19,7 +19,9 @@ import org.json.JSONObject
  */
 object ResultsExport {
     const val FILE_FORMAT = "seed-seeker-results"
-    const val FORMAT_VERSION = 1
+
+    /** Newest results-file version this build can read. */
+    const val FORMAT_VERSION = 2
     const val SUGGESTED_FILE_NAME = "seed-seeker-results.json"
 
     /** Mirrors the Rust core's `SHPD_VERSION`, the source of truth. */
@@ -54,6 +56,7 @@ object ResultsExport {
         "max_depth",
         "require_blacksmith",
         "exclude_blacksmith_rewards",
+        "wandmaker_quest",
         "fast_mode",
         "challenges",
     )
@@ -69,10 +72,22 @@ object ResultsExport {
         "max_depth",
     )
 
+    /**
+     * The lowest format version able to express [query].
+     *
+     * Version 2 added the `wandmaker_quest` field. Readers validate the query
+     * strictly, so a file carrying that field must declare version 2 or older
+     * apps would misread it — but a query without it is still exactly a
+     * version-1 document, and stamping it 2 would needlessly stop older apps
+     * from importing it. Writers therefore declare this, not [FORMAT_VERSION].
+     */
+    fun requiredFormatVersion(query: PresetQuery): Int =
+        if (query.wandmakerQuest == null) 1 else 2
+
     fun encode(query: PresetQuery, seeds: List<String>, appVersion: String): String =
         JSONObject().apply {
             put("format", FILE_FORMAT)
-            put("format_version", FORMAT_VERSION)
+            put("format_version", requiredFormatVersion(query))
             put("app_version", appVersion)
             put("shpd_version", SHPD_VERSION)
             put("query", encodeQuery(query))
@@ -139,6 +154,7 @@ object ResultsExport {
         if (query.maximumDepth != 24) put("max_depth", query.maximumDepth)
         if (query.requireBlacksmith) put("require_blacksmith", true)
         if (query.excludeBlacksmithRewards) put("exclude_blacksmith_rewards", true)
+        query.wandmakerQuest?.let { put("wandmaker_quest", it.documentName) }
         if (query.fastMode) put("fast_mode", true)
         val challenges = CHALLENGE_NAMES.entries
             .filter { (_, challenge) -> query.challenges and challenge.bit != 0 }
@@ -205,11 +221,17 @@ object ResultsExport {
         }
         val maximumDepth = value.strictIntOrNull("max_depth") ?: 24
         require(maximumDepth in 1..24) { "Maximum floor must be 1..24." }
+        val wandmakerQuest = value.strictStringOrNull("wandmaker_quest")?.let { name ->
+            requireNotNull(WandmakerQuest.named(name)) {
+                "The query in this results file uses an unknown Wandmaker quest \"$name\"."
+            }
+        }
         return PresetQuery(
             requirements = requirements,
             maximumDepth = maximumDepth,
             requireBlacksmith = value.strictBool("require_blacksmith"),
             excludeBlacksmithRewards = value.strictBool("exclude_blacksmith_rewards"),
+            wandmakerQuest = wandmakerQuest,
             fastMode = value.strictBool("fast_mode"),
             challenges = challenges,
         )

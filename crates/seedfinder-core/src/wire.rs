@@ -12,17 +12,19 @@ use crate::quests::{
 };
 use crate::seed::DungeonSeed;
 
-const REQUEST_MAGIC: &[u8; 4] = b"SSF7";
+const REQUEST_MAGIC: &[u8; 4] = b"SSF8";
 const SCOUT_REQUEST_MAGIC_V2: &[u8; 4] = b"SSQ2";
 const RESULT_MAGIC: &[u8; 4] = b"SSR1";
 const SCOUT_RESULT_MAGIC: &[u8; 4] = b"SSC2";
 const MAX_REQUIREMENTS: usize = 64;
 
-/// Decodes an `SSF7` search request. The flags byte uses bit 0 for required
+/// Decodes an `SSF8` search request. The flags byte uses bit 0 for required
 /// blacksmith availability, bit 1 for the lossy fast search mode described on
 /// [`SearchQuery::fast_mode`], and bit 2 to prevent Blacksmith "Smith" rewards
-/// from satisfying item requirements. Each requirement ends with a flags byte;
-/// its bit 0 requires the matching item to be uncursed.
+/// from satisfying item requirements. The byte after the challenge mask is the
+/// required Wandmaker quest — `0` for any, otherwise the variant's one-based
+/// game value. Each requirement ends with a flags byte; its bit 0 requires the
+/// matching item to be uncursed.
 ///
 /// # Errors
 ///
@@ -41,7 +43,7 @@ pub fn decode_query(packet: &[u8]) -> Result<SearchQuery, WireError> {
     Ok(query)
 }
 
-/// Encodes a validated query using the uncursed-aware `SSF7` request schema.
+/// Encodes a validated query using the quest-aware `SSF8` request schema.
 ///
 /// # Errors
 ///
@@ -63,6 +65,7 @@ pub fn encode_query(query: &SearchQuery) -> Result<Vec<u8>, WireError> {
             | (u8::from(query.exclude_blacksmith_rewards) << 2),
     );
     output.extend_from_slice(&query.challenges.bits().to_le_bytes());
+    output.push(query.wandmaker_quest.map_or(0, WandmakerQuestType::wire_id));
     output.extend_from_slice(&count.to_be_bytes());
     for requirement in &query.requirements {
         output.push(requirement_kind_wire_id(
@@ -111,6 +114,12 @@ fn decode_query_payload(input: &mut Input<'_>) -> Result<SearchQuery, WireError>
         return Err(WireError::InvalidFlags);
     }
     let challenges = Challenges::new(input.u16_le()?).map_err(|_| WireError::InvalidChallenges)?;
+    let wandmaker_quest = match input.u8()? {
+        0 => None,
+        value => {
+            Some(WandmakerQuestType::from_wire_id(value).ok_or(WireError::UnknownQuestVariant)?)
+        }
+    };
     let count = usize::from(input.u16()?);
     if count == 0 || count > MAX_REQUIREMENTS {
         return Err(WireError::InvalidRequirementCount);
@@ -187,6 +196,7 @@ fn decode_query_payload(input: &mut Input<'_>) -> Result<SearchQuery, WireError>
         challenges,
         require_blacksmith: flags & 1 != 0,
         exclude_blacksmith_rewards: flags & 0b100 != 0,
+        wandmaker_quest,
         fast_mode: flags & 0b10 != 0,
     })
 }
@@ -426,12 +436,8 @@ fn decode_quest_summary(input: &mut Input<'_>) -> Result<QuestSummary, WireError
                 quests.ghost = Some(ScheduledQuest { variant, depth });
             }
             WANDMAKER_QUEST_WIRE_ID => {
-                let variant = match variant {
-                    1 => WandmakerQuestType::CorpseDust,
-                    2 => WandmakerQuestType::ElementalEmbers,
-                    3 => WandmakerQuestType::Rotberry,
-                    _ => return Err(WireError::UnknownQuestVariant),
-                };
+                let variant = WandmakerQuestType::from_wire_id(variant)
+                    .ok_or(WireError::UnknownQuestVariant)?;
                 quests.wandmaker = Some(ScheduledQuest { variant, depth });
             }
             BLACKSMITH_QUEST_WIRE_ID => {
@@ -744,6 +750,7 @@ mod tests {
     use crate::main_world::CanonicalMainWorldGenerator;
     use crate::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
     use crate::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
+    use crate::quests::WandmakerQuestType;
     use crate::search::WorldGenerator;
     use crate::seed::DungeonSeed;
 
@@ -785,10 +792,11 @@ mod tests {
         tier: [u8; 2],
         upgrade: [u8; 2],
     ) -> Vec<u8> {
-        let mut packet = b"SSF7".to_vec();
+        let mut packet = b"SSF8".to_vec();
         packet.push(24);
         packet.push(flags);
         packet.extend_from_slice(&challenges.to_le_bytes());
+        packet.push(0);
         packet.extend_from_slice(&1_u16.to_be_bytes());
         packet.push(kind);
         field(&mut packet, stable_id);
@@ -800,7 +808,7 @@ mod tests {
     }
 
     #[test]
-    fn ssf7_round_trips_all_query_fields() {
+    fn ssf8_round_trips_all_query_fields() {
         let query = SearchQuery {
             requirements: vec![
                 Requirement {
@@ -844,16 +852,19 @@ mod tests {
             challenges: Challenges::new(104).unwrap(),
             require_blacksmith: true,
             exclude_blacksmith_rewards: true,
+            wandmaker_quest: Some(WandmakerQuestType::ElementalEmbers),
             fast_mode: true,
         };
 
         let packet = encode_query(&query).unwrap();
-        assert_eq!(&packet[..4], b"SSF7");
+        assert_eq!(&packet[..4], b"SSF8");
+        // magic[4], max_depth, flags, challenges:u16le, then the quest byte.
+        assert_eq!(packet[8], WandmakerQuestType::ElementalEmbers.wire_id());
         assert_eq!(decode_query(&packet), Ok(query));
     }
 
     #[test]
-    fn ssf7_kind_bytes_cover_melee_and_thrown_and_stay_backwards_compatible() {
+    fn ssf8_kind_bytes_cover_melee_and_thrown_and_stay_backwards_compatible() {
         use crate::catalog::WeaponCategory;
 
         // A legacy packet with kind byte 0 still decodes to an unfiltered
@@ -870,7 +881,7 @@ mod tests {
             assert_eq!(decoded.requirements[0].kind, ItemKind::Weapon);
             assert_eq!(decoded.requirements[0].weapon_category, Some(category));
             let encoded = encode_query(&decoded).unwrap();
-            assert_eq!(encoded[10], byte);
+            assert_eq!(encoded[11], byte);
             assert_eq!(decode_query(&encoded), Ok(decoded));
         }
 
@@ -887,13 +898,41 @@ mod tests {
     }
 
     #[test]
-    fn ssf7_decodes_uncursed_requirement_flag() {
+    fn ssf8_decodes_uncursed_requirement_flag() {
         let mut packet = query_packet(0, 0, 0, "sword", [0, 0], [1, 2]);
         *packet.last_mut().unwrap() = 1;
         assert!(decode_query(&packet).unwrap().requirements[0].require_uncursed);
 
         *packet.last_mut().unwrap() = 2;
         assert_eq!(decode_query(&packet), Err(WireError::InvalidFlags));
+    }
+
+    #[test]
+    fn ssf8_quest_byte_selects_one_wandmaker_variant_or_none() {
+        // Zero is "any", which is what every packet carries until a user
+        // picks a quest, so it must stay the neutral value.
+        let any = query_packet(0, 0, 0, "sword", [0, 0], [0, 0]);
+        assert_eq!(decode_query(&any).unwrap().wandmaker_quest, None);
+
+        for variant in WandmakerQuestType::ALL {
+            let mut packet = any.clone();
+            packet[8] = variant.wire_id();
+            assert_eq!(
+                decode_query(&packet).unwrap().wandmaker_quest,
+                Some(variant)
+            );
+            assert_eq!(
+                encode_query(&decode_query(&packet).unwrap()).unwrap(),
+                packet
+            );
+        }
+
+        let unknown = {
+            let mut packet = any;
+            packet[8] = 4;
+            packet
+        };
+        assert_eq!(decode_query(&unknown), Err(WireError::UnknownQuestVariant));
     }
 
     #[test]

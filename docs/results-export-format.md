@@ -32,7 +32,7 @@ query that did not produce its seeds.
 | Field            | Type    | Required | Meaning                                                                 |
 | ---------------- | ------- | -------- | ----------------------------------------------------------------------- |
 | `format`         | string  | yes      | Always `"seed-seeker-results"`. Distinguishes these files from other JSON. |
-| `format_version` | integer | yes      | Schema version, strictly a positive integer. This document describes version `1`. |
+| `format_version` | integer | yes      | Schema version, strictly a positive integer. This document describes versions `1` and `2`. Writers declare the **lowest** version able to express the query (see *Versions* below). |
 | `app_version`    | string  | no       | App version that wrote the file. Informational only.                    |
 | `shpd_version`   | string  | no       | Upstream Shattered Pixel Dungeon version the exporting engine targeted. See *Cross-version imports* below. |
 | `query`          | object  | yes      | The query that produced the results, in the shared JSON query-document format (see below). |
@@ -76,6 +76,9 @@ It is decoded by `crates/seedfinder-core/src/json_query.rs`:
 - `max_depth` (integer 1–24, default 24), `require_blacksmith`,
   `exclude_blacksmith_rewards`, `fast_mode` (booleans) — top-level scope
   flags.
+- `wandmaker_quest` — **version 2**; `"corpse_dust" | "elemental_embers" |
+  "rotberry"`, restricting the search to runs whose Wandmaker asks for that
+  item. Absent means any quest.
 - `challenges` — array of snake_case challenge names (`on_diet`,
   `faith_is_my_armor`, `pharmacophobia`, `barren_land`, `swarm_intelligence`,
   `into_darkness`, `forbidden_runes`, `hostile_champions`, `badder_bosses`).
@@ -91,9 +94,8 @@ identical across platforms.
 
 ## Compatibility rules
 
-Version 1 readers must follow these rules; they are what lets files exported
-today stay importable forever, and files from slightly newer apps degrade
-gracefully:
+Readers must follow these rules; they are what lets files exported today stay
+importable forever, and files from slightly newer apps degrade gracefully:
 
 1. **Reject non-results files clearly.** If `format` is missing or not
    `"seed-seeker-results"`, report that the file is not a Seed Seeker results
@@ -106,7 +108,7 @@ gracefully:
 3. **Ignore unknown *envelope* fields and unknown *per-result* fields.** A
    future release may add optional fields there (for example an export
    timestamp or per-result annotations) without bumping `format_version`;
-   version-1 readers must skip them silently. Note the flip side: an app that
+   readers must skip them silently. Note the flip side: an app that
    imports such a file and re-exports it writes only the fields it knows, so
    round-tripping through an older app drops newer optional fields.
 4. **Be strict about the `query` contents.** Unknown query fields, item ids,
@@ -142,6 +144,20 @@ Writers must:
    the whole file. Additive optional fields in the envelope or in result
    entries do **not** need a bump (rule 3). Renamed/removed fields or changed
    meanings anywhere need a bump.
+4. Declare the **lowest** version that can express the query being written,
+   not the newest version the writer understands. A query with no
+   `wandmaker_quest` is exactly a version-1 document, and stamping it `2`
+   would stop already-shipped apps from importing a file they could read
+   perfectly well. The core owns this rule as
+   `results_export::required_format_version`, mirrored by every frontend
+   codec.
+
+## Versions
+
+| Version | Added                                                            |
+| ------- | ---------------------------------------------------------------- |
+| 1       | The envelope, the shared query document, and the results list.    |
+| 2       | The query's optional `wandmaker_quest` filter. Nothing else changed, so a version-2 file without that field is byte-identical to the version-1 file it would have been — which is why writers declare 1 for such queries. |
 
 ## Cross-version imports (`shpd_version`)
 
@@ -156,14 +172,15 @@ version bump.
 
 ## Fixtures
 
-The format is pinned by one shared, frozen version-1 fixture:
-`crates/seedfinder-core/tests/fixtures/results-export-v1.json`. The core unit
-tests, the web tests (via a raw import), the Android tests, and the macOS
-tests all decode **that same file**, so a platform codec cannot silently
-drift from the canonical schema. Windows has no test harness in this repo;
-its codec must be kept in sync by review.
+The format is pinned by shared, frozen fixtures under
+`crates/seedfinder-core/tests/fixtures/`: `results-export-v1.json` and, for
+the quest filter, `results-export-v2.json`. The core unit tests, the web tests
+(via a raw import), the Android tests, and the macOS tests all decode **those
+same files**, so a platform codec cannot silently drift from the canonical
+schema. Windows has no test harness in this repo; its codec must be kept in
+sync by review.
 
-When evolving the format, never edit the version-1 fixture — add new fixtures
+When evolving the format, never edit an existing fixture — add new fixtures
 for the new version and keep the old ones passing. Additive changes inside a
 version get their own fixture the same way:
 `results-export-v1-weapon-categories.json` pins the narrowed
@@ -177,4 +194,5 @@ half-applies), and records the imported query as the export snapshot so
 re-exporting reproduces the file. Imports are refused while a search is
 running — including when a search started while the file picker was open.
 The informational `app_version` field is not compared against the running
-app; a version-1 file is importable regardless of which app version wrote it.
+app; a file is importable regardless of which app version wrote it, as long
+as its `format_version` is one this app understands.

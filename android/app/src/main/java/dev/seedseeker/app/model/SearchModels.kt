@@ -168,6 +168,32 @@ fun floorLimitIndex(depth: Int): Int {
     return FLOOR_LIMIT_OPTIONS.indexOfLast { it <= floor }.coerceAtLeast(0)
 }
 
+/**
+ * The Wandmaker quest a search can demand, or `null` for any of them.
+ *
+ * Only this giver's variant is worth filtering on: its quest item — corpse
+ * dust, an elemental ember, or a rotberry seed — can be used in the dungeon
+ * instead of being handed in. The other three quests only change the fight.
+ */
+enum class WandmakerQuest(val variant: ScoutQuestVariant, val documentName: String) {
+    CORPSE_DUST(ScoutQuestVariant.CORPSE_DUST, "corpse_dust"),
+    ELEMENTAL_EMBERS(ScoutQuestVariant.ELEMENTAL_EMBERS, "elemental_embers"),
+    ROTBERRY(ScoutQuestVariant.ROTBERRY, "rotberry"),
+    ;
+
+    /** The game's own one-based quest value, reused as the SSF8 wire id. */
+    val wireId: Int
+        get() = ordinal + 1
+
+    val label: String
+        get() = variant.label
+
+    companion object {
+        /** Resolves the stable snake_case name used by shared query documents. */
+        fun named(name: String): WandmakerQuest? = entries.firstOrNull { it.documentName == name }
+    }
+}
+
 data class SearchRequest(
     val requirements: List<ItemRequirement>,
     val maximumDepth: Int = 24,
@@ -175,6 +201,8 @@ data class SearchRequest(
     val requireBlacksmith: Boolean = false,
     /** Prevent the Blacksmith's 2,000-favor Smith choice from satisfying item requirements. */
     val excludeBlacksmithRewards: Boolean = false,
+    /** Which Wandmaker quest the run must roll; null accepts any. */
+    val wandmakerQuest: WandmakerQuest? = null,
     /**
      * Faster but non-exhaustive: +3 weapon/armor requirements only consider
      * quest rewards, skipping seeds whose sole match is a Crypt or

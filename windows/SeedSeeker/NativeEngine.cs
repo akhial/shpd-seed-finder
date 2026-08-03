@@ -100,7 +100,7 @@ public sealed class NativeEngine
     /// candidate requirement at least as strict (equal or strengthened).
     /// The engine owns this predicate — the same
     /// <c>SearchQuery::continues</c> that decides which seeds a resumed pass may
-    /// skip — so the decision is made on the encoded SSF7 packets rather than
+    /// skip — so the decision is made on the encoded SSF8 packets rather than
     /// re-derived here, and the two can never drift.
     /// </summary>
     public static bool QueryContinues(QuerySettings candidate, QuerySettings baseline)
@@ -116,9 +116,9 @@ public sealed class NativeEngine
 
     private static byte[] EncodeQuery(QuerySettings query)
     {
-        var w = new Writer(); w.Bytes("SSF7"u8.ToArray()); w.U8(query.MaximumDepth);
+        var w = new Writer(); w.Bytes("SSF8"u8.ToArray()); w.U8(query.MaximumDepth);
         w.U8((query.RequireBlacksmith ? 1 : 0) | (query.FastMode ? 2 : 0) | (query.ExcludeBlacksmithRewards ? 4 : 0));
-        w.U16Le(query.Challenges); w.U16(query.Requirements.Count);
+        w.U16Le(query.Challenges); w.U8((int)query.WandmakerQuest); w.U16(query.Requirements.Count);
         foreach (var r in query.Requirements)
         {
             w.U8((int)r.Kind); w.Text(r.Item?.Id ?? ""); w.U8((int)r.TierMatch); w.U8(r.Tier);

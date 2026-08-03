@@ -23,7 +23,17 @@ public sealed class ResultsExportException(string message) : Exception(message);
 public static partial class ResultsExport
 {
     public const string FileFormat = "seed-seeker-results";
-    public const int FormatVersion = 1;
+    /// <summary>Newest results-file version this build can read.</summary>
+    public const int FormatVersion = 2;
+
+    /// <summary>
+    /// The lowest version able to express <paramref name="query"/>. Version 2
+    /// added <c>wandmaker_quest</c>; a query without it is still exactly a
+    /// version-1 document, and declaring 2 anyway would stop already-shipped
+    /// apps from importing it.
+    /// </summary>
+    public static int RequiredFormatVersion(QuerySettings query) =>
+        query.WandmakerQuest == WandmakerQuest.Any ? 1 : 2;
     public const string SuggestedFileName = "seed-seeker-results";
     /// <summary>Mirrors the Rust core's SHPD_VERSION, the source of truth.</summary>
     public const string ShpdVersion = "3.3.8";
@@ -49,7 +59,7 @@ public static partial class ResultsExport
     ];
     private static readonly HashSet<string> QueryKeys = [
         "requirements", "max_depth", "require_blacksmith",
-        "exclude_blacksmith_rewards", "fast_mode", "challenges",
+        "exclude_blacksmith_rewards", "wandmaker_quest", "fast_mode", "challenges",
     ];
     private static readonly HashSet<string> RequirementKeys = [
         "kind", "item", "tier", "upgrade", "effect", "uncursed", "source",
@@ -64,7 +74,7 @@ public static partial class ResultsExport
         var document = new JsonObject
         {
             ["format"] = FileFormat,
-            ["format_version"] = FormatVersion,
+            ["format_version"] = RequiredFormatVersion(query),
             ["app_version"] = appVersion,
             ["shpd_version"] = ShpdVersion,
             ["query"] = EncodeQuery(query),
@@ -132,6 +142,7 @@ public static partial class ResultsExport
         if (query.MaximumDepth != 24) output["max_depth"] = query.MaximumDepth;
         if (query.RequireBlacksmith) output["require_blacksmith"] = true;
         if (query.ExcludeBlacksmithRewards) output["exclude_blacksmith_rewards"] = true;
+        if (WandmakerQuests.DocumentName(query.WandmakerQuest) is string quest) output["wandmaker_quest"] = quest;
         if (query.FastMode) output["fast_mode"] = true;
         var challenges = ChallengeNames.Where(c => (query.Challenges & c.Bit) != 0).Select(c => c.Name).ToArray();
         if (challenges.Length != 0)
@@ -212,12 +223,20 @@ public static partial class ResultsExport
                 challenges |= match.Bit;
             }
         }
+        var wandmakerQuest = WandmakerQuest.Any;
+        if (StringField(value, "wandmaker_quest") is string questName)
+        {
+            wandmakerQuest = WandmakerQuests.Named(questName)
+                ?? throw new ResultsExportException(
+                    $"The query in this results file uses an unknown Wandmaker quest \"{questName}\".");
+        }
         return new QuerySettings
         {
             Requirements = requirements,
             MaximumDepth = maximumDepth,
             RequireBlacksmith = BoolField(value, "require_blacksmith"),
             ExcludeBlacksmithRewards = BoolField(value, "exclude_blacksmith_rewards"),
+            WandmakerQuest = wandmakerQuest,
             FastMode = BoolField(value, "fast_mode"),
             Challenges = challenges,
         };

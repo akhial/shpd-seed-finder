@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 // The canonical frozen fixture, imported verbatim from the Rust core's test
 // data so this codec can never silently drift from it.
 import VERSION_1_FIXTURE from '../../../crates/seedfinder-core/tests/fixtures/results-export-v1.json?raw'
+import VERSION_2_FIXTURE from '../../../crates/seedfinder-core/tests/fixtures/results-export-v2.json?raw'
 import WEAPON_CATEGORIES_FIXTURE from '../../../crates/seedfinder-core/tests/fixtures/results-export-v1-weapon-categories.json?raw'
 import { defaultQueryState, toQueryDocument } from './query'
 import {
@@ -9,6 +10,7 @@ import {
   decodeResultsFile,
   encodeResultsFile,
   parsedSeedFromCode,
+  requiredResultsFileVersion,
   seedCodeValue,
 } from './results-file'
 import type { QueryState } from './wasm/types'
@@ -53,7 +55,9 @@ describe('results file', () => {
   it('round-trips the query and seeds through encode and decode', () => {
     const text = encodeResultsFile(toQueryDocument(loadedQuery), ['AAA-AAA-BUH', 'ABC-DEF-GHI'], '3.3.8')
     const decoded = decodeResultsFile(text)
-    expect(decoded.formatVersion).toBe(RESULTS_FILE_VERSION)
+    // A query version 1 can express keeps declaring 1, so files stay
+    // importable by already-shipped apps.
+    expect(decoded.formatVersion).toBe(1)
     expect(decoded.appVersion).toBeDefined()
     expect(decoded.shpdVersion).toBe('3.3.8')
     expect(decoded.query).toEqual(loadedQuery)
@@ -115,11 +119,37 @@ describe('results file', () => {
   it('rejects files from a newer format version with an update message', () => {
     const text = JSON.stringify({
       format: 'seed-seeker-results',
-      format_version: 2,
+      format_version: RESULTS_FILE_VERSION + 1,
       query: { requirements: [{ item: 'sword' }] },
       results: [],
     })
-    expect(() => decodeResultsFile(text)).toThrowError(/format version 2.*Update Seed Seeker/s)
+    expect(() => decodeResultsFile(text)).toThrowError(/format version 3.*Update Seed Seeker/s)
+  })
+
+  it('declares version 2 only for a query that carries a Wandmaker quest', () => {
+    const plain = toQueryDocument(loadedQuery)
+    expect(requiredResultsFileVersion(plain)).toBe(1)
+    expect(requiredResultsFileVersion({ ...plain, wandmaker_quest: 'rotberry' })).toBe(2)
+
+    const quested: QueryState = { ...loadedQuery, wandmakerQuest: 'corpse_dust' }
+    const text = encodeResultsFile(toQueryDocument(quested), ['AAA-AAA-BUH'], '3.3.8')
+    expect((JSON.parse(text) as Record<string, unknown>).format_version).toBe(2)
+    const decoded = decodeResultsFile(text)
+    expect(decoded.formatVersion).toBe(2)
+    expect(decoded.query).toEqual(quested)
+  })
+
+  it('decodes the canonical frozen version-2 fixture', () => {
+    const decoded = decodeResultsFile(VERSION_2_FIXTURE)
+    expect(decoded.formatVersion).toBe(2)
+    expect(decoded.query.wandmakerQuest).toBe('rotberry')
+    expect(decoded.query.maxDepth).toBe(9)
+    expect(decoded.seeds).toEqual(['AAA-AAA-BUH', 'ABC-DEF-GHI'])
+  })
+
+  it('rejects an unknown Wandmaker quest instead of widening the filter', () => {
+    const text = file({ requirements: [{ item: 'sword' }], wandmaker_quest: 'seed_of_rotberry' })
+    expect(() => decodeResultsFile(text)).toThrowError(/Wandmaker quest/)
   })
 
   it('requires the format version to be a positive whole number', () => {

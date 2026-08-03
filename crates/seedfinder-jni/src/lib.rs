@@ -176,7 +176,7 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_resumeHint<'lo
     array
 }
 
-/// Re-verifies specific seed values against the `SSF7` query in `request` and
+/// Re-verifies specific seed values against the `SSF8` query in `request` and
 /// returns the surviving seeds as an `SSR1` packet in input order. This is the
 /// "filter existing results" half of refining a search.
 #[unsafe(no_mangle)]
@@ -249,7 +249,7 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_filterSeeds<'l
     }
 }
 
-/// Reports whether the `SSF7` query in `candidate` continues the one in
+/// Reports whether the `SSF8` query in `candidate` continues the one in
 /// `base` — the soundness precondition for the filter-and-resume refine flow.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_queryContinues<'local>(

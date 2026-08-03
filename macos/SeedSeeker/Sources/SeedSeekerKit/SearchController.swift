@@ -142,6 +142,7 @@ public final class SearchController {
             requirements: query.requirements, maximumDepth: query.maximumDepth,
             requireBlacksmith: query.requireBlacksmith,
             excludeBlacksmithRewards: query.excludeBlacksmithRewards,
+            wandmakerQuest: query.wandmakerQuest,
             fastMode: query.fastMode, challenges: query.challenges)
         target = request.map { TargetState(request: $0, seeds: unique, resumeFrom: 0, remaining: 0) }
     }
@@ -197,6 +198,7 @@ public final class SearchController {
             requirements: request.requirements, maximumDepth: request.maximumDepth,
             requireBlacksmith: request.requireBlacksmith,
             excludeBlacksmithRewards: request.excludeBlacksmithRewards,
+            wandmakerQuest: request.wandmakerQuest,
             fastMode: request.fastMode, challenges: request.challenges)
         task = Task { [weak self] in
             guard let self else { return }
@@ -281,6 +283,7 @@ public final class SearchController {
                 requirements: request.requirements, maximumDepth: request.maximumDepth,
                 requireBlacksmith: request.requireBlacksmith,
                 excludeBlacksmithRewards: request.excludeBlacksmithRewards,
+                wandmakerQuest: request.wandmakerQuest,
                 fastMode: request.fastMode, challenges: request.challenges)
             // A filter never scans; a refine resumes the target's remainder.
             if resumesScan && target.remaining > 0 {
@@ -331,6 +334,7 @@ public final class SearchController {
                 requirements: request.requirements, maximumDepth: request.maximumDepth,
                 requireBlacksmith: request.requireBlacksmith,
                 excludeBlacksmithRewards: request.excludeBlacksmithRewards,
+                wandmakerQuest: request.wandmakerQuest,
                 fastMode: request.fastMode, challenges: request.challenges)
             if base.remaining > 0 {
                 await self.run(request, alreadyShown: Set(kept)) { engine in

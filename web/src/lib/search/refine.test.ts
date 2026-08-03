@@ -65,6 +65,8 @@ describe('isContinuationOf', () => {
     expect(isContinuationOf({ ...added, fast_mode: true }, base)).toBe(false)
     expect(isContinuationOf({ ...added, require_blacksmith: true }, base)).toBe(false)
     expect(isContinuationOf({ ...added, exclude_blacksmith_rewards: true }, base)).toBe(false)
+    expect(isContinuationOf({ ...added, wandmaker_quest: 'rotberry' }, base)).toBe(false)
+    expect(isContinuationOf({ ...added, wandmaker_quest: 'rotberry' }, { ...base, wandmaker_quest: 'rotberry' })).toBe(true)
     expect(isContinuationOf({ ...added, challenges: ['on_diet'] }, base)).toBe(false)
     expect(isContinuationOf({ ...added, challenges: ['on_diet'] }, { ...base, challenges: ['on_diet'] })).toBe(true)
     // Even an otherwise unchanged query restarts when the scope moves.
