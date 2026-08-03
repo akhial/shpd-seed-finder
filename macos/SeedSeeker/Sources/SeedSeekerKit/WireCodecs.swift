@@ -127,9 +127,27 @@ public enum ScoutCodec {
 
     public static func decode(_ packet: Data) throws -> ScoutWorld {
         var input = Reader(data: packet)
-        guard try input.bytes(4) == Data("SSC1".utf8) else { throw WireCodecError.badMagic }
+        guard try input.bytes(4) == Data("SSC2".utf8) else { throw WireCodecError.badMagic }
         let seed = try input.ascii(Int(input.u8()))
         guard SeedCode.isCanonical(seed) else { throw WireCodecError.invalidValue("Malformed seed from native scout") }
+        let questCount = Int(try input.u8())
+        guard questCount <= 4 else { throw WireCodecError.invalidValue("Scout quest count must be 0..4") }
+        var previousQuestID = 0
+        let quests: [ScoutQuest] = try (0..<questCount).map { _ in
+            let questID = Int(try input.u8())
+            guard let kind = ScoutQuestKind(rawValue: questID) else { throw WireCodecError.invalidValue("Unknown scout quest \(questID)") }
+            guard questID > previousQuestID else { throw WireCodecError.invalidValue("Scout quest ids must be strictly ascending") }
+            previousQuestID = questID
+            let variantID = Int(try input.u8())
+            guard (1...kind.variants.count).contains(variantID) else {
+                throw WireCodecError.invalidValue("Unknown \(kind.giverLabel) quest variant \(variantID)")
+            }
+            let depth = Int(try input.u8())
+            guard kind.depthRange.contains(depth) else {
+                throw WireCodecError.invalidValue("\(kind.giverLabel) quest depth must be \(kind.depthRange.lowerBound)..\(kind.depthRange.upperBound)")
+            }
+            return ScoutQuest(variant: kind.variants[variantID - 1], depth: depth)
+        }
         let items: [ScoutItem] = try (0..<input.u16()).map { _ in
             let stableID = try input.utf8(input.u16())
             guard let item = ItemCatalog.findById(stableID) else { throw WireCodecError.invalidValue("Unknown catalog item '\(stableID)' in native scout packet") }
@@ -161,6 +179,6 @@ public enum ScoutCodec {
                              secret: flags & 2 != 0)
         }
         guard input.remaining == 0 else { throw WireCodecError.trailingBytes }
-        return ScoutWorld(seed: seed, items: items)
+        return ScoutWorld(seed: seed, quests: quests, items: items)
     }
 }

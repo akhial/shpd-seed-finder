@@ -2,6 +2,7 @@
 
 use crate::catalog::{Effect, ItemId};
 use crate::equipment::EquipmentRoll;
+use crate::quests::QuestSummary;
 use crate::seed::DungeonSeed;
 
 /// Where an item can be obtained in the generated world.
@@ -117,4 +118,6 @@ impl WorldItem {
 pub struct GeneratedWorld {
     pub seed: DungeonSeed,
     pub items: Vec<WorldItem>,
+    /// Quest variants rolled while generating the requested prefix.
+    pub quests: QuestSummary,
 }

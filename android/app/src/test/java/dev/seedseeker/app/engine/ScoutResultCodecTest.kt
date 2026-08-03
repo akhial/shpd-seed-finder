@@ -4,6 +4,9 @@ package dev.seedseeker.app.engine
 import dev.seedseeker.app.model.ItemKind
 import dev.seedseeker.app.model.ScoutAccessibility
 import dev.seedseeker.app.model.ScoutItemSource
+import dev.seedseeker.app.model.ScoutQuest
+import dev.seedseeker.app.model.ScoutQuestGiver
+import dev.seedseeker.app.model.ScoutQuestVariant
 import java.io.ByteArrayOutputStream
 import java.io.DataOutputStream
 import java.io.EOFException
@@ -17,7 +20,7 @@ import org.junit.Test
 
 class ScoutResultCodecTest {
     @Test
-    fun decodesAllSsc1FieldsWithoutDroppingDuplicateOrZeroUpgradeItems() {
+    fun decodesAllSsc2FieldsWithoutDroppingDuplicateOrZeroUpgradeItems() {
         val packet = scoutPacket(
             item(
                 id = "dagger",
@@ -60,11 +63,19 @@ class ScoutResultCodecTest {
                 flags = 3,
                 source = 16,
             ),
+            quests = listOf(quest(1, 2, 3), quest(4, 1, 17)),
         )
 
         val world = ScoutResultCodec.decode(packet)
 
         assertEquals("AAA-AAA-AAA", world.seed)
+        assertEquals(
+            listOf(
+                ScoutQuest(ScoutQuestVariant.GNOLL_TRICKSTER, 3),
+                ScoutQuest(ScoutQuestVariant.MONK, 17),
+            ),
+            world.quests,
+        )
         assertEquals(4, world.items.size)
         assertEquals(
             listOf("dagger", "dagger", "wand_frost", "ring_sharpshooting"),
@@ -98,6 +109,100 @@ class ScoutResultCodecTest {
             assertTrue(cursed)
             assertTrue(secret)
             assertEquals(ScoutItemSource.IMP_REWARD, source)
+        }
+    }
+
+    @Test
+    fun decodesTheGoldenSsc2QuestBlockBytes() {
+        val packet = "SSC2".toByteArray(StandardCharsets.US_ASCII) +
+            byteArrayOf(0x0B) +
+            "AAA-AAA-AAA".toByteArray(StandardCharsets.UTF_8) +
+            byteArrayOf(
+                0x04,
+                0x01, 0x03, 0x04,
+                0x02, 0x03, 0x08,
+                0x03, 0x01, 0x0D,
+                0x04, 0x02, 0x12,
+                0x00, 0x00,
+            )
+
+        val world = ScoutResultCodec.decode(packet)
+
+        assertEquals("AAA-AAA-AAA", world.seed)
+        assertTrue(world.items.isEmpty())
+        assertEquals(
+            listOf(
+                ScoutQuest(ScoutQuestVariant.GREAT_CRAB, 4),
+                ScoutQuest(ScoutQuestVariant.ROTBERRY, 8),
+                ScoutQuest(ScoutQuestVariant.CRYSTAL, 13),
+                ScoutQuest(ScoutQuestVariant.GOLEM, 18),
+            ),
+            world.quests,
+        )
+        assertEquals(
+            listOf(
+                ScoutQuestGiver.GHOST,
+                ScoutQuestGiver.WANDMAKER,
+                ScoutQuestGiver.BLACKSMITH,
+                ScoutQuestGiver.IMP,
+            ),
+            world.quests.map { it.giver },
+        )
+    }
+
+    @Test
+    fun rejectsMalformedQuestBlocks() {
+        val unknownQuestId = scoutPacket(quests = listOf(quest(5, 1, 4)))
+        assertThrows(IllegalStateException::class.java) {
+            ScoutResultCodec.decode(unknownQuestId)
+        }
+
+        val zeroQuestId = scoutPacket(quests = listOf(quest(0, 1, 4)))
+        assertThrows(IllegalStateException::class.java) {
+            ScoutResultCodec.decode(zeroQuestId)
+        }
+
+        val unknownGhostVariant = scoutPacket(quests = listOf(quest(1, 4, 3)))
+        assertThrows(IllegalStateException::class.java) {
+            ScoutResultCodec.decode(unknownGhostVariant)
+        }
+
+        val unknownImpVariant = scoutPacket(quests = listOf(quest(4, 3, 18)))
+        assertThrows(IllegalStateException::class.java) {
+            ScoutResultCodec.decode(unknownImpVariant)
+        }
+
+        val zeroVariant = scoutPacket(quests = listOf(quest(2, 0, 8)))
+        assertThrows(IllegalStateException::class.java) {
+            ScoutResultCodec.decode(zeroVariant)
+        }
+
+        val ghostDepthTooDeep = scoutPacket(quests = listOf(quest(1, 1, 5)))
+        assertThrows(IllegalStateException::class.java) {
+            ScoutResultCodec.decode(ghostDepthTooDeep)
+        }
+
+        val impDepthTooShallow = scoutPacket(quests = listOf(quest(4, 1, 16)))
+        assertThrows(IllegalStateException::class.java) {
+            ScoutResultCodec.decode(impDepthTooShallow)
+        }
+
+        val duplicateQuestIds = scoutPacket(quests = listOf(quest(2, 1, 7), quest(2, 2, 8)))
+        assertThrows(IllegalStateException::class.java) {
+            ScoutResultCodec.decode(duplicateQuestIds)
+        }
+
+        val descendingQuestIds = scoutPacket(quests = listOf(quest(3, 1, 13), quest(1, 1, 2)))
+        assertThrows(IllegalStateException::class.java) {
+            ScoutResultCodec.decode(descendingQuestIds)
+        }
+
+        val tooManyQuests = scoutPacket(
+            quests = listOf(quest(1, 1, 2), quest(2, 1, 7), quest(3, 1, 12), quest(4, 1, 17)),
+            questCount = 5,
+        )
+        assertThrows(IllegalStateException::class.java) {
+            ScoutResultCodec.decode(tooManyQuests)
         }
     }
 
@@ -200,15 +305,27 @@ class ScoutResultCodecTest {
         }
     }
 
-    private fun scoutPacket(vararg items: ByteArray): ByteArray = ByteArrayOutputStream().use { bytes ->
+    private fun scoutPacket(
+        vararg items: ByteArray,
+        quests: List<IntArray> = emptyList(),
+        questCount: Int = quests.size,
+    ): ByteArray = ByteArrayOutputStream().use { bytes ->
         DataOutputStream(bytes).use { output ->
-            output.writeBytes("SSC1")
+            output.writeBytes("SSC2")
             writeByteString(output, "AAA-AAA-AAA")
+            output.writeByte(questCount)
+            quests.forEach { (quest, variant, depth) ->
+                output.writeByte(quest)
+                output.writeByte(variant)
+                output.writeByte(depth)
+            }
             output.writeShort(items.size)
             items.forEach { output.write(it) }
         }
         bytes.toByteArray()
     }
+
+    private fun quest(quest: Int, variant: Int, depth: Int) = intArrayOf(quest, variant, depth)
 
     private fun item(
         id: String = "dagger",

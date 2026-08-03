@@ -1111,6 +1111,19 @@ private struct SeedDetailView: View {
             }
             .font(.caption).foregroundStyle(.secondary)
             .padding(.horizontal).padding(.vertical, 6)
+            if !world.quests.isEmpty {
+                FlowLayout(spacing: 6, lineSpacing: 6) {
+                    ForEach(world.quests) { quest in
+                        HStack(spacing: 4) {
+                            Text(quest.variant.label).font(.caption.bold())
+                            Text("\(quest.kind.giverLabel) · F\(quest.depth)")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .background(Self.questTint(quest.kind).opacity(0.12), in: Capsule())
+                    }
+                }.padding(.horizontal).padding(.bottom, 6)
+            }
             List {
                 ForEach(depths, id: \.self) { depth in
                     Section {
@@ -1121,10 +1134,22 @@ private struct SeedDetailView: View {
                         HStack {
                             Text("Floor \(depth)")
                             Text(Self.region(depth)).foregroundStyle(.tertiary)
+                            if let quest = world.quests.first(where: { $0.depth == depth }) {
+                                Text("· \(quest.variant.label)").foregroundStyle(.tertiary)
+                            }
                         }
                     }
                 }
             }
+        }
+    }
+
+    private static func questTint(_ kind: ScoutQuestKind) -> Color {
+        switch kind {
+        case .ghost: .teal
+        case .wandmaker: .purple
+        case .blacksmith: .orange
+        case .imp: .yellow
         }
     }
 
@@ -1138,6 +1163,47 @@ private struct SeedDetailView: View {
         }
     }
 
+}
+
+/// Lays its subviews out left to right at their natural size, starting a new
+/// row whenever the next one would overflow. SwiftUI ships no wrapping stack.
+private struct FlowLayout: Layout {
+    var spacing: CGFloat
+    var lineSpacing: CGFloat
+
+    /// Every subview's origin relative to the layout's top-left, plus the size
+    /// the resulting rows occupy.
+    private func flow(_ subviews: Subviews, width: CGFloat) -> (origins: [CGPoint], size: CGSize) {
+        var origins: [CGPoint] = []
+        var size = CGSize.zero
+        var cursor = CGPoint.zero
+        var rowHeight: CGFloat = 0
+        for subview in subviews {
+            let item = subview.sizeThatFits(.unspecified)
+            // A row always keeps its first subview, however wide it is.
+            if cursor.x > 0, cursor.x + item.width > width {
+                cursor = CGPoint(x: 0, y: cursor.y + rowHeight + lineSpacing)
+                rowHeight = 0
+            }
+            origins.append(cursor)
+            cursor.x += item.width + spacing
+            rowHeight = max(rowHeight, item.height)
+            size.width = max(size.width, cursor.x - spacing)
+        }
+        size.height = cursor.y + rowHeight
+        return (origins, size)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        flow(subviews, width: proposal.width ?? .infinity).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (subview, origin) in zip(subviews, flow(subviews, width: bounds.width).origins) {
+            subview.place(at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y),
+                          proposal: .unspecified)
+        }
+    }
 }
 
 private struct ScoutItemRow: View {

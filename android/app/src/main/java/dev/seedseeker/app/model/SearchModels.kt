@@ -194,7 +194,50 @@ data class SeedResult(
 data class ScoutWorld(
     val seed: String,
     val items: List<ScoutItem>,
+    val quests: List<ScoutQuest>,
 )
+
+/** One rolled quest: which giver spawned, the variant it rolled, and its host floor. */
+data class ScoutQuest(
+    val variant: ScoutQuestVariant,
+    val depth: Int,
+) {
+    init {
+        require(depth in variant.giver.depths) {
+            "${variant.giver.label} quest floor must be in ${variant.giver.depths}"
+        }
+    }
+
+    val giver: ScoutQuestGiver
+        get() = variant.giver
+}
+
+enum class ScoutQuestGiver(val label: String, val depths: IntRange) {
+    GHOST("Sad ghost", 2..4),
+    WANDMAKER("Wandmaker", 7..9),
+    BLACKSMITH("Blacksmith", 12..14),
+    IMP("Imp", 17..19),
+}
+
+/** Declaration order within each giver matches the wire variant codes 1..n. */
+enum class ScoutQuestVariant(val giver: ScoutQuestGiver, val label: String) {
+    FETID_RAT(ScoutQuestGiver.GHOST, "Fetid rat"),
+    GNOLL_TRICKSTER(ScoutQuestGiver.GHOST, "Gnoll trickster"),
+    GREAT_CRAB(ScoutQuestGiver.GHOST, "Great crab"),
+    CORPSE_DUST(ScoutQuestGiver.WANDMAKER, "Corpse dust"),
+    ELEMENTAL_EMBERS(ScoutQuestGiver.WANDMAKER, "Elemental embers"),
+    ROTBERRY(ScoutQuestGiver.WANDMAKER, "Rotberry"),
+    CRYSTAL(ScoutQuestGiver.BLACKSMITH, "Crystal spire"),
+    GNOLL(ScoutQuestGiver.BLACKSMITH, "Gnoll geomancer"),
+    MONK(ScoutQuestGiver.IMP, "Monks"),
+    GOLEM(ScoutQuestGiver.IMP, "Golems"),
+    ;
+
+    companion object {
+        fun variantsFor(giver: ScoutQuestGiver): List<ScoutQuestVariant> =
+            entries.filter { it.giver == giver }
+    }
+}
 
 data class ScoutItem(
     val item: CatalogItem,

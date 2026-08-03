@@ -1356,6 +1356,24 @@ input[type='range']::-moz-range-thumb {
 
 .d1-match-full { color: var(--d1-green); }
 
+/* Variant chip in the header of a floor that hosts the quest. Tinted with the
+   region color of its floor via the same `--region` variable the floor sections
+   use; plain `var(--region)` is the fallback without color-mix(). */
+.d1-floor-quest {
+  margin-left: auto;
+  padding: 0 8px;
+  line-height: 17px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+  color: var(--region);
+  color: color-mix(in srgb, var(--region) 84%, var(--d1-text));
+  background: color-mix(in srgb, var(--region) 11%, transparent);
+  border: 1px solid transparent;
+  border-color: color-mix(in srgb, var(--region) 30%, transparent);
+}
+
 .d1-floor { border-bottom: 1px solid var(--d1-border); }
 
 .d1-floor-head {

@@ -12,6 +12,9 @@ import dev.seedseeker.app.model.SearchStatus
 import dev.seedseeker.app.model.ScoutAccessibility
 import dev.seedseeker.app.model.ScoutItem
 import dev.seedseeker.app.model.ScoutItemSource
+import dev.seedseeker.app.model.ScoutQuest
+import dev.seedseeker.app.model.ScoutQuestGiver
+import dev.seedseeker.app.model.ScoutQuestVariant
 import dev.seedseeker.app.model.ScoutWorld
 import dev.seedseeker.app.model.SeedResult
 import dev.seedseeker.app.model.TierMatch
@@ -214,6 +217,12 @@ class DemoNativeSeedFinder : NativeSeedFinder {
                     accessibility = ScoutAccessibility.Independent,
                 ),
             ),
+            quests = listOf(
+                ScoutQuest(variant = ScoutQuestVariant.GREAT_CRAB, depth = 4),
+                ScoutQuest(variant = ScoutQuestVariant.ROTBERRY, depth = 8),
+                ScoutQuest(variant = ScoutQuestVariant.CRYSTAL, depth = 13),
+                ScoutQuest(variant = ScoutQuestVariant.MONK, depth = 18),
+            ),
         )
     }
 
@@ -328,8 +337,11 @@ class DemoNativeSeedFinder : NativeSeedFinder {
  * Result packet `SSR1`: magic[4], count:u16, then
  * repeated seedLength:u8, seed:ASCII. State codes are 0 running, 1 complete, 2 cancelled,
  * 3 failed. A non-zero handle is required. Scout requests use `SSQ2`, a little-endian challenge
- * mask, then the canonical UTF-8 seed. Scout packet `SSC1` contains the echoed canonical seed
- * followed by catalog ID, depth, upgrade, flags (bit 0 cursed, bit 1 hidden in a secret room),
+ * mask, then the canonical UTF-8 seed. Scout packet `SSC2` contains the echoed canonical seed,
+ * then a quest block — questCount:u8 (0..4) of strictly ascending {quest:u8, variant:u8,
+ * depth:u8} records, where quest 1..4 is ghost/wandmaker/blacksmith/imp, variants are 1-based
+ * per giver, and depth must sit in the giver's floor range (2..4, 7..9, 12..14, 17..19) — and
+ * finally catalog ID, depth, upgrade, flags (bit 0 cursed, bit 1 hidden in a secret room),
  * effect, source, and accessibility for every item.
  */
 class JniNativeSeedFinder(
@@ -573,7 +585,7 @@ private object ResultCodec {
 }
 
 object ScoutResultCodec {
-    private val MAGIC = byteArrayOf('S'.code.toByte(), 'S'.code.toByte(), 'C'.code.toByte(), '1'.code.toByte())
+    private val MAGIC = byteArrayOf('S'.code.toByte(), 'S'.code.toByte(), 'C'.code.toByte(), '2'.code.toByte())
     private val SEED_PATTERN = Regex("[A-Z]{3}-[A-Z]{3}-[A-Z]{3}")
 
     fun decode(packet: ByteArray): ScoutWorld =
@@ -583,6 +595,24 @@ object ScoutResultCodec {
 
             val seed = readAscii(input, input.readUnsignedByte())
             check(SEED_PATTERN.matches(seed)) { "Malformed seed from native scout" }
+            val questCount = input.readUnsignedByte()
+            check(questCount <= ScoutQuestGiver.entries.size) { "Scout quest count must be 0..4" }
+            var previousQuestId = 0
+            val quests = List(questCount) {
+                val questId = input.readUnsignedByte()
+                val giver = ScoutQuestGiver.entries.getOrNull(questId - 1)
+                    ?: error("Unknown scout quest id $questId")
+                check(questId > previousQuestId) { "Scout quest ids must be strictly ascending" }
+                previousQuestId = questId
+                val variantCode = input.readUnsignedByte()
+                val variant = ScoutQuestVariant.variantsFor(giver).getOrNull(variantCode - 1)
+                    ?: error("Unknown ${giver.label} quest variant $variantCode")
+                val depth = input.readUnsignedByte()
+                check(depth in giver.depths) {
+                    "${giver.label} quest floor must be in ${giver.depths}"
+                }
+                ScoutQuest(variant = variant, depth = depth)
+            }
             val items = List(input.readUnsignedShort()) {
                 val stableId = readUtf8(input, input.readUnsignedShort())
                 val catalogItem = checkNotNull(ItemCatalog.findById(stableId)) {
@@ -632,7 +662,7 @@ object ScoutResultCodec {
                 )
             }
             check(input.available() == 0) { "Trailing bytes in native scout packet" }
-            ScoutWorld(seed, items)
+            ScoutWorld(seed = seed, items = items, quests = quests)
         }
 
     private fun readUtf8(input: DataInputStream, length: Int): String {
