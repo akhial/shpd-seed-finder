@@ -36,8 +36,9 @@ interface NativeSeedFinder {
     fun scoutSeed(seed: String, challenges: Int = 0): ScoutWorld
 
     /**
-     * Whether [candidate] never widens [base]: identical scope (depth, challenges, blacksmith
-     * flags, fast mode) and every base requirement covered by a distinct candidate requirement
+     * Whether [candidate] never widens [base]: an identical floor limit, challenge set and fast
+     * mode, world conditions (blacksmith flags, Wandmaker quest) at least as strict as the base's,
+     * and every base requirement covered by a distinct candidate requirement
      * at least as strict — equal or strengthened (a named item, a tightened bound)
      * (UI list keys are not part of the wire query, so re-keying is invisible here). Only such a
      * query may reuse the base run's results and finish by rescanning the seeds it never reached,
@@ -95,20 +96,23 @@ class DemoNativeSeedFinder : NativeSeedFinder {
     /**
      * The one demo answer that is not a stand-in shape but the real rule: a demo APK ships no
      * `.so`, and a wrong continuation verdict would send every demo search down a refine branch
-     * the shipped app would never take. It mirrors `SearchQuery::continues` — identical scope, a
-     * Wandmaker filter at least as strict as the base's,
+     * the shipped app would never take. It mirrors `SearchQuery::continues` — an identical floor
+     * limit, challenge set and fast mode, world conditions (the blacksmith flags and the
+     * Wandmaker filter) at least as strict as the base's,
      * and every base requirement covered by a distinct candidate requirement at least as strict
      * (equal or strengthened: a named item, a tightened bound), ignoring UI list keys. Coverage
      * is a bipartite matching, found with augmenting paths just like the engine's, because a
      * strengthened requirement can cover several base rows and greedy claiming picks wrongly.
      */
     override fun queryContinues(candidate: SearchRequest, base: SearchRequest): Boolean {
+        // The blacksmith flags and the quest filter are conditions on an
+        // unchanged world, so switching one on only removes seeds and
+        // strengthens the base; switching it off, or swapping the quest for
+        // another variant, widens the query and must rescan.
         if (candidate.maximumDepth != base.maximumDepth ||
             candidate.challenges != base.challenges ||
-            candidate.requireBlacksmith != base.requireBlacksmith ||
-            candidate.excludeBlacksmithRewards != base.excludeBlacksmithRewards ||
-            // Demanding a quest only removes seeds, so it strengthens an
-            // unfiltered base; dropping or swapping one must rescan.
+            (base.requireBlacksmith && !candidate.requireBlacksmith) ||
+            (base.excludeBlacksmithRewards && !candidate.excludeBlacksmithRewards) ||
             (base.wandmakerQuest != null && candidate.wandmakerQuest != base.wandmakerQuest) ||
             candidate.fastMode != base.fastMode
         ) {

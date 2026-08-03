@@ -691,21 +691,30 @@ final class RefineSearchTests: XCTestCase {
         XCTAssertTrue(doubled.isRefinement(of: base))
     }
 
-    /// Any scope difference ends the continuation: the base run's coverage says
-    /// nothing about a differently scoped query's matches.
-    func testAnyScopeChangeEndsTheContinuation() throws {
+    /// A widened scope ends the continuation: the base run's coverage says
+    /// nothing about a query it never tested for, while a narrowed one only
+    /// removes seeds the base already delivered.
+    func testAWidenedScopeEndsTheContinuation() throws {
         let base = try SearchRequest(requirements: [wand(key: 1, upgrade: 3)])
         let requirements = [try wand(key: 9, upgrade: 3), try wand(key: 10, upgrade: 0)]
         XCTAssertTrue(try SearchRequest(requirements: requirements).isRefinement(of: base))
         XCTAssertFalse(try SearchRequest(requirements: requirements, maximumDepth: 12).isRefinement(of: base))
-        XCTAssertFalse(try SearchRequest(requirements: requirements, requireBlacksmith: true).isRefinement(of: base))
-        XCTAssertFalse(try SearchRequest(requirements: requirements, excludeBlacksmithRewards: true).isRefinement(of: base))
         XCTAssertFalse(try SearchRequest(requirements: requirements, fastMode: true).isRefinement(of: base))
         XCTAssertFalse(try SearchRequest(requirements: requirements, challenges: 32).isRefinement(of: base))
 
-        // A Wandmaker filter only narrows the match set, so demanding one
-        // strengthens an unfiltered base instead of ending the continuation.
-        // Dropping or swapping one still forces a rescan.
+        // The blacksmith flags and the Wandmaker filter only narrow the match
+        // set, so switching one on strengthens the base instead of ending the
+        // continuation. Switching it back off — or swapping the quest for
+        // another variant — forces a rescan.
+        let smith = try SearchRequest(requirements: [wand(key: 1, upgrade: 3)], requireBlacksmith: true)
+        XCTAssertTrue(try SearchRequest(requirements: requirements, requireBlacksmith: true)
+            .isRefinement(of: base))
+        XCTAssertFalse(try SearchRequest(requirements: requirements).isRefinement(of: smith))
+        let excluded = try SearchRequest(requirements: [wand(key: 1, upgrade: 3)],
+                                         excludeBlacksmithRewards: true)
+        XCTAssertTrue(try SearchRequest(requirements: requirements, excludeBlacksmithRewards: true)
+            .isRefinement(of: base))
+        XCTAssertFalse(try SearchRequest(requirements: requirements).isRefinement(of: excluded))
         let quested = try SearchRequest(requirements: [wand(key: 1, upgrade: 3)],
                                         wandmakerQuest: .rotberry)
         XCTAssertTrue(try SearchRequest(requirements: requirements, wandmakerQuest: .rotberry)

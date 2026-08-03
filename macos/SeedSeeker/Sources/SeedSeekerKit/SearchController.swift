@@ -210,7 +210,7 @@ public final class SearchController {
 
     /// Whether starting `request` could continue the last finished run rather
     /// than rescan: nothing running, a base run on record, and the same
-    /// requirements or more at identical scope. `decideStart(_:)` consults
+    /// requirements or more under a scope it never widens. `decideStart(_:)` consults
     /// this for the detached thread only; a continuation of the Target Query
     /// always refines the Target instead.
     public func canRefine(with request: SearchRequest) -> Bool {

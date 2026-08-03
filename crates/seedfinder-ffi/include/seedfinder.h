@@ -35,8 +35,9 @@ int32_t seedfinder_status(int64_t handle, int64_t out_status[5]);
 // running — never resume from a running session's hint.
 int32_t seedfinder_resume_hint(int64_t handle, int64_t out_hint[2]);
 // Reports whether the SSF8 query in candidate continues the one in base:
-// identical scope (depth, challenges, blacksmith flags, fast mode), a
-// Wandmaker filter at least as strict as base's, and every
+// an identical depth, challenge set and fast mode, world conditions (the
+// blacksmith flags and the Wandmaker filter) at least as strict as base's,
+// and every
 // base requirement covered by a distinct candidate requirement at least as
 // strict (equal or strengthened). Only a continuing query may reuse
 // a stopped session's results and resume hint (filter-and-resume refining).

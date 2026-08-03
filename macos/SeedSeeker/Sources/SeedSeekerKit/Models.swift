@@ -298,9 +298,9 @@ public struct SearchRequest: Codable, Sendable {
 }
 
 extension SearchRequest {
-    /// Whether this request refines `base`: identical scope (floor limit,
-    /// blacksmith settings, fast mode, and challenges), a Wandmaker filter at
-    /// least as strict as `base`'s, plus, for every base
+    /// Whether this request refines `base`: an identical floor limit, fast
+    /// mode and challenge set, world conditions (the blacksmith settings and
+    /// the Wandmaker filter) at least as strict as `base`'s, plus, for every base
     /// requirement, a distinct requirement of this request at least as strict
     /// — equal, added-to, or strengthened (a named item, a tightened bound).
     ///

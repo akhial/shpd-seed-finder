@@ -77,17 +77,22 @@ class QueryContinuationTest {
     }
 
     @Test
-    fun anyScopeChangeDoesNotContinue() {
+    fun aWidenedScopeDoesNotContinue() {
         val base = request(frost)
         assertContinues(false, request(frost, fireblast, maximumDepth = 12), base)
         assertContinues(false, request(frost, fireblast, challenges = Challenge.DARKNESS.bit), base)
-        assertContinues(false, request(frost, fireblast, requireBlacksmith = true), base)
-        assertContinues(false, request(frost, fireblast, excludeBlacksmithRewards = true), base)
         assertContinues(false, request(frost, fireblast, fastMode = true), base)
 
-        // A Wandmaker filter only narrows the match set, so demanding one
-        // strengthens an unfiltered base instead of ending the continuation.
-        // Dropping or swapping one still forces a rescan.
+        // The blacksmith flags and the quest filter only narrow the match
+        // set, so switching one on strengthens the base instead of ending the
+        // continuation. Switching it back off — or swapping the quest for
+        // another variant — forces a rescan.
+        val smith = request(frost, requireBlacksmith = true)
+        assertContinues(true, request(frost, fireblast, requireBlacksmith = true), base)
+        assertContinues(false, request(frost, fireblast), smith)
+        val excluded = request(frost, excludeBlacksmithRewards = true)
+        assertContinues(true, request(frost, fireblast, excludeBlacksmithRewards = true), base)
+        assertContinues(false, request(frost, fireblast), excluded)
         val quested = request(frost, wandmakerQuest = WandmakerQuest.ROTBERRY)
         assertContinues(true, request(frost, fireblast, wandmakerQuest = WandmakerQuest.ROTBERRY), base)
         assertContinues(true, request(frost, fireblast, wandmakerQuest = WandmakerQuest.ROTBERRY), quested)

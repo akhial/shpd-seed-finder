@@ -213,7 +213,9 @@ public sealed class QuerySettings
 
 /// <summary>
 /// Decides whether a query can continue a finished run instead of rescanning it:
-/// identical scope, and every baseline requirement still present (counting
+/// an identical floor limit, challenge set and fast mode, world conditions (the
+/// blacksmith flags and the Wandmaker quest) at least as strict as the
+/// baseline's, and every baseline requirement still present (counting
 /// duplicates). Extra requirements are allowed but not required — an unchanged
 /// query qualifies too, and continuing it is exactly right: its filter trivially
 /// keeps every seed the run delivered and the scan resumes where it stopped. A
@@ -228,7 +230,7 @@ public static class QueryRefinement
     /// <summary>
     /// True when every requirement of <paramref name="baseline"/> is covered by
     /// a distinct requirement of <paramref name="candidate"/> at least as strict
-    /// (equal or strengthened) under an identical scope.
+    /// (equal or strengthened) under a scope the candidate never widens.
     /// Deliberately not strict: an equal query is a continuation, not a rescan.
     /// The engine decides — this encodes both queries and asks
     /// <c>seedfinder_query_continues</c>, so refine eligibility here is the very

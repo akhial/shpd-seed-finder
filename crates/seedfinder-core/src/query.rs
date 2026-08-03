@@ -128,7 +128,7 @@ impl Requirement {
     }
 
     /// Whether every item this requirement accepts is also accepted by
-    /// `base`, assuming both live in queries of identical scope. This is the
+    /// `base`, assuming both live in queries of the same floor limit. This is the
     /// per-requirement half of the continuation rule: a requirement may be
     /// *strengthened* — an item named where `base` had only a kind, a bound
     /// tightened, uncursed demanded — and still cover `base`, because every
@@ -272,6 +272,17 @@ const fn quest_at_least_as_strict(
     }
 }
 
+/// Whether a narrowing flag is at least as strict in `candidate` as in `base`.
+///
+/// The blacksmith flags are conditions on an unchanged world, exactly like the
+/// quest filter: requiring a reachable Blacksmith, or barring the Smith
+/// rewards from satisfying requirements, can only drop seeds the base already
+/// matched. Switching one on therefore continues; switching it off widens the
+/// query and has to rescan.
+const fn flag_at_least_as_strict(candidate: bool, base: bool) -> bool {
+    candidate || !base
+}
+
 impl SearchQuery {
     /// Validates bounds and every requirement.
     ///
@@ -311,9 +322,10 @@ impl SearchQuery {
         Ok(())
     }
 
-    /// Whether this query *continues* `base`: identical scope (floor limit,
-    /// challenges, blacksmith flags, fast mode), a Wandmaker filter at least
-    /// as strict as `base`'s, and, for every requirement
+    /// Whether this query *continues* `base`: identical floor limit,
+    /// challenges and fast mode, world conditions at least as strict as
+    /// `base`'s (the blacksmith flags and the Wandmaker filter — see
+    /// [`flag_at_least_as_strict`]), and, for every requirement
     /// of `base`, a *distinct* requirement of this query at least as strict
     /// ([`Requirement::implies`] — equality included, but so is naming a
     /// specific item where `base` wanted any of its kind, or tightening an
@@ -327,8 +339,11 @@ impl SearchQuery {
     pub fn continues(&self, base: &SearchQuery) -> bool {
         if self.max_depth != base.max_depth
             || self.challenges != base.challenges
-            || self.require_blacksmith != base.require_blacksmith
-            || self.exclude_blacksmith_rewards != base.exclude_blacksmith_rewards
+            || !flag_at_least_as_strict(self.require_blacksmith, base.require_blacksmith)
+            || !flag_at_least_as_strict(
+                self.exclude_blacksmith_rewards,
+                base.exclude_blacksmith_rewards,
+            )
             || !quest_at_least_as_strict(self.wandmaker_quest, base.wandmaker_quest)
             || self.fast_mode != base.fast_mode
             || self.requirements.len() < base.requirements.len()
@@ -600,7 +615,7 @@ mod tests {
     }
 
     #[test]
-    fn continuation_needs_identical_scope_and_a_requirement_superset() {
+    fn continuation_needs_a_compatible_scope_and_a_requirement_superset() {
         let base = SearchQuery {
             requirements: vec![requirement(ItemId::Sword), requirement(ItemId::Sword)],
             max_depth: 4,
@@ -626,33 +641,50 @@ mod tests {
         assert!(base.continues(&single));
         assert!(!single.continues(&base));
 
-        // Any scope difference breaks continuation.
+        // A different world — floor limit, challenges, or the lossy fast
+        // mode — breaks continuation outright.
         let mut deeper = base.clone();
         deeper.max_depth = 5;
         assert!(!deeper.continues(&base));
         let mut challenged = base.clone();
         challenged.challenges = crate::challenges::Challenges::DARKNESS;
         assert!(!challenged.continues(&base));
-        let mut smith = base.clone();
-        smith.require_blacksmith = true;
-        assert!(!smith.continues(&base));
-        let mut excluded = base.clone();
-        excluded.exclude_blacksmith_rewards = true;
-        assert!(!excluded.continues(&base));
         let mut fast = base.clone();
         fast.fast_mode = true;
         assert!(!fast.continues(&base));
-        // Demanding a Wandmaker quest only narrows the match set, so it
-        // strengthens an unfiltered base rather than ending the continuation.
-        // Dropping or swapping one still forces a rescan.
+
+        // The world conditions only ever remove seeds, so switching one on
+        // strengthens the query rather than ending the continuation. Turning
+        // it back off — or swapping the quest for another variant — widens it
+        // and must rescan.
+        let mut smith = base.clone();
+        smith.require_blacksmith = true;
+        assert!(smith.continues(&base));
+        assert!(smith.continues(&smith));
+        assert!(!base.continues(&smith));
+        let mut excluded = base.clone();
+        excluded.exclude_blacksmith_rewards = true;
+        assert!(excluded.continues(&base));
+        assert!(!base.continues(&excluded));
         let mut quested = base.clone();
         quested.wandmaker_quest = Some(crate::quests::WandmakerQuestType::CorpseDust);
         assert!(quested.continues(&base));
-        assert!(!base.continues(&quested));
         assert!(quested.continues(&quested));
+        assert!(!base.continues(&quested));
         let mut other = base.clone();
         other.wandmaker_quest = Some(crate::quests::WandmakerQuestType::Rotberry);
         assert!(!other.continues(&quested));
+
+        // Tightening several at once still continues; a single loosened one
+        // among them does not.
+        let mut all = smith.clone();
+        all.exclude_blacksmith_rewards = true;
+        all.wandmaker_quest = Some(crate::quests::WandmakerQuestType::CorpseDust);
+        assert!(all.continues(&base));
+        assert!(all.continues(&smith));
+        let mut relaxed = all.clone();
+        relaxed.require_blacksmith = false;
+        assert!(!relaxed.continues(&all));
     }
 
     #[test]

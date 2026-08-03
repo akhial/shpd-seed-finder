@@ -96,7 +96,9 @@ public sealed class NativeEngine
 
     /// <summary>
     /// Whether <paramref name="candidate"/> continues <paramref name="baseline"/>:
-    /// identical scope and every baseline requirement covered by a distinct
+    /// an identical floor limit, challenge set and fast mode, world conditions
+    /// (the blacksmith flags and the Wandmaker quest) at least as strict as the
+    /// baseline's, and every baseline requirement covered by a distinct
     /// candidate requirement at least as strict (equal or strengthened).
     /// The engine owns this predicate — the same
     /// <c>SearchQuery::continues</c> that decides which seeds a resumed pass may
