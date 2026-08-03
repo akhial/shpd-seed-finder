@@ -309,7 +309,7 @@ mod tests {
         );
         assert!(!pointer.is_null());
         let packet = unsafe { take_packet(pointer, len) };
-        assert_eq!(&packet[..4], b"SSC1");
+        assert_eq!(&packet[..4], b"SSC2");
         seedfinder_buffer_free(ptr::null_mut(), 0);
     }
 

@@ -14,6 +14,9 @@ use shpd_seedfinder_core::main_world::{
 use shpd_seedfinder_core::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
 use shpd_seedfinder_core::probability::estimate_match_probability;
 use shpd_seedfinder_core::query::SearchQuery;
+use shpd_seedfinder_core::quests::{
+    BlacksmithQuestType, GhostQuestType, ImpTarget, QuestSummary, WandmakerQuestType,
+};
 use shpd_seedfinder_core::search::WorldGenerator;
 use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
 use shpd_seedfinder_core::{SHPD_COMMIT, SHPD_VERSION};
@@ -106,9 +109,18 @@ impl From<FileChallenge> for Challenges {
 #[serde(rename_all = "camelCase")]
 struct ScoutOutput {
     seed: SeedOutput,
+    quests: Vec<ScoutQuestOutput>,
     items: Vec<ScoutItemOutput>,
     matched_requirements: usize,
     total_requirements: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScoutQuestOutput {
+    quest: &'static str,
+    variant: &'static str,
+    depth: u8,
 }
 
 #[derive(Serialize)]
@@ -436,10 +448,58 @@ fn scout_impl(request_json: &str) -> Result<String, String> {
         .collect();
     Ok(to_json(&ScoutOutput {
         seed: seed.into(),
+        quests: scout_quest_outputs(world.quests),
         items,
         matched_requirements,
         total_requirements,
     }))
+}
+
+fn scout_quest_outputs(quests: QuestSummary) -> Vec<ScoutQuestOutput> {
+    let mut output = Vec::with_capacity(4);
+    if let Some(quest) = quests.ghost {
+        output.push(ScoutQuestOutput {
+            quest: "ghost",
+            variant: match quest.variant {
+                GhostQuestType::FetidRat => "fetid_rat",
+                GhostQuestType::GnollTrickster => "gnoll_trickster",
+                GhostQuestType::GreatCrab => "great_crab",
+            },
+            depth: quest.depth,
+        });
+    }
+    if let Some(quest) = quests.wandmaker {
+        output.push(ScoutQuestOutput {
+            quest: "wandmaker",
+            variant: match quest.variant {
+                WandmakerQuestType::CorpseDust => "corpse_dust",
+                WandmakerQuestType::ElementalEmbers => "elemental_embers",
+                WandmakerQuestType::Rotberry => "rotberry",
+            },
+            depth: quest.depth,
+        });
+    }
+    if let Some(quest) = quests.blacksmith {
+        output.push(ScoutQuestOutput {
+            quest: "blacksmith",
+            variant: match quest.variant {
+                BlacksmithQuestType::Crystal => "crystal",
+                BlacksmithQuestType::Gnoll => "gnoll",
+            },
+            depth: quest.depth,
+        });
+    }
+    if let Some(quest) = quests.imp {
+        output.push(ScoutQuestOutput {
+            quest: "imp",
+            variant: match quest.variant {
+                ImpTarget::Monk => "monk",
+                ImpTarget::Golem => "golem",
+            },
+            depth: quest.depth,
+        });
+    }
+    output
 }
 
 fn scout_item_output(world_item: &WorldItem, matched: bool) -> ScoutItemOutput {
@@ -757,6 +817,16 @@ mod tests {
         let world = generate_main_world(DungeonSeed::MIN, 24).unwrap();
         let output_items = output["items"].as_array().unwrap();
         assert_eq!(output_items.len(), world.items.len());
+
+        assert_eq!(
+            output["quests"],
+            serde_json::json!([
+                { "quest": "ghost", "variant": "great_crab", "depth": 4 },
+                { "quest": "wandmaker", "variant": "elemental_embers", "depth": 9 },
+                { "quest": "blacksmith", "variant": "crystal", "depth": 13 },
+                { "quest": "imp", "variant": "golem", "depth": 19 },
+            ])
+        );
 
         let catalog: AndroidCatalog = serde_json::from_str(include_str!(
             "../../../android/app/src/main/assets/third_party/shattered-pixel-dungeon/catalog-v3.3.8.json"

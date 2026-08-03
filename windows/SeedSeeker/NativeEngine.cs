@@ -42,6 +42,7 @@ internal ref struct Reader
     public string Text(int count) { if (count < 0 || Remaining < count) throw new InvalidDataException("Truncated native packet"); var s = Encoding.UTF8.GetString(data.Slice(offset, count)); offset += count; return s; }
     public string Text() => Text(U16());
     public void Magic(string expected) { if (Text(4) != expected) throw new InvalidDataException("Unexpected native packet"); }
+    public IReadOnlyList<ScoutQuest> Quests() => ScoutQuests.Parse(data, ref offset);
 }
 
 public static partial class SeedCode
@@ -133,8 +134,8 @@ public sealed class NativeEngine
         var w = new Writer(); w.Bytes("SSQ2"u8.ToArray()); w.U16Le(challenges); w.Bytes(Encoding.ASCII.GetBytes(seed));
         var request = w.Finish(); var code = Native.seedfinder_scout(request, (nuint)request.Length, out var ptr, out var len);
         if (code != 0) throw new InvalidOperationException($"Native scout failed ({code}).");
-        var bytes = CopyAndFree(ptr, len); var r = new Reader(bytes); r.Magic("SSC1");
-        var returnedSeed = r.Text(r.U8()); var items = new List<ScoutItem>(); var count = r.U16();
+        var bytes = CopyAndFree(ptr, len); var r = new Reader(bytes); r.Magic("SSC2");
+        var returnedSeed = r.Text(r.U8()); var quests = r.Quests(); var items = new List<ScoutItem>(); var count = r.U16();
         for (var i = 0; i < count; i++)
         {
             var item = ItemCatalog.Find(r.Text()) ?? throw new InvalidDataException("Unknown item in scout packet");
@@ -144,7 +145,7 @@ public sealed class NativeEngine
             items.Add(new(item, depth, upgrade, effect.Length == 0 ? null : effect, (flags & 1) != 0, source, tag, group, value, Secret: (flags & 2) != 0));
         }
         if (r.Remaining != 0) throw new InvalidDataException("Trailing native data");
-        return new(returnedSeed, items);
+        return new(returnedSeed, quests, items);
     }
 
     internal static byte[] CopyAndFree(nint ptr, nuint len)

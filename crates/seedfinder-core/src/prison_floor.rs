@@ -300,7 +300,11 @@ fn generate_prison_world_with_roots(
         next_choice_group = remap_floor_choice_groups(&mut floor.world_items, next_choice_group);
         items.extend(floor.world_items);
     }
-    Ok(GeneratedWorld { seed, items })
+    Ok(GeneratedWorld {
+        seed,
+        items,
+        quests: quests.summary(),
+    })
 }
 
 /// Completes a regular Prison floor through flags, Wandmaker/ordinary mobs,

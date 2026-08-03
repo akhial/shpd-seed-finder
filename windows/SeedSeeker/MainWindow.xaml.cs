@@ -926,10 +926,13 @@ public sealed partial class MainWindow : Window
             var groups = world.Items.Select((item, index) => (Item: item, Index: index))
                 .GroupBy(x => x.Item.Depth).OrderBy(g => g.Key).Select(g =>
             {
-                var group = new ScoutGroup { Floor = $"Floor {g.Key}", Region = Region(g.Key) };
+                var group = new ScoutGroup { Floor = $"Floor {g.Key}", Region = Region(g.Key), Quest = QuestLabel(world.Quests, g.Key) };
                 group.AddRange(g.Select(entry => ScoutRow.From(entry.Item, matches.Contains(entry.Index)))); return group;
             }).ToList();
             ScoutList.ItemsSource = new CollectionViewSource { IsSourceGrouped = true, Source = groups }.View;
+            QuestStrip.Children.Clear();
+            foreach (var quest in world.Quests) QuestStrip.Children.Add(QuestChip(quest));
+            QuestStrip.Visibility = world.Quests.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
             ScoutStatus.Text = $"{world.Items.Count} items across {groups.Count} floors" + (query.Requirements.Count == 0 ? "" : $"  ·  {matches.Count} requirement match{(matches.Count == 1 ? "" : "es")}");
             EmptyScout.Visibility = Visibility.Collapsed; ScoutList.Visibility = Visibility.Visible;
             renderedSeed = seed;
@@ -944,6 +947,28 @@ public sealed partial class MainWindow : Window
         finally { if (generation == scoutGeneration) ScoutButton.IsEnabled = SeedCode.IsCanonical(SeedInput.Text); }
     }
     private static string Region(int depth) => depth switch { <= 5 => "Sewers", <= 10 => "Prison", <= 15 => "Caves", <= 20 => "Dwarven City", _ => "Demon Halls" };
+    /// <summary>The variant label of the quest hosted on <paramref name="depth"/>, or "" for quest-less floors.</summary>
+    private static string QuestLabel(IReadOnlyList<ScoutQuest> quests, int depth) =>
+        quests.FirstOrDefault(quest => quest.Depth == depth) is { } quest ? ScoutQuests.VariantLabel(quest.Variant) : "";
+    /// <summary>A pill summarising one quest, e.g. "Great crab · Sad Ghost · F4".</summary>
+    private static Border QuestChip(ScoutQuest quest)
+    {
+        var text = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        text.Children.Add(new TextBlock { Text = ScoutQuests.VariantLabel(quest.Variant), FontSize = 11, FontWeight = FontWeights.SemiBold });
+        text.Children.Add(new TextBlock
+        {
+            Text = $"· {ScoutQuests.GiverLabel(quest.Giver)} · F{quest.Depth}",
+            FontSize = 11,
+            Foreground = ThemeBrush("TextFillColorSecondaryBrush", Microsoft.UI.Colors.Gray),
+        });
+        return new Border
+        {
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(8, 2, 8, 2),
+            Background = ThemeBrush("LayerFillColorDefaultBrush", Microsoft.UI.Colors.Transparent),
+            Child = text,
+        };
+    }
     private void CopySeed_Click(object sender, RoutedEventArgs e) { if (SeedCode.IsCanonical(SeedInput.Text)) Copy(SeedInput.Text); }
     private static void Copy(string text) { var data = new DataPackage(); data.SetText(text); Clipboard.SetContent(data); }
 }
@@ -952,6 +977,8 @@ public sealed class ScoutGroup : List<ScoutRow>
 {
     public string Floor { get; init; } = "";
     public string Region { get; init; } = "";
+    /// <summary>The floor's quest variant label, or "" when it hosts no quest.</summary>
+    public string Quest { get; init; } = "";
 }
 
 public sealed class ScoutRow

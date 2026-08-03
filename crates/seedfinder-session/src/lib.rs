@@ -97,7 +97,7 @@ pub enum ScoutCallError {
 
 /// Validates an `SSQ2` scout request (`magic[4]`, little-endian challenge
 /// `u16`, remaining UTF-8 seed code) or a legacy raw-seed request, generates a
-/// depth-24 world with the supplied generator, and encodes `SSC1`.
+/// depth-24 world with the supplied generator, and encodes `SSC2`.
 ///
 /// # Errors
 ///
@@ -622,6 +622,7 @@ mod tests {
     }
     fn matching_world(seed: DungeonSeed) -> GeneratedWorld {
         GeneratedWorld {
+            quests: shpd_seedfinder_core::quests::QuestSummary::default(),
             seed,
             items: vec![WorldItem {
                 item: ItemId::WandFrost,

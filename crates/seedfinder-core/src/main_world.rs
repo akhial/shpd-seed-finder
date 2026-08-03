@@ -389,7 +389,11 @@ fn generate_gated_world_with_roots(
             return Ok(None);
         }
     }
-    Ok(Some(GeneratedWorld { seed, items }))
+    Ok(Some(GeneratedWorld {
+        seed,
+        items,
+        quests: quests.summary(),
+    }))
 }
 
 /// Failure while producing a canonical main-dungeon prefix.

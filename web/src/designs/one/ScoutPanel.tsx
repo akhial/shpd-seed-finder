@@ -4,6 +4,7 @@ import { sourceLabel } from '../../lib/catalog'
 import { formatSeedInput } from '../../lib/format'
 import { itemGlow } from '../../lib/glow'
 import { CheckIcon, CopyIcon, FlagIcon, ForkIcon } from '../../lib/icons'
+import { questLabel, questVariantLabel } from '../../lib/quests'
 import { regionForDepth } from '../../lib/region'
 import type { ResultPosition } from '../../lib/scout-nav'
 import { queryStore } from '../../lib/store'
@@ -52,6 +53,9 @@ export function ScoutPanel({
     }
     return [...byDepth.entries()].sort(([left], [right]) => left - right)
   }, [result])
+
+  // `?? []` guards against cached worker responses from before quests existed.
+  const questByDepth = new Map((result?.quests ?? []).map((quest) => [quest.depth, quest]))
 
   const copySeed = () => {
     if (!result) return
@@ -179,12 +183,18 @@ export function ScoutPanel({
 
             {floors.map(([depth, items]) => {
               const region = regionForDepth(depth)
+              const quest = questByDepth.get(depth)
               return (
                 <section className="d1-floor" key={depth} style={{ ['--region' as string]: region.color }}>
                   <header className="d1-floor-head">
                     <span className="d1-floor-bar" aria-hidden="true" />
                     <span className="d1-floor-label">Floor {depth}</span>
                     <span className="d1-floor-region">{region.name}</span>
+                    {quest && (
+                      <span className="d1-floor-quest" title={`${questLabel(quest.quest)} quest`}>
+                        {questVariantLabel(quest.variant)}
+                      </span>
+                    )}
                   </header>
                   <ul className="d1-item-list">
                     {items.map((item, index) => {

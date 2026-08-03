@@ -73,6 +73,7 @@ import dev.seedseeker.app.engine.SeedCode
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.ScoutAccessibility
 import dev.seedseeker.app.model.ScoutItem
+import dev.seedseeker.app.model.ScoutQuest
 import dev.seedseeker.app.model.ScoutWorld
 import dev.seedseeker.app.ui.theme.SpdCurse
 import dev.seedseeker.app.ui.theme.SpdDanger
@@ -232,6 +233,7 @@ fun ScoutScreen(
                         )
                     }
 
+                    val questsByDepth = world.quests.associateBy(ScoutQuest::depth)
                     world.items.withIndex()
                         .groupBy { it.value.depth }
                         .toSortedMap()
@@ -240,6 +242,7 @@ fun ScoutScreen(
                                 FloorHeading(
                                     depth = depth,
                                     itemCount = floorItems.size,
+                                    questLabel = questsByDepth[depth]?.variant?.label,
                                     modifier = Modifier.padding(top = 20.dp, bottom = 10.dp),
                                 )
                             }
@@ -449,7 +452,12 @@ private fun ScoutSummaryCard(
 }
 
 @Composable
-private fun FloorHeading(depth: Int, itemCount: Int, modifier: Modifier = Modifier) {
+private fun FloorHeading(
+    depth: Int,
+    itemCount: Int,
+    modifier: Modifier = Modifier,
+    questLabel: String? = null,
+) {
     val region = floorRegionColor(depth)
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         // Region-coloured bar, as on the web's floor headers.
@@ -472,6 +480,20 @@ private fun FloorHeading(depth: Int, itemCount: Int, modifier: Modifier = Modifi
             style = MaterialTheme.typography.labelMedium,
             color = region,
         )
+        questLabel?.let {
+            Surface(
+                shape = MaterialTheme.shapes.extraSmall,
+                color = region.copy(alpha = 0.12f),
+            ) {
+                Text(
+                    it,
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = region,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+        }
         Text(
             if (itemCount == 1) "1 item" else "$itemCount items",
             style = MaterialTheme.typography.labelSmall,
