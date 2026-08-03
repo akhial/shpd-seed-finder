@@ -100,6 +100,35 @@ tasks.matching { it.name == "mergeReleaseJniLibFolders" }.configureEach {
     dependsOn(buildRustJni)
 }
 
+// The engine owns the refine continuation predicate (docs/search-semantics.md),
+// so the unit tests that assert it load the real JNI library built for the host
+// rather than a Kotlin re-derivation of the rule.
+val hostJniOutput = layout.buildDirectory.dir("generated/hostJni")
+val buildHostJni by tasks.registering(Exec::class) {
+    group = "verification"
+    description = "Builds the host Rust JNI library that JVM unit tests load"
+    workingDir(rootProject.projectDir.parentFile)
+    commandLine(
+        "sh",
+        rootProject.projectDir.parentFile.resolve("scripts/build-host-native.sh").absolutePath,
+        hostJniOutput.get().asFile.absolutePath,
+    )
+    inputs.files(
+        fileTree(rootProject.projectDir.parentFile.resolve("crates")) {
+            include("**/*.rs", "**/Cargo.toml")
+        },
+        rootProject.projectDir.parentFile.resolve("Cargo.toml"),
+        rootProject.projectDir.parentFile.resolve("Cargo.lock"),
+        rootProject.projectDir.parentFile.resolve("scripts/build-host-native.sh"),
+    )
+    outputs.dir(hostJniOutput)
+}
+
+tasks.withType<Test>().configureEach {
+    dependsOn(buildHostJni)
+    systemProperty("java.library.path", hostJniOutput.get().asFile.absolutePath)
+}
+
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2025.12.01")
 

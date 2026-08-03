@@ -11,6 +11,7 @@ import { DownloadMenu } from './DownloadMenu'
 import { QueryPanel } from './QueryPanel'
 import { ResultsPanel } from './ResultsPanel'
 import { ScoutPanel } from './ScoutPanel'
+import { FooterStatus, StatusSnackbar } from './StatusBar'
 import { Sprite } from './parts'
 import './styles.css'
 
@@ -30,6 +31,8 @@ const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigat
 export default function App() {
   const query = useStore(queryStore)
   const searchState = useStore(searchStore, (state) => state.state)
+  // The badge reports the full accumulated collection, like every seed
+  // count; only the listed rows are capped.
   const matchCount = useStore(searchStore, (state) => state.matches.length)
 
   const [engine, setEngine] = useState<EngineInfo | undefined>(undefined)
@@ -73,10 +76,15 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState<Tab>('query')
 
+  // Starting is a single action: the coordinator continues the previous
+  // finished run instead of rescanning whenever that is sound (same scope,
+  // requirements unchanged or only added), which needs no decision from the
+  // user. An unchanged query therefore resumes a cancelled run rather than
+  // wiping it. The results panel reports it as a refine when it happens.
   const toggleSearch = useCallback(() => {
     const controller = coordinator.current
     if (!controller) return
-    if (searchStore.state.state === 'running') {
+    if (searchStore.state.state === 'running' || searchStore.state.state === 'stopping') {
       controller.cancel()
       return
     }
@@ -100,7 +108,7 @@ export default function App() {
 
   // Warn before leaving the page while a search is running.
   useEffect(() => {
-    if (searchState !== 'running') return
+    if (searchState !== 'running' && searchState !== 'stopping') return
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault()
     }
@@ -282,7 +290,7 @@ export default function App() {
   }
 
   const paneClass = (tab: Tab) => `d1-pane d1-pane-${tab}${activeTab === tab ? ' d1-pane-active' : ''}`
-  const running = searchState === 'running'
+  const running = searchState === 'running' || searchState === 'stopping'
 
   return (
     <div className="d1-app">
@@ -389,7 +397,9 @@ export default function App() {
           <span className="d1-footer-wide">Asset attribution</span>
           <span className="d1-footer-narrow">Attribution</span>
         </a>
+        <FooterStatus />
       </footer>
+      <StatusSnackbar />
     </div>
   )
 }

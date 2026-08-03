@@ -3,6 +3,7 @@ import init, {
   engine_info,
   format_seed_code,
   parse_seed_code,
+  query_continues,
 } from './pkg/seedfinder.js'
 import type { AnalysisResult, EngineInfo, ParsedSeed } from './types'
 
@@ -31,4 +32,19 @@ export async function parseSeedCode(input: string): Promise<ParsedSeed> {
 export async function analyzeQuery(queryJson: string): Promise<AnalysisResult> {
   await initEngine()
   return JSON.parse(analyze_query(queryJson)) as AnalysisResult
+}
+
+/**
+ * The engine's refine-soundness predicate: whether a run of `candidateJson`
+ * can continue one of `baseJson`. Single-sourced here rather than restated in
+ * TypeScript, so the browser agrees with every other frontend about when
+ * filter-and-resume is safe. Throws when either query fails to decode.
+ *
+ * Synchronous, unlike everything else in this module, because the refine
+ * decision sits on the synchronous Start path. Callers must have awaited
+ * `initEngine()` — the app builds its `SearchCoordinator` only once
+ * `getEngineInfo()` has resolved, so nothing can reach this before then.
+ */
+export function queryContinues(candidateJson: string, baseJson: string): boolean {
+  return query_continues(candidateJson, baseJson)
 }

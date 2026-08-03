@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from '@tanstack/react-store'
 import { compactNumber, formatDuration, probabilityLabel } from '../../lib/format'
-import { CheckIcon, CopyIcon, DownloadIcon, UploadIcon } from '../../lib/icons'
+import { CheckIcon, CopyIcon, DownloadIcon, TrashIcon, UploadIcon } from '../../lib/icons'
 import {
   MAX_RESULTS_FILE_BYTES,
   RESULTS_FILE_NAME,
@@ -9,7 +9,8 @@ import {
   encodeResultsFile,
   parsedSeedFromCode,
 } from '../../lib/results-file'
-import { loadImportedResults, searchStore } from '../../lib/search/coordinator'
+import { clearResults, loadImportedResults, searchStore } from '../../lib/search/coordinator'
+import { canClearResults, RESULT_CAP } from '../../lib/search/coordinator-state'
 import { queryStore } from '../../lib/store'
 import { analyzeQuery } from '../../lib/wasm'
 import type { AnalysisResult } from '../../lib/wasm/types'
@@ -79,7 +80,7 @@ export function ResultsPanel({
     })
   }
 
-  const running = search.state === 'running'
+  const running = search.state === 'running' || search.state === 'stopping'
   const now = useTicker(running)
   const elapsed = running ? now - search.startedAt : search.elapsed
   const probability = analysis?.valid ? analysis.probability : null
@@ -91,9 +92,25 @@ export function ResultsPanel({
       ? 'Completed'
       : search.state === 'cancelled'
         ? 'Cancelled'
-        : search.state === 'imported'
-          ? 'Imported'
-          : undefined
+        : search.state === 'failed'
+          ? 'Failed'
+          : search.state === 'imported'
+            ? 'Imported'
+            : undefined
+  // The store keeps every delivered match for refine soundness; the panel
+  // lists at most the advertised cap, while the counts report the full
+  // collection — an accumulated set is the user's real result.
+  const shownMatches = search.matches.slice(0, RESULT_CAP)
+  const foundCount = search.matches.length
+
+  // Returns the panel to its idle empty state, banners included. Dropping the
+  // finished run also drops what a start would have refined from, which is
+  // the point: the next search rescans the whole seed space.
+  const discardResults = () => {
+    clearResults()
+    setFileError(undefined)
+    setFileInfo(undefined)
+  }
 
   const exportResults = () => {
     // Export the query snapshot captured when the results were produced (at
@@ -144,10 +161,12 @@ export function ResultsPanel({
         <span className="d1-pane-head-side">
           <span className="d1-pane-head-info">
             {running && <span className="d1-live-dot" aria-hidden="true" />}
-            {search.matches.length > 0
-              ? `${search.matches.length.toLocaleString()} seed${search.matches.length === 1 ? '' : 's'}`
+            {foundCount > 0
+              ? `${foundCount.toLocaleString()} seed${foundCount === 1 ? '' : 's'}`
               : running
-                ? 'searching…'
+                ? search.filtering
+                  ? 'refining…'
+                  : 'searching…'
                 : ''}
           </span>
           <button
@@ -159,7 +178,7 @@ export function ResultsPanel({
             onClick={() => fileInput.current?.click()}
           >
             <DownloadIcon size={13} />
-            Import
+            <span className="d1-io-label">Import</span>
           </button>
           <button
             type="button"
@@ -170,7 +189,18 @@ export function ResultsPanel({
             onClick={exportResults}
           >
             <UploadIcon size={13} />
-            Export
+            <span className="d1-io-label">Export</span>
+          </button>
+          <button
+            type="button"
+            className="d1-io-btn"
+            title="Clear these results, so the next search starts from scratch"
+            aria-label="Clear results"
+            disabled={!canClearResults(search)}
+            onClick={discardResults}
+          >
+            <TrashIcon size={13} />
+            <span className="d1-io-label">Clear</span>
           </button>
           <input
             ref={fileInput}
@@ -191,7 +221,13 @@ export function ResultsPanel({
         {fileError && <div className="d1-banner d1-banner-error" role="alert">{fileError}</div>}
         {fileInfo && <div className="d1-banner d1-banner-info" role="status">{fileInfo}</div>}
 
-        {running && (
+        {running && search.filtering && (
+          <div className="d1-progress" role="progressbar" aria-label="Verifying previous results">
+            <div className="d1-progress-sweep" />
+          </div>
+        )}
+
+        {running && !search.filtering && (
           <>
             <div className="d1-progress" role="progressbar" aria-label="Search running">
               <div className="d1-progress-sweep" />
@@ -214,7 +250,7 @@ export function ResultsPanel({
                 <span className="d1-stat-value d1-mono">{estimateDuration(timeToSeed)}</span>
               </div>
             </div>
-            <p className="d1-caption">{probabilityLabel(probability)}</p>
+            <p className="d1-caption">{search.state === 'stopping' ? 'Stopping…' : probabilityLabel(probability)}</p>
           </>
         )}
 
@@ -227,19 +263,17 @@ export function ResultsPanel({
             <span className={`d1-state-chip${search.state === 'completed' || search.state === 'imported' ? ' d1-state-ok' : ''}`}>{statusChip}</span>
             <span className="d1-caption">
               {search.state === 'imported'
-                ? `${search.matches.length.toLocaleString()} seed${search.matches.length === 1 ? '' : 's'} loaded from file${
+                ? `${foundCount.toLocaleString()} seed${foundCount === 1 ? '' : 's'} loaded from file${
                     search.importedDropped ? ` · ${search.importedDropped.toLocaleString()} entr${search.importedDropped === 1 ? 'y' : 'ies'} dropped (duplicates or beyond the 1,024-seed limit)` : ''
                   }`
-                : `${search.matches.length.toLocaleString()} seed${search.matches.length === 1 ? '' : 's'} · tested ${compactNumber(search.tested)} in ${formatDuration(search.elapsed)}`}
+                : `${foundCount.toLocaleString()} seed${foundCount === 1 ? '' : 's'} · tested ${compactNumber(search.tested)} in ${formatDuration(search.elapsed)}`}
             </span>
           </div>
         )}
-
-        {search.capped && <p className="d1-caption d1-capped">Result limit reached (1,024 seeds).</p>}
       </div>
 
       <div className="d1-pane-body">
-        {search.matches.length === 0 ? (
+        {shownMatches.length === 0 ? (
           <div className="d1-results-empty">
             {search.state === 'completed'
               ? <p>No seeds matched this query in the searched range.</p>
@@ -249,7 +283,7 @@ export function ResultsPanel({
           </div>
         ) : (
           <ol className="d1-result-list">
-            {search.matches.map((match, index) => (
+            {shownMatches.map((match, index) => (
               <li
                 key={match.code}
                 ref={activeSeed === match.code ? activeRow : undefined}

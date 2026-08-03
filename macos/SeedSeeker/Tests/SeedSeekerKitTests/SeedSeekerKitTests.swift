@@ -267,6 +267,16 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertFalse(SeedCode.isCanonical("abc-def-ghi"))
     }
 
+    func testSeedCodeNumericValue() {
+        XCTAssertEqual(SeedCode.value(of: "AAA-AAA-AAA"), 0)
+        XCTAssertEqual(SeedCode.value(of: "AAA-AAA-AAB"), 1)
+        XCTAssertEqual(SeedCode.value(of: "AAA-AAA-ABA"), 26)
+        XCTAssertEqual(SeedCode.value(of: "ZZZ-ZZZ-ZZZ"), 5_429_503_678_975)
+        XCTAssertNil(SeedCode.value(of: "aaa-aaa-aaa"))
+        XCTAssertNil(SeedCode.value(of: "AAAAAAAAA"))
+        XCTAssertNil(SeedCode.value(of: ""))
+    }
+
     func testSearchEstimateFormatting() {
         XCTAssertEqual(NumberFormat.probabilityPercent(13.0 / 10_000_000.0), "1.3x10^-4%")
         XCTAssertEqual(NumberFormat.seedRate(4_600), "4.6k")
@@ -304,6 +314,35 @@ final class SeedSeekerKitTests: XCTestCase {
             kind: .weapon, tier: 1, tierMatch: .exactly))
     }
 
+    // The continuation predicate is the engine's, exercised end to end over
+    // the wire in RefineSearchTests; the "shares an item" rule below stays a
+    // local estimate and is tested here.
+
+    func testSearchRequestSharedItemRules() throws {
+        func request(_ kind: ItemKind, item: CatalogItem? = nil, maximumDepth: Int = 24,
+                     challenges: Int = 0) throws -> SearchRequest {
+            try SearchRequest(requirements: [
+                ItemRequirement(key: 1, item: item, upgrade: 0, kind: kind, upgradeMatch: .any)],
+                maximumDepth: maximumDepth, challenges: challenges)
+        }
+        let anyWand = try request(.wand)
+        let missile = try request(.wand, item: ItemCatalog.wands[0])
+        let fireblast = try request(.wand, item: ItemCatalog.wands[1])
+        // Same kind: a kind-level requirement subsumes every item of its kind.
+        XCTAssertTrue(anyWand.sharesRequirement(with: missile))
+        XCTAssertTrue(missile.sharesRequirement(with: anyWand))
+        XCTAssertTrue(missile.sharesRequirement(with: missile))
+        // Same kind but two different named items share nothing.
+        XCTAssertFalse(missile.sharesRequirement(with: fireblast))
+        // Different kinds never share, and the narrowed weapon kinds count as
+        // kinds of their own (matching the other platforms).
+        XCTAssertFalse(anyWand.sharesRequirement(with: try request(.ring)))
+        XCTAssertFalse(try request(.weapon).sharesRequirement(with: try request(.meleeWeapon)))
+        // Scope and challenge differences are irrelevant to sharing.
+        XCTAssertTrue(anyWand.sharesRequirement(with: try request(.wand, maximumDepth: 12)))
+        XCTAssertTrue(anyWand.sharesRequirement(with: try request(.wand, challenges: 32)))
+    }
+
     func testRealFFIScout() async throws {
         let world = try await ProductionSeedFinderEngine().scoutSeed("AAA-AAA-AAA", challenges: 0)
         XCTAssertFalse(world.items.isEmpty)
@@ -325,6 +364,45 @@ final class SeedSeekerKitTests: XCTestCase {
         } while !terminal && ContinuousClock.now < deadline
         XCTAssertTrue(terminal, "cancelled native session should terminate promptly")
         await session.close(); await session.close()
+    }
+
+    func testRealFFIResumeHintResumedSearchAndFilter() async throws {
+        let requirement = try ItemRequirement(key: 1, item: ItemCatalog.findById("wand_frost"),
+            upgrade: 2, kind: .wand)
+        let request = try SearchRequest(requirements: [requirement])
+        let engine = ProductionSeedFinderEngine()
+
+        let session = try await engine.startSearch(request)
+        await session.cancel()
+        try await waitForTerminal(session)
+        let hint = try await session.resumeHint()
+        XCTAssertGreaterThanOrEqual(hint.position, 0)
+        XCTAssertGreaterThanOrEqual(hint.remaining, 0)
+        await session.close()
+
+        // A one-seed resumed scan finishes almost immediately.
+        let resumed = try await engine.startResumedSearch(request, resumeFrom: hint.position, scanLen: 1)
+        try await waitForTerminal(resumed)
+        let status = try await resumed.status()
+        XCTAssertEqual(status.state, .completed)
+        await resumed.close()
+
+        // The authoritative filter returns a subset of its input, in order.
+        let filtered = try await engine.filterSeeds(request, seeds: ["AAA-AAA-AAA", "AAA-AAA-AAB"])
+        XCTAssertTrue(Set(filtered).isSubset(of: ["AAA-AAA-AAA", "AAA-AAA-AAB"]))
+        let empty = try await engine.filterSeeds(request, seeds: [])
+        XCTAssertEqual(empty, [])
+    }
+
+    private func waitForTerminal(_ session: any SeedFinderSearchSession) async throws {
+        let deadline = ContinuousClock.now + .seconds(5)
+        var terminal = false
+        repeat {
+            _ = try await session.poll(4)
+            terminal = try await session.status().state != .running
+            if !terminal { try await Task.sleep(for: .milliseconds(10)) }
+        } while !terminal && ContinuousClock.now < deadline
+        XCTAssertTrue(terminal, "native session should reach a terminal state promptly")
     }
 
     private func scoutPacket(depth: UInt8, flags: UInt8, effect: String, option: UInt8) -> Data {

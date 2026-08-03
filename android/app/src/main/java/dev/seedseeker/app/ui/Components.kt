@@ -32,6 +32,7 @@ import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.ScoutAccessibility
 import dev.seedseeker.app.model.ScoutItem
 import dev.seedseeker.app.model.ScoutItemSource
+import dev.seedseeker.app.model.SearchState
 import dev.seedseeker.app.model.SearchStatus
 import dev.seedseeker.app.model.TierMatch
 import dev.seedseeker.app.model.UpgradeMatch
@@ -384,6 +385,21 @@ fun compactCount(value: Long): String = when {
     value >= 1_000_000L -> String.format(Locale.US, "%.1fM", value / 1_000_000.0)
     value >= 1_000L -> String.format(Locale.US, "%.1fK", value / 1_000.0)
     else -> value.toString()
+}
+
+internal fun resultsHeaderText(
+    resultCount: Int,
+    state: SearchState?,
+    isSearching: Boolean,
+    refinePhase: RefinePhase?,
+): String = when {
+    // "refining" is the filter phase only; the resumed scan that follows is a search.
+    isSearching && refinePhase == RefinePhase.FILTERING -> "Results — $resultCount · refining"
+    isSearching && refinePhase == RefinePhase.SCANNING -> "Results — $resultCount · searching"
+    isSearching -> "Results — $resultCount · live"
+    state == SearchState.COMPLETED -> "Results — $resultCount found"
+    state == SearchState.CANCELLED -> "Results — $resultCount · cancelled"
+    else -> "Results"
 }
 
 internal fun searchEstimateText(status: SearchStatus?, seedsPerSecond: Double): String {

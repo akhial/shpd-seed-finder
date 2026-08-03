@@ -66,6 +66,16 @@ public enum SeedCode {
     public static func isCanonical(_ seed: String) -> Bool {
         seed.wholeMatch(of: /^[A-Z]{3}-[A-Z]{3}-[A-Z]{3}$/) != nil
     }
+    /// The numeric seed value the engine scans: nine base-26 letters (A = 0)
+    /// with the dashes ignored. Nil unless the seed is canonical.
+    public static func value(of seed: String) -> Int64? {
+        guard isCanonical(seed) else { return nil }
+        var value: Int64 = 0
+        for scalar in seed.unicodeScalars where scalar != "-" {
+            value = value * 26 + Int64(scalar.value - 65)
+        }
+        return value
+    }
 }
 
 public enum QueryCodec {

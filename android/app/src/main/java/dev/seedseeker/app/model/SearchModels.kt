@@ -255,4 +255,10 @@ data class SearchStatus(
     val matchProbability: Double = 0.0,
 )
 
+/** Where and how much a follow-up traversal must scan to finish a session's coverage. */
+data class ResumeHint(
+    val position: Long,
+    val remaining: Long,
+)
+
 data class SearchBatch(val results: List<SeedResult>)

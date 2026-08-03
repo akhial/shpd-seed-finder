@@ -43,6 +43,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -82,11 +84,15 @@ fun FinderScreen(
     challenges: Int,
     presets: List<QueryPreset>,
     results: List<SeedResult>,
+    /** The run's full collection size; `results` lists at most the display cap. */
+    foundCount: Int,
     status: SearchStatus?,
     seedsPerSecond: Double,
     elapsedSeconds: Long,
     isSearching: Boolean,
+    refinePhase: RefinePhase?,
     error: String?,
+    snackbarHostState: SnackbarHostState,
     onAbout: () -> Unit,
     onChallenges: () -> Unit,
     onApplyPreset: (QueryPreset) -> Unit,
@@ -102,9 +108,11 @@ fun FinderScreen(
     onSearch: () -> Unit,
     onCancel: () -> Unit,
     canExportResults: Boolean,
+    canClearResults: Boolean,
     importNotice: String?,
     onExportResults: () -> Unit,
     onImportResults: () -> Unit,
+    onClearResults: () -> Unit,
     onScoutSeed: (String) -> Unit,
     bottomBar: @Composable () -> Unit,
 ) {
@@ -112,6 +120,7 @@ fun FinderScreen(
     var showOverflowMenu by remember { mutableStateOf(false) }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Seed Seeker") },
@@ -147,6 +156,14 @@ fun FinderScreen(
                                 onClick = {
                                     showOverflowMenu = false
                                     onExportResults()
+                                },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Clear results") },
+                                enabled = !isSearching && canClearResults,
+                                onClick = {
+                                    showOverflowMenu = false
+                                    onClearResults()
                                 },
                             )
                         }
@@ -192,8 +209,10 @@ fun FinderScreen(
                     fastMode = fastMode,
                     challenges = challenges,
                     results = results,
+                    foundCount = foundCount,
                     status = status,
                     isSearching = isSearching,
+                    refinePhase = refinePhase,
                     error = error,
                     onAdd = onAdd,
                     onEdit = onEdit,
@@ -243,19 +262,6 @@ fun FinderScreen(
                         items(results, key = { it.seed }) { result ->
                             ResultRow(result = result, onScout = { onScoutSeed(result.seed) })
                         }
-                        if (results.size >= 1_024) {
-                            item {
-                                Text(
-                                    "Result limit reached (1,024 seeds).",
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 4.dp),
-                                    textAlign = TextAlign.Center,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
                     }
                 }
             }
@@ -282,8 +288,10 @@ private fun QueryHeader(
     fastMode: Boolean,
     challenges: Int,
     results: List<SeedResult>,
+    foundCount: Int,
     status: SearchStatus?,
     isSearching: Boolean,
+    refinePhase: RefinePhase?,
     error: String?,
     onAdd: () -> Unit,
     onEdit: (ItemRequirement) -> Unit,
@@ -344,12 +352,12 @@ private fun QueryHeader(
             onChallenges = onChallenges,
         )
         Text(
-            when {
-                isSearching -> "Results — ${results.size} · live"
-                status?.state == SearchState.COMPLETED -> "Results — ${results.size} found"
-                status?.state == SearchState.CANCELLED -> "Results — ${results.size} · cancelled"
-                else -> "Results"
-            },
+            resultsHeaderText(
+                resultCount = foundCount,
+                state = status?.state,
+                isSearching = isSearching,
+                refinePhase = refinePhase,
+            ),
             style = MaterialTheme.typography.titleSmall,
         )
         if (error != null) {

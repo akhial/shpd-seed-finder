@@ -231,6 +231,40 @@ pub fn scout(request_json: &str) -> Result<String, JsError> {
     scout_impl(request_json).map_err(|error| JsError::new(&error))
 }
 
+/// Re-verifies specific seeds against a full query using the same
+/// authoritative matcher as the search path, returning the matching seeds as
+/// a JSON array of `{code, value}` in input order. This backs the "refine"
+/// flow: existing result seeds are filtered by the combined query instead of
+/// trusting stale metadata.
+///
+/// # Errors
+///
+/// Returns a JavaScript error for an invalid query or seed value.
+#[wasm_bindgen]
+#[allow(clippy::needless_pass_by_value)] // wasm-bindgen requires an owned Vec.
+pub fn filter_seeds(query_json: &str, seed_values: Vec<f64>) -> Result<String, JsError> {
+    filter_seeds_impl(query_json, &seed_values).map_err(|error| JsError::new(&error))
+}
+
+/// Reports whether the query in `candidate_json` continues the one in
+/// `base_json`: identical scope (depth, challenges, blacksmith flags, fast
+/// mode) and every base requirement covered by a distinct candidate
+/// requirement at least as strict (equal or strengthened). Only a continuing
+/// query may reuse a stopped search's results and coverage remainder (the
+/// filter-and-resume refine flow).
+///
+/// # Errors
+///
+/// Returns a JavaScript error when either query fails to decode.
+#[wasm_bindgen]
+pub fn query_continues(candidate_json: &str, base_json: &str) -> Result<bool, JsError> {
+    query_continues_impl(candidate_json, base_json).map_err(|error| JsError::new(&error))
+}
+
+fn query_continues_impl(candidate_json: &str, base_json: &str) -> Result<bool, String> {
+    Ok(json_query::decode(candidate_json)?.continues(&json_query::decode(base_json)?))
+}
+
 /// Cooperative, single-threaded browser search state.
 #[wasm_bindgen]
 pub struct SearchSession {
@@ -341,6 +375,30 @@ impl SearchSession {
             completed,
         })
     }
+}
+
+fn filter_seeds_impl(query_json: &str, seed_values: &[f64]) -> Result<String, String> {
+    let query = json_query::decode(query_json)?;
+    let seeds = seed_values
+        .iter()
+        .map(|&value| {
+            seed_bound(value, false)
+                .and_then(|value| DungeonSeed::new(value).map_err(|error| error.to_string()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let plan = QueryPlan::analyze(&query);
+    if plan.is_unsatisfiable() {
+        return Ok(to_json::<Vec<SeedOutput>>(&Vec::new()));
+    }
+    let generator = CanonicalMainWorldGenerator::with_challenges(query.challenges);
+    let worlds = generator.generate_batch_gated(&seeds, plan.generation_depth(), &plan);
+    let matches = worlds
+        .into_iter()
+        .flatten()
+        .filter(|world| query.matches(world))
+        .map(|world| SeedOutput::from(world.seed))
+        .collect::<Vec<_>>();
+    Ok(to_json(&matches))
 }
 
 fn parse_seed_code_impl(input: &str) -> Result<String, String> {
@@ -607,9 +665,22 @@ mod tests {
     use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
 
     use super::{
-        MAX_RESULTS, SearchSession, analyze_query, engine_info, format_seed_code,
-        parse_seed_code_impl, scout_impl,
+        MAX_RESULTS, SearchSession, analyze_query, engine_info, filter_seeds_impl,
+        format_seed_code, parse_seed_code_impl, query_continues_impl, scout_impl,
     };
+
+    #[test]
+    fn query_continuation_matches_scope_and_requirement_multiset() {
+        let base = r#"{"requirements":[{"kind":"ring","upgrade":{"at_least":1}}],"max_depth":6}"#;
+        let narrowed = r#"{"requirements":[{"kind":"ring","upgrade":{"at_least":1}},{"kind":"wand"}],"max_depth":6}"#;
+        let rescoped =
+            r#"{"requirements":[{"kind":"ring","upgrade":{"at_least":1}}],"max_depth":7}"#;
+        assert!(query_continues_impl(base, base).unwrap());
+        assert!(query_continues_impl(narrowed, base).unwrap());
+        assert!(!query_continues_impl(base, narrowed).unwrap());
+        assert!(!query_continues_impl(rescoped, base).unwrap());
+        assert!(query_continues_impl("not json", base).is_err());
+    }
 
     #[test]
     fn engine_info_reports_core_constants() {
@@ -744,6 +815,49 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(matched.len(), 1);
         assert_eq!(matched[0]["id"], definition.stable_id);
+    }
+
+    #[test]
+    fn filtering_seeds_agrees_with_the_search_matcher() {
+        // Find a couple of matches in a small range first, then check that
+        // filtering keeps exactly those seeds among a mixed candidate list.
+        let query_json =
+            r#"{"requirements":[{"kind":"ring","upgrade":{"at_least":1}}],"max_depth":6}"#;
+        let query = json_query::decode(query_json).unwrap();
+        let matches = search_parallel(
+            &CanonicalMainWorldGenerator,
+            &query,
+            SearchOptions {
+                start_seed: 0,
+                end_seed_exclusive: 2_000,
+                workers: NonZeroUsize::MIN,
+                chunk_size: NonZeroUsize::new(64).unwrap(),
+                max_results: NonZeroUsize::new(MAX_RESULTS).unwrap(),
+            },
+            &SearchProgress::default(),
+        )
+        .unwrap()
+        .worlds
+        .into_iter()
+        .map(|world| world.seed.value())
+        .collect::<Vec<_>>();
+        assert!(!matches.is_empty());
+
+        #[allow(clippy::cast_precision_loss)]
+        let candidates = (0..2_000_u64).map(|seed| seed as f64).collect::<Vec<_>>();
+        let output: Value =
+            serde_json::from_str(&filter_seeds_impl(query_json, &candidates).unwrap()).unwrap();
+        let kept = output
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["value"].as_u64().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(kept, matches);
+
+        assert!(filter_seeds_impl("not json", &[0.0]).is_err());
+        assert!(filter_seeds_impl(query_json, &[-1.0]).is_err());
+        assert_eq!(filter_seeds_impl(query_json, &[]).unwrap(), "[]");
     }
 
     #[test]
