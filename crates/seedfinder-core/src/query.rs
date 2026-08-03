@@ -254,6 +254,24 @@ pub struct SearchQuery {
     pub fast_mode: bool,
 }
 
+/// Whether `candidate`'s Wandmaker filter is at least as strict as `base`'s.
+///
+/// Demanding a variant only ever removes seeds — the world generates the same
+/// either way — so adding one to an unfiltered base narrows the match set just
+/// like naming an item, and the base's covered region still contains every
+/// match of the narrowed query. Dropping a filter, or swapping it for another
+/// variant, admits seeds the base never accepted and must rescan.
+const fn quest_at_least_as_strict(
+    candidate: Option<WandmakerQuestType>,
+    base: Option<WandmakerQuestType>,
+) -> bool {
+    match (candidate, base) {
+        (_, None) => true,
+        (Some(candidate), Some(wanted)) => candidate as u8 == wanted as u8,
+        (None, Some(_)) => false,
+    }
+}
+
 impl SearchQuery {
     /// Validates bounds and every requirement.
     ///
@@ -294,7 +312,8 @@ impl SearchQuery {
     }
 
     /// Whether this query *continues* `base`: identical scope (floor limit,
-    /// challenges, blacksmith flags, Wandmaker quest, fast mode) and, for every requirement
+    /// challenges, blacksmith flags, fast mode), a Wandmaker filter at least
+    /// as strict as `base`'s, and, for every requirement
     /// of `base`, a *distinct* requirement of this query at least as strict
     /// ([`Requirement::implies`] — equality included, but so is naming a
     /// specific item where `base` wanted any of its kind, or tightening an
@@ -310,7 +329,7 @@ impl SearchQuery {
             || self.challenges != base.challenges
             || self.require_blacksmith != base.require_blacksmith
             || self.exclude_blacksmith_rewards != base.exclude_blacksmith_rewards
-            || self.wandmaker_quest != base.wandmaker_quest
+            || !quest_at_least_as_strict(self.wandmaker_quest, base.wandmaker_quest)
             || self.fast_mode != base.fast_mode
             || self.requirements.len() < base.requirements.len()
         {
@@ -623,10 +642,17 @@ mod tests {
         let mut fast = base.clone();
         fast.fast_mode = true;
         assert!(!fast.continues(&base));
+        // Demanding a Wandmaker quest only narrows the match set, so it
+        // strengthens an unfiltered base rather than ending the continuation.
+        // Dropping or swapping one still forces a rescan.
         let mut quested = base.clone();
         quested.wandmaker_quest = Some(crate::quests::WandmakerQuestType::CorpseDust);
-        assert!(!quested.continues(&base));
+        assert!(quested.continues(&base));
         assert!(!base.continues(&quested));
+        assert!(quested.continues(&quested));
+        let mut other = base.clone();
+        other.wandmaker_quest = Some(crate::quests::WandmakerQuestType::Rotberry);
+        assert!(!other.continues(&quested));
     }
 
     #[test]

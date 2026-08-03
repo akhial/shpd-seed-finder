@@ -95,7 +95,8 @@ class DemoNativeSeedFinder : NativeSeedFinder {
     /**
      * The one demo answer that is not a stand-in shape but the real rule: a demo APK ships no
      * `.so`, and a wrong continuation verdict would send every demo search down a refine branch
-     * the shipped app would never take. It mirrors `SearchQuery::continues` — identical scope
+     * the shipped app would never take. It mirrors `SearchQuery::continues` — identical scope, a
+     * Wandmaker filter at least as strict as the base's,
      * and every base requirement covered by a distinct candidate requirement at least as strict
      * (equal or strengthened: a named item, a tightened bound), ignoring UI list keys. Coverage
      * is a bipartite matching, found with augmenting paths just like the engine's, because a
@@ -106,7 +107,9 @@ class DemoNativeSeedFinder : NativeSeedFinder {
             candidate.challenges != base.challenges ||
             candidate.requireBlacksmith != base.requireBlacksmith ||
             candidate.excludeBlacksmithRewards != base.excludeBlacksmithRewards ||
-            candidate.wandmakerQuest != base.wandmakerQuest ||
+            // Demanding a quest only removes seeds, so it strengthens an
+            // unfiltered base; dropping or swapping one must rescan.
+            (base.wandmakerQuest != null && candidate.wandmakerQuest != base.wandmakerQuest) ||
             candidate.fastMode != base.fastMode
         ) {
             return false

@@ -5,7 +5,8 @@ import type { SeedRange } from './traversal'
 
 /**
  * Whether a run of `candidate` can continue one of `base`: identical scope
- * (depth, challenges, and flags) and every base requirement covered by a
+ * (depth, challenges, and flags), a Wandmaker filter at least as strict as the
+ * base's, and every base requirement covered by a
  * distinct candidate requirement at least as strict — equal, added-to, or
  * strengthened (a named item where the base wanted any of its kind, a
  * tightened bound). Only then are the base run's matches guaranteed

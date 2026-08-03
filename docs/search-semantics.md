@@ -20,7 +20,11 @@ only action that discards results is the explicit **Clear** button.
   has scanned, kept as resume state (uncovered remainder). Imported results
   carry no coverage.
 - **Continuation**: query B continues query A when scope (floor limit,
-  blacksmith flags, Wandmaker quest, fast mode, challenges) is identical and every
+  blacksmith flags, fast mode, challenges) is identical, B's Wandmaker filter
+  is at least as strict as A's (A unfiltered accepts any of B's; otherwise
+  they must demand the same variant — the quest only removes seeds, so
+  demanding one is a strengthening, while dropping or swapping one is not),
+  and every
   requirement of A is covered by a *distinct* requirement of B at least as
   strict — equal, or strengthened: an item named where A wanted any of its
   kind, a tightened upgrade/tier bound, a demanded source, effect, curse

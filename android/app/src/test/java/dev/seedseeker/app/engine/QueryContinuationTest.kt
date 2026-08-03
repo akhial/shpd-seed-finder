@@ -83,13 +83,15 @@ class QueryContinuationTest {
         assertContinues(false, request(frost, fireblast, challenges = Challenge.DARKNESS.bit), base)
         assertContinues(false, request(frost, fireblast, requireBlacksmith = true), base)
         assertContinues(false, request(frost, fireblast, excludeBlacksmithRewards = true), base)
-        assertContinues(false, request(frost, fireblast, wandmakerQuest = WandmakerQuest.ROTBERRY), base)
         assertContinues(false, request(frost, fireblast, fastMode = true), base)
 
-        // Matching quests continue each other, so an unchanged filter still
-        // resumes rather than rescanning.
+        // A Wandmaker filter only narrows the match set, so demanding one
+        // strengthens an unfiltered base instead of ending the continuation.
+        // Dropping or swapping one still forces a rescan.
         val quested = request(frost, wandmakerQuest = WandmakerQuest.ROTBERRY)
+        assertContinues(true, request(frost, fireblast, wandmakerQuest = WandmakerQuest.ROTBERRY), base)
         assertContinues(true, request(frost, fireblast, wandmakerQuest = WandmakerQuest.ROTBERRY), quested)
+        assertContinues(false, request(frost, fireblast), quested)
         assertContinues(false, request(frost, fireblast, wandmakerQuest = WandmakerQuest.CORPSE_DUST), quested)
     }
 

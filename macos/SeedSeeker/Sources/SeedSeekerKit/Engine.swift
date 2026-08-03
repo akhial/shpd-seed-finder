@@ -40,7 +40,8 @@ private func copiedPacket(_ pointer: UnsafeMutablePointer<UInt8>?, _ length: Int
 
 /// The engine's refine soundness predicate, bridged rather than re-derived:
 /// whether the SSF8 query in `candidate` continues the one in `base` —
-/// identical scope (floor limit, challenges, blacksmith flags, fast mode) and
+/// identical scope (floor limit, challenges, blacksmith flags, fast mode), a
+/// Wandmaker filter at least as strict as the base's, and
 /// every base requirement covered by a distinct candidate requirement at least
 /// as strict — equal or strengthened (a named item, a tightened bound).
 ///

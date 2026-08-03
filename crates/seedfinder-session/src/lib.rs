@@ -254,7 +254,8 @@ pub enum FilterPacketError {
 
 /// Decodes two `SSF8` query requests and reports whether `candidate`
 /// continues `base`: identical scope (depth, challenges, blacksmith flags,
-/// fast mode) and every requirement of `base` covered by a distinct
+/// fast mode), a Wandmaker filter at least as strict as the base's, and
+/// every requirement of `base` covered by a distinct
 /// candidate requirement at least as strict (equal or strengthened).
 /// This is the soundness precondition for refining a search — only a
 /// continuing query may filter a stopped session's delivered results and
