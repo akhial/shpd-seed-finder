@@ -102,6 +102,51 @@ public sealed partial class ItemRequirement
     public ItemRequirement Clone() => (ItemRequirement)MemberwiseClone();
 }
 
+/// <summary>
+/// Floor-limit helpers shared by every floor selector. Boss floors 5, 10 and 15
+/// generate no searchable items: the engine treats a floor limit of 5/10/15
+/// exactly like 4/9/14, so selectors skip them. Floor 20 stays selectable
+/// because the Imp shop gives the City boss floor searchable stock.
+/// </summary>
+public static class FloorLimits
+{
+    public static readonly int[] EmptyBossFloors = [5, 10, 15];
+
+    /// <summary>Floors offered by floor-limit selectors: 1..24 minus the empty boss floors.</summary>
+    public static readonly int[] Options = Enumerable.Range(1, 24).Where(f => !EmptyBossFloors.Contains(f)).ToArray();
+
+    /// <summary>Snaps an empty boss-floor limit to the equivalent floor below it (5→4, 10→9, 15→14).</summary>
+    public static int Normalize(int depth) => EmptyBossFloors.Contains(depth) ? depth - 1 : depth;
+
+    /// <summary>The slider index for a floor limit; off-list values snap to the nearest option below (or the first option).</summary>
+    public static int IndexOf(int depth)
+    {
+        var floor = Normalize(depth);
+        var exact = Array.IndexOf(Options, floor);
+        return exact >= 0 ? exact : Math.Max(0, Array.FindLastIndex(Options, option => option <= floor));
+    }
+
+    /// <summary>
+    /// Where a floor-limit control lands when the user moves it onto an empty boss floor.
+    /// A single upward step (spin button, arrow key) continues to the next real floor; every
+    /// other move — single steps down and typed jumps in either direction — snaps to the
+    /// equivalent floor below, matching <see cref="Normalize"/>. Typing "10" therefore means
+    /// "first 10 floors" (≡ 9), never 11.
+    /// </summary>
+    public static int SkipTarget(int previous, int requested) =>
+        !EmptyBossFloors.Contains(requested) ? requested
+        : requested == previous + 1 ? requested + 1
+        : requested - 1;
+}
+
+/// <summary>Renders a floor slider's raw index as the floor it selects, for the thumb tooltip.</summary>
+public sealed class FloorLimitIndexConverter : Microsoft.UI.Xaml.Data.IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) =>
+        FloorLimits.Options[Math.Clamp((int)Math.Round((double)value), 0, FloorLimits.Options.Length - 1)].ToString();
+    public object ConvertBack(object value, Type targetType, object parameter, string language) => throw new NotSupportedException();
+}
+
 public sealed class QuerySettings
 {
     public ObservableCollection<ItemRequirement> Requirements { get; set; } = [];

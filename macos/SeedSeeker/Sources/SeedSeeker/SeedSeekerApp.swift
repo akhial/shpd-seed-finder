@@ -515,7 +515,9 @@ private struct QueryView: View {
                             Text("first \(maximumDepth) floor\(maximumDepth == 1 ? "" : "s")")
                                 .monospacedDigit().foregroundStyle(.secondary)
                         }
-                        Slider(value: intBinding($maximumDepth), in: 1...24, step: 1)
+                        Slider(value: floorLimitBinding($maximumDepth),
+                               in: 0...Double(FloorLimits.options.count - 1), step: 1)
+                            .accessibilityValue(Text("first \(maximumDepth) floor\(maximumDepth == 1 ? "" : "s")"))
                     }
                 }
                 Section("Blacksmith") {
@@ -832,13 +834,15 @@ private struct RequirementEditor: View {
                     }.pickerStyle(.segmented)
                     Toggle("Limit this item to a floor", isOn: Binding(
                         get: { maximumDepth != 0 },
-                        set: { maximumDepth = $0 ? 5 : 0 }
+                        set: { maximumDepth = $0 ? 4 : 0 }
                     ))
                     if maximumDepth != 0 {
                         LabeledContent("Within first") {
                             Text("\(maximumDepth) floors").monospacedDigit().foregroundStyle(.secondary)
                         }
-                        Slider(value: intBinding($maximumDepth), in: 1...24, step: 1)
+                        Slider(value: floorLimitBinding($maximumDepth),
+                               in: 0...Double(FloorLimits.options.count - 1), step: 1)
+                            .accessibilityValue(Text("\(maximumDepth) floors"))
                     }
                 }
             }
@@ -1288,4 +1292,17 @@ private struct WindowAccessor: NSViewRepresentable {
 
 private func intBinding(_ value: Binding<Int>) -> Binding<Double> {
     Binding(get: { Double(value.wrappedValue) }, set: { value.wrappedValue = Int($0.rounded()) })
+}
+
+/// Maps a floor-limit binding onto an index into `FloorLimits.options`, so
+/// sliders skip the empty boss floors (5, 10, 15). Off-list values snap to
+/// the nearest option below.
+private func floorLimitBinding(_ value: Binding<Int>) -> Binding<Double> {
+    Binding(
+        get: { Double(FloorLimits.index(of: value.wrappedValue)) },
+        set: {
+            let index = min(max(Int($0.rounded()), 0), FloorLimits.options.count - 1)
+            value.wrappedValue = FloorLimits.options[index]
+        }
+    )
 }
