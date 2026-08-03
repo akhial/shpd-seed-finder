@@ -21,7 +21,9 @@ public struct SavedQuery: Codable, Sendable {
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         requirements = try container.decode([ItemRequirement].self, forKey: .requirements)
-        maximumDepth = try container.decode(Int.self, forKey: .maximumDepth)
+        // Queries saved before empty boss floors were removed may hold 5/10/15;
+        // snap them to the equivalent limit below.
+        maximumDepth = FloorLimits.normalize(try container.decode(Int.self, forKey: .maximumDepth))
         requireBlacksmith = try container.decode(Bool.self, forKey: .requireBlacksmith)
         excludeBlacksmithRewards = try container.decodeIfPresent(
             Bool.self, forKey: .excludeBlacksmithRewards) ?? false

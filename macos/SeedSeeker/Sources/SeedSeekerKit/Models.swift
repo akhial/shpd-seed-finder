@@ -91,6 +91,32 @@ public enum Challenge: Int, CaseIterable, Sendable {
     }
 }
 
+/// Floor-limit helpers shared by every floor selector.
+///
+/// Boss floors 5, 10 and 15 generate no searchable items: the engine treats
+/// a floor limit of 5/10/15 exactly like 4/9/14, so selectors skip them.
+/// Floor 20 stays selectable because the Imp shop gives the City boss floor
+/// searchable stock.
+public enum FloorLimits {
+    public static let emptyBossFloors: Set<Int> = [5, 10, 15]
+
+    /// Floors offered by floor-limit selectors: 1...24 minus the empty boss floors.
+    public static let options: [Int] = (1...24).filter { !emptyBossFloors.contains($0) }
+
+    /// Snaps an empty boss-floor limit to the equivalent floor below it (5→4, 10→9, 15→14).
+    public static func normalize(_ depth: Int) -> Int {
+        emptyBossFloors.contains(depth) ? depth - 1 : depth
+    }
+
+    /// The selector index of a floor limit within `options`; off-list values
+    /// snap to the nearest option below (or the first option).
+    public static func index(of depth: Int) -> Int {
+        let floor = normalize(depth)
+        if let exact = options.firstIndex(of: floor) { return exact }
+        return options.lastIndex(where: { $0 <= floor }) ?? 0
+    }
+}
+
 public enum ModelValidationError: Error, Equatable, LocalizedError {
     case itemKind, tier, upgrade, modifier, uncursedCurse, identityGroup, itemMaximumDepth, emptyRequirements, maximumDepth, challenges
     public var errorDescription: String? {
@@ -174,7 +200,9 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
             upgradeMatch: values.decode(UpgradeMatch.self, forKey: .upgradeMatch),
             source: values.decodeIfPresent(ScoutItemSource.self, forKey: .source),
             identityGroup: values.decodeIfPresent(Int.self, forKey: .identityGroup),
-            maximumDepth: values.decodeIfPresent(Int.self, forKey: .maximumDepth),
+            // Requirements saved before empty boss floors were removed may hold
+            // 5/10/15; snap them to the equivalent limit below.
+            maximumDepth: values.decodeIfPresent(Int.self, forKey: .maximumDepth).map(FloorLimits.normalize),
             requireUncursed: values.decodeIfPresent(Bool.self, forKey: .requireUncursed) ?? false
         )
     }

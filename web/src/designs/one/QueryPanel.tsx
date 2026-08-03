@@ -4,7 +4,7 @@ import { challenges as challengeOptions, wildcardSprites } from '../../lib/catal
 import { probabilityLabel } from '../../lib/format'
 import { effectGlow } from '../../lib/glow'
 import { CommandIcon, PlusIcon, ReturnIcon, XIcon } from '../../lib/icons'
-import { emptyRequirement, fromQueryJson, toQueryJson, validateRequirement } from '../../lib/query'
+import { FLOOR_LIMIT_OPTIONS, emptyRequirement, fromQueryJson, toQueryJson, validateRequirement } from '../../lib/query'
 import type { ValidationResult } from '../../lib/query'
 import { builtInPresets, loadPresets, maxWorkers, queryStore, savePresets, setWorkerCount, workerCountStore } from '../../lib/store'
 import type { Preset } from '../../lib/store'
@@ -257,8 +257,7 @@ export function QueryPanel({
           <SliderRow
             label="Floor limit"
             valueLabel={`first ${query.maxDepth} floor${query.maxDepth === 1 ? '' : 's'}`}
-            min={1}
-            max={24}
+            values={FLOOR_LIMIT_OPTIONS}
             value={query.maxDepth}
             fill
             onChange={(value) => patchQuery({ maxDepth: value })}

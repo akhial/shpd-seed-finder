@@ -12,7 +12,7 @@ use shpd_seedfinder_core::model::ItemSource;
 use shpd_seedfinder_core::query::{TierRequirement, UpgradeRequirement};
 
 use crate::config::APP_ID;
-use crate::state::{ALL_SOURCES, AppState, UiRequirement};
+use crate::state::{ALL_SOURCES, AppState, UiRequirement, normalize_floor_limit};
 
 #[derive(Default, Deserialize, Serialize)]
 struct SavedState {
@@ -138,7 +138,9 @@ fn save_state(state: &AppState) -> SavedState {
 
 fn restore_state(saved: SavedState) -> AppState {
     let mut state = AppState::default();
-    state.max_depth = saved.max_depth.unwrap_or(24).clamp(1, 24);
+    // Files saved before empty boss floors were removed may hold 5/10/15;
+    // snap them to the equivalent limit below.
+    state.max_depth = normalize_floor_limit(saved.max_depth.unwrap_or(24).clamp(1, 24));
     state.require_blacksmith = saved.require_blacksmith;
     state.exclude_blacksmith_rewards = saved.exclude_blacksmith_rewards;
     state.fast_mode = saved.fast_mode;
@@ -234,7 +236,7 @@ fn restore_requirement(saved: &SavedRequirement, key: u64) -> Option<UiRequireme
         require_uncursed: saved.require_uncursed,
         source,
         identity_group: saved.identity_group,
-        max_depth: saved.max_depth,
+        max_depth: saved.max_depth.map(normalize_floor_limit),
     })
 }
 
@@ -385,6 +387,24 @@ mod tests {
             restore_requirement(&saved, 4)
                 .is_none_or(|requirement| requirement.to_core().validate().is_err())
         );
+    }
+
+    #[test]
+    fn empty_boss_floor_limits_snap_to_the_floor_below() {
+        let mut state = AppState::default();
+        state.max_depth = 24;
+        let key = state.claim_key();
+        state.requirements.push(UiRequirement {
+            key,
+            kind: ItemKind::Wand,
+            max_depth: Some(10),
+            ..UiRequirement::new(key)
+        });
+        let mut saved = save_state(&state);
+        saved.max_depth = Some(15);
+        let restored = super::restore_state(saved);
+        assert_eq!(restored.max_depth, 14);
+        assert_eq!(restored.requirements[0].max_depth, Some(9));
     }
 
     #[test]

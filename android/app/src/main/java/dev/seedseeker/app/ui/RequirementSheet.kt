@@ -49,17 +49,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.seedseeker.app.catalog.ItemCatalog
 import dev.seedseeker.app.model.CatalogItem
+import dev.seedseeker.app.model.FLOOR_LIMIT_OPTIONS
 import dev.seedseeker.app.model.ItemKind
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.ScoutItemSource
 import dev.seedseeker.app.model.TierMatch
 import dev.seedseeker.app.model.UpgradeMatch
+import dev.seedseeker.app.model.floorLimitIndex
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -590,11 +594,20 @@ fun RequirementSheet(
                                 color = MaterialTheme.colorScheme.primary,
                             )
                         }
+                        // Position 0 means "no limit"; the rest index into FLOOR_LIMIT_OPTIONS so
+                        // empty boss floors (5, 10, 15) are not offered. Off-list stored values
+                        // snap to the nearest option below via floorLimitIndex.
                         Slider(
-                            value = (maximumDepth ?: 0).toFloat(),
-                            onValueChange = { maximumDepth = it.roundToInt().takeIf { depth -> depth > 0 } },
-                            valueRange = 0f..24f,
-                            steps = 23,
+                            value = (maximumDepth?.let { depth -> floorLimitIndex(depth) + 1 } ?: 0).toFloat(),
+                            onValueChange = {
+                                val index = it.roundToInt().coerceIn(0, FLOOR_LIMIT_OPTIONS.size)
+                                maximumDepth = if (index == 0) null else FLOOR_LIMIT_OPTIONS[index - 1]
+                            },
+                            valueRange = 0f..FLOOR_LIMIT_OPTIONS.size.toFloat(),
+                            steps = FLOOR_LIMIT_OPTIONS.size - 1,
+                            modifier = Modifier.semantics {
+                                stateDescription = maximumDepth?.let { "Floor $it" } ?: "No limit"
+                            },
                         )
 
                         Spacer(Modifier.height(18.dp))

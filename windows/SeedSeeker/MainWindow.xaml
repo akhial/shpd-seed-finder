@@ -86,6 +86,8 @@
                   <TextBlock Text="Floor limit" VerticalAlignment="Center"/>
                   <TextBlock x:Name="FloorLabel" Style="{StaticResource Caption}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
                 </Grid>
+                <!-- Indexes into FloorLimits.Options (skips the empty boss floors); the code-behind
+                     installs a ThumbToolTipValueConverter so the tooltip names the floor, not the index. -->
                 <Slider x:Name="FloorSlider" StepFrequency="1" ValueChanged="FloorSlider_ValueChanged" HorizontalAlignment="Stretch" Margin="0,2,0,-8"/>
               </StackPanel>
             </Border>

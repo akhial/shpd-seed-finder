@@ -8,8 +8,33 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::gio;
 
-use crate::state::{AppState, UiRequirement, kind_icon};
+use crate::state::{
+    AppState, UiRequirement, floor_limit_skip_target, kind_icon, normalize_floor_limit,
+};
 use crate::{glow, sprites};
+
+/// Makes a floor-limit spin row skip the empty boss floors (5, 10, 15):
+/// spinning up from 4 lands on 6, spinning down from 6 lands on 4, and typed
+/// values snap down (10 means the first 10 floors, ≡ 9), since those floors
+/// add no searchable items and are useless as limits.
+pub fn skip_empty_boss_floors(row: &adw::SpinRow) {
+    let previous = Cell::new(row.value());
+    row.connect_value_notify(move |row| {
+        let value = row.value();
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let requested = value.round().clamp(0.0, 24.0) as u8;
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let anchor = previous.get().round().clamp(0.0, 24.0) as u8;
+        let target = floor_limit_skip_target(anchor, requested);
+        if target != requested {
+            // The corrected value re-enters this handler and, being a real
+            // floor, records itself as the new anchor.
+            row.set_value(f64::from(target));
+            return;
+        }
+        previous.set(value);
+    });
+}
 
 type KeyHandler = Box<dyn Fn(u64)>;
 
@@ -167,6 +192,7 @@ impl QueryPane {
             on_changed: RefCell::new(None),
         });
 
+        skip_empty_boss_floors(&pane.depth_row);
         pane.depth_row.connect_value_notify({
             let pane = Rc::clone(&pane);
             move |_| pane.notify_changed()
@@ -206,7 +232,7 @@ impl QueryPane {
     pub fn read_scope(&self, state: &mut AppState) {
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let depth = self.depth_row.value().round() as u8;
-        state.max_depth = depth.clamp(1, 24);
+        state.max_depth = normalize_floor_limit(depth.clamp(1, 24));
         state.require_blacksmith = self.blacksmith_row.is_active();
         state.exclude_blacksmith_rewards = self.exclude_row.is_active();
         state.fast_mode = self.fast_row.is_active();
@@ -215,7 +241,8 @@ impl QueryPane {
     /// Rebuilds every control from `state` without echoing change signals.
     pub fn refresh(self: &Rc<Self>, state: &AppState) {
         self.updating.set(true);
-        self.depth_row.set_value(f64::from(state.max_depth));
+        self.depth_row
+            .set_value(f64::from(normalize_floor_limit(state.max_depth)));
         self.blacksmith_row.set_active(state.require_blacksmith);
         self.blacksmith_row.set_sensitive(state.max_depth < 14);
         self.exclude_row

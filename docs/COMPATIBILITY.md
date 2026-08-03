@@ -48,6 +48,13 @@ catalog. The boss levels also seed a child generator for `Bones.get()`; with
 bones disabled it produces no items, and both the child and all map RNG are
 confined to that boss depth.
 
+Because depths 5, 10, and 15 contribute no searchable items, the apps'
+floor-limit selectors (the global scope limit and each requirement's
+"within first N floors" bound) do not offer them. Stored queries and presets
+that still hold one of those limits are rewritten to the equivalent floor
+below (5→4, 10→9, 15→14) when loaded; the JSON query format itself continues
+to accept every value in 1–24.
+
 Depth 20 must not be skipped. `CityBossLevel.build()` creates an `ImpShopRoom`,
 and `ImpShopRoom.paint()` eagerly calls `ShopRoom.generateItems()` before the
 shop is visible. The resulting cached tier-five weapon, Plate Armor, missile,
