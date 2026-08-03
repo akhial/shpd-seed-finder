@@ -139,14 +139,6 @@ public static class FloorLimits
         : requested - 1;
 }
 
-/// <summary>Renders a floor slider's raw index as the floor it selects, for the thumb tooltip.</summary>
-public sealed class FloorLimitIndexConverter : Microsoft.UI.Xaml.Data.IValueConverter
-{
-    public object Convert(object value, Type targetType, object parameter, string language) =>
-        FloorLimits.Options[Math.Clamp((int)Math.Round((double)value), 0, FloorLimits.Options.Length - 1)].ToString();
-    public object ConvertBack(object value, Type targetType, object parameter, string language) => throw new NotSupportedException();
-}
-
 public sealed class QuerySettings
 {
     public ObservableCollection<ItemRequirement> Requirements { get; set; } = [];
