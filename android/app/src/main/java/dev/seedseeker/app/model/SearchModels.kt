@@ -202,6 +202,7 @@ data class ScoutItem(
     val upgrade: Int,
     val effect: String?,
     val cursed: Boolean,
+    val secret: Boolean = false,
     val source: ScoutItemSource,
     val accessibility: ScoutAccessibility,
 )

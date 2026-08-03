@@ -1474,6 +1474,12 @@ input[type='range']::-moz-range-thumb {
   background: rgba(217, 108, 95, 0.14);
 }
 
+.d1-badge-secret {
+  /* Items tucked behind a hidden door — violet to read as "arcane/hidden". */
+  color: #c9a6f5;
+  background: rgba(140, 100, 220, 0.14);
+}
+
 .d1-badge-match {
   flex: 0 0 auto;
   align-self: center;

@@ -1313,6 +1313,7 @@ mod tests {
                 depth: 8,
                 source: ItemSource::Heap,
                 accessibility: Accessibility::Independent,
+                secret: false,
             }]
         );
         assert_eq!(
@@ -1427,6 +1428,7 @@ mod tests {
                     depth: 13,
                     source: ItemSource::Heap,
                     accessibility: Accessibility::Independent,
+                    secret: false,
                 },
                 WorldItem {
                     item: ItemId::ThrowingSpear,
@@ -1436,6 +1438,7 @@ mod tests {
                     depth: 13,
                     source: ItemSource::Heap,
                     accessibility: Accessibility::Independent,
+                    secret: false,
                 },
             ]
         );
@@ -1486,6 +1489,7 @@ mod tests {
                     depth: 13,
                     source: ItemSource::Heap,
                     accessibility: Accessibility::Independent,
+                    secret: false,
                 },
                 WorldItem {
                     item: ItemId::Tomahawk,
@@ -1495,6 +1499,7 @@ mod tests {
                     depth: 13,
                     source: ItemSource::Heap,
                     accessibility: Accessibility::Independent,
+                    secret: false,
                 },
             ]
         );

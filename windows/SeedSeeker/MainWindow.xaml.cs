@@ -960,6 +960,7 @@ public sealed class ScoutRow
     public string Upgrade { get; init; } = "";
     public Visibility UpgradeVisibility { get; init; } = Visibility.Collapsed;
     public Visibility CurseVisibility { get; init; } = Visibility.Collapsed;
+    public Visibility SecretVisibility { get; init; } = Visibility.Collapsed;
     public string Effect { get; init; } = "";
     public Visibility EffectVisibility { get; init; } = Visibility.Collapsed;
     public Brush EffectBrush { get; init; } = new SolidColorBrush(Color.FromArgb(255, 42, 160, 176));
@@ -985,6 +986,7 @@ public sealed class ScoutRow
             ItemName = x.Item.Name,
             Upgrade = $"+{x.Upgrade}", UpgradeVisibility = x.Upgrade > 0 ? Visibility.Visible : Visibility.Collapsed,
             CurseVisibility = x.Cursed ? Visibility.Visible : Visibility.Collapsed,
+            SecretVisibility = x.Secret ? Visibility.Visible : Visibility.Collapsed,
             Effect = x.Effect ?? "", EffectVisibility = x.Effect is null ? Visibility.Collapsed : Visibility.Visible,
             EffectBrush = isCurse ? (Brush)Application.Current.Resources["SystemFillColorCriticalBrush"] : new SolidColorBrush(Color.FromArgb(255, 42, 160, 176)),
             Source = Labels.Source(x.Source),

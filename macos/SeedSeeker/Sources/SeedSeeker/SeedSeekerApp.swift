@@ -1160,6 +1160,12 @@ private struct ScoutItemRow: View {
                             .padding(.horizontal, 5).padding(.vertical, 1)
                             .background(.red.opacity(0.12), in: Capsule())
                     }
+                    if item.secret {
+                        Text("secret").font(.caption2.bold()).foregroundStyle(.purple)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(.purple.opacity(0.12), in: Capsule())
+                            .help("Hidden in a secret room — search to reveal it")
+                    }
                 }
                 HStack(spacing: 6) {
                     if let effect = item.effect {

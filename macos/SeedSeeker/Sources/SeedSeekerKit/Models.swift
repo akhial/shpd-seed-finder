@@ -308,14 +308,16 @@ public struct ScoutItem: Identifiable, Sendable {
     public let upgrade: Int
     public let effect: String?
     public let cursed: Bool
+    public let secret: Bool
     public let source: ScoutItemSource
     public let accessibility: ScoutAccessibility
     public var id: String { "\(depth):\(item.id):\(upgrade):\(source.rawValue):\(accessibility)" }
     public init(item: CatalogItem, depth: Int, upgrade: Int, effect: String? = nil,
                 cursed: Bool = false, source: ScoutItemSource,
-                accessibility: ScoutAccessibility = .independent) {
+                accessibility: ScoutAccessibility = .independent, secret: Bool = false) {
         self.item = item; self.depth = depth; self.upgrade = upgrade; self.effect = effect
-        self.cursed = cursed; self.source = source; self.accessibility = accessibility
+        self.cursed = cursed; self.secret = secret
+        self.source = source; self.accessibility = accessibility
     }
 }
 

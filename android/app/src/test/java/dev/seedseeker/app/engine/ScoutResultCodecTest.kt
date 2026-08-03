@@ -10,6 +10,7 @@ import java.io.EOFException
 import java.nio.charset.StandardCharsets
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -31,7 +32,7 @@ class ScoutResultCodecTest {
                 id = "dagger",
                 depth = 1,
                 upgrade = 2,
-                flags = 0,
+                flags = 2,
                 effect = null,
                 source = 16,
                 accessibility = byteArrayOf(1, 0x12, 0x34, 2),
@@ -56,7 +57,7 @@ class ScoutResultCodecTest {
                 id = "ring_sharpshooting",
                 depth = 17,
                 upgrade = 4,
-                flags = 1,
+                flags = 3,
                 source = 16,
             ),
         )
@@ -72,11 +73,16 @@ class ScoutResultCodecTest {
         with(world.items[0]) {
             assertEquals(0, upgrade)
             assertTrue(cursed)
+            assertFalse(secret)
             assertEquals("Lucky", effect)
             assertEquals(ScoutItemSource.LOCKED_CHEST, source)
             assertEquals(ScoutAccessibility.Independent, accessibility)
         }
-        assertEquals(ScoutAccessibility.Choice(0x1234, 2), world.items[1].accessibility)
+        with(world.items[1]) {
+            assertFalse(cursed)
+            assertTrue(secret)
+            assertEquals(ScoutAccessibility.Choice(0x1234, 2), accessibility)
+        }
         with(world.items[2]) {
             assertEquals(ItemKind.WAND, item.kind)
             assertEquals(22, depth)
@@ -90,6 +96,7 @@ class ScoutResultCodecTest {
             assertEquals(ItemKind.RING, item.kind)
             assertEquals(4, upgrade)
             assertTrue(cursed)
+            assertTrue(secret)
             assertEquals(ScoutItemSource.IMP_REWARD, source)
         }
     }
@@ -111,7 +118,7 @@ class ScoutResultCodecTest {
             ScoutResultCodec.decode(impossibleWandEffect)
         }
 
-        val reservedFlags = scoutPacket(item(flags = 2))
+        val reservedFlags = scoutPacket(item(flags = 4))
         assertThrows(IllegalStateException::class.java) {
             ScoutResultCodec.decode(reservedFlags)
         }

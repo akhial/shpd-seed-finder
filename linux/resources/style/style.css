@@ -31,3 +31,7 @@ entry.seed-entry {
 .tag.accent {
   color: var(--accent-color);
 }
+
+.tag.warning {
+  color: var(--warning-color);
+}

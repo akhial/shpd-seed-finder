@@ -138,7 +138,7 @@ public enum ScoutCodec {
             let upgrade = Int(try input.u8())
             guard (0...item.kind.maximumSearchUpgrade).contains(upgrade) else { throw WireCodecError.invalidValue("Invalid scout item upgrade") }
             let flags = try input.u8()
-            guard flags & 0xfe == 0 else { throw WireCodecError.invalidValue("Unknown scout item flags \(flags)") }
+            guard flags & 0xfc == 0 else { throw WireCodecError.invalidValue("Unknown scout item flags \(flags)") }
             let effectText = try input.utf8(input.u16())
             let effect = effectText.isEmpty ? nil : effectText
             if let effect, !ItemCatalog.modifiersFor(item.kind).contains(effect) { throw WireCodecError.invalidValue("Unknown modifier '\(effect)' for \(item.id)") }
@@ -157,7 +157,8 @@ public enum ScoutCodec {
             case let tag: throw WireCodecError.invalidValue("Unknown scout accessibility tag \(tag)")
             }
             return ScoutItem(item: item, depth: depth, upgrade: upgrade, effect: effect,
-                             cursed: flags & 1 != 0, source: source, accessibility: accessibility)
+                             cursed: flags & 1 != 0, source: source, accessibility: accessibility,
+                             secret: flags & 2 != 0)
         }
         guard input.remaining == 0 else { throw WireCodecError.trailingBytes }
         return ScoutWorld(seed: seed, items: items)

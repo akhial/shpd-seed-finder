@@ -197,6 +197,7 @@ export function ScoutPanel({
                               <span>{item.name}</span>
                               {item.upgrade > 0 && <b className="d1-badge d1-badge-up">+{item.upgrade}</b>}
                               {item.cursed && <b className="d1-badge d1-badge-curse">cursed</b>}
+                              {item.secret && <b className="d1-badge d1-badge-secret" title="Hidden in a secret room — search to reveal it">secret</b>}
                             </div>
                             <div className="d1-item-meta">
                               {item.effect && (

@@ -2245,6 +2245,7 @@ mod tests {
             depth: 11,
             source,
             accessibility,
+            secret: false,
         }
     }
 

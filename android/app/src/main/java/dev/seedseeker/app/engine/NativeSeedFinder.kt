@@ -173,6 +173,7 @@ class DemoNativeSeedFinder : NativeSeedFinder {
                     upgrade = 1,
                     effect = "Lucky",
                     cursed = false,
+                    secret = true,
                     source = ScoutItemSource.CHEST,
                     accessibility = ScoutAccessibility.Independent,
                 ),
@@ -328,7 +329,8 @@ class DemoNativeSeedFinder : NativeSeedFinder {
  * repeated seedLength:u8, seed:ASCII. State codes are 0 running, 1 complete, 2 cancelled,
  * 3 failed. A non-zero handle is required. Scout requests use `SSQ2`, a little-endian challenge
  * mask, then the canonical UTF-8 seed. Scout packet `SSC1` contains the echoed canonical seed
- * followed by catalog ID, depth, upgrade, curse, effect, source, and accessibility for every item.
+ * followed by catalog ID, depth, upgrade, flags (bit 0 cursed, bit 1 hidden in a secret room),
+ * effect, source, and accessibility for every item.
  */
 class JniNativeSeedFinder(
     private val bindings: NativeBindings = JniBindingsAdapter,
@@ -593,7 +595,7 @@ object ScoutResultCodec {
                     "Scout item upgrade must be 0..${catalogItem.kind.maximumSearchUpgrade}"
                 }
                 val flags = input.readUnsignedByte()
-                check(flags and 0xFE == 0) { "Unknown scout item flags $flags" }
+                check(flags and 0xFC == 0) { "Unknown scout item flags $flags" }
                 val effect = readUtf8(input, input.readUnsignedShort()).ifEmpty { null }
                 effect?.let {
                     check(it in ItemCatalog.modifiersFor(catalogItem.kind)) {
@@ -624,6 +626,7 @@ object ScoutResultCodec {
                     upgrade = upgrade,
                     effect = effect,
                     cursed = flags and 1 != 0,
+                    secret = flags and 2 != 0,
                     source = source,
                     accessibility = accessibility,
                 )

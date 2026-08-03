@@ -15,7 +15,8 @@ extern "C" {
 // appends flags:u8 where bit 0 requires an uncursed item.
 // Scout requests are SSQ2 magic[4], challenges:u16 little-endian, then the
 // UTF-8 seed code in all remaining bytes. Legacy raw UTF-8 seed codes use mask 0.
-// Scout responses remain SSC1.
+// Scout responses remain SSC1; each item's flags byte uses bit 0 for cursed
+// and bit 1 for placement inside a secret room.
 int64_t seedfinder_start_search(const uint8_t *request, size_t request_len); // >0 handle, 0 on invalid request or spawn failure
 // Starts a search that scans only the scan_len seeds beginning at resume_from,
 // wrapping at the end of the seed space. Pass the values reported by

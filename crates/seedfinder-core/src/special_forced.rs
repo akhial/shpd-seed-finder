@@ -1416,6 +1416,7 @@ mod tests {
                 depth: 11,
                 source: ItemSource::Skeleton,
                 accessibility: Accessibility::Independent,
+                secret: false,
             }]
         );
         assert_eq!(

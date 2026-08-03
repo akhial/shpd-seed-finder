@@ -248,9 +248,16 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertEqual(world.seed, "AAA-AAA-AAA"); XCTAssertEqual(world.items.count, 1)
         XCTAssertEqual(world.items[0].item.id, "dagger"); XCTAssertEqual(world.items[0].depth, 3)
         XCTAssertEqual(world.items[0].effect, "Lucky"); XCTAssertTrue(world.items[0].cursed)
+        XCTAssertFalse(world.items[0].secret)
         XCTAssertEqual(world.items[0].accessibility, .choice(group: 3, option: 1))
+
+        let secretOnly = try ScoutCodec.decode(scoutPacket(depth: 3, flags: 2, effect: "", option: 1)).items[0]
+        XCTAssertTrue(secretOnly.secret); XCTAssertFalse(secretOnly.cursed)
+        let secretCursed = try ScoutCodec.decode(scoutPacket(depth: 3, flags: 3, effect: "", option: 1)).items[0]
+        XCTAssertTrue(secretCursed.secret); XCTAssertTrue(secretCursed.cursed)
+
         XCTAssertThrowsError(try ScoutCodec.decode(scoutPacket(depth: 0, flags: 0, effect: "", option: 1)))
-        XCTAssertThrowsError(try ScoutCodec.decode(scoutPacket(depth: 1, flags: 2, effect: "", option: 1)))
+        XCTAssertThrowsError(try ScoutCodec.decode(scoutPacket(depth: 1, flags: 4, effect: "", option: 1)))
         XCTAssertThrowsError(try ScoutCodec.decode(scoutPacket(depth: 1, flags: 0, effect: "Bogus", option: 1)))
         XCTAssertThrowsError(try ScoutCodec.decode(scoutPacket(depth: 1, flags: 0, effect: "", option: 64)))
         XCTAssertEqual(try ScoutCodec.decode(scenarioPacket(mask: 4)).items[0].accessibility,

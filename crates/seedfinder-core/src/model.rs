@@ -77,6 +77,9 @@ pub struct WorldItem {
     pub depth: u8,
     pub source: ItemSource,
     pub accessibility: Accessibility,
+    /// The item lies inside a secret room and stays invisible until the
+    /// player searches out its hidden door.
+    pub secret: bool,
 }
 
 impl WorldItem {
@@ -97,7 +100,15 @@ impl WorldItem {
             depth,
             source,
             accessibility,
+            secret: false,
         }
+    }
+
+    /// Marks the record as hidden inside a secret room.
+    #[must_use]
+    pub const fn in_secret_room(mut self) -> Self {
+        self.secret = true;
+        self
     }
 }
 
