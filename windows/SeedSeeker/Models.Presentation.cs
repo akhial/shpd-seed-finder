@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Data;
 using Microsoft.UI.Xaml.Media;
 
 namespace SeedSeeker;
@@ -27,4 +28,12 @@ public sealed partial class ItemRequirement
     /// </summary>
     [JsonIgnore] public Windows.UI.Color GlowColor => ItemGlow.ForEffect(Modifier)?.Color ?? default;
     [JsonIgnore] public double GlowPeriod => Item is null ? 0 : ItemGlow.ForEffect(Modifier)?.Period ?? 0;
+}
+
+/// <summary>Renders a floor slider's raw index as the floor it selects, for the thumb tooltip.</summary>
+public sealed class FloorLimitIndexConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter, string language) =>
+        FloorLimits.Options[Math.Clamp((int)Math.Round((double)value), 0, FloorLimits.Options.Length - 1)].ToString();
+    public object ConvertBack(object value, Type targetType, object parameter, string language) => throw new NotSupportedException();
 }
