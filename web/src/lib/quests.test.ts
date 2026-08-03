@@ -20,10 +20,10 @@ describe('questVariantLabel', () => {
     ['corpse_dust', 'Corpse Dust'],
     ['elemental_embers', 'Elemental Embers'],
     ['rotberry', 'Rotberry'],
-    ['crystal', 'Crystal'],
-    ['gnoll', 'Gnoll'],
-    ['monk', 'Monk'],
-    ['golem', 'Golem'],
+    ['crystal', 'Crystal Spire'],
+    ['gnoll', 'Gnoll Geomancer'],
+    ['monk', 'Monks'],
+    ['golem', 'Golems'],
   ] as const)('labels %s as %s', (variant, label) => {
     expect(questVariantLabel(variant)).toBe(label)
   })

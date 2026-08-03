@@ -1112,22 +1112,17 @@ private struct SeedDetailView: View {
             .font(.caption).foregroundStyle(.secondary)
             .padding(.horizontal).padding(.vertical, 6)
             if !world.quests.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(world.quests) { quest in
-                            HStack(spacing: 4) {
-                                Image(systemName: Self.questSymbol(quest.kind))
-                                    .font(.caption2)
-                                    .foregroundStyle(Self.questTint(quest.kind))
-                                Text(quest.variant.label).font(.caption.bold())
-                                Text("\(quest.kind.giverLabel) · F\(quest.depth)")
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                            .padding(.horizontal, 7).padding(.vertical, 2)
-                            .background(Self.questTint(quest.kind).opacity(0.12), in: Capsule())
+                FlowLayout(spacing: 6, lineSpacing: 6) {
+                    ForEach(world.quests) { quest in
+                        HStack(spacing: 4) {
+                            Text(quest.variant.label).font(.caption.bold())
+                            Text("\(quest.kind.giverLabel) · F\(quest.depth)")
+                                .font(.caption).foregroundStyle(.secondary)
                         }
-                    }.padding(.horizontal)
-                }.padding(.bottom, 6)
+                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .background(Self.questTint(quest.kind).opacity(0.12), in: Capsule())
+                    }
+                }.padding(.horizontal).padding(.bottom, 6)
             }
             List {
                 ForEach(depths, id: \.self) { depth in
@@ -1158,15 +1153,6 @@ private struct SeedDetailView: View {
         }
     }
 
-    private static func questSymbol(_ kind: ScoutQuestKind) -> String {
-        switch kind {
-        case .ghost: "eye"
-        case .wandmaker: "wand.and.stars"
-        case .blacksmith: "hammer"
-        case .imp: "flame"
-        }
-    }
-
     private static func region(_ depth: Int) -> String {
         switch depth {
         case ..<6: "Sewers"
@@ -1177,6 +1163,47 @@ private struct SeedDetailView: View {
         }
     }
 
+}
+
+/// Lays its subviews out left to right at their natural size, starting a new
+/// row whenever the next one would overflow. SwiftUI ships no wrapping stack.
+private struct FlowLayout: Layout {
+    var spacing: CGFloat
+    var lineSpacing: CGFloat
+
+    /// Every subview's origin relative to the layout's top-left, plus the size
+    /// the resulting rows occupy.
+    private func flow(_ subviews: Subviews, width: CGFloat) -> (origins: [CGPoint], size: CGSize) {
+        var origins: [CGPoint] = []
+        var size = CGSize.zero
+        var cursor = CGPoint.zero
+        var rowHeight: CGFloat = 0
+        for subview in subviews {
+            let item = subview.sizeThatFits(.unspecified)
+            // A row always keeps its first subview, however wide it is.
+            if cursor.x > 0, cursor.x + item.width > width {
+                cursor = CGPoint(x: 0, y: cursor.y + rowHeight + lineSpacing)
+                rowHeight = 0
+            }
+            origins.append(cursor)
+            cursor.x += item.width + spacing
+            rowHeight = max(rowHeight, item.height)
+            size.width = max(size.width, cursor.x - spacing)
+        }
+        size.height = cursor.y + rowHeight
+        return (origins, size)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        flow(subviews, width: proposal.width ?? .infinity).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (subview, origin) in zip(subviews, flow(subviews, width: bounds.width).origins) {
+            subview.place(at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y),
+                          proposal: .unspecified)
+        }
+    }
 }
 
 private struct ScoutItemRow: View {

@@ -100,10 +100,10 @@ public static class ScoutQuests
         QuestVariant.CorpseDust => "Corpse dust",
         QuestVariant.ElementalEmbers => "Elemental embers",
         QuestVariant.Rotberry => "Rotberry",
-        QuestVariant.Crystal => "Crystal",
-        QuestVariant.Gnoll => "Gnoll",
-        QuestVariant.Monk => "Monk",
-        _ => "Golem",
+        QuestVariant.Crystal => "Crystal spire",
+        QuestVariant.Gnoll => "Gnoll geomancer",
+        QuestVariant.Monk => "Monks",
+        _ => "Golems",
     };
 
     private static byte Next(ReadOnlySpan<byte> data, ref int offset)

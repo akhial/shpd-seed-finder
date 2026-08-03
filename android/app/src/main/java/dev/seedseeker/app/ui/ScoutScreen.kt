@@ -7,8 +7,6 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -236,15 +233,6 @@ fun ScoutScreen(
                         )
                     }
 
-                    if (world.quests.isNotEmpty()) {
-                        item {
-                            ScoutQuestCard(
-                                quests = world.quests,
-                                modifier = Modifier.padding(top = 10.dp),
-                            )
-                        }
-                    }
-
                     val questsByDepth = world.quests.associateBy(ScoutQuest::depth)
                     world.items.withIndex()
                         .groupBy { it.value.depth }
@@ -457,59 +445,6 @@ private fun ScoutSummaryCard(
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
                     )
-                }
-            }
-        }
-    }
-}
-
-/** Quest variants rolled by the seed, tinted with the region colour of their host floor. */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun ScoutQuestCard(quests: List<ScoutQuest>, modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-    ) {
-        Column(Modifier.padding(18.dp)) {
-            Text(
-                "Quests",
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Spacer(Modifier.height(10.dp))
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                quests.forEach { quest ->
-                    val region = floorRegionColor(quest.depth)
-                    Surface(
-                        shape = MaterialTheme.shapes.medium,
-                        color = region.copy(alpha = 0.12f),
-                    ) {
-                        Column(Modifier.padding(horizontal = 12.dp, vertical = 7.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    Modifier
-                                        .size(7.dp)
-                                        .background(region, CircleShape),
-                                )
-                                Spacer(Modifier.width(7.dp))
-                                Text(
-                                    quest.variant.label,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                            }
-                            Text(
-                                "${quest.giver.label} · Floor ${quest.depth}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
                 }
             }
         }

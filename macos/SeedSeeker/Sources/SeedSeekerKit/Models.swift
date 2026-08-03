@@ -361,10 +361,10 @@ public enum ScoutQuestVariant: Hashable, Sendable {
         case .corpseDust: "Corpse dust"
         case .elementalEmbers: "Elemental embers"
         case .rotberry: "Rotberry"
-        case .crystal: "Crystal"
-        case .gnoll: "Gnoll"
-        case .monk: "Monk"
-        case .golem: "Golem"
+        case .crystal: "Crystal spire"
+        case .gnoll: "Gnoll geomancer"
+        case .monk: "Monks"
+        case .golem: "Golems"
         }
     }
 }

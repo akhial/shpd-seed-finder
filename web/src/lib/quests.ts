@@ -14,10 +14,10 @@ const VARIANT_LABELS: Record<QuestVariant, string> = {
   corpse_dust: 'Corpse Dust',
   elemental_embers: 'Elemental Embers',
   rotberry: 'Rotberry',
-  crystal: 'Crystal',
-  gnoll: 'Gnoll',
-  monk: 'Monk',
-  golem: 'Golem',
+  crystal: 'Crystal Spire',
+  gnoll: 'Gnoll Geomancer',
+  monk: 'Monks',
+  golem: 'Golems',
 }
 
 /** Display name of a quest giver, e.g. `ghost` → "Sad Ghost". */

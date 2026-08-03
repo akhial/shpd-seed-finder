@@ -26,6 +26,7 @@ pub struct DetailPane {
     stack: gtk::Stack,
     summary_items: gtk::Label,
     summary_matches: gtk::Label,
+    summary_quests: gtk::Label,
     manifest_box: gtk::Box,
     world: RefCell<Option<GeneratedWorld>>,
     updating: Cell<bool>,
@@ -98,6 +99,18 @@ impl DetailPane {
         summary_area.append(&summary_items);
         summary_area.append(&summary_matches);
 
+        // Every quest of the scouted seed on one line; each floor header
+        // repeats its own quest, so this only has to name the givers.
+        let summary_quests = gtk::Label::builder()
+            .css_classes(["caption", "dim-label"])
+            .ellipsize(gtk::pango::EllipsizeMode::End)
+            .margin_start(12)
+            .margin_end(12)
+            .margin_bottom(3)
+            .xalign(0.0)
+            .visible(false)
+            .build();
+
         let manifest_box = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
             .spacing(24)
@@ -117,6 +130,7 @@ impl DetailPane {
             .build();
         let manifest_area = gtk::Box::new(gtk::Orientation::Vertical, 0);
         manifest_area.append(&summary_area);
+        manifest_area.append(&summary_quests);
         manifest_area.append(&manifest_scroller);
 
         let stack = gtk::Stack::builder()
@@ -147,6 +161,7 @@ impl DetailPane {
             stack,
             summary_items,
             summary_matches,
+            summary_quests,
             manifest_box,
             world: RefCell::new(None),
             updating: Cell::new(false),
@@ -301,13 +316,8 @@ impl DetailPane {
             self.manifest_box.remove(&child);
         }
         let quests = quest_rows(world.quests);
-        if !quests.is_empty() {
-            let group = adw::PreferencesGroup::builder().title("Quests").build();
-            for quest in &quests {
-                group.add(&quest_row(quest));
-            }
-            self.manifest_box.append(&group);
-        }
+        self.summary_quests.set_visible(!quests.is_empty());
+        self.summary_quests.set_label(&quest_summary_line(&quests));
         for (depth, indices) in &by_depth {
             let mut description = region(*depth).to_owned();
             if let Some(quest) = quests.iter().find(|quest| quest.depth == *depth) {
@@ -325,21 +335,18 @@ impl DetailPane {
     }
 }
 
-/// One "Quests" overview row: the rolled variant, given by whom and where.
-fn quest_row(quest: &QuestRow) -> adw::ActionRow {
-    let row = adw::ActionRow::builder()
-        .title(quest.variant)
-        .subtitle(format!(
-            "{} · Floor {} · {}",
-            quest.giver,
-            quest.depth,
-            region(quest.depth)
-        ))
-        .build();
-    let giver = gtk::Image::from_icon_name("avatar-default-symbolic");
-    giver.add_css_class("dim-label");
-    row.add_prefix(&giver);
-    row
+/// The whole quest schedule on one line, e.g. "Sad ghost: Great crab ·
+/// Wandmaker: Rotberry". The floors are left to the floor headers, which
+/// already repeat each quest's variant.
+fn quest_summary_line(quests: &[QuestRow]) -> String {
+    let mut line = String::new();
+    for quest in quests {
+        if !line.is_empty() {
+            line.push_str(" · ");
+        }
+        let _ = write!(line, "{}: {}", quest.giver, quest.variant);
+    }
+    line
 }
 
 fn item_row(world_item: &WorldItem, matched: bool) -> adw::ActionRow {
@@ -436,7 +443,27 @@ fn format_seed_input(input: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::format_seed_input;
+    use super::{QuestRow, format_seed_input, quest_summary_line};
+
+    #[test]
+    fn quest_summary_names_every_giver_on_one_line() {
+        assert_eq!(quest_summary_line(&[]), "");
+        assert_eq!(
+            quest_summary_line(&[
+                QuestRow {
+                    giver: "Sad ghost",
+                    variant: "Great crab",
+                    depth: 4,
+                },
+                QuestRow {
+                    giver: "Blacksmith",
+                    variant: "Crystal spire",
+                    depth: 13,
+                },
+            ]),
+            "Sad ghost: Great crab · Blacksmith: Crystal spire"
+        );
+    }
 
     #[test]
     fn seed_input_is_canonicalized_while_typing() {

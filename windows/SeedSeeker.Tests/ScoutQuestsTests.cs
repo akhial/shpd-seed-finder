@@ -154,9 +154,9 @@ public sealed class ScoutQuestsTests
         Assert.Equal("Corpse dust", ScoutQuests.VariantLabel(QuestVariant.CorpseDust));
         Assert.Equal("Elemental embers", ScoutQuests.VariantLabel(QuestVariant.ElementalEmbers));
         Assert.Equal("Rotberry", ScoutQuests.VariantLabel(QuestVariant.Rotberry));
-        Assert.Equal("Crystal", ScoutQuests.VariantLabel(QuestVariant.Crystal));
-        Assert.Equal("Gnoll", ScoutQuests.VariantLabel(QuestVariant.Gnoll));
-        Assert.Equal("Monk", ScoutQuests.VariantLabel(QuestVariant.Monk));
-        Assert.Equal("Golem", ScoutQuests.VariantLabel(QuestVariant.Golem));
+        Assert.Equal("Crystal spire", ScoutQuests.VariantLabel(QuestVariant.Crystal));
+        Assert.Equal("Gnoll geomancer", ScoutQuests.VariantLabel(QuestVariant.Gnoll));
+        Assert.Equal("Monks", ScoutQuests.VariantLabel(QuestVariant.Monk));
+        Assert.Equal("Golems", ScoutQuests.VariantLabel(QuestVariant.Golem));
     }
 }

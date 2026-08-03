@@ -55,8 +55,7 @@ export function ScoutPanel({
   }, [result])
 
   // `?? []` guards against cached worker responses from before quests existed.
-  const quests = result?.quests ?? []
-  const questByDepth = new Map(quests.map((quest) => [quest.depth, quest]))
+  const questByDepth = new Map((result?.quests ?? []).map((quest) => [quest.depth, quest]))
 
   const copySeed = () => {
     if (!result) return
@@ -181,26 +180,6 @@ export function ScoutPanel({
                 )}
               </p>
             </div>
-
-            {quests.length > 0 && (
-              <ul className="d1-quest-strip" aria-label="Quests">
-                {quests.map((quest) => {
-                  const region = regionForDepth(quest.depth)
-                  return (
-                    <li
-                      className="d1-quest-chip"
-                      key={quest.quest}
-                      style={{ ['--region' as string]: region.color }}
-                      title={`${questLabel(quest.quest)} quest on floor ${quest.depth} (${region.name})`}
-                    >
-                      <span className="d1-quest-chip-variant">{questVariantLabel(quest.variant)}</span>
-                      <span className="d1-quest-chip-giver">{questLabel(quest.quest)}</span>
-                      <span className="d1-quest-chip-floor d1-mono">F{quest.depth}</span>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
 
             {floors.map(([depth, items]) => {
               const region = regionForDepth(depth)

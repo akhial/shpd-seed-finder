@@ -227,10 +227,10 @@ enum class ScoutQuestVariant(val giver: ScoutQuestGiver, val label: String) {
     CORPSE_DUST(ScoutQuestGiver.WANDMAKER, "Corpse dust"),
     ELEMENTAL_EMBERS(ScoutQuestGiver.WANDMAKER, "Elemental embers"),
     ROTBERRY(ScoutQuestGiver.WANDMAKER, "Rotberry"),
-    CRYSTAL(ScoutQuestGiver.BLACKSMITH, "Crystal"),
-    GNOLL(ScoutQuestGiver.BLACKSMITH, "Gnoll"),
-    MONK(ScoutQuestGiver.IMP, "Monk"),
-    GOLEM(ScoutQuestGiver.IMP, "Golem"),
+    CRYSTAL(ScoutQuestGiver.BLACKSMITH, "Crystal spire"),
+    GNOLL(ScoutQuestGiver.BLACKSMITH, "Gnoll geomancer"),
+    MONK(ScoutQuestGiver.IMP, "Monks"),
+    GOLEM(ScoutQuestGiver.IMP, "Golems"),
     ;
 
     companion object {

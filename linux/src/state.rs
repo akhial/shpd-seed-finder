@@ -419,15 +419,15 @@ pub const fn wandmaker_quest_label(variant: WandmakerQuestType) -> &'static str 
 
 pub const fn blacksmith_quest_label(variant: BlacksmithQuestType) -> &'static str {
     match variant {
-        BlacksmithQuestType::Crystal => "Crystal",
-        BlacksmithQuestType::Gnoll => "Gnoll",
+        BlacksmithQuestType::Crystal => "Crystal spire",
+        BlacksmithQuestType::Gnoll => "Gnoll geomancer",
     }
 }
 
 pub const fn imp_target_label(target: ImpTarget) -> &'static str {
     match target {
-        ImpTarget::Monk => "Monk",
-        ImpTarget::Golem => "Golem",
+        ImpTarget::Monk => "Monks",
+        ImpTarget::Golem => "Golems",
     }
 }
 
@@ -875,11 +875,14 @@ mod tests {
         );
         assert_eq!(
             blacksmith_quest_label(BlacksmithQuestType::Crystal),
-            "Crystal"
+            "Crystal spire"
         );
-        assert_eq!(blacksmith_quest_label(BlacksmithQuestType::Gnoll), "Gnoll");
-        assert_eq!(imp_target_label(ImpTarget::Monk), "Monk");
-        assert_eq!(imp_target_label(ImpTarget::Golem), "Golem");
+        assert_eq!(
+            blacksmith_quest_label(BlacksmithQuestType::Gnoll),
+            "Gnoll geomancer"
+        );
+        assert_eq!(imp_target_label(ImpTarget::Monk), "Monks");
+        assert_eq!(imp_target_label(ImpTarget::Golem), "Golems");
     }
 
     #[test]
@@ -920,12 +923,12 @@ mod tests {
                 },
                 QuestRow {
                     giver: "Blacksmith",
-                    variant: "Crystal",
+                    variant: "Crystal spire",
                     depth: 13,
                 },
                 QuestRow {
                     giver: "Imp",
-                    variant: "Golem",
+                    variant: "Golems",
                     depth: 19,
                 },
             ]
