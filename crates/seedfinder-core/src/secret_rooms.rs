@@ -610,6 +610,7 @@ fn searchable_world_item(
     };
     item.searchable_equipment().map(|equipment| {
         WorldItem::from_equipment_roll(equipment.item, equipment.roll, depth, source, accessibility)
+            .in_secret_room()
     })
 }
 
@@ -2133,6 +2134,7 @@ mod tests {
                             .all(|item| item.upgrade == 0
                                 && item.effect.is_none()
                                 && !item.cursed
+                                && item.secret
                                 && item.source == ItemSource::Heap
                                 && item.accessibility == Accessibility::Independent)
                     );
@@ -2144,6 +2146,7 @@ mod tests {
                     assert_eq!(item.source, ItemSource::LockedChest);
                     assert_eq!(item.upgrade, 0);
                     assert!(!item.cursed);
+                    assert!(item.secret);
                 }
                 SecretRoomKind::Maze => {
                     assert_eq!(fixture.report.searchable_items.len(), 1);
@@ -2153,6 +2156,7 @@ mod tests {
                     assert_eq!(item.upgrade, 1);
                     assert!(item.effect.is_none());
                     assert!(!item.cursed);
+                    assert!(item.secret);
                 }
                 _ => assert!(
                     fixture.report.searchable_items.is_empty(),
@@ -2189,5 +2193,6 @@ mod tests {
         assert_eq!(item.item, ItemId::WandFrost);
         assert_eq!(item.upgrade, 2);
         assert_eq!(item.source, ItemSource::Skeleton);
+        assert!(item.secret);
     }
 }

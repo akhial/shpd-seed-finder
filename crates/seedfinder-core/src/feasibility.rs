@@ -470,6 +470,7 @@ mod tests {
             depth,
             source,
             accessibility: Accessibility::Independent,
+            secret: false,
         }
     }
 

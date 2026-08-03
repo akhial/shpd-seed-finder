@@ -631,6 +631,7 @@ mod tests {
                 depth: 1,
                 source: ItemSource::Heap,
                 accessibility: Accessibility::Independent,
+                secret: true,
             }],
         }
     }

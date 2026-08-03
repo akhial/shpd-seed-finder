@@ -121,6 +121,7 @@ export interface ScoutItem {
   upgrade: number
   effect: { name: string; kind: 'enchantment' | 'curse' } | null
   cursed: boolean
+  secret: boolean
   depth: number
   source: ItemSource
   accessibility: Accessibility

@@ -148,6 +148,7 @@ mod tests {
             depth,
             source: ItemSource::Heap,
             accessibility,
+            secret: false,
         }
     }
 

@@ -363,6 +363,11 @@ fn item_row(world_item: &WorldItem, matched: bool) -> adw::ActionRow {
     if world_item.cursed {
         row.add_suffix(&tag("Cursed", "error"));
     }
+    if world_item.secret {
+        let badge = tag("Secret", "warning");
+        badge.set_tooltip_text(Some("Hidden in a secret room — search to reveal it"));
+        row.add_suffix(&badge);
+    }
     if matched {
         let badge = tag("Match", "success");
         badge.set_tooltip_text(Some(

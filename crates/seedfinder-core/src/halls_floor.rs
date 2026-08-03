@@ -1084,6 +1084,7 @@ mod tests {
             depth,
             source,
             accessibility,
+            secret: false,
         }
     }
 
