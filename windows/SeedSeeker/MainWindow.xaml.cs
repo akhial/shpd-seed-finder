@@ -882,7 +882,7 @@ public sealed partial class MainWindow : Window
             // "0 seeds searched" would read as a malfunction rather than as
             // the proof it is. A failed run's count is unknown.
             var searched = status.Scanned > 0 ? $" · {status.Scanned:N0} seeds searched" : "";
-            SearchStatus.Text = status.State == SearchState.Running ? $"Seed match probability: {probability}   •   TTS @ {rate:N0} seeds/s: {tts}\nTime elapsed: {FormatDuration(seconds)}   •   Seeds searched: {status.Scanned:N0}" : status.State switch { SearchState.Completed => $"Completed{searched}", SearchState.Cancelled => $"Cancelled{searched}", _ => $"Failed (error {status.ErrorCode})" };
+            SearchStatus.Text = status.State == SearchState.Running ? $"Seed match probability: {probability} · TTS @ {rate:N0} seeds/s: {tts}\nTime elapsed: {FormatDuration(seconds)} · Seeds searched: {status.Scanned:N0}" : status.State switch { SearchState.Completed => $"Completed{searched}", SearchState.Cancelled => $"Cancelled{searched}", _ => $"Failed (error {status.ErrorCode})" };
             // The engine reports a terminal state only once every queued match
             // has been drained, so breaking here never leaves seeds behind —
             // including a session that stopped itself at its accept cap.
