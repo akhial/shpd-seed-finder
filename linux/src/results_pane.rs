@@ -96,7 +96,6 @@ pub struct ResultsPane {
     message_page: adw::StatusPage,
     stats_line: gtk::Label,
     progress_line: gtk::Label,
-    progress_bar: gtk::ProgressBar,
     list: gtk::ListBox,
     /// Every accepted seed of the current display run, uncapped and in
     /// traversal order. This collection — not the row widgets — feeds the
@@ -161,14 +160,6 @@ impl ResultsPane {
         stack.add_named(&results_box, Some("results"));
         stack.add_named(&message_page, Some("message"));
 
-        let progress_bar = gtk::ProgressBar::builder()
-            .css_classes(["osd"])
-            .valign(gtk::Align::Start)
-            .visible(false)
-            .build();
-        let overlay = gtk::Overlay::builder().child(&stack).build();
-        overlay.add_overlay(&progress_bar);
-
         let title = adw::WindowTitle::new("Results", "");
         let header_bar = adw::HeaderBar::builder().title_widget(&title).build();
         let export_button = gtk::Button::builder()
@@ -191,7 +182,7 @@ impl ResultsPane {
         header_bar.pack_end(&clear_button);
         let toolbar_view = adw::ToolbarView::new();
         toolbar_view.add_top_bar(&header_bar);
-        toolbar_view.set_content(Some(&overlay));
+        toolbar_view.set_content(Some(&stack));
 
         let nav_page = adw::NavigationPage::builder()
             .title("Results")
@@ -206,7 +197,6 @@ impl ResultsPane {
             message_page,
             stats_line,
             progress_line,
-            progress_bar,
             list,
             seeds: RefCell::new(Vec::new()),
             active: RefCell::new(None),
@@ -305,7 +295,6 @@ impl ResultsPane {
         self.target.replace(None);
         self.seeds.borrow_mut().clear();
         self.list.remove_all();
-        self.progress_bar.set_visible(false);
         self.progress_line.set_visible(false);
         self.stats_line.set_label("");
         self.title.set_subtitle("");
@@ -371,7 +360,6 @@ impl ResultsPane {
         for (index, seed) in imported.iter().take(DISPLAY_CAP).enumerate() {
             self.append_row(seed, index + 1);
         }
-        self.progress_bar.set_visible(false);
         self.progress_line.set_visible(false);
         let count = imported.len() as u64;
         self.title.set_subtitle(&match count {
@@ -397,7 +385,6 @@ impl ResultsPane {
         // result is discarded by the poll loop finding the slot empty, and
         // the previous results stay listed untouched.
         if self.pending_refine.borrow_mut().take().is_some() {
-            self.progress_bar.set_visible(false);
             self.progress_line.set_visible(false);
             self.restore_count_subtitle();
             self.stats_line
@@ -514,8 +501,6 @@ impl ResultsPane {
         self.stats_line.set_label("Measuring search speed…");
         self.progress_line.set_label("Starting…");
         self.progress_line.set_visible(true);
-        self.progress_bar.set_fraction(0.0);
-        self.progress_bar.set_visible(true);
         let now = Instant::now();
         self.active.replace(Some(ActiveSearch {
             session,
@@ -581,8 +566,6 @@ impl ResultsPane {
             if previous_matches == 1 { "" } else { "s" },
         ));
         self.progress_line.set_visible(false);
-        self.progress_bar.set_fraction(0.0);
-        self.progress_bar.set_visible(true);
         let pane = Rc::clone(self);
         glib::timeout_add_local(POLL_INTERVAL, move || pane.refine_tick());
     }
@@ -595,10 +578,7 @@ impl ResultsPane {
                 return glib::ControlFlow::Break;
             };
             match pending.receiver.try_recv() {
-                Err(mpsc::TryRecvError::Empty) => {
-                    self.progress_bar.pulse();
-                    return glib::ControlFlow::Continue;
-                }
+                Err(mpsc::TryRecvError::Empty) => return glib::ControlFlow::Continue,
                 Ok(result) => result.map_err(|error| format!("{error:?}")),
                 Err(mpsc::TryRecvError::Disconnected) => {
                     Err("the verification thread stopped unexpectedly".to_owned())
@@ -612,7 +592,6 @@ impl ResultsPane {
         let kept_worlds = match outcome {
             Ok(worlds) => worlds,
             Err(message) => {
-                self.progress_bar.set_visible(false);
                 self.restore_count_subtitle();
                 self.stats_line
                     .set_label("Refine failed · previous results unchanged");
@@ -666,7 +645,6 @@ impl ResultsPane {
         ) {
             Ok(session) => Rc::new(session),
             Err(error) => {
-                self.progress_bar.set_visible(false);
                 self.restore_count_subtitle();
                 self.stats_line
                     .set_label("Refine failed · kept seeds are listed");
@@ -700,7 +678,6 @@ impl ResultsPane {
     }
 
     fn conclude_refined_filter_only(&self, kept: u64, previous: u64, mode: StartMode) {
-        self.progress_bar.set_visible(false);
         self.progress_line.set_visible(false);
         self.restore_count_subtitle();
         // A target filter deliberately skipped scanning; the other filter-only
@@ -786,7 +763,6 @@ impl ResultsPane {
         let status = active.session.status();
         let search_state = status[0];
         let tested = status[1].max(0).unsigned_abs();
-        let total = status[2].max(1).unsigned_abs();
         let probability = f64::from_bits(u64::from_ne_bytes(status[4].to_ne_bytes()));
         let probability = (probability > 0.0 && probability.is_finite()).then_some(probability);
 
@@ -803,8 +779,6 @@ impl ResultsPane {
         active.last_tested = tested;
         active.last_tick = now;
 
-        self.progress_bar
-            .set_fraction((precise(tested) / precise(total)).clamp(0.0, 1.0));
         self.title.set_subtitle(&match active.matches {
             0 => "Searching…".to_owned(),
             1 => "1 seed".to_owned(),
@@ -822,9 +796,8 @@ impl ResultsPane {
                 estimate_duration(time_to_seed),
             ));
             self.progress_line.set_label(&format!(
-                "Tested {} of {} · elapsed {}",
+                "Tested {} · elapsed {}",
                 group_digits(tested),
-                group_digits(total),
                 duration(active.started.elapsed().as_secs_f64()),
             ));
             return glib::ControlFlow::Continue;
@@ -876,7 +849,6 @@ impl ResultsPane {
         refined: Option<(u64, u64)>,
         diagnostic: &str,
     ) {
-        self.progress_bar.set_visible(false);
         self.title.set_subtitle(&match matches {
             0 => String::new(),
             1 => "1 seed".to_owned(),
