@@ -822,9 +822,8 @@ impl ResultsPane {
                 estimate_duration(time_to_seed),
             ));
             self.progress_line.set_label(&format!(
-                "Tested {} of {} · elapsed {}",
+                "Tested {} · elapsed {}",
                 group_digits(tested),
-                group_digits(total),
                 duration(active.started.elapsed().as_secs_f64()),
             ));
             return glib::ControlFlow::Continue;

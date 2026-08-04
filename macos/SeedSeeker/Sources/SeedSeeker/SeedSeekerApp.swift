@@ -986,8 +986,19 @@ private struct ResultsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
         } else if let state = controller.state {
-            Text(state == .failed ? "Failed (error \(controller.errorCode))" : state == .completed ? "Completed" : "Cancelled")
-                .font(.caption.bold()).padding(.horizontal, 10).padding(.vertical, 4).background(.quaternary, in: Capsule())
+            HStack(spacing: 8) {
+                Text(state == .failed ? "Failed (error \(controller.errorCode))" : state == .completed ? "Completed" : "Cancelled")
+                    .font(.caption.bold()).padding(.horizontal, 10).padding(.vertical, 4).background(.quaternary, in: Capsule())
+                // A concluded run keeps its counter, except where nothing was
+                // scanned: a filter-only refine never scans, and "0 seeds
+                // searched" would read as a malfunction rather than as the
+                // phase it is. (The impossible query, the other way to end at
+                // zero, is handled above.) A failed run's count is unknown.
+                if state != .failed && controller.scannedSeeds > 0 {
+                    Text("\(NumberFormat.si(Double(controller.scannedSeeds))) seeds searched")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
         }
     }
     private var importedCaption: String {
