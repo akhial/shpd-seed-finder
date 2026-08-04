@@ -21,9 +21,9 @@ push/pop navigation as the window narrows, down to a fully single-pane phone-siz
   directory.
 - **Results** streams matching seed codes from a full-seed-space production session running
   on all cores with a rotated start, with live match probability, seeds-per-second,
-  time-to-match, and progress. Impossible queries, empty completions, and worker failures
-  each get a dedicated status page. Sessions are cancellable and cap accepted results at
-  1,024, like the other app frontends.
+  time-to-match, and a seeds-searched count. Impossible queries, empty completions, and
+  worker failures each get a dedicated status page. Sessions are cancellable and cap
+  accepted results at 1,024, like the other app frontends.
 - **Seed** scouts one seed — typed in, or selected from the results — and lists every
   searchable item through depth 24, grouped by floor with region names, upgrade and
   enchantment tags, cursed state, source, and choice constraints. Items that jointly
