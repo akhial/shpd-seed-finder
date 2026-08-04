@@ -4,6 +4,7 @@ package dev.seedseeker.app.model
 import dev.seedseeker.app.catalog.ItemCatalog
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -36,9 +37,10 @@ class ResultsExportTest {
     )
 
     /**
-     * The canonical frozen version-1 fixture, read straight from the Rust
-     * core's test data so this codec can never silently drift from it. Files
-     * exported today must always stay readable; never edit the fixture.
+     * The canonical frozen fixture, read straight from the Rust core's test
+     * data so this codec can never silently drift from it. It still carries
+     * the `"format_version": 1` older releases wrote: files exported by an
+     * older release must always stay readable; never edit the fixture.
      * Gradle runs unit tests with the module directory as the working
      * directory, so the repository root is two levels up.
      */
@@ -69,7 +71,7 @@ class ResultsExportTest {
     fun encodeEmitsTheDocumentedEnvelopeAndMinimalQuery() {
         val document = JSONObject(ResultsExport.encode(loadedQuery, listOf("AAA-AAA-BUH"), "0.6.1"))
         assertEquals("seed-seeker-results", document.getString("format"))
-        assertEquals(1, document.getInt("format_version"))
+        assertFalse(document.has("format_version"))
         assertEquals("0.6.1", document.getString("app_version"))
         assertEquals("3.3.8", document.getString("shpd_version"))
         assertEquals(1, document.getJSONArray("results").length())
@@ -105,7 +107,7 @@ class ResultsExportTest {
         assertEquals(UpgradeMatch.AT_LEAST, imported.query.requirements[1].upgradeMatch)
     }
 
-    /** The narrowed weapon kinds are additive within format version 1. */
+    /** Another frozen document, pinning the narrowed weapon kinds. */
     private val weaponCategoriesFixture: String by lazy {
         val fixture = java.io.File(
             "../../crates/seedfinder-core/tests/fixtures/results-export-v1-weapon-categories.json",
@@ -135,41 +137,25 @@ class ResultsExportTest {
         )
     }
 
-    /** The frozen version-2 fixture: the same shared file, with a quest. */
-    private val version2Fixture: String by lazy {
+    /** The frozen quest fixture: the same shared file, with a quest. */
+    private val wandmakerQuestFixture: String by lazy {
         val fixture = java.io.File(
-            "../../crates/seedfinder-core/tests/fixtures/results-export-v2.json",
+            "../../crates/seedfinder-core/tests/fixtures/results-export-wandmaker-quest.json",
         )
-        check(fixture.exists()) { "version-2 fixture not found at ${fixture.absolutePath}" }
+        check(fixture.exists()) { "quest fixture not found at ${fixture.absolutePath}" }
         fixture.readText()
     }
 
     @Test
-    fun version2FixtureCarriesTheWandmakerQuest() {
-        val imported = ResultsExport.decode(version2Fixture)
+    fun wandmakerQuestFixtureCarriesTheQuest() {
+        val imported = ResultsExport.decode(wandmakerQuestFixture)
         assertEquals(WandmakerQuest.ROTBERRY, imported.query.wandmakerQuest)
         assertEquals(9, imported.query.maximumDepth)
         assertEquals(listOf("AAA-AAA-BUH", "ABC-DEF-GHI"), imported.seeds)
 
-        // Re-encoding keeps both the quest and the version it forces.
+        // Re-encoding keeps the quest.
         val document = JSONObject(ResultsExport.encode(imported.query, imported.seeds, "0.6.1"))
-        assertEquals(2, document.getInt("format_version"))
         assertEquals("rotberry", document.getJSONObject("query").getString("wandmaker_quest"))
-    }
-
-    /**
-     * A query without a quest is still exactly a version-1 document, so it
-     * keeps declaring 1 and already-shipped apps can still import it.
-     */
-    @Test
-    fun onlyAWandmakerQuestRaisesTheDeclaredVersion() {
-        assertEquals(1, ResultsExport.requiredFormatVersion(loadedQuery))
-        assertEquals(
-            2,
-            ResultsExport.requiredFormatVersion(
-                loadedQuery.copy(wandmakerQuest = WandmakerQuest.CORPSE_DUST),
-            ),
-        )
     }
 
     @Test
@@ -177,7 +163,7 @@ class ResultsExportTest {
         val failure = assertThrows(IllegalArgumentException::class.java) {
             ResultsExport.decode(
                 """
-                {"format":"seed-seeker-results","format_version":2,
+                {"format":"seed-seeker-results",
                  "query":{"requirements":[{"item":"sword"}],"wandmaker_quest":"moon_cheese"},
                  "results":[]}
                 """.trimIndent(),
@@ -205,14 +191,17 @@ class ResultsExportTest {
     }
 
     @Test
-    fun futureFormatVersionsFailWithAnUpdateMessage() {
-        val failure = assertThrows(IllegalArgumentException::class.java) {
-            ResultsExport.decode(
-                """{"format":"seed-seeker-results","format_version":3,"query":{"requirements":[]},"results":[]}""",
+    fun anyDeclaredFormatVersionIsIgnored() {
+        // The number carried no meaning for a reader newer than the file, so
+        // it is now just another unknown envelope field.
+        for (version in listOf("1", "2", "99", "0", "1.5", "true", "\"1\"", "-1")) {
+            val imported = ResultsExport.decode(
+                """{"format":"seed-seeker-results","format_version":$version,
+                   "query":{"requirements":[{"item":"sword"}]},
+                   "results":[{"seed":"AAA-AAA-AAB"}]}""",
             )
+            assertEquals(version, listOf("AAA-AAA-AAB"), imported.seeds)
         }
-        assertTrue(failure.message!!.contains("format version 3"))
-        assertTrue(failure.message!!.contains("Update Seed Seeker"))
     }
 
     @Test
@@ -230,7 +219,7 @@ class ResultsExportTest {
         val unknownItem = assertThrows(IllegalArgumentException::class.java) {
             ResultsExport.decode(
                 """
-                {"format":"seed-seeker-results","format_version":1,
+                {"format":"seed-seeker-results",
                  "query":{"requirements":[{"item":"item_from_the_future"}]},"results":[]}
                 """.trimIndent(),
             )
@@ -240,7 +229,7 @@ class ResultsExportTest {
         val unknownField = assertThrows(IllegalArgumentException::class.java) {
             ResultsExport.decode(
                 """
-                {"format":"seed-seeker-results","format_version":1,
+                {"format":"seed-seeker-results",
                  "query":{"requirements":[{"item":"sword"}],"wished_luck":7},"results":[]}
                 """.trimIndent(),
             )
@@ -253,26 +242,13 @@ class ResultsExportTest {
         val failure = assertThrows(IllegalArgumentException::class.java) {
             ResultsExport.decode(
                 """
-                {"format":"seed-seeker-results","format_version":1,
+                {"format":"seed-seeker-results",
                  "query":{"requirements":[{"item":"sword"}]},
                  "results":[{"seed":"AAA-AAA-AAB"},{"seed":"AAA-AAA-AA0"}]}
                 """.trimIndent(),
             )
         }
         assertTrue(failure.message!!.contains("Result 2"))
-    }
-
-    @Test
-    fun formatVersionMustBeAPositiveInteger() {
-        for (version in listOf("0", "1.5", "true", "\"1\"", "-1")) {
-            val failure = assertThrows(IllegalArgumentException::class.java) {
-                ResultsExport.decode(
-                    """{"format":"seed-seeker-results","format_version":$version,
-                       "query":{"requirements":[{"item":"sword"}]},"results":[]}""",
-                )
-            }
-            assertTrue("$version: ${failure.message}", failure.message!!.contains("format version"))
-        }
     }
 
     @Test
@@ -290,7 +266,7 @@ class ResultsExportTest {
         for (query in payloads) {
             assertThrows(query, IllegalArgumentException::class.java) {
                 ResultsExport.decode(
-                    """{"format":"seed-seeker-results","format_version":1,
+                    """{"format":"seed-seeker-results",
                        "query":$query,"results":[]}""",
                 )
             }
@@ -302,7 +278,7 @@ class ResultsExportTest {
         for (seed in listOf("aaa-aaa-aab", "AAAAAAAAB", "AAA AAA AAB", " AAA-AAA-AAB")) {
             val failure = assertThrows(IllegalArgumentException::class.java) {
                 ResultsExport.decode(
-                    """{"format":"seed-seeker-results","format_version":1,
+                    """{"format":"seed-seeker-results",
                        "query":{"requirements":[{"item":"sword"}]},
                        "results":[{"seed":"$seed"}]}""",
                 )
@@ -315,7 +291,7 @@ class ResultsExportTest {
     fun decodeAcceptsAllCoreTierAndUpgradeForms() {
         val imported = ResultsExport.decode(
             """
-            {"format":"seed-seeker-results","format_version":1,
+            {"format":"seed-seeker-results",
              "query":{"requirements":[
                {"kind":"weapon","tier":"any","upgrade":"any"},
                {"kind":"weapon","tier":{"exact":2},"upgrade":{"exact":3}},

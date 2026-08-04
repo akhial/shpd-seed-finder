@@ -15,25 +15,14 @@ public sealed class ResultsExportException(string message) : Exception(message);
 /// The canonical implementation and compatibility rules live in the Rust core
 /// (crates/seedfinder-core/src/results_export.rs); the schema is documented in
 /// docs/results-export-format.md. Keep this codec schema-compatible with it:
-/// unknown envelope and per-result fields are ignored, files declaring a newer
-/// format_version are rejected with an "update the app" message, and unknown
-/// or wrong-typed query content fails the import instead of silently changing
-/// its meaning.
+/// unknown envelope and per-result fields are ignored — including the
+/// format_version number releases up to 0.7.0 wrote, so every file an older
+/// release exported keeps importing — and unknown or wrong-typed query content
+/// fails the import instead of silently changing its meaning.
 /// </summary>
 public static partial class ResultsExport
 {
     public const string FileFormat = "seed-seeker-results";
-    /// <summary>Newest results-file version this build can read.</summary>
-    public const int FormatVersion = 2;
-
-    /// <summary>
-    /// The lowest version able to express <paramref name="query"/>. Version 2
-    /// added <c>wandmaker_quest</c>; a query without it is still exactly a
-    /// version-1 document, and declaring 2 anyway would stop already-shipped
-    /// apps from importing it.
-    /// </summary>
-    public static int RequiredFormatVersion(QuerySettings query) =>
-        query.WandmakerQuest == WandmakerQuest.Any ? 1 : 2;
     public const string SuggestedFileName = "seed-seeker-results";
     /// <summary>Mirrors the Rust core's SHPD_VERSION, the source of truth.</summary>
     public const string ShpdVersion = "3.3.8";
@@ -43,8 +32,6 @@ public static partial class ResultsExport
     public sealed record Imported(QuerySettings Query, IReadOnlyList<string> Seeds, string? FileShpdVersion);
 
     /// <summary>Stable document names, indexed by the matching enum value.</summary>
-    // Indexed by the matching enum value; the narrowed weapon kinds are
-    // additive within format version 1.
     private static readonly string[] KindNames = ["weapon", "armor", "wand", "ring", "melee_weapon", "thrown_weapon"];
     private static readonly string[] SourceNames = [
         "heap", "chest", "locked_chest", "crystal_chest", "tomb", "skeleton",
@@ -74,7 +61,6 @@ public static partial class ResultsExport
         var document = new JsonObject
         {
             ["format"] = FileFormat,
-            ["format_version"] = RequiredFormatVersion(query),
             ["app_version"] = appVersion,
             ["shpd_version"] = ShpdVersion,
             ["query"] = EncodeQuery(query),
@@ -100,17 +86,6 @@ public static partial class ResultsExport
         // raw .NET exception on number or boolean nodes.
         if (TolerantString(document, "format") != FileFormat)
             throw new ResultsExportException("This is not a Seed Seeker results file.");
-        var versionNode = document["format_version"];
-        if (versionNode is null)
-            throw new ResultsExportException("This results file is missing its format version.");
-        if (versionNode is not JsonValue versionValue
-            || !versionValue.TryGetValue(out int version) || version < 1)
-            throw new ResultsExportException(
-                "This results file does not declare a valid format version (a positive whole number).");
-        if (version > FormatVersion)
-            throw new ResultsExportException(
-                $"This results file uses format version {version}, but this app understands " +
-                $"up to version {FormatVersion}. Update Seed Seeker to import it.");
         if (document["query"] is not JsonObject queryValue)
             throw new ResultsExportException("This results file is missing its query.");
         var query = DecodeQuery(queryValue);

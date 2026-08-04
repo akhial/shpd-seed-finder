@@ -4,14 +4,12 @@ import { fromQueryJson } from './query'
 import { WANDMAKER_QUESTS } from './wasm/types'
 import type { ParsedSeed, QueryDocument, QueryState } from './wasm/types'
 
-// The versioned results-export document shared by every Seed Seeker frontend.
-// The canonical implementation and compatibility rules live in the Rust core
+// The results-export document shared by every Seed Seeker frontend. The
+// canonical implementation and compatibility rules live in the Rust core
 // (crates/seedfinder-core/src/results_export.rs); the schema is documented in
 // docs/results-export-format.md. Keep this codec schema-compatible with it.
 
 export const RESULTS_FILE_FORMAT = 'seed-seeker-results'
-/** Newest results-file version this build can read. */
-export const RESULTS_FILE_VERSION = 2
 export const RESULTS_FILE_NAME = 'seed-seeker-results.json'
 /** Import size cap; a maximal legal file is far below this. */
 export const MAX_RESULTS_FILE_BYTES = 2 * 1024 * 1024
@@ -42,21 +40,11 @@ export function parsedSeedFromCode(code: string): ParsedSeed {
   return { code, value: seedCodeValue(code) }
 }
 
-/**
- * The lowest version able to express `query`. Version 2 added
- * `wandmaker_quest`; a document without it is still exactly a version-1 file,
- * and declaring 2 anyway would stop older apps from importing it.
- */
-export function requiredResultsFileVersion(query: QueryDocument): number {
-  return query.wandmaker_quest ? 2 : 1
-}
-
 /** Encodes the query document that produced `seeds` (a search-time snapshot). */
 export function encodeResultsFile(query: QueryDocument, seeds: string[], shpdVersion: string): string {
   return JSON.stringify(
     {
       format: RESULTS_FILE_FORMAT,
-      format_version: requiredResultsFileVersion(query),
       app_version: packageJson.version,
       shpd_version: shpdVersion,
       query,
@@ -68,7 +56,6 @@ export function encodeResultsFile(query: QueryDocument, seeds: string[], shpdVer
 }
 
 export interface DecodedResultsFile {
-  formatVersion: number
   appVersion?: string
   shpdVersion?: string
   /** The raw query document, for engine-side validation and re-serialization. */
@@ -175,12 +162,11 @@ function validateRequirementDocument(entry: unknown): void {
 /**
  * Decodes and validates a results-export document.
  *
- * Unknown envelope and per-result fields are ignored so files written by
- * future releases of a known version keep importing; files declaring a newer
- * `format_version` are rejected with an "update the app" message. Unknown or
- * wrong-typed query content fails instead of silently changing the query's
- * meaning. Callers should additionally validate `queryDocument` with the
- * engine (`analyzeQuery`).
+ * Unknown envelope and per-result fields are ignored — including the
+ * `format_version` number releases up to 0.7.0 wrote — so every file an older
+ * release exported keeps importing. Unknown or wrong-typed query content fails
+ * instead of silently changing the query's meaning. Callers should
+ * additionally validate `queryDocument` with the engine (`analyzeQuery`).
  *
  * @throws Error with a user-facing message for unusable files.
  */
@@ -195,16 +181,6 @@ export function decodeResultsFile(text: string): DecodedResultsFile {
     throw new Error('This is not a Seed Seeker results file.')
   }
   const document = parsed
-  const version = document.format_version
-  if (version === undefined) throw new Error('This results file is missing its format version.')
-  if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) {
-    throw new Error('This results file does not declare a valid format version (a positive whole number).')
-  }
-  if (version > RESULTS_FILE_VERSION) {
-    throw new Error(
-      `This results file uses format version ${version}, but this app understands up to version ${RESULTS_FILE_VERSION}. Update Seed Seeker to import it.`,
-    )
-  }
   const queryValue = document.query
   if (!isRecord(queryValue)) {
     throw new Error('This results file is missing its query.')
@@ -228,7 +204,6 @@ export function decodeResultsFile(text: string): DecodedResultsFile {
     throw new Error(`The query in this results file is not usable: ${error instanceof Error ? error.message : String(error)}`)
   }
   return {
-    formatVersion: version,
     appVersion: typeof document.app_version === 'string' ? document.app_version : undefined,
     shpdVersion: typeof document.shpd_version === 'string' ? document.shpd_version : undefined,
     queryDocument: queryValue as unknown as QueryDocument,

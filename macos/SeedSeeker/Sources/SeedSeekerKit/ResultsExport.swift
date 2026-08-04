@@ -13,14 +13,12 @@ public struct ResultsExportError: Error, LocalizedError, Equatable {
 /// The canonical implementation and compatibility rules live in the Rust core
 /// (`crates/seedfinder-core/src/results_export.rs`); the schema is documented
 /// in `docs/results-export-format.md`. Keep this codec schema-compatible with
-/// it: unknown envelope and per-result fields are ignored, files declaring a
-/// newer `format_version` are rejected with an "update the app" message, and
-/// unknown or wrong-typed query content fails the import instead of silently
-/// changing the query's meaning.
+/// it: unknown envelope and per-result fields are ignored — including the
+/// `format_version` number releases up to 0.7.0 wrote, so every file an older
+/// release exported keeps importing — and unknown or wrong-typed query content
+/// fails the import instead of silently changing the query's meaning.
 public enum ResultsExport {
     public static let fileFormat = "seed-seeker-results"
-    /// Newest results-file version this build can read.
-    public static let formatVersion = 2
     public static let suggestedFileName = "seed-seeker-results"
     /// Mirrors the Rust core's `SHPD_VERSION`, the source of truth.
     public static let shpdVersion = "3.3.8"
@@ -38,7 +36,6 @@ public enum ResultsExport {
     }
 
     /// Stable document names, indexed by the matching enum raw value.
-    /// The narrowed weapon kinds are additive within format version 1.
     private static let kindNames = ["weapon", "armor", "wand", "ring", "melee_weapon", "thrown_weapon"]
     private static let sourceNames = [
         "heap", "chest", "locked_chest", "crystal_chest", "tomb", "skeleton",
@@ -58,12 +55,6 @@ public enum ResultsExport {
         "exclude_blacksmith_rewards", "wandmaker_quest", "fast_mode", "challenges",
     ]
 
-    /// The lowest version able to express `query`. Version 2 added
-    /// `wandmaker_quest`; a query without it is still exactly a version-1
-    /// document, and declaring 2 anyway would stop older apps importing it.
-    public static func requiredFormatVersion(_ query: SavedQuery) -> Int {
-        query.wandmakerQuest == nil ? 1 : 2
-    }
     private static let requirementKeys: Set<String> = [
         "kind", "item", "tier", "upgrade", "effect", "uncursed", "source",
         "identity_group", "max_depth",
@@ -72,7 +63,6 @@ public enum ResultsExport {
     public static func encode(_ query: SavedQuery, seeds: [String], appVersion: String) -> String {
         let document: [String: Any] = [
             "format": fileFormat,
-            "format_version": requiredFormatVersion(query),
             "app_version": appVersion,
             "shpd_version": shpdVersion,
             "query": encodeQuery(query),
@@ -89,20 +79,6 @@ public enum ResultsExport {
               let document = parsed as? [String: Any],
               document["format"] as? String == fileFormat else {
             throw ResultsExportError("This is not a Seed Seeker results file.")
-        }
-        guard let versionValue = document["format_version"] else {
-            throw ResultsExportError("This results file is missing its format version.")
-        }
-        // Strictly a positive integer: NSNumber bridging would otherwise let
-        // `true` or `1.5` slip through `as? Int`.
-        guard let version = strictInt(versionValue), version >= 1 else {
-            throw ResultsExportError(
-                "This results file does not declare a valid format version (a positive whole number).")
-        }
-        guard version <= formatVersion else {
-            throw ResultsExportError(
-                "This results file uses format version \(version), but this app understands " +
-                "up to version \(formatVersion). Update Seed Seeker to import it.")
         }
         guard let queryValue = document["query"] as? [String: Any] else {
             throw ResultsExportError("This results file is missing its query.")

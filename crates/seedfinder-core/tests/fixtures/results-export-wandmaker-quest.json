@@ -1,7 +1,6 @@
 {
   "format": "seed-seeker-results",
-  "format_version": 2,
-  "app_version": "0.6.1",
+  "app_version": "0.7.0",
   "shpd_version": "3.3.8",
   "query": {
     "requirements": [
