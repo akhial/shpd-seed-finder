@@ -514,7 +514,9 @@ impl ResultsPane {
         self.stats_line.set_label("Measuring search speed…");
         self.progress_line.set_label("Starting…");
         self.progress_line.set_visible(true);
-        self.progress_bar.set_fraction(0.0);
+        // Straight into activity mode, so the bar never shows an empty
+        // determinate trough for the tick before the first pulse.
+        self.progress_bar.pulse();
         self.progress_bar.set_visible(true);
         let now = Instant::now();
         self.active.replace(Some(ActiveSearch {
@@ -581,7 +583,7 @@ impl ResultsPane {
             if previous_matches == 1 { "" } else { "s" },
         ));
         self.progress_line.set_visible(false);
-        self.progress_bar.set_fraction(0.0);
+        self.progress_bar.pulse();
         self.progress_bar.set_visible(true);
         let pane = Rc::clone(self);
         glib::timeout_add_local(POLL_INTERVAL, move || pane.refine_tick());
@@ -786,7 +788,6 @@ impl ResultsPane {
         let status = active.session.status();
         let search_state = status[0];
         let tested = status[1].max(0).unsigned_abs();
-        let total = status[2].max(1).unsigned_abs();
         let probability = f64::from_bits(u64::from_ne_bytes(status[4].to_ne_bytes()));
         let probability = (probability > 0.0 && probability.is_finite()).then_some(probability);
 
@@ -803,8 +804,11 @@ impl ResultsPane {
         active.last_tested = tested;
         active.last_tick = now;
 
-        self.progress_bar
-            .set_fraction((precise(tested) / precise(total)).clamp(0.0, 1.0));
+        // Indeterminate on purpose: the traversal covers the whole seed space,
+        // and a bar measured against ~5T seeds sits at zero for the entire run
+        // — it would promise an end no search is expected to reach. The count
+        // and the rate below are the honest progress.
+        self.progress_bar.pulse();
         self.title.set_subtitle(&match active.matches {
             0 => "Searching…".to_owned(),
             1 => "1 seed".to_owned(),
