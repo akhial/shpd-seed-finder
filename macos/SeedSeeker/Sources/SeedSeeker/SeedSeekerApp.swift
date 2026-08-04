@@ -971,7 +971,7 @@ private struct ResultsView: View {
                      "TTS @ \(NumberFormat.seedRate(controller.seedsPerSecond)) seeds/s: " +
                      NumberFormat.estimateDuration(controller.timeToSeed))
                     .font(.caption).foregroundStyle(.secondary)
-                Text("Time elapsed: \(NumberFormat.duration(controller.elapsed))   •   " +
+                Text("Time elapsed: \(NumberFormat.duration(controller.elapsed)) · " +
                      "Seeds searched: \(NumberFormat.si(Double(controller.scannedSeeds)))")
                     .font(.caption2).foregroundStyle(.tertiary)
             }
