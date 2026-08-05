@@ -60,15 +60,26 @@ describe('isContinuationOf', () => {
     expect(isContinuationOf(base, twoRings)).toBe(false)
     expect(isContinuationOf({ requirements: [base.requirements[0], { kind: 'wand' }] }, twoRings)).toBe(false)
   })
-  it('rejects any scope change', () => {
+  it('rejects a widened scope', () => {
     expect(isContinuationOf({ ...added, max_depth: 9 }, base)).toBe(false)
     expect(isContinuationOf({ ...added, fast_mode: true }, base)).toBe(false)
-    expect(isContinuationOf({ ...added, require_blacksmith: true }, base)).toBe(false)
-    expect(isContinuationOf({ ...added, exclude_blacksmith_rewards: true }, base)).toBe(false)
     expect(isContinuationOf({ ...added, challenges: ['on_diet'] }, base)).toBe(false)
     expect(isContinuationOf({ ...added, challenges: ['on_diet'] }, { ...base, challenges: ['on_diet'] })).toBe(true)
     // Even an otherwise unchanged query restarts when the scope moves.
     expect(isContinuationOf({ ...base, max_depth: 9 }, base)).toBe(false)
+  })
+  it('accepts a narrowed world condition and rejects a relaxed one', () => {
+    // The blacksmith flags and the quest filter only remove seeds, so
+    // switching one on strengthens the base; switching it off, or swapping the
+    // quest for another variant, has to rescan.
+    expect(isContinuationOf({ ...added, require_blacksmith: true }, base)).toBe(true)
+    expect(isContinuationOf(added, { ...base, require_blacksmith: true })).toBe(false)
+    expect(isContinuationOf({ ...added, exclude_blacksmith_rewards: true }, base)).toBe(true)
+    expect(isContinuationOf(added, { ...base, exclude_blacksmith_rewards: true })).toBe(false)
+    expect(isContinuationOf({ ...added, wandmaker_quest: 'rotberry' }, base)).toBe(true)
+    expect(isContinuationOf({ ...added, wandmaker_quest: 'rotberry' }, { ...base, wandmaker_quest: 'rotberry' })).toBe(true)
+    expect(isContinuationOf(added, { ...base, wandmaker_quest: 'rotberry' })).toBe(false)
+    expect(isContinuationOf({ ...added, wandmaker_quest: 'corpse_dust' }, { ...base, wandmaker_quest: 'rotberry' })).toBe(false)
   })
   it('compares requirements as the engine decodes them, not as they are written', () => {
     // Two spellings of the same requirement are the same requirement, which

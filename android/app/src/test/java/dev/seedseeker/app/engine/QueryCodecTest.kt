@@ -8,6 +8,7 @@ import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.ScoutItemSource
 import dev.seedseeker.app.model.UpgradeMatch
 import dev.seedseeker.app.model.TierMatch
+import dev.seedseeker.app.model.WandmakerQuest
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -15,7 +16,7 @@ import org.junit.Test
 
 class QueryCodecTest {
     @Test
-    fun tierPredicateUsesSsf7AndEncodesExactTierWithZeroChallengeMask() {
+    fun tierPredicateUsesSsf8AndEncodesExactTierWithZeroChallengeMask() {
         val requirement = ItemRequirement(
             key = 1,
             item = null,
@@ -28,8 +29,8 @@ class QueryCodecTest {
 
         assertArrayEquals(
             byteArrayOf(
-                'S'.code.toByte(), 'S'.code.toByte(), 'F'.code.toByte(), '7'.code.toByte(),
-                24, 0, 0, 0, 0, 1,
+                'S'.code.toByte(), 'S'.code.toByte(), 'F'.code.toByte(), '8'.code.toByte(),
+                24, 0, 0, 0, 0, 0, 1,
                 0, 0, 0, // weapon, any item
                 1, 5, // exact tier 5
                 0, 0, // any upgrade
@@ -54,7 +55,7 @@ class QueryCodecTest {
             upgradeMatch = UpgradeMatch.ANY,
         )
         val meleePacket = QueryCodec.encode(SearchRequest(listOf(melee)))
-        assertEquals(4, meleePacket[10].toInt())
+        assertEquals(4, meleePacket[11].toInt())
 
         val shuriken = ItemCatalog.thrownWeapons.first { it.id == "shuriken" }
         val thrown = ItemRequirement(
@@ -65,7 +66,7 @@ class QueryCodecTest {
             upgradeMatch = UpgradeMatch.ANY,
         )
         val thrownPacket = QueryCodec.encode(SearchRequest(listOf(thrown)))
-        assertEquals(5, thrownPacket[10].toInt())
+        assertEquals(5, thrownPacket[11].toInt())
         assertEquals("Any melee weapon", melee.title)
 
         // A narrowed kind rejects an item of the other weapon class.
@@ -93,7 +94,7 @@ class QueryCodecTest {
         )
 
         val packet = QueryCodec.encode(SearchRequest(listOf(requirement)))
-        assertArrayEquals(byteArrayOf(3, 4), packet.copyOfRange(13, 15))
+        assertArrayEquals(byteArrayOf(3, 4), packet.copyOfRange(14, 16))
         assertEquals("Any Tier 4 or lower armor", requirement.title)
         assertThrows(IllegalArgumentException::class.java) {
             requirement.copy(tier = 5)
@@ -110,7 +111,7 @@ class QueryCodecTest {
     }
 
     @Test
-    fun encodesStableSsf7PacketWithExactUpgradeAndFloorLimit() {
+    fun encodesStableSsf8PacketWithExactUpgradeAndFloorLimit() {
         val sword = ItemCatalog.weapons.first { it.id == "sword" }
         val request = SearchRequest(
             listOf(ItemRequirement(key = 9, item = sword, upgrade = 2, modifier = "Lucky", maximumDepth = 5)),
@@ -118,9 +119,10 @@ class QueryCodecTest {
 
         assertArrayEquals(
             byteArrayOf(
-                0x53, 0x53, 0x46, 0x37, // SSF7
+                0x53, 0x53, 0x46, 0x38, // SSF8
                 0x18, 0x00, // floor 24, no world flags
                 0x00, 0x00, // no challenges, little-endian
+                0x00, // any Wandmaker quest
                 0x00, 0x01, // one requirement
                 0x00, // weapon
                 0x00, 0x05, 0x73, 0x77, 0x6F, 0x72, 0x64, // sword
@@ -142,9 +144,10 @@ class QueryCodecTest {
         val packet = QueryCodec.encode(request)
         assertArrayEquals(
             byteArrayOf(
-                0x53, 0x53, 0x46, 0x37,
+                0x53, 0x53, 0x46, 0x38,
                 24, 0,
                 0, 0,
+                0,
                 0, 1,
                 3,
                 0, 18,
@@ -165,9 +168,10 @@ class QueryCodecTest {
         )
         assertArrayEquals(
             byteArrayOf(
-                0x53, 0x53, 0x46, 0x37,
+                0x53, 0x53, 0x46, 0x38,
                 0x18, 0x02, // floor 24, fast-mode flag
                 0x00, 0x00,
+                0x00,
                 0x00, 0x01,
                 0x00,
                 0x00, 0x05, 0x73, 0x77, 0x6F, 0x72, 0x64,
@@ -192,9 +196,10 @@ class QueryCodecTest {
 
         assertArrayEquals(
             byteArrayOf(
-                0x53, 0x53, 0x46, 0x37,
+                0x53, 0x53, 0x46, 0x38,
                 0x18, 0x04,
                 0x00, 0x00,
+                0x00,
                 0x00, 0x01,
                 0x00,
                 0x00, 0x05, 0x73, 0x77, 0x6F, 0x72, 0x64,
@@ -237,8 +242,8 @@ class QueryCodecTest {
         val packet = QueryCodec.encode(request)
         assertArrayEquals(
             byteArrayOf(
-                'S'.code.toByte(), 'S'.code.toByte(), 'F'.code.toByte(), '7'.code.toByte(),
-                14, 1, 0, 0, 0, 4,
+                'S'.code.toByte(), 'S'.code.toByte(), 'F'.code.toByte(), '8'.code.toByte(),
+                14, 1, 0, 0, 0, 0, 4,
                 2, 0, 0, 0, 0, 1, 3, 0, 0, 15, 1, 0, 0,
                 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1, 0, 0,
                 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1, 0, 0,
@@ -272,6 +277,23 @@ class QueryCodecTest {
         )
 
         assertEquals(1, QueryCodec.encode(SearchRequest(listOf(requirement))).last().toInt())
+    }
+
+    @Test
+    fun encodesTheWandmakerQuestByteBetweenChallengesAndRequirements() {
+        val sword = ItemCatalog.weapons.first { it.id == "sword" }
+        val requirement = ItemRequirement(key = 1, item = sword, upgrade = 2)
+        for (quest in WandmakerQuest.entries) {
+            val packet = QueryCodec.encode(
+                SearchRequest(requirements = listOf(requirement), wandmakerQuest = quest),
+            )
+            assertEquals(quest.wireId, packet[8].toInt())
+        }
+        assertEquals(0, QueryCodec.encode(SearchRequest(listOf(requirement)))[8].toInt())
+
+        assertEquals("Rotberry", WandmakerQuest.ROTBERRY.label)
+        assertEquals(WandmakerQuest.ELEMENTAL_EMBERS, WandmakerQuest.named("elemental_embers"))
+        assertEquals(null, WandmakerQuest.named("elemental embers"))
     }
 
     @Test

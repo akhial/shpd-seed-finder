@@ -155,12 +155,12 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertTrue(scoutMatchIndices(items: [cursed], requirements: [requirement]).isEmpty)
     }
 
-    func testQueryCodecTierPredicateUsesSSF7WithZeroChallenges() throws {
+    func testQueryCodecTierPredicateUsesSSF8WithZeroChallengesAndAnyQuest() throws {
         let requirement = try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .armor,
             tier: 4, tierMatch: .atLeast, upgradeMatch: .any)
         let request = try SearchRequest(requirements: [requirement])
         XCTAssertEqual(Array(try QueryCodec.encode(request)), [
-            83, 83, 70, 55, 24, 0, 0, 0, 0, 1,
+            83, 83, 70, 56, 24, 0, 0, 0, 0, 0, 1,
             1, 0, 0, 2, 4, 0, 0, 0, 0, 0, 0, 0, 0,
         ])
         XCTAssertEqual(requirement.title, "Any Tier 4+ armor")
@@ -169,13 +169,13 @@ final class SeedSeekerKitTests: XCTestCase {
     func testQueryCodecMeleeAndThrownKindsUseWireIdsFourAndFive() throws {
         let melee = try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .meleeWeapon,
             upgradeMatch: .any)
-        XCTAssertEqual(try QueryCodec.encode(SearchRequest(requirements: [melee]))[10], 4)
+        XCTAssertEqual(try QueryCodec.encode(SearchRequest(requirements: [melee]))[11], 4)
         XCTAssertEqual(melee.title, "Any melee weapon")
 
         let shuriken = try XCTUnwrap(ItemCatalog.findById("shuriken"))
         let thrown = try ItemRequirement(key: 2, item: shuriken, upgrade: 0, kind: .thrownWeapon,
             upgradeMatch: .any)
-        XCTAssertEqual(try QueryCodec.encode(SearchRequest(requirements: [thrown]))[10], 5)
+        XCTAssertEqual(try QueryCodec.encode(SearchRequest(requirements: [thrown]))[11], 5)
     }
 
     func testWeaponClassificationAndNarrowedKindValidation() throws {
@@ -209,7 +209,7 @@ final class SeedSeekerKitTests: XCTestCase {
             tier: 4, tierMatch: .atMost, upgradeMatch: .any)
         let request = try SearchRequest(requirements: [requirement])
         let packet = Array(try QueryCodec.encode(request))
-        XCTAssertEqual(Array(packet[13..<15]), [3, 4])
+        XCTAssertEqual(Array(packet[14..<16]), [3, 4])
         XCTAssertEqual(requirement.title, "Any Tier 4 or lower armor")
     }
 
@@ -223,7 +223,7 @@ final class SeedSeekerKitTests: XCTestCase {
         let request = try SearchRequest(requirements: [first, second], maximumDepth: 12,
                                         requireBlacksmith: true, challenges: 104)
         XCTAssertEqual(Array(try QueryCodec.encode(request)), [
-            83, 83, 70, 55, 12, 1, 104, 0, 0, 2,
+            83, 83, 70, 56, 12, 1, 104, 0, 0, 0, 2,
             0, 0, 6, 100, 97, 103, 103, 101, 114, 0, 0, 1, 2,
             0, 5, 76, 117, 99, 107, 121, 2, 1, 5, 0,
             3, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0,
@@ -235,7 +235,7 @@ final class SeedSeekerKitTests: XCTestCase {
                                               upgradeMatch: .exactly)
         let request = try SearchRequest(requirements: [requirement], fastMode: true)
         XCTAssertEqual(Array(try QueryCodec.encode(request)), [
-            83, 83, 70, 55, 24, 2, 0, 0, 0, 1,
+            83, 83, 70, 56, 24, 2, 0, 0, 0, 0, 1,
             1, 0, 0, 0, 0, 1, 3, 0, 0, 0, 0, 0, 0,
         ])
     }
@@ -245,9 +245,24 @@ final class SeedSeekerKitTests: XCTestCase {
         let request = try SearchRequest(requirements: [requirement],
                                         excludeBlacksmithRewards: true)
         XCTAssertEqual(Array(try QueryCodec.encode(request)), [
-            83, 83, 70, 55, 24, 4, 0, 0, 0, 1,
+            83, 83, 70, 56, 24, 4, 0, 0, 0, 0, 1,
             0, 0, 0, 0, 0, 1, 2, 0, 0, 0, 0, 0, 0,
         ])
+    }
+
+    /// The quest byte sits between the challenge mask and the requirement
+    /// count, and is zero until a quest is demanded.
+    func testQueryCodecEncodesTheWandmakerQuestByte() throws {
+        let requirement = try ItemRequirement(key: 1, item: nil, upgrade: 2, kind: .weapon)
+        for quest in WandmakerQuest.allCases {
+            let request = try SearchRequest(requirements: [requirement], wandmakerQuest: quest)
+            XCTAssertEqual(Array(try QueryCodec.encode(request))[8], UInt8(quest.rawValue))
+        }
+        let any = try SearchRequest(requirements: [requirement])
+        XCTAssertEqual(Array(try QueryCodec.encode(any))[8], 0)
+        XCTAssertEqual(WandmakerQuest.rotberry.label, "Rotberry")
+        XCTAssertEqual(WandmakerQuest.named("elemental_embers"), .elementalEmbers)
+        XCTAssertNil(WandmakerQuest.named("elemental embers"))
     }
 
     func testQueryCodecUncursedRequirementSetsFlagBitZero() throws {

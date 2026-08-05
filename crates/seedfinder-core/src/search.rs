@@ -11,15 +11,23 @@ use std::time::{Duration, Instant};
 use crate::feasibility::QueryPlan;
 use crate::model::{GeneratedWorld, WorldItem};
 use crate::query::{QueryError, SearchQuery};
+use crate::quests::QuestSummary;
 use crate::seed::{DungeonSeed, TOTAL_SEEDS};
 
 /// Per-floor cancellation oracle consulted between floors of one seed.
 ///
 /// Returning `false` promises that no continuation of the partial world can
 /// satisfy the active query, letting the generator abandon the seed without
-/// producing its remaining floors.
+/// producing its remaining floors. `quests_so_far` carries the variants
+/// rolled by the floors generated up to this point, which is what lets a
+/// quest filter prune a seed the moment its giver appears.
 pub trait FloorGate: Sync {
-    fn continue_after_floor(&self, completed_depth: u8, items_so_far: &[WorldItem]) -> bool;
+    fn continue_after_floor(
+        &self,
+        completed_depth: u8,
+        items_so_far: &[WorldItem],
+        quests_so_far: &QuestSummary,
+    ) -> bool;
 }
 
 /// Version-pinned world simulator used by the parallel search scheduler.
@@ -862,6 +870,7 @@ mod tests {
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         };
         let options = SearchOptions {
@@ -944,6 +953,7 @@ mod tests {
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         };
         let options = SearchOptions {
@@ -1011,6 +1021,7 @@ mod tests {
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         };
         let options = SearchOptions {
@@ -1081,6 +1092,7 @@ mod tests {
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         };
         let options = SearchOptions {
@@ -1119,6 +1131,7 @@ mod tests {
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         }
     }
@@ -1257,6 +1270,7 @@ mod tests {
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         };
         let options = SearchOptions {
@@ -1503,6 +1517,7 @@ mod tests {
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         };
         let options = SearchOptions {

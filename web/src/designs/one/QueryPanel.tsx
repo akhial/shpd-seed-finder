@@ -6,9 +6,11 @@ import { effectGlow } from '../../lib/glow'
 import { CommandIcon, PlusIcon, ReturnIcon, XIcon } from '../../lib/icons'
 import { FLOOR_LIMIT_OPTIONS, emptyRequirement, fromQueryJson, toQueryJson, validateRequirement } from '../../lib/query'
 import type { ValidationResult } from '../../lib/query'
+import { questVariantLabel } from '../../lib/quests'
 import { builtInPresets, loadPresets, maxWorkers, queryStore, savePresets, setWorkerCount, workerCountStore } from '../../lib/store'
 import type { Preset } from '../../lib/store'
-import type { AnalysisResult, ChallengeName, ItemCategory, QueryState, RequirementState } from '../../lib/wasm/types'
+import { WANDMAKER_QUESTS } from '../../lib/wasm/types'
+import type { AnalysisResult, ChallengeName, ItemCategory, QueryState, RequirementState, WandmakerQuest } from '../../lib/wasm/types'
 import { RequirementEditor } from './RequirementEditor'
 import { SliderRow, Sprite } from './parts'
 import { categoryPlural, requirementDetails, requirementKind, requirementSprite, requirementTitle } from './summary'
@@ -105,6 +107,7 @@ export function QueryPanel({
   })).filter((group) => group.entries.length > 0)
   const ungrouped = indexed.filter(({ requirement }) => requirementKind(requirement) === undefined)
   const challengeCount = query.challenges.length
+  const wandmakerCount = Number(Boolean(query.wandmakerQuest))
   const blacksmithCount = Number(query.requireBlacksmith) + Number(query.excludeBlacksmithRewards)
   const performanceCount = Number(query.fastMode)
   const hasRequirements = query.requirements.length > 0
@@ -267,6 +270,32 @@ export function QueryPanel({
         <section className="d1-section">
           <details className="d1-details">
             <summary>
+              <span>Wandmaker</span>
+              {wandmakerCount > 0 && <span className="d1-count">{wandmakerCount}</span>}
+            </summary>
+            <div className="d1-details-body">
+              <label className="d1-field">
+                <span className="d1-field-label">Quest</span>
+                <span className="d1-field-control">
+                  <select
+                    className="d1-select"
+                    value={query.wandmakerQuest ?? ''}
+                    onChange={(event) => patchQuery({ wandmakerQuest: (event.currentTarget.value || undefined) as WandmakerQuest | undefined })}
+                  >
+                    <option value="">Any</option>
+                    {WANDMAKER_QUESTS.map((variant) => (
+                      <option key={variant} value={variant}>{questVariantLabel(variant)}</option>
+                    ))}
+                  </select>
+                </span>
+              </label>
+            </div>
+          </details>
+        </section>
+
+        <section className="d1-section">
+          <details className="d1-details">
+            <summary>
               <span>Blacksmith</span>
               {blacksmithCount > 0 && <span className="d1-count">{blacksmithCount}</span>}
             </summary>
@@ -371,7 +400,8 @@ export function QueryPanel({
                 <strong className="d1-impossible-title">Impossible query</strong>
                 <p>
                   No seed can satisfy these requirements within the current floor limit. Quest-reward-only items
-                  need their quest floors in range: +3 wands floors 7–9, +3/+4 rings floors 17–19.
+                  need their quest floors in range: +3 wands and the Wandmaker's quest floors 7–9,
+                  +3/+4 rings floors 17–19.
                 </p>
               </div>
             )}

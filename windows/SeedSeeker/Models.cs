@@ -9,7 +9,7 @@ namespace SeedSeeker;
 // in Models.Presentation.cs.
 
 // MeleeWeapon and ThrownWeapon narrow a weapon requirement to one weapon
-// class; the enum value doubles as the SSF7 wire kind ID (0..=5), so they
+// class; the enum value doubles as the SSF8 wire kind ID (0..=5), so they
 // must stay appended after the original four families.
 public enum ItemKind { Weapon, Armor, Wand, Ring, MeleeWeapon, ThrownWeapon }
 
@@ -139,12 +139,63 @@ public static class FloorLimits
         : requested - 1;
 }
 
+/// <summary>
+/// The Wandmaker quest a search can demand. Only this giver's variant is worth
+/// filtering on: its quest item can be used in the dungeon instead of being
+/// handed in. The value doubles as the SSF8 wire id, with 0 meaning "any".
+/// </summary>
+public enum WandmakerQuest
+{
+    Any = 0,
+    CorpseDust = 1,
+    ElementalEmbers = 2,
+    Rotberry = 3,
+}
+
+public static class WandmakerQuests
+{
+    /// <summary>The pickable quests in wire order, "Any" first.</summary>
+    public static readonly WandmakerQuest[] All =
+    [
+        WandmakerQuest.Any,
+        WandmakerQuest.CorpseDust,
+        WandmakerQuest.ElementalEmbers,
+        WandmakerQuest.Rotberry,
+    ];
+
+    public static string Label(WandmakerQuest quest) => quest switch
+    {
+        WandmakerQuest.CorpseDust => "Corpse dust",
+        WandmakerQuest.ElementalEmbers => "Elemental embers",
+        WandmakerQuest.Rotberry => "Rotberry",
+        _ => "Any",
+    };
+
+    /// <summary>Stable snake_case name used by the shared query document.</summary>
+    public static string? DocumentName(WandmakerQuest quest) => quest switch
+    {
+        WandmakerQuest.CorpseDust => "corpse_dust",
+        WandmakerQuest.ElementalEmbers => "elemental_embers",
+        WandmakerQuest.Rotberry => "rotberry",
+        _ => null,
+    };
+
+    public static WandmakerQuest? Named(string name) => name switch
+    {
+        "corpse_dust" => WandmakerQuest.CorpseDust,
+        "elemental_embers" => WandmakerQuest.ElementalEmbers,
+        "rotberry" => WandmakerQuest.Rotberry,
+        _ => null,
+    };
+}
+
 public sealed class QuerySettings
 {
     public ObservableCollection<ItemRequirement> Requirements { get; set; } = [];
     public int MaximumDepth { get; set; } = 24;
     public bool RequireBlacksmith { get; set; }
     public bool ExcludeBlacksmithRewards { get; set; }
+    public WandmakerQuest WandmakerQuest { get; set; } = WandmakerQuest.Any;
     public bool FastMode { get; set; }
     public int Challenges { get; set; }
 
@@ -154,6 +205,7 @@ public sealed class QuerySettings
         MaximumDepth = MaximumDepth,
         RequireBlacksmith = RequireBlacksmith,
         ExcludeBlacksmithRewards = ExcludeBlacksmithRewards,
+        WandmakerQuest = WandmakerQuest,
         FastMode = FastMode,
         Challenges = Challenges,
     };
@@ -161,7 +213,9 @@ public sealed class QuerySettings
 
 /// <summary>
 /// Decides whether a query can continue a finished run instead of rescanning it:
-/// identical scope, and every baseline requirement still present (counting
+/// an identical floor limit, challenge set and fast mode, world conditions (the
+/// blacksmith flags and the Wandmaker quest) at least as strict as the
+/// baseline's, and every baseline requirement still present (counting
 /// duplicates). Extra requirements are allowed but not required — an unchanged
 /// query qualifies too, and continuing it is exactly right: its filter trivially
 /// keeps every seed the run delivered and the scan resumes where it stopped. A
@@ -176,7 +230,7 @@ public static class QueryRefinement
     /// <summary>
     /// True when every requirement of <paramref name="baseline"/> is covered by
     /// a distinct requirement of <paramref name="candidate"/> at least as strict
-    /// (equal or strengthened) under an identical scope.
+    /// (equal or strengthened) under a scope the candidate never widens.
     /// Deliberately not strict: an equal query is a continuation, not a rescan.
     /// The engine decides — this encodes both queries and asks
     /// <c>seedfinder_query_continues</c>, so refine eligibility here is the very

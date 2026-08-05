@@ -9,6 +9,7 @@ data class PresetQuery(
     val maximumDepth: Int = 24,
     val requireBlacksmith: Boolean = false,
     val excludeBlacksmithRewards: Boolean = false,
+    val wandmakerQuest: WandmakerQuest? = null,
     val fastMode: Boolean = false,
     val challenges: Int = 0,
 )

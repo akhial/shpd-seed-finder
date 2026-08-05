@@ -61,6 +61,7 @@ private struct ContentView: View {
     @State private var requirements: [ItemRequirement] = []
     @State private var maximumDepth = 24
     @State private var requireBlacksmith = false
+    @State private var wandmakerQuest: WandmakerQuest?
     @State private var excludeBlacksmithRewards = false
     @State private var fastMode = false
     @State private var restored = false
@@ -99,7 +100,8 @@ private struct ContentView: View {
             NavigationSplitView {
                 QueryView(requirements: $requirements, maximumDepth: $maximumDepth,
                           requireBlacksmith: $requireBlacksmith,
-                          excludeBlacksmithRewards: $excludeBlacksmithRewards, fastMode: $fastMode,
+                          excludeBlacksmithRewards: $excludeBlacksmithRewards,
+                          wandmakerQuest: $wandmakerQuest, fastMode: $fastMode,
                           challenges: $challenges,
                           userPresets: userPresets,
                           onApplyPreset: apply,
@@ -207,6 +209,7 @@ private struct ContentView: View {
             requirements = saved.requirements; maximumDepth = saved.maximumDepth
             requireBlacksmith = saved.requireBlacksmith
             excludeBlacksmithRewards = saved.excludeBlacksmithRewards
+            wandmakerQuest = saved.wandmakerQuest
             fastMode = saved.fastMode
             userPresets = PresetPersistence.decode(savedPresetsJSON)
         }
@@ -217,6 +220,7 @@ private struct ContentView: View {
         .onChange(of: maximumDepth) { save() }
         .onChange(of: requireBlacksmith) { save() }
         .onChange(of: excludeBlacksmithRewards) { save() }
+        .onChange(of: wandmakerQuest) { save() }
         .onChange(of: fastMode) { save() }
         .onChange(of: challenges) { save() }
         .onChange(of: controller.selectedSeed) { _, seed in
@@ -285,7 +289,8 @@ private struct ContentView: View {
         guard restored else { return }
         savedQueryJSON = QueryPersistence.encode(.init(requirements: requirements,
             maximumDepth: maximumDepth, requireBlacksmith: requireBlacksmith,
-            excludeBlacksmithRewards: excludeBlacksmithRewards, fastMode: fastMode,
+            excludeBlacksmithRewards: excludeBlacksmithRewards,
+            wandmakerQuest: wandmakerQuest, fastMode: fastMode,
             challenges: challenges)) ?? ""
     }
 
@@ -300,6 +305,7 @@ private struct ContentView: View {
         maximumDepth = saved.maximumDepth
         requireBlacksmith = saved.requireBlacksmith
         excludeBlacksmithRewards = saved.excludeBlacksmithRewards
+        wandmakerQuest = saved.wandmakerQuest
         fastMode = saved.fastMode
         challenges = saved.challenges
     }
@@ -367,6 +373,7 @@ private struct ContentView: View {
         let query = SavedQuery(requirements: requirements, maximumDepth: maximumDepth,
                                requireBlacksmith: requireBlacksmith,
                                excludeBlacksmithRewards: excludeBlacksmithRewards,
+                               wandmakerQuest: wandmakerQuest,
                                fastMode: fastMode, challenges: challenges)
         if let index = userPresets.firstIndex(where: { $0.name.localizedCaseInsensitiveCompare(cleanName) == .orderedSame }) {
             userPresets[index].query = query
@@ -451,6 +458,7 @@ private struct QueryView: View {
     @Binding var maximumDepth: Int
     @Binding var requireBlacksmith: Bool
     @Binding var excludeBlacksmithRewards: Bool
+    @Binding var wandmakerQuest: WandmakerQuest?
     @Binding var fastMode: Bool
     @Binding var challenges: Int
     let userPresets: [QueryPreset]
@@ -520,6 +528,14 @@ private struct QueryView: View {
                             .accessibilityValue(Text("first \(maximumDepth) floor\(maximumDepth == 1 ? "" : "s")"))
                     }
                 }
+                Section("Wandmaker") {
+                    Picker("Quest", selection: $wandmakerQuest) {
+                        Text("Any").tag(WandmakerQuest?.none)
+                        ForEach(WandmakerQuest.allCases, id: \.self) { quest in
+                            Text(quest.label).tag(WandmakerQuest?.some(quest))
+                        }
+                    }
+                }
                 Section("Blacksmith") {
                     Toggle("Require accessible blacksmith", isOn: $requireBlacksmith)
                         .disabled(maximumDepth >= 14)
@@ -585,6 +601,7 @@ private struct QueryView: View {
         try? SearchRequest(requirements: requirements, maximumDepth: maximumDepth,
                            requireBlacksmith: requireBlacksmith,
                            excludeBlacksmithRewards: excludeBlacksmithRewards,
+                           wandmakerQuest: wandmakerQuest,
                            fastMode: fastMode, challenges: challenges)
     }
 

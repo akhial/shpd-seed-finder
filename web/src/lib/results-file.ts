@@ -1,21 +1,21 @@
 import packageJson from '../../package.json'
 import { effectNamesForCategory, getItem, isCurseForCategory } from './catalog'
 import { fromQueryJson } from './query'
+import { WANDMAKER_QUESTS } from './wasm/types'
 import type { ParsedSeed, QueryDocument, QueryState } from './wasm/types'
 
-// The versioned results-export document shared by every Seed Seeker frontend.
-// The canonical implementation and compatibility rules live in the Rust core
+// The results-export document shared by every Seed Seeker frontend. The
+// canonical implementation and compatibility rules live in the Rust core
 // (crates/seedfinder-core/src/results_export.rs); the schema is documented in
 // docs/results-export-format.md. Keep this codec schema-compatible with it.
 
 export const RESULTS_FILE_FORMAT = 'seed-seeker-results'
-export const RESULTS_FILE_VERSION = 1
 export const RESULTS_FILE_NAME = 'seed-seeker-results.json'
 /** Import size cap; a maximal legal file is far below this. */
 export const MAX_RESULTS_FILE_BYTES = 2 * 1024 * 1024
 
 const SEED_CODE = /^[A-Z]{3}-[A-Z]{3}-[A-Z]{3}$/
-const QUERY_KEYS = new Set(['requirements', 'max_depth', 'require_blacksmith', 'exclude_blacksmith_rewards', 'fast_mode', 'challenges'])
+const QUERY_KEYS = new Set(['requirements', 'max_depth', 'require_blacksmith', 'exclude_blacksmith_rewards', 'wandmaker_quest', 'fast_mode', 'challenges'])
 const REQUIREMENT_KEYS = new Set(['kind', 'item', 'tier', 'upgrade', 'effect', 'uncursed', 'source', 'identity_group', 'max_depth'])
 const KIND_NAMES = new Set(['weapon', 'melee_weapon', 'thrown_weapon', 'armor', 'wand', 'ring'])
 const SOURCE_NAMES = new Set([
@@ -45,7 +45,6 @@ export function encodeResultsFile(query: QueryDocument, seeds: string[], shpdVer
   return JSON.stringify(
     {
       format: RESULTS_FILE_FORMAT,
-      format_version: RESULTS_FILE_VERSION,
       app_version: packageJson.version,
       shpd_version: shpdVersion,
       query,
@@ -57,7 +56,6 @@ export function encodeResultsFile(query: QueryDocument, seeds: string[], shpdVer
 }
 
 export interface DecodedResultsFile {
-  formatVersion: number
   appVersion?: string
   shpdVersion?: string
   /** The raw query document, for engine-side validation and re-serialization. */
@@ -113,6 +111,10 @@ function validateQueryDocument(query: Record<string, unknown>): void {
   boolField(query, 'require_blacksmith')
   boolField(query, 'exclude_blacksmith_rewards')
   boolField(query, 'fast_mode')
+  const wandmakerQuest = stringField(query, 'wandmaker_quest')
+  if (wandmakerQuest !== undefined && !(WANDMAKER_QUESTS as readonly string[]).includes(wandmakerQuest)) {
+    throw new Error(`The query in this results file uses an unknown Wandmaker quest "${wandmakerQuest}".`)
+  }
   if (query.challenges !== undefined) {
     if (!Array.isArray(query.challenges)) throw new Error('"challenges" must be a list of challenge names.')
     for (const name of query.challenges as unknown[]) {
@@ -160,12 +162,11 @@ function validateRequirementDocument(entry: unknown): void {
 /**
  * Decodes and validates a results-export document.
  *
- * Unknown envelope and per-result fields are ignored so files written by
- * future releases of format version 1 keep importing; files declaring a newer
- * `format_version` are rejected with an "update the app" message. Unknown or
- * wrong-typed query content fails instead of silently changing the query's
- * meaning. Callers should additionally validate `queryDocument` with the
- * engine (`analyzeQuery`).
+ * Unknown envelope and per-result fields are ignored — including the
+ * `format_version` number releases up to 0.7.0 wrote — so every file an older
+ * release exported keeps importing. Unknown or wrong-typed query content fails
+ * instead of silently changing the query's meaning. Callers should
+ * additionally validate `queryDocument` with the engine (`analyzeQuery`).
  *
  * @throws Error with a user-facing message for unusable files.
  */
@@ -180,16 +181,6 @@ export function decodeResultsFile(text: string): DecodedResultsFile {
     throw new Error('This is not a Seed Seeker results file.')
   }
   const document = parsed
-  const version = document.format_version
-  if (version === undefined) throw new Error('This results file is missing its format version.')
-  if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) {
-    throw new Error('This results file does not declare a valid format version (a positive whole number).')
-  }
-  if (version > RESULTS_FILE_VERSION) {
-    throw new Error(
-      `This results file uses format version ${version}, but this app understands up to version ${RESULTS_FILE_VERSION}. Update Seed Seeker to import it.`,
-    )
-  }
   const queryValue = document.query
   if (!isRecord(queryValue)) {
     throw new Error('This results file is missing its query.')
@@ -213,7 +204,6 @@ export function decodeResultsFile(text: string): DecodedResultsFile {
     throw new Error(`The query in this results file is not usable: ${error instanceof Error ? error.message : String(error)}`)
   }
   return {
-    formatVersion: version,
     appVersion: typeof document.app_version === 'string' ? document.app_version : undefined,
     shpdVersion: typeof document.shpd_version === 'string' ? document.shpd_version : undefined,
     queryDocument: queryValue as unknown as QueryDocument,

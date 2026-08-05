@@ -194,6 +194,7 @@ pub struct AppState {
     pub max_depth: u8,
     pub require_blacksmith: bool,
     pub exclude_blacksmith_rewards: bool,
+    pub wandmaker_quest: Option<WandmakerQuestType>,
     pub fast_mode: bool,
     pub challenges: Challenges,
     next_key: u64,
@@ -206,6 +207,7 @@ impl Default for AppState {
             max_depth: 24,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
             challenges: Challenges::NONE,
             next_key: 1,
@@ -230,6 +232,7 @@ impl AppState {
             max_depth: query.max_depth,
             require_blacksmith: query.require_blacksmith,
             exclude_blacksmith_rewards: query.exclude_blacksmith_rewards,
+            wandmaker_quest: query.wandmaker_quest,
             fast_mode: query.fast_mode,
             challenges: query.challenges,
             next_key: 1,
@@ -265,6 +268,7 @@ impl AppState {
             challenges: self.challenges,
             require_blacksmith: self.require_blacksmith && self.max_depth < 14,
             exclude_blacksmith_rewards: self.exclude_blacksmith_rewards,
+            wandmaker_quest: self.wandmaker_quest,
             fast_mode: self.fast_mode,
         };
         query.validate().map_err(|error| error.to_string())?;
@@ -1017,6 +1021,22 @@ mod tests {
                 variant: "Rotberry",
                 depth: 8,
             }]
+        );
+    }
+
+    #[test]
+    fn wandmaker_quest_survives_the_query_round_trip() {
+        let mut state = AppState::default();
+        let key = state.claim_key();
+        state.requirements.push(UiRequirement::new(key));
+        assert_eq!(state.to_query().unwrap().wandmaker_quest, None);
+
+        state.wandmaker_quest = Some(WandmakerQuestType::Rotberry);
+        let query = state.to_query().unwrap();
+        assert_eq!(query.wandmaker_quest, Some(WandmakerQuestType::Rotberry));
+        assert_eq!(
+            AppState::from_query(&query).wandmaker_quest,
+            Some(WandmakerQuestType::Rotberry)
         );
     }
 

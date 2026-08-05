@@ -223,7 +223,7 @@ pub fn filter_matching_seeds(
 }
 
 /// Packet form of [`filter_matching_seeds`] for wire frontends: decodes an
-/// `SSF7` query request, filters `seed_values`, and encodes the surviving
+/// `SSF8` query request, filters `seed_values`, and encodes the surviving
 /// seeds as an `SSR1` result packet. Generation panics are contained.
 ///
 /// # Errors
@@ -252,9 +252,10 @@ pub enum FilterPacketError {
     Panicked,
 }
 
-/// Decodes two `SSF7` query requests and reports whether `candidate`
-/// continues `base`: identical scope (depth, challenges, blacksmith flags,
-/// fast mode) and every requirement of `base` covered by a distinct
+/// Decodes two `SSF8` query requests and reports whether `candidate`
+/// continues `base`: an identical depth, challenge set and fast mode, world
+/// conditions (the blacksmith flags and the Wandmaker filter) at least as
+/// strict as the base's, and every requirement of `base` covered by a distinct
 /// candidate requirement at least as strict (equal or strengthened).
 /// This is the soundness precondition for refining a search — only a
 /// continuing query may filter a stopped session's delivered results and
@@ -316,7 +317,7 @@ impl NativeSession {
         )
     }
 
-    /// Decodes an `SSF7` request and starts a canonical production search.
+    /// Decodes an `SSF8` request and starts a canonical production search.
     ///
     /// # Errors
     ///
@@ -359,7 +360,7 @@ impl NativeSession {
         )
     }
 
-    /// Decodes an `SSF7` request and starts a resumed production search.
+    /// Decodes an `SSF8` request and starts a resumed production search.
     ///
     /// # Errors
     ///
@@ -654,6 +655,7 @@ mod tests {
             challenges: Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         }
     }
@@ -815,6 +817,7 @@ mod tests {
             challenges: Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         };
 
@@ -853,10 +856,11 @@ mod tests {
         let seed = DungeonSeed::from_code("AAA-AAA-AAF").unwrap();
         let world = production_scout_world(seed, Challenges::NONE).unwrap();
         let known = world.items.first().cloned().unwrap();
-        let mut request = b"SSF7".to_vec();
+        let mut request = b"SSF8".to_vec();
         request.push(known.depth); // max_depth
         request.push(0); // flags
         request.extend_from_slice(&[0, 0]); // challenges
+        request.push(0); // any Wandmaker quest
         request.extend_from_slice(&[0, 1]); // one requirement
         let definition = shpd_seedfinder_core::catalog::item(known.item);
         let kind_byte = match definition.kind {
@@ -909,6 +913,7 @@ mod tests {
             challenges: Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         };
         let session = NativeSession::production_resumed(impossible, 42, 1_000).unwrap();

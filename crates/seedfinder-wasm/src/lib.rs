@@ -260,8 +260,9 @@ pub fn filter_seeds(query_json: &str, seed_values: Vec<f64>) -> Result<String, J
 }
 
 /// Reports whether the query in `candidate_json` continues the one in
-/// `base_json`: identical scope (depth, challenges, blacksmith flags, fast
-/// mode) and every base requirement covered by a distinct candidate
+/// `base_json`: an identical depth, challenge set and fast mode, world
+/// conditions (the blacksmith flags and the Wandmaker filter) at least as
+/// strict as the base's, and every base requirement covered by a distinct candidate
 /// requirement at least as strict (equal or strengthened). Only a continuing
 /// query may reuse a stopped search's results and coverage remainder (the
 /// filter-and-resume refine flow).

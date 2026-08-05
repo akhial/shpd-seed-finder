@@ -54,6 +54,7 @@ import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.SearchState
 import dev.seedseeker.app.model.SearchStatus
 import dev.seedseeker.app.model.SeedResult
+import dev.seedseeker.app.model.WandmakerQuest
 import dev.seedseeker.app.update.UpdateChecker
 import dev.seedseeker.app.update.UpdateInfo
 import kotlinx.coroutines.CancellationException
@@ -135,6 +136,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
     var maximumDepth by remember { mutableStateOf(24) }
     var requireBlacksmith by remember { mutableStateOf(false) }
     var excludeBlacksmithRewards by remember { mutableStateOf(false) }
+    var wandmakerQuest by remember { mutableStateOf<WandmakerQuest?>(null) }
     var fastMode by remember { mutableStateOf(false) }
     var challenges by remember {
         mutableStateOf(
@@ -224,6 +226,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                 maximumDepth = imported.query.maximumDepth
                 requireBlacksmith = imported.query.requireBlacksmith
                 excludeBlacksmithRewards = imported.query.excludeBlacksmithRewards
+                wandmakerQuest = imported.query.wandmakerQuest
                 fastMode = imported.query.fastMode
                 challenges = imported.query.challenges
                 preferences.edit().putInt(CHALLENGES_KEY, challenges).apply()
@@ -252,6 +255,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                             challenges = imported.query.challenges,
                             requireBlacksmith = imported.query.requireBlacksmith,
                             excludeBlacksmithRewards = imported.query.excludeBlacksmithRewards,
+                            wandmakerQuest = imported.query.wandmakerQuest,
                             fastMode = imported.query.fastMode,
                         ),
                         results = importedResults,
@@ -365,6 +369,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                     maximumDepth = currentRun.request.maximumDepth,
                     requireBlacksmith = currentRun.request.requireBlacksmith,
                     excludeBlacksmithRewards = currentRun.request.excludeBlacksmithRewards,
+                    wandmakerQuest = currentRun.request.wandmakerQuest,
                     fastMode = currentRun.request.fastMode,
                     challenges = currentRun.request.challenges,
                 )
@@ -514,6 +519,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
             challenges = challenges,
             requireBlacksmith = requireBlacksmith,
             excludeBlacksmithRewards = excludeBlacksmithRewards,
+            wandmakerQuest = wandmakerQuest,
             fastMode = fastMode,
         )
     }.getOrNull()
@@ -547,6 +553,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                 maximumDepth = maximumDepth,
                 requireBlacksmith = requireBlacksmith,
                 excludeBlacksmithRewards = excludeBlacksmithRewards,
+                wandmakerQuest = wandmakerQuest,
                 fastMode = fastMode,
                 challenges = challenges,
                 presets = BuiltInPresets.all + userPresets,
@@ -572,6 +579,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                     maximumDepth = preset.query.maximumDepth
                     requireBlacksmith = preset.query.requireBlacksmith
                     excludeBlacksmithRewards = preset.query.excludeBlacksmithRewards
+                    wandmakerQuest = preset.query.wandmakerQuest
                     fastMode = preset.query.fastMode
                     challenges = preset.query.challenges
                     preferences.edit().putInt(CHALLENGES_KEY, challenges).apply()
@@ -584,6 +592,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                             maximumDepth = maximumDepth,
                             requireBlacksmith = requireBlacksmith,
                             excludeBlacksmithRewards = excludeBlacksmithRewards,
+                            wandmakerQuest = wandmakerQuest,
                             fastMode = fastMode,
                             challenges = challenges,
                         )
@@ -614,6 +623,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                 onMaximumDepthChange = { maximumDepth = it },
                 onRequireBlacksmithChange = { requireBlacksmith = it },
                 onExcludeBlacksmithRewardsChange = { excludeBlacksmithRewards = it },
+                onWandmakerQuestChange = { wandmakerQuest = it },
                 onFastModeChange = { fastMode = it },
                 onSearch = {
                     if (currentRequest != null) {
@@ -631,6 +641,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                                 maximumDepth = maximumDepth,
                                 requireBlacksmith = requireBlacksmith,
                                 excludeBlacksmithRewards = excludeBlacksmithRewards,
+                                wandmakerQuest = wandmakerQuest,
                                 fastMode = fastMode,
                                 challenges = challenges,
                             )

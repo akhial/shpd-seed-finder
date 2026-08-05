@@ -163,7 +163,10 @@ public sealed partial class MainWindow : Window
         query.MaximumDepth = FloorLimits.Normalize(query.MaximumDepth);
         foreach (var requirement in query.Requirements)
             if (requirement.MaximumDepth is int depth) requirement.MaximumDepth = FloorLimits.Normalize(depth);
-        FloorSlider.Value = FloorLimits.IndexOf(query.MaximumDepth); RequireBlacksmith.IsOn = query.RequireBlacksmith; ExcludeRewards.IsOn = query.ExcludeBlacksmithRewards; FastMode.IsOn = query.FastMode; restoring = false;
+        FloorSlider.Value = FloorLimits.IndexOf(query.MaximumDepth); RequireBlacksmith.IsOn = query.RequireBlacksmith; ExcludeRewards.IsOn = query.ExcludeBlacksmithRewards; FastMode.IsOn = query.FastMode;
+        WandmakerQuestPicker.ItemsSource = WandmakerQuests.All.Select(WandmakerQuests.Label).ToList();
+        WandmakerQuestPicker.SelectedIndex = Array.IndexOf(WandmakerQuests.All, query.WandmakerQuest);
+        restoring = false;
     }
     private void SaveSettings() { if (restoring) return; Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!); File.WriteAllText(SettingsPath, JsonSerializer.Serialize(query, new JsonSerializerOptions { WriteIndented = true })); }
     private void LoadPresets()
@@ -194,6 +197,7 @@ public sealed partial class MainWindow : Window
             if (requirement.MaximumDepth is int depth) requirement.MaximumDepth = FloorLimits.Normalize(depth);
         FloorSlider.Value = FloorLimits.IndexOf(query.MaximumDepth); RequireBlacksmith.IsOn = query.RequireBlacksmith;
         ExcludeRewards.IsOn = query.ExcludeBlacksmithRewards; FastMode.IsOn = query.FastMode;
+        WandmakerQuestPicker.SelectedIndex = Array.IndexOf(WandmakerQuests.All, query.WandmakerQuest);
         restoring = false; RefreshQuery(); SaveSettings();
     }
     private void PresetPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -224,6 +228,13 @@ public sealed partial class MainWindow : Window
     }
     private void FloorSlider_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e) { if (restoring || FloorLabel is null) return; query.MaximumDepth = FloorLimits.Options[Math.Clamp((int)e.NewValue, 0, FloorLimits.Options.Length - 1)]; RefreshQuery(); SaveSettings(); }
     private void SettingChanged(object sender, RoutedEventArgs e) { if (restoring) return; query.RequireBlacksmith = RequireBlacksmith.IsOn; query.ExcludeBlacksmithRewards = ExcludeRewards.IsOn; query.FastMode = FastMode.IsOn; SaveSettings(); }
+    private void WandmakerQuestChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (restoring) return;
+        var index = WandmakerQuestPicker.SelectedIndex;
+        query.WandmakerQuest = index >= 0 && index < WandmakerQuests.All.Length ? WandmakerQuests.All[index] : WandmakerQuest.Any;
+        SaveSettings();
+    }
 
     private async void AddRequirement_Click(object sender, RoutedEventArgs e) { var r = new ItemRequirement { Kind = ItemKind.Weapon, UpgradeMatch = UpgradeMatch.Any }; if (await EditRequirement(r, true)) { query.Requirements.Add(r); RefreshQuery(); SaveSettings(); } }
     private async void Requirement_Click(object sender, RoutedEventArgs e)

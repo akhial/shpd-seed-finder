@@ -7,6 +7,7 @@ import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.ScoutItemSource
 import dev.seedseeker.app.model.TierMatch
 import dev.seedseeker.app.model.UpgradeMatch
+import dev.seedseeker.app.model.WandmakerQuest
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -70,6 +71,17 @@ class QuerySummaryTest {
         assertEquals(
             "≤ floor 1 · 1 challenge",
             scopeSummaryText(1, requireBlacksmith = false, excludeBlacksmithRewards = false, fastMode = false, challenges = 16),
+        )
+        assertEquals(
+            "≤ floor 9 · corpse dust",
+            scopeSummaryText(
+                9,
+                requireBlacksmith = false,
+                excludeBlacksmithRewards = false,
+                wandmakerQuest = WandmakerQuest.CORPSE_DUST,
+                fastMode = false,
+                challenges = 0,
+            ),
         )
     }
 }

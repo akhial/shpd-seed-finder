@@ -19,8 +19,17 @@ only action that discards results is the explicit **Clear** button.
 - **Target coverage** — the portion of the seed space the target traversal
   has scanned, kept as resume state (uncovered remainder). Imported results
   carry no coverage.
-- **Continuation**: query B continues query A when scope (floor limit,
-  blacksmith flags, fast mode, challenges) is identical and every
+- **World conditions** — the query-level conditions that judge an otherwise
+  unchanged world: require an accessible blacksmith, exclude the Smith
+  rewards, and demand a Wandmaker quest. Switching one on, or naming a quest
+  where none was demanded, only ever *removes* seeds, so one query's
+  conditions can be **at least as strict** as another's: every flag the base
+  sets is also set, and a base quest is demanded unchanged (an unfiltered base
+  accepts any). The floor limit, challenges and fast mode are not world
+  conditions — they change which world is generated, or how it is searched.
+- **Continuation**: query B continues query A when the floor limit, challenge
+  set and fast mode are identical, B's world conditions are at least as
+  strict as A's, and every
   requirement of A is covered by a *distinct* requirement of B at least as
   strict — equal, or strengthened: an item named where A wanted any of its
   kind, a tightened upgrade/tier bound, a demanded source, effect, curse

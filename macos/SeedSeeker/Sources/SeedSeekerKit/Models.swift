@@ -1,7 +1,7 @@
 import Foundation
 
 public enum ItemKind: Int, Codable, CaseIterable, Sendable {
-    // The raw value doubles as the SSF7 wire kind ID: 0...3 are the original
+    // The raw value doubles as the SSF8 wire kind ID: 0...3 are the original
     // families and 4/5 narrow a weapon requirement to one weapon class, so
     // saved queries and packets from older builds keep their meaning.
     case weapon, armor, wand, ring, meleeWeapon, thrownWeapon
@@ -243,12 +243,38 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
     }
 }
 
+/// The Wandmaker quest a search can demand, or `nil` for any of them.
+///
+/// Only this giver's variant is worth filtering on: its quest item — corpse
+/// dust, an elemental ember, or a rotberry seed — can be used in the dungeon
+/// instead of being handed in. The other three quests only change the fight.
+public enum WandmakerQuest: Int, CaseIterable, Codable, Sendable {
+    // The raw value doubles as the SSF8 wire id and the 1-based variant index.
+    case corpseDust = 1, elementalEmbers, rotberry
+
+    public var variant: ScoutQuestVariant { ScoutQuestKind.wandmaker.variants[rawValue - 1] }
+    public var label: String { variant.label }
+    /// Stable snake_case name used by the shared JSON query document.
+    public var documentName: String {
+        switch self {
+        case .corpseDust: "corpse_dust"
+        case .elementalEmbers: "elemental_embers"
+        case .rotberry: "rotberry"
+        }
+    }
+    public static func named(_ name: String) -> WandmakerQuest? {
+        allCases.first { $0.documentName == name }
+    }
+}
+
 public struct SearchRequest: Codable, Sendable {
     public var requirements: [ItemRequirement]
     public var maximumDepth: Int
     public var requireBlacksmith: Bool
     /// Prevents the 2,000-favor Smith choice from satisfying item requirements.
     public var excludeBlacksmithRewards: Bool
+    /// Which Wandmaker quest the run must roll; `nil` accepts any.
+    public var wandmakerQuest: WandmakerQuest?
     /// Faster but non-exhaustive: +3 weapon/armor requirements only consider
     /// quest rewards, skipping seeds whose sole match is a Crypt or
     /// Sacrificial-fire prize. Found seeds are always genuine matches.
@@ -257,6 +283,7 @@ public struct SearchRequest: Codable, Sendable {
 
     public init(requirements: [ItemRequirement], maximumDepth: Int = 24,
                 requireBlacksmith: Bool = false, excludeBlacksmithRewards: Bool = false,
+                wandmakerQuest: WandmakerQuest? = nil,
                 fastMode: Bool = false, challenges: Int = 0) throws {
         guard !requirements.isEmpty else { throw ModelValidationError.emptyRequirements }
         guard (1...24).contains(maximumDepth) else { throw ModelValidationError.maximumDepth }
@@ -264,14 +291,16 @@ public struct SearchRequest: Codable, Sendable {
         self.requirements = requirements; self.maximumDepth = maximumDepth
         self.requireBlacksmith = requireBlacksmith
         self.excludeBlacksmithRewards = excludeBlacksmithRewards
+        self.wandmakerQuest = wandmakerQuest
         self.fastMode = fastMode
         self.challenges = challenges
     }
 }
 
 extension SearchRequest {
-    /// Whether this request refines `base`: identical scope (floor limit,
-    /// blacksmith settings, fast mode, and challenges) plus, for every base
+    /// Whether this request refines `base`: an identical floor limit, fast
+    /// mode and challenge set, world conditions (the blacksmith settings and
+    /// the Wandmaker filter) at least as strict as `base`'s, plus, for every base
     /// requirement, a distinct requirement of this request at least as strict
     /// — equal, added-to, or strengthened (a named item, a tightened bound).
     ///
@@ -280,8 +309,8 @@ extension SearchRequest {
     /// where it stopped — rather than throw the results away and rescan.
     ///
     /// The rule itself is the engine's (`SearchQuery::continues`, bridged as
-    /// `seedfinder_query_continues`): both queries go over the same SSF7 wire
-    /// the search takes, so refine eligibility is decided once for every
+    /// `seedfinder_query_continues`): both queries go over the same SSF8
+    /// wire the search takes, so refine eligibility is decided once for every
     /// platform instead of being re-derived here. Row identity (`key`) drops
     /// out for free — it is not part of the wire format. A query too large to
     /// encode continues nothing.

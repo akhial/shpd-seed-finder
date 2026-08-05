@@ -13,7 +13,7 @@ the libadwaita pattern for triple-pane navigation. Breakpoints collapse the pane
 push/pop navigation as the window narrows, down to a fully single-pane phone-sized layout.
 
 - **Query** (sidebar) builds the search declaratively: item requirements as editable rows,
-  plus floor limit, blacksmith, and fast-search scope controls. Requirements open in a dialog
+  plus floor limit, Wandmaker quest, blacksmith, and fast-search scope controls. Requirements open in a dialog
   with category, item, tier, upgrade, enchantment/glyph, source, same-item group, and
   per-item floor limit predicates. Included and user-saved presets are available from the
   sidebar and main menu; user presets can be updated or deleted. Challenges live in a
