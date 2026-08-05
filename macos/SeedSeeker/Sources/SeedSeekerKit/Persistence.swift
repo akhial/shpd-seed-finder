@@ -5,18 +5,22 @@ public struct SavedQuery: Codable, Sendable {
     public var maximumDepth: Int
     public var requireBlacksmith: Bool
     public var excludeBlacksmithRewards: Bool
+    public var wandmakerQuest: WandmakerQuest?
     public var fastMode: Bool
     public var challenges: Int
     public init(requirements: [ItemRequirement] = [], maximumDepth: Int = 24,
                 requireBlacksmith: Bool = false, excludeBlacksmithRewards: Bool = false,
+                wandmakerQuest: WandmakerQuest? = nil,
                 fastMode: Bool = false, challenges: Int = 0) {
         self.requirements = requirements; self.maximumDepth = maximumDepth
         self.requireBlacksmith = requireBlacksmith
-        self.excludeBlacksmithRewards = excludeBlacksmithRewards; self.fastMode = fastMode
+        self.excludeBlacksmithRewards = excludeBlacksmithRewards
+        self.wandmakerQuest = wandmakerQuest; self.fastMode = fastMode
         self.challenges = challenges
     }
     private enum CodingKeys: String, CodingKey {
-        case requirements, maximumDepth, requireBlacksmith, excludeBlacksmithRewards, fastMode, challenges
+        case requirements, maximumDepth, requireBlacksmith, excludeBlacksmithRewards
+        case wandmakerQuest, fastMode, challenges
     }
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -27,6 +31,9 @@ public struct SavedQuery: Codable, Sendable {
         requireBlacksmith = try container.decode(Bool.self, forKey: .requireBlacksmith)
         excludeBlacksmithRewards = try container.decodeIfPresent(
             Bool.self, forKey: .excludeBlacksmithRewards) ?? false
+        // A quest id a newer build knows falls back to "any" rather than
+        // discarding the whole saved query.
+        wandmakerQuest = (try? container.decodeIfPresent(WandmakerQuest.self, forKey: .wandmakerQuest)) ?? nil
         // Saved queries predating the fast-mode toggle omit the key.
         fastMode = try container.decodeIfPresent(Bool.self, forKey: .fastMode) ?? false
         challenges = try container.decodeIfPresent(Int.self, forKey: .challenges) ?? 0

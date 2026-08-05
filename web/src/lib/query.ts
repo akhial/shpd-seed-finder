@@ -1,4 +1,5 @@
 import { getItem, isCurseForCategory, kindFamily, kindWeaponClass } from './catalog'
+import { WANDMAKER_QUESTS } from './wasm/types'
 import type {
   QueryDocument,
   QueryState,
@@ -6,6 +7,7 @@ import type {
   RequirementState,
   TierFilter,
   UpgradeFilter,
+  WandmakerQuest,
 } from './wasm/types'
 
 /**
@@ -76,6 +78,7 @@ export function toQueryDocument(state: QueryState): QueryDocument {
   if (state.maxDepth !== 24) output.max_depth = state.maxDepth
   if (state.requireBlacksmith) output.require_blacksmith = true
   if (state.excludeBlacksmithRewards) output.exclude_blacksmith_rewards = true
+  if (state.wandmakerQuest) output.wandmaker_quest = state.wandmakerQuest
   if (state.fastMode) output.fast_mode = true
   if (state.challenges.length) output.challenges = [...state.challenges]
   return output
@@ -118,6 +121,13 @@ function upgradeFromDocument(value: unknown): UpgradeFilter {
   throw new Error('unrecognized upgrade filter')
 }
 
+/** Rejects unknown quest names rather than silently widening the filter. */
+function wandmakerQuestFromDocument(value: unknown): WandmakerQuest | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value === 'string' && (WANDMAKER_QUESTS as readonly string[]).includes(value)) return value as WandmakerQuest
+  throw new Error(`unknown Wandmaker quest "${String(value)}"`)
+}
+
 function requirementFromDocument(value: RequirementDocument): RequirementState {
   const raw = value as Record<string, unknown>
   return {
@@ -142,6 +152,7 @@ export function fromQueryJson(json: string): QueryState {
     maxDepth: normalizeFloorLimit(document.max_depth ?? 24),
     requireBlacksmith: document.require_blacksmith ?? false,
     excludeBlacksmithRewards: document.exclude_blacksmith_rewards ?? false,
+    wandmakerQuest: wandmakerQuestFromDocument(document.wandmaker_quest),
     fastMode: document.fast_mode ?? false,
     challenges: document.challenges ? [...document.challenges] : [],
   }

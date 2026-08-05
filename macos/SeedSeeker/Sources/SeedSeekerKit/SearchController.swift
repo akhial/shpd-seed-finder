@@ -142,6 +142,7 @@ public final class SearchController {
             requirements: query.requirements, maximumDepth: query.maximumDepth,
             requireBlacksmith: query.requireBlacksmith,
             excludeBlacksmithRewards: query.excludeBlacksmithRewards,
+            wandmakerQuest: query.wandmakerQuest,
             fastMode: query.fastMode, challenges: query.challenges)
         target = request.map { TargetState(request: $0, seeds: unique, resumeFrom: 0, remaining: 0) }
     }
@@ -197,6 +198,7 @@ public final class SearchController {
             requirements: request.requirements, maximumDepth: request.maximumDepth,
             requireBlacksmith: request.requireBlacksmith,
             excludeBlacksmithRewards: request.excludeBlacksmithRewards,
+            wandmakerQuest: request.wandmakerQuest,
             fastMode: request.fastMode, challenges: request.challenges)
         task = Task { [weak self] in
             guard let self else { return }
@@ -208,7 +210,7 @@ public final class SearchController {
 
     /// Whether starting `request` could continue the last finished run rather
     /// than rescan: nothing running, a base run on record, and the same
-    /// requirements or more at identical scope. `decideStart(_:)` consults
+    /// requirements or more under a scope it never widens. `decideStart(_:)` consults
     /// this for the detached thread only; a continuation of the Target Query
     /// always refines the Target instead.
     public func canRefine(with request: SearchRequest) -> Bool {
@@ -281,6 +283,7 @@ public final class SearchController {
                 requirements: request.requirements, maximumDepth: request.maximumDepth,
                 requireBlacksmith: request.requireBlacksmith,
                 excludeBlacksmithRewards: request.excludeBlacksmithRewards,
+                wandmakerQuest: request.wandmakerQuest,
                 fastMode: request.fastMode, challenges: request.challenges)
             // A filter never scans; a refine resumes the target's remainder.
             if resumesScan && target.remaining > 0 {
@@ -331,6 +334,7 @@ public final class SearchController {
                 requirements: request.requirements, maximumDepth: request.maximumDepth,
                 requireBlacksmith: request.requireBlacksmith,
                 excludeBlacksmithRewards: request.excludeBlacksmithRewards,
+                wandmakerQuest: request.wandmakerQuest,
                 fastMode: request.fastMode, challenges: request.challenges)
             if base.remaining > 0 {
                 await self.run(request, alreadyShown: Set(kept)) { engine in

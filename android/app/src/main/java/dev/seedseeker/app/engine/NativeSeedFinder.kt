@@ -36,8 +36,9 @@ interface NativeSeedFinder {
     fun scoutSeed(seed: String, challenges: Int = 0): ScoutWorld
 
     /**
-     * Whether [candidate] never widens [base]: identical scope (depth, challenges, blacksmith
-     * flags, fast mode) and every base requirement covered by a distinct candidate requirement
+     * Whether [candidate] never widens [base]: an identical floor limit, challenge set and fast
+     * mode, world conditions (blacksmith flags, Wandmaker quest) at least as strict as the base's,
+     * and every base requirement covered by a distinct candidate requirement
      * at least as strict — equal or strengthened (a named item, a tightened bound)
      * (UI list keys are not part of the wire query, so re-keying is invisible here). Only such a
      * query may reuse the base run's results and finish by rescanning the seeds it never reached,
@@ -95,17 +96,24 @@ class DemoNativeSeedFinder : NativeSeedFinder {
     /**
      * The one demo answer that is not a stand-in shape but the real rule: a demo APK ships no
      * `.so`, and a wrong continuation verdict would send every demo search down a refine branch
-     * the shipped app would never take. It mirrors `SearchQuery::continues` — identical scope
+     * the shipped app would never take. It mirrors `SearchQuery::continues` — an identical floor
+     * limit, challenge set and fast mode, world conditions (the blacksmith flags and the
+     * Wandmaker filter) at least as strict as the base's,
      * and every base requirement covered by a distinct candidate requirement at least as strict
      * (equal or strengthened: a named item, a tightened bound), ignoring UI list keys. Coverage
      * is a bipartite matching, found with augmenting paths just like the engine's, because a
      * strengthened requirement can cover several base rows and greedy claiming picks wrongly.
      */
     override fun queryContinues(candidate: SearchRequest, base: SearchRequest): Boolean {
+        // The blacksmith flags and the quest filter are conditions on an
+        // unchanged world, so switching one on only removes seeds and
+        // strengthens the base; switching it off, or swapping the quest for
+        // another variant, widens the query and must rescan.
         if (candidate.maximumDepth != base.maximumDepth ||
             candidate.challenges != base.challenges ||
-            candidate.requireBlacksmith != base.requireBlacksmith ||
-            candidate.excludeBlacksmithRewards != base.excludeBlacksmithRewards ||
+            (base.requireBlacksmith && !candidate.requireBlacksmith) ||
+            (base.excludeBlacksmithRewards && !candidate.excludeBlacksmithRewards) ||
+            (base.wandmakerQuest != null && candidate.wandmakerQuest != base.wandmakerQuest) ||
             candidate.fastMode != base.fastMode
         ) {
             return false
@@ -325,8 +333,9 @@ class DemoNativeSeedFinder : NativeSeedFinder {
  * 10. `queryContinues(candidateBytes, baseBytes) -> boolean` reports whether the candidate query
  *    may reuse a run of the base query, throwing for an undecodable packet.
  *
- * Search requests always use `SSF7`: magic, maxDepth:u8, flags:u8, challenges:u16 little-endian,
- * requirementCount:u16 big-endian, followed by repeated
+ * Search requests always use `SSF8`: magic, maxDepth:u8, flags:u8, challenges:u16 little-endian,
+ * wandmakerQuest:u8 (0 any, else the 1-based variant), requirementCount:u16 big-endian,
+ * followed by repeated
  * kind:u8, optionalItemId:utf8_u16, tierMode:u8, tierValue:u8, upgradeMode:u8,
  * upgradeValue:u8, modifier:utf8_u16,
  * optionalSource:u8, sameItemGroup:u8, requirementMaxDepth:u8 (0 uses the request limit),
@@ -511,7 +520,7 @@ object SeedCode {
 object QueryCodec {
     fun encode(request: SearchRequest): ByteArray = ByteArrayOutputStream().use { bytes ->
         DataOutputStream(bytes).use { output ->
-            output.write("SSF7".toByteArray(StandardCharsets.US_ASCII))
+            output.write("SSF8".toByteArray(StandardCharsets.US_ASCII))
             output.writeByte(request.maximumDepth)
             output.writeByte(
                 (if (request.requireBlacksmith) 1 else 0) or
@@ -520,6 +529,7 @@ object QueryCodec {
             )
             output.writeByte(request.challenges and 0xff)
             output.writeByte(request.challenges ushr 8)
+            output.writeByte(request.wandmakerQuest?.wireId ?: 0)
             output.writeShort(request.requirements.size)
             request.requirements.forEach { requirement -> writeRequirement(output, requirement) }
         }

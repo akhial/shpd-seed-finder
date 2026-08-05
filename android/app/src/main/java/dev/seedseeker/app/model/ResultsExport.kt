@@ -12,14 +12,14 @@ import org.json.JSONObject
  * The canonical implementation and compatibility rules live in the Rust core
  * (`crates/seedfinder-core/src/results_export.rs`); the schema is documented
  * in `docs/results-export-format.md`. Keep this codec schema-compatible with
- * it: unknown envelope and per-result fields are ignored, files declaring a
- * newer `format_version` are rejected with an "update the app" message, and
- * unknown or wrong-typed query content fails the import instead of silently
- * changing the query's meaning.
+ * it: unknown envelope and per-result fields are ignored — including the
+ * `format_version` number releases up to 0.7.0 wrote, so every file an older
+ * release exported keeps importing — and unknown or wrong-typed query content
+ * fails the import instead of silently changing the query's meaning.
  */
 object ResultsExport {
     const val FILE_FORMAT = "seed-seeker-results"
-    const val FORMAT_VERSION = 1
+
     const val SUGGESTED_FILE_NAME = "seed-seeker-results.json"
 
     /** Mirrors the Rust core's `SHPD_VERSION`, the source of truth. */
@@ -54,6 +54,7 @@ object ResultsExport {
         "max_depth",
         "require_blacksmith",
         "exclude_blacksmith_rewards",
+        "wandmaker_quest",
         "fast_mode",
         "challenges",
     )
@@ -72,7 +73,6 @@ object ResultsExport {
     fun encode(query: PresetQuery, seeds: List<String>, appVersion: String): String =
         JSONObject().apply {
             put("format", FILE_FORMAT)
-            put("format_version", FORMAT_VERSION)
             put("app_version", appVersion)
             put("shpd_version", SHPD_VERSION)
             put("query", encodeQuery(query))
@@ -96,22 +96,6 @@ object ResultsExport {
         }
         require(document.opt("format") == FILE_FORMAT) {
             "This is not a Seed Seeker results file."
-        }
-        val version = document.opt("format_version")
-        requireNotNull(version.takeIf { it != JSONObject.NULL }) {
-            "This results file is missing its format version."
-        }
-        // Strictly a positive integer: no booleans, strings, or fractions.
-        require(version is Int || version is Long) {
-            "This results file does not declare a valid format version (a positive whole number)."
-        }
-        val versionNumber = (version as Number).toLong()
-        require(versionNumber >= 1) {
-            "This results file does not declare a valid format version (a positive whole number)."
-        }
-        require(versionNumber <= FORMAT_VERSION) {
-            "This results file uses format version $versionNumber, but this app understands " +
-                "up to version $FORMAT_VERSION. Update Seed Seeker to import it."
         }
         val queryValue = document.optJSONObject("query")
         requireNotNull(queryValue) { "This results file is missing its query." }
@@ -139,6 +123,7 @@ object ResultsExport {
         if (query.maximumDepth != 24) put("max_depth", query.maximumDepth)
         if (query.requireBlacksmith) put("require_blacksmith", true)
         if (query.excludeBlacksmithRewards) put("exclude_blacksmith_rewards", true)
+        query.wandmakerQuest?.let { put("wandmaker_quest", it.documentName) }
         if (query.fastMode) put("fast_mode", true)
         val challenges = CHALLENGE_NAMES.entries
             .filter { (_, challenge) -> query.challenges and challenge.bit != 0 }
@@ -205,11 +190,17 @@ object ResultsExport {
         }
         val maximumDepth = value.strictIntOrNull("max_depth") ?: 24
         require(maximumDepth in 1..24) { "Maximum floor must be 1..24." }
+        val wandmakerQuest = value.strictStringOrNull("wandmaker_quest")?.let { name ->
+            requireNotNull(WandmakerQuest.named(name)) {
+                "The query in this results file uses an unknown Wandmaker quest \"$name\"."
+            }
+        }
         return PresetQuery(
             requirements = requirements,
             maximumDepth = maximumDepth,
             requireBlacksmith = value.strictBool("require_blacksmith"),
             excludeBlacksmithRewards = value.strictBool("exclude_blacksmith_rewards"),
+            wandmakerQuest = wandmakerQuest,
             fastMode = value.strictBool("fast_mode"),
             challenges = challenges,
         )

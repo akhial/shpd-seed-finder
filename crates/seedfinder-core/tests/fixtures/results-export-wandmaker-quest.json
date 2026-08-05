@@ -1,0 +1,19 @@
+{
+  "format": "seed-seeker-results",
+  "app_version": "0.7.0",
+  "shpd_version": "3.3.8",
+  "query": {
+    "requirements": [
+      {
+        "kind": "wand",
+        "upgrade": 3
+      }
+    ],
+    "max_depth": 9,
+    "wandmaker_quest": "rotberry"
+  },
+  "results": [
+    { "seed": "AAA-AAA-BUH" },
+    { "seed": "ABC-DEF-GHI" }
+  ]
+}

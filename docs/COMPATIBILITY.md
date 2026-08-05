@@ -32,7 +32,12 @@ condition is satisfied only when the generated Blacksmith quest room is
 accessible within the selected maximum floor; a failed room build does not
 count. The Smith-reward exclusion independently prevents those choice items from
 satisfying requirements while still allowing the room to meet the blacksmith
-condition. The overall maximum floor and each item's optional floor limit are
+condition. The Wandmaker-quest filter is satisfied when the scheduled Prison
+quest rolls the demanded variant: the giver appears on floors 7–9 (certain by
+floor 9), and its variant is fixed when the quest room is scheduled, so a
+query demanding one is impossible below floor 7 and forces the prefix to run
+to floor `min(max_depth, 9)` even when every item requirement was already
+met. The overall maximum floor and each item's optional floor limit are
 passed into planning, so later regions are not simulated once every remaining
 requirement has reached its deadline.
 

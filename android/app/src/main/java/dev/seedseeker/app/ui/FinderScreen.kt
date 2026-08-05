@@ -74,6 +74,7 @@ import dev.seedseeker.app.model.QueryPreset
 import dev.seedseeker.app.model.SearchState
 import dev.seedseeker.app.model.SearchStatus
 import dev.seedseeker.app.model.SeedResult
+import dev.seedseeker.app.model.WandmakerQuest
 import dev.seedseeker.app.model.floorLimitIndex
 import kotlin.math.roundToInt
 
@@ -84,6 +85,7 @@ fun FinderScreen(
     maximumDepth: Int,
     requireBlacksmith: Boolean,
     excludeBlacksmithRewards: Boolean,
+    wandmakerQuest: WandmakerQuest?,
     fastMode: Boolean,
     challenges: Int,
     presets: List<QueryPreset>,
@@ -108,6 +110,7 @@ fun FinderScreen(
     onMaximumDepthChange: (Int) -> Unit,
     onRequireBlacksmithChange: (Boolean) -> Unit,
     onExcludeBlacksmithRewardsChange: (Boolean) -> Unit,
+    onWandmakerQuestChange: (WandmakerQuest?) -> Unit,
     onFastModeChange: (Boolean) -> Unit,
     onSearch: () -> Unit,
     onCancel: () -> Unit,
@@ -210,6 +213,7 @@ fun FinderScreen(
                     maximumDepth = maximumDepth,
                     requireBlacksmith = requireBlacksmith,
                     excludeBlacksmithRewards = excludeBlacksmithRewards,
+                    wandmakerQuest = wandmakerQuest,
                     fastMode = fastMode,
                     challenges = challenges,
                     results = results,
@@ -224,6 +228,7 @@ fun FinderScreen(
                     onMaximumDepthChange = onMaximumDepthChange,
                     onRequireBlacksmithChange = onRequireBlacksmithChange,
                     onExcludeBlacksmithRewardsChange = onExcludeBlacksmithRewardsChange,
+                    onWandmakerQuestChange = onWandmakerQuestChange,
                     onFastModeChange = onFastModeChange,
                     onChallenges = onChallenges,
                 )
@@ -289,6 +294,7 @@ private fun QueryHeader(
     maximumDepth: Int,
     requireBlacksmith: Boolean,
     excludeBlacksmithRewards: Boolean,
+    wandmakerQuest: WandmakerQuest?,
     fastMode: Boolean,
     challenges: Int,
     results: List<SeedResult>,
@@ -303,6 +309,7 @@ private fun QueryHeader(
     onMaximumDepthChange: (Int) -> Unit,
     onRequireBlacksmithChange: (Boolean) -> Unit,
     onExcludeBlacksmithRewardsChange: (Boolean) -> Unit,
+    onWandmakerQuestChange: (WandmakerQuest?) -> Unit,
     onFastModeChange: (Boolean) -> Unit,
     onChallenges: () -> Unit,
 ) {
@@ -346,12 +353,14 @@ private fun QueryHeader(
             maximumDepth = maximumDepth,
             requireBlacksmith = requireBlacksmith,
             excludeBlacksmithRewards = excludeBlacksmithRewards,
+            wandmakerQuest = wandmakerQuest,
             fastMode = fastMode,
             challenges = challenges,
             enabled = !isSearching,
             onMaximumDepthChange = onMaximumDepthChange,
             onRequireBlacksmithChange = onRequireBlacksmithChange,
             onExcludeBlacksmithRewardsChange = onExcludeBlacksmithRewardsChange,
+            onWandmakerQuestChange = onWandmakerQuestChange,
             onFastModeChange = onFastModeChange,
             onChallenges = onChallenges,
         )
@@ -433,12 +442,14 @@ private fun ScopeSection(
     maximumDepth: Int,
     requireBlacksmith: Boolean,
     excludeBlacksmithRewards: Boolean,
+    wandmakerQuest: WandmakerQuest?,
     fastMode: Boolean,
     challenges: Int,
     enabled: Boolean,
     onMaximumDepthChange: (Int) -> Unit,
     onRequireBlacksmithChange: (Boolean) -> Unit,
     onExcludeBlacksmithRewardsChange: (Boolean) -> Unit,
+    onWandmakerQuestChange: (WandmakerQuest?) -> Unit,
     onFastModeChange: (Boolean) -> Unit,
     onChallenges: () -> Unit,
 ) {
@@ -458,6 +469,7 @@ private fun ScopeSection(
                     maximumDepth = maximumDepth,
                     requireBlacksmith = requireBlacksmith,
                     excludeBlacksmithRewards = excludeBlacksmithRewards,
+                    wandmakerQuest = wandmakerQuest,
                     fastMode = fastMode,
                     challenges = challenges,
                 ),
@@ -498,6 +510,11 @@ private fun ScopeSection(
                     steps = FLOOR_LIMIT_OPTIONS.size - 2,
                     enabled = enabled,
                     modifier = Modifier.semantics { stateDescription = "Floor $maximumDepth" },
+                )
+                WandmakerQuestRow(
+                    quest = wandmakerQuest,
+                    enabled = enabled,
+                    onQuestChange = onWandmakerQuestChange,
                 )
                 SwitchRow(
                     label = "Blacksmith reachable",
@@ -540,6 +557,64 @@ private fun ScopeSection(
                         tint = MaterialTheme.colorScheme.primary,
                     )
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Which Wandmaker quest a run must roll. It sits above the blacksmith
+ * switches because only this giver's item is worth choosing: corpse dust, an
+ * elemental ember, or a rotberry seed can be used in the dungeon instead of
+ * being handed in.
+ */
+@Composable
+private fun WandmakerQuestRow(
+    quest: WandmakerQuest?,
+    enabled: Boolean,
+    onQuestChange: (WandmakerQuest?) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(enabled = enabled) { expanded = true }
+                .padding(vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Wandmaker quest",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                quest?.label ?: "Any",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Icon(
+                Icons.Filled.KeyboardArrowDown,
+                contentDescription = "Choose the Wandmaker quest",
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("Any") },
+                onClick = {
+                    expanded = false
+                    onQuestChange(null)
+                },
+            )
+            WandmakerQuest.entries.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option.label) },
+                    onClick = {
+                        expanded = false
+                        onQuestChange(option)
+                    },
+                )
             }
         }
     }

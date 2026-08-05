@@ -48,6 +48,7 @@ use crate::probability_tables::{
     spread_index, supply_for, tipped_index,
 };
 use crate::query::{Requirement, SearchQuery, UpgradeRequirement};
+use crate::quests::WandmakerQuestType;
 
 /// Estimates the fraction of seeds satisfying a query.
 ///
@@ -63,7 +64,7 @@ pub fn estimate_match_probability(query: &SearchQuery) -> f64 {
         }
     }
 
-    let mut probability = blacksmith_probability(query);
+    let mut probability = blacksmith_probability(query) * wandmaker_quest_probability(query);
     let mut groups: Vec<Vec<Requirement>> = Vec::new();
     for members in linked.into_values() {
         // A linked group that names its item constrains nothing extra: every
@@ -117,6 +118,28 @@ fn blacksmith_probability(query: &SearchQuery) -> f64 {
         })
         .sum::<f64>()
         .clamp(0.0, 1.0)
+}
+
+/// Probability that the Wandmaker spawns within the search depth *and* rolls
+/// the demanded quest.
+///
+/// This factor is exact rather than measured. `Wandmaker.Quest.spawnRoom`
+/// draws `Int(10 - depth) == 0` on each Prison floor above six, so the giver
+/// arrives on floor seven one time in three, on floor eight one of the
+/// remaining two times, and on floor nine always. The variant is then a flat
+/// `Int(3)` over the three quests, independent of the floor.
+fn wandmaker_quest_probability(query: &SearchQuery) -> f64 {
+    if query.wandmaker_quest.is_none() {
+        return 1.0;
+    }
+    let mut missed = 1.0;
+    for depth in WandmakerQuestType::WINDOW {
+        if depth > query.max_depth {
+            break;
+        }
+        missed *= 1.0 - 1.0 / f64::from(10 - u16::from(depth));
+    }
+    (1.0 - missed) / 3.0
 }
 
 /// Probability that requirements sharing an identity group are all satisfied.
@@ -1135,6 +1158,7 @@ mod tests {
             challenges: Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         }
     }
@@ -1393,5 +1417,28 @@ mod tests {
         let mut late = query(vec![requirement(ItemKind::Armor)], 14);
         late.require_blacksmith = true;
         assert!(estimate_match_probability(&late) > 0.9);
+    }
+
+    #[test]
+    fn a_wandmaker_quest_costs_exactly_its_spawn_and_variant_odds() {
+        use crate::quests::WandmakerQuestType;
+
+        let quested = |max_depth| SearchQuery {
+            wandmaker_quest: Some(WandmakerQuestType::Rotberry),
+            ..query(vec![requirement(ItemKind::Armor)], max_depth)
+        };
+        let open = |max_depth| query(vec![requirement(ItemKind::Armor)], max_depth);
+        let ratio = |max_depth| {
+            estimate_match_probability(&quested(max_depth))
+                / estimate_match_probability(&open(max_depth))
+        };
+
+        // Below the Prison the Wandmaker never spawns at all.
+        assert!(estimate_match_probability(&quested(6)) <= 0.0);
+        // Floor seven spawns one run in three, floor eight two in three, and
+        // floor nine always; one of three quests then has to be the wanted one.
+        assert!((ratio(7) - 1.0 / 9.0).abs() < 1e-9);
+        assert!((ratio(8) - 2.0 / 9.0).abs() < 1e-9);
+        assert!((ratio(24) - 1.0 / 3.0).abs() < 1e-9);
     }
 }

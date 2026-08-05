@@ -13,13 +13,12 @@ public struct ResultsExportError: Error, LocalizedError, Equatable {
 /// The canonical implementation and compatibility rules live in the Rust core
 /// (`crates/seedfinder-core/src/results_export.rs`); the schema is documented
 /// in `docs/results-export-format.md`. Keep this codec schema-compatible with
-/// it: unknown envelope and per-result fields are ignored, files declaring a
-/// newer `format_version` are rejected with an "update the app" message, and
-/// unknown or wrong-typed query content fails the import instead of silently
-/// changing the query's meaning.
+/// it: unknown envelope and per-result fields are ignored — including the
+/// `format_version` number releases up to 0.7.0 wrote, so every file an older
+/// release exported keeps importing — and unknown or wrong-typed query content
+/// fails the import instead of silently changing the query's meaning.
 public enum ResultsExport {
     public static let fileFormat = "seed-seeker-results"
-    public static let formatVersion = 1
     public static let suggestedFileName = "seed-seeker-results"
     /// Mirrors the Rust core's `SHPD_VERSION`, the source of truth.
     public static let shpdVersion = "3.3.8"
@@ -37,7 +36,6 @@ public enum ResultsExport {
     }
 
     /// Stable document names, indexed by the matching enum raw value.
-    /// The narrowed weapon kinds are additive within format version 1.
     private static let kindNames = ["weapon", "armor", "wand", "ring", "melee_weapon", "thrown_weapon"]
     private static let sourceNames = [
         "heap", "chest", "locked_chest", "crystal_chest", "tomb", "skeleton",
@@ -54,8 +52,9 @@ public enum ResultsExport {
     ]
     private static let queryKeys: Set<String> = [
         "requirements", "max_depth", "require_blacksmith",
-        "exclude_blacksmith_rewards", "fast_mode", "challenges",
+        "exclude_blacksmith_rewards", "wandmaker_quest", "fast_mode", "challenges",
     ]
+
     private static let requirementKeys: Set<String> = [
         "kind", "item", "tier", "upgrade", "effect", "uncursed", "source",
         "identity_group", "max_depth",
@@ -64,7 +63,6 @@ public enum ResultsExport {
     public static func encode(_ query: SavedQuery, seeds: [String], appVersion: String) -> String {
         let document: [String: Any] = [
             "format": fileFormat,
-            "format_version": formatVersion,
             "app_version": appVersion,
             "shpd_version": shpdVersion,
             "query": encodeQuery(query),
@@ -81,20 +79,6 @@ public enum ResultsExport {
               let document = parsed as? [String: Any],
               document["format"] as? String == fileFormat else {
             throw ResultsExportError("This is not a Seed Seeker results file.")
-        }
-        guard let versionValue = document["format_version"] else {
-            throw ResultsExportError("This results file is missing its format version.")
-        }
-        // Strictly a positive integer: NSNumber bridging would otherwise let
-        // `true` or `1.5` slip through `as? Int`.
-        guard let version = strictInt(versionValue), version >= 1 else {
-            throw ResultsExportError(
-                "This results file does not declare a valid format version (a positive whole number).")
-        }
-        guard version <= formatVersion else {
-            throw ResultsExportError(
-                "This results file uses format version \(version), but this app understands " +
-                "up to version \(formatVersion). Update Seed Seeker to import it.")
         }
         guard let queryValue = document["query"] as? [String: Any] else {
             throw ResultsExportError("This results file is missing its query.")
@@ -175,6 +159,7 @@ public enum ResultsExport {
         if query.maximumDepth != 24 { output["max_depth"] = query.maximumDepth }
         if query.requireBlacksmith { output["require_blacksmith"] = true }
         if query.excludeBlacksmithRewards { output["exclude_blacksmith_rewards"] = true }
+        if let quest = query.wandmakerQuest { output["wandmaker_quest"] = quest.documentName }
         if query.fastMode { output["fast_mode"] = true }
         let challenges = challengeNames
             .filter { query.challenges & $0.challenge.rawValue != 0 }
@@ -246,11 +231,20 @@ public enum ResultsExport {
                 challenges |= match.challenge.rawValue
             }
         }
+        var wandmakerQuest: WandmakerQuest?
+        if let name = try stringField(value, "wandmaker_quest") {
+            guard let quest = WandmakerQuest.named(name) else {
+                throw ResultsExportError(
+                    "The query in this results file uses an unknown Wandmaker quest \"\(name)\".")
+            }
+            wandmakerQuest = quest
+        }
         return try SavedQuery(
             requirements: requirements,
             maximumDepth: maximumDepth,
             requireBlacksmith: boolField(value, "require_blacksmith"),
             excludeBlacksmithRewards: boolField(value, "exclude_blacksmith_rewards"),
+            wandmakerQuest: wandmakerQuest,
             fastMode: boolField(value, "fast_mode"),
             challenges: challenges)
     }

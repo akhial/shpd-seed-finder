@@ -8,8 +8,11 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::gio;
 
+use shpd_seedfinder_core::quests::WandmakerQuestType;
+
 use crate::state::{
     AppState, UiRequirement, floor_limit_skip_target, kind_icon, normalize_floor_limit,
+    wandmaker_quest_label,
 };
 use crate::{glow, sprites};
 
@@ -44,6 +47,7 @@ pub struct QueryPane {
     depth_row: adw::SpinRow,
     blacksmith_row: adw::SwitchRow,
     exclude_row: adw::SwitchRow,
+    wandmaker_row: adw::ComboRow,
     fast_row: adw::SwitchRow,
     start_content: adw::ButtonContent,
     start_button: gtk::Button,
@@ -105,12 +109,29 @@ impl QueryPane {
                  leaving favor available for reforging",
             )
             .build();
+        // Index zero is "Any"; the rest follow WandmakerQuestType::ALL.
+        let wandmaker_labels = std::iter::once("Any")
+            .chain(
+                WandmakerQuestType::ALL
+                    .into_iter()
+                    .map(wandmaker_quest_label),
+            )
+            .collect::<Vec<_>>();
+        let wandmaker_row = adw::ComboRow::builder()
+            .title("Quest")
+            .model(&gtk::StringList::new(&wandmaker_labels))
+            .build();
+        let wandmaker_group = adw::PreferencesGroup::builder().title("Wandmaker").build();
+        wandmaker_group.add(&wandmaker_row);
+
         let scope_group = adw::PreferencesGroup::builder()
             .title("Search Scope")
             .build();
         scope_group.add(&depth_row);
-        scope_group.add(&blacksmith_row);
-        scope_group.add(&exclude_row);
+
+        let blacksmith_group = adw::PreferencesGroup::builder().title("Blacksmith").build();
+        blacksmith_group.add(&blacksmith_row);
+        blacksmith_group.add(&exclude_row);
 
         let fast_row = adw::SwitchRow::builder()
             .title("Fast search")
@@ -128,6 +149,8 @@ impl QueryPane {
         preferences_page.add(&presets_group);
         preferences_page.add(&requirements_group);
         preferences_page.add(&scope_group);
+        preferences_page.add(&wandmaker_group);
+        preferences_page.add(&blacksmith_group);
         preferences_page.add(&performance_group);
 
         let challenges_button = gtk::Button::builder()
@@ -182,6 +205,7 @@ impl QueryPane {
             depth_row,
             blacksmith_row,
             exclude_row,
+            wandmaker_row,
             fast_row,
             start_content,
             start_button,
@@ -203,6 +227,10 @@ impl QueryPane {
                 move |_| pane.notify_changed()
             });
         }
+        pane.wandmaker_row.connect_selected_notify({
+            let pane = Rc::clone(&pane);
+            move |_| pane.notify_changed()
+        });
         pane
     }
 
@@ -235,6 +263,10 @@ impl QueryPane {
         state.max_depth = normalize_floor_limit(depth.clamp(1, 24));
         state.require_blacksmith = self.blacksmith_row.is_active();
         state.exclude_blacksmith_rewards = self.exclude_row.is_active();
+        state.wandmaker_quest = usize::try_from(self.wandmaker_row.selected())
+            .ok()
+            .and_then(|index| index.checked_sub(1))
+            .and_then(|index| WandmakerQuestType::ALL.get(index).copied());
         state.fast_mode = self.fast_row.is_active();
     }
 
@@ -247,6 +279,11 @@ impl QueryPane {
         self.blacksmith_row.set_sensitive(state.max_depth < 14);
         self.exclude_row
             .set_active(state.exclude_blacksmith_rewards);
+        self.wandmaker_row.set_selected(
+            state
+                .wandmaker_quest
+                .map_or(0, |variant| u32::from(variant.wire_id())),
+        );
         self.fast_row.set_active(state.fast_mode);
         self.rebuild_rows(state);
         let enabled = state.challenges.bits().count_ones();

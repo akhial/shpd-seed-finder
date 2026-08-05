@@ -101,21 +101,56 @@ public sealed class QueryRefinementTests
     }
 
     [Fact]
-    public void ADifferentScopeAlwaysRescans()
+    public void AWidenedScopeRescans()
     {
         var baseline = Query(Ring());
         QuerySettings WithScope(Action<QuerySettings> mutate)
         {
             var query = Query(Ring(), Wand()); mutate(query); return query;
         }
+        // The floor limit and fast mode change which world is generated, or how
+        // it is searched, and so does the challenge set: the base run's coverage
+        // says nothing about them, so they have to match exactly.
         Assert.False(QueryRefinement.CanRefine(WithScope(q => q.MaximumDepth = 9), baseline));
         Assert.False(QueryRefinement.CanRefine(WithScope(q => q.FastMode = true), baseline));
-        Assert.False(QueryRefinement.CanRefine(WithScope(q => q.RequireBlacksmith = true), baseline));
-        Assert.False(QueryRefinement.CanRefine(WithScope(q => q.ExcludeBlacksmithRewards = true), baseline));
         Assert.False(QueryRefinement.CanRefine(WithScope(q => q.Challenges = 4), baseline));
         // Scope equal on both sides, including a non-default one.
         var challenged = Query(Ring()); challenged.Challenges = 4;
         Assert.True(QueryRefinement.CanRefine(challenged.Clone(), challenged));
+    }
+
+    [Fact]
+    public void ANarrowedWorldConditionContinuesAndARelaxedOneRescans()
+    {
+        // The blacksmith flags and the Wandmaker filter are conditions on an
+        // unchanged world: switching one on can only drop seeds the base run
+        // already matched, so the run continues. Switching it back off asks for
+        // seeds the base never delivered, and rescans.
+        var baseline = Query(Ring());
+        QuerySettings Narrowed(Action<QuerySettings> mutate)
+        {
+            var query = Query(Ring(), Wand()); mutate(query); return query;
+        }
+        QuerySettings BaselineWith(Action<QuerySettings> mutate)
+        {
+            var query = Query(Ring()); mutate(query); return query;
+        }
+        var conditions = new (string Name, Action<QuerySettings> Apply)[]
+        {
+            ("require_blacksmith", q => q.RequireBlacksmith = true),
+            ("exclude_blacksmith_rewards", q => q.ExcludeBlacksmithRewards = true),
+            ("wandmaker_quest", q => q.WandmakerQuest = WandmakerQuest.Rotberry),
+        };
+        foreach (var (name, apply) in conditions)
+        {
+            Assert.True(QueryRefinement.CanRefine(Narrowed(apply), baseline), name);
+            Assert.True(QueryRefinement.CanRefine(Narrowed(apply), BaselineWith(apply)), name);
+            Assert.False(QueryRefinement.CanRefine(Query(Ring(), Wand()), BaselineWith(apply)), name);
+        }
+        // A different quest is not a narrowing of the one the base ran.
+        Assert.False(QueryRefinement.CanRefine(
+            Narrowed(q => q.WandmakerQuest = WandmakerQuest.CorpseDust),
+            BaselineWith(q => q.WandmakerQuest = WandmakerQuest.Rotberry)));
     }
 
     [Fact]

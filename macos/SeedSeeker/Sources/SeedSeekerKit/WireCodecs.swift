@@ -80,11 +80,12 @@ public enum SeedCode {
 
 public enum QueryCodec {
     public static func encode(_ request: SearchRequest) throws -> Data {
-        var output = Writer(); output.bytes("SSF7".utf8); output.u8(request.maximumDepth)
+        var output = Writer(); output.bytes("SSF8".utf8); output.u8(request.maximumDepth)
         output.u8((request.requireBlacksmith ? 1 : 0)
             | (request.fastMode ? 2 : 0)
             | (request.excludeBlacksmithRewards ? 4 : 0))
         output.u16LittleEndian(request.challenges)
+        output.u8(request.wandmakerQuest?.rawValue ?? 0)
         output.u16(request.requirements.count)
         for requirement in request.requirements {
             output.u8(requirement.kind.rawValue); try output.text(requirement.item?.id ?? "")

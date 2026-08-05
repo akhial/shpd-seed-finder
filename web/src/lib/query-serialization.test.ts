@@ -40,6 +40,21 @@ describe('query serialization', () => {
     expect(fromQueryJson('{"requirements":[{"kind":"weapon"}]}').requirements[0].kind).toBe('weapon')
   })
 
+  it('carries the Wandmaker quest and defaults it to any', () => {
+    const base = { ...defaultQueryState(), requirements: [{ kind: 'wand' as const, tier: { mode: 'any' as const, value: 3 }, upgrade: { mode: 'any' as const, value: 1 }, uncursed: false }] }
+    expect(toQueryJson(base)).toBe('{"requirements":[{"kind":"wand"}]}')
+    expect(fromQueryJson(toQueryJson(base)).wandmakerQuest).toBeUndefined()
+
+    for (const variant of ['corpse_dust', 'elemental_embers', 'rotberry'] as const) {
+      const state: QueryState = { ...base, wandmakerQuest: variant }
+      expect(JSON.parse(toQueryJson(state))).toEqual({ requirements: [{ kind: 'wand' }], wandmaker_quest: variant })
+      expect(fromQueryJson(toQueryJson(state))).toEqual(state)
+    }
+
+    // An unknown quest fails the import rather than silently widening it.
+    expect(() => fromQueryJson('{"requirements":[{"kind":"wand"}],"wandmaker_quest":"dust"}')).toThrowError(/Wandmaker quest/)
+  })
+
   it('round-trips a fully loaded state', () => {
     const state: QueryState = {
       requirements: [{

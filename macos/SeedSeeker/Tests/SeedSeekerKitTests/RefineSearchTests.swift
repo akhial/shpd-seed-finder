@@ -665,7 +665,7 @@ final class RefineSearchTests: XCTestCase {
 
     // MARK: - The continuation predicate, as the engine answers it
 
-    /// `isRefinement(of:)` is the engine's own predicate reached over SSF7, so
+    /// `isRefinement(of:)` is the engine's own predicate reached over SSF8, so
     /// these are conformance assertions for the whole encode → bridge → decode
     /// path rather than for a rule this module owns.
     func testEngineDecidesContinuationOverTheEncodedQuery() throws {
@@ -691,17 +691,39 @@ final class RefineSearchTests: XCTestCase {
         XCTAssertTrue(doubled.isRefinement(of: base))
     }
 
-    /// Any scope difference ends the continuation: the base run's coverage says
-    /// nothing about a differently scoped query's matches.
-    func testAnyScopeChangeEndsTheContinuation() throws {
+    /// A widened scope ends the continuation: the base run's coverage says
+    /// nothing about a query it never tested for, while a narrowed one only
+    /// removes seeds the base already delivered.
+    func testAWidenedScopeEndsTheContinuation() throws {
         let base = try SearchRequest(requirements: [wand(key: 1, upgrade: 3)])
         let requirements = [try wand(key: 9, upgrade: 3), try wand(key: 10, upgrade: 0)]
         XCTAssertTrue(try SearchRequest(requirements: requirements).isRefinement(of: base))
         XCTAssertFalse(try SearchRequest(requirements: requirements, maximumDepth: 12).isRefinement(of: base))
-        XCTAssertFalse(try SearchRequest(requirements: requirements, requireBlacksmith: true).isRefinement(of: base))
-        XCTAssertFalse(try SearchRequest(requirements: requirements, excludeBlacksmithRewards: true).isRefinement(of: base))
         XCTAssertFalse(try SearchRequest(requirements: requirements, fastMode: true).isRefinement(of: base))
         XCTAssertFalse(try SearchRequest(requirements: requirements, challenges: 32).isRefinement(of: base))
+
+        // The blacksmith flags and the Wandmaker filter only narrow the match
+        // set, so switching one on strengthens the base instead of ending the
+        // continuation. Switching it back off — or swapping the quest for
+        // another variant — forces a rescan.
+        let smith = try SearchRequest(requirements: [wand(key: 1, upgrade: 3)], requireBlacksmith: true)
+        XCTAssertTrue(try SearchRequest(requirements: requirements, requireBlacksmith: true)
+            .isRefinement(of: base))
+        XCTAssertFalse(try SearchRequest(requirements: requirements).isRefinement(of: smith))
+        let excluded = try SearchRequest(requirements: [wand(key: 1, upgrade: 3)],
+                                         excludeBlacksmithRewards: true)
+        XCTAssertTrue(try SearchRequest(requirements: requirements, excludeBlacksmithRewards: true)
+            .isRefinement(of: base))
+        XCTAssertFalse(try SearchRequest(requirements: requirements).isRefinement(of: excluded))
+        let quested = try SearchRequest(requirements: [wand(key: 1, upgrade: 3)],
+                                        wandmakerQuest: .rotberry)
+        XCTAssertTrue(try SearchRequest(requirements: requirements, wandmakerQuest: .rotberry)
+            .isRefinement(of: base))
+        XCTAssertTrue(try SearchRequest(requirements: requirements, wandmakerQuest: .rotberry)
+            .isRefinement(of: quested))
+        XCTAssertFalse(try SearchRequest(requirements: requirements).isRefinement(of: quested))
+        XCTAssertFalse(try SearchRequest(requirements: requirements, wandmakerQuest: .corpseDust)
+            .isRefinement(of: quested))
     }
 
     /// Every requirement predicate must reach the engine intact. Each variant
@@ -753,7 +775,7 @@ final class RefineSearchTests: XCTestCase {
         XCTAssertTrue(QueryContinuation.continues(narrowed, base: base))
         XCTAssertTrue(QueryContinuation.continues(base, base: base))
         XCTAssertFalse(QueryContinuation.continues(base, base: narrowed))
-        XCTAssertFalse(QueryContinuation.continues(Data("SSF7".utf8), base: base),
+        XCTAssertFalse(QueryContinuation.continues(Data("SSF8".utf8), base: base),
                        "a truncated packet decodes to nothing")
         XCTAssertFalse(QueryContinuation.continues(Data(), base: base))
         XCTAssertFalse(QueryContinuation.continues(narrowed, base: Data("SSF0nonsense".utf8)))

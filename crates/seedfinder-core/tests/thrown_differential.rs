@@ -35,6 +35,7 @@ fn query(requirements: Vec<Requirement>, fast_mode: bool) -> SearchQuery {
         challenges: Challenges::NONE,
         require_blacksmith: false,
         exclude_blacksmith_rewards: false,
+        wandmaker_quest: None,
         fast_mode,
     }
 }

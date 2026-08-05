@@ -5,6 +5,7 @@ use crate::catalog::{Effect, ItemKind, WeaponCategory, item, item_by_stable_id};
 use crate::challenges::Challenges;
 use crate::model::ItemSource;
 use crate::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
+use crate::quests::WandmakerQuestType;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
@@ -18,6 +19,8 @@ struct QueryDocument {
     require_blacksmith: bool,
     #[serde(default)]
     exclude_blacksmith_rewards: bool,
+    #[serde(default)]
+    wandmaker_quest: Option<String>,
     #[serde(default)]
     fast_mode: bool,
     #[serde(default)]
@@ -233,6 +236,14 @@ pub fn decode(contents: &str) -> Result<SearchQuery, String> {
                 .map_err(|error| format!("requirement {}: {error}", index + 1))
         })
         .collect::<Result<Vec<_>, _>>()?;
+    let wandmaker_quest = document
+        .wandmaker_quest
+        .as_deref()
+        .map(|name| {
+            WandmakerQuestType::from_document_name(name)
+                .ok_or_else(|| format!("unknown Wandmaker quest '{name}'"))
+        })
+        .transpose()?;
     let query = SearchQuery {
         requirements,
         max_depth: document.max_depth,
@@ -242,6 +253,7 @@ pub fn decode(contents: &str) -> Result<SearchQuery, String> {
             .fold(Challenges::NONE, |mask, challenge| mask | challenge.into()),
         require_blacksmith: document.require_blacksmith,
         exclude_blacksmith_rewards: document.exclude_blacksmith_rewards,
+        wandmaker_quest,
         fast_mode: document.fast_mode,
     };
     query
@@ -375,6 +387,9 @@ pub fn encode(query: &SearchQuery) -> Value {
     }
     if query.exclude_blacksmith_rewards {
         document.insert("exclude_blacksmith_rewards".to_owned(), json!(true));
+    }
+    if let Some(variant) = query.wandmaker_quest {
+        document.insert("wandmaker_quest".to_owned(), json!(variant.document_name()));
     }
     if query.fast_mode {
         document.insert("fast_mode".to_owned(), json!(true));
@@ -522,6 +537,32 @@ mod tests {
     }
 
     #[test]
+    fn wandmaker_quest_names_round_trip_and_default_to_any() {
+        use crate::quests::WandmakerQuestType;
+
+        assert_eq!(
+            decode(r#"{"requirements":[{"item":"sword"}]}"#)
+                .unwrap()
+                .wandmaker_quest,
+            None
+        );
+        for variant in WandmakerQuestType::ALL {
+            let contents = format!(
+                r#"{{"requirements":[{{"item":"sword"}}],"wandmaker_quest":"{}"}}"#,
+                variant.document_name()
+            );
+            let query = decode(&contents).unwrap();
+            assert_eq!(query.wandmaker_quest, Some(variant));
+            assert_eq!(decode(&encode(&query).to_string()).unwrap(), query);
+        }
+
+        let error =
+            decode(r#"{"requirements":[{"item":"sword"}],"wandmaker_quest":"corpse dust"}"#)
+                .unwrap_err();
+        assert!(error.contains("corpse dust"), "{error}");
+    }
+
+    #[test]
     fn challenge_names_map_to_the_upstream_mask() {
         let query = decode(
             r#"{"challenges":["barren_land","into_darkness","forbidden_runes"],
@@ -620,6 +661,7 @@ mod tests {
             challenges: Challenges::NO_HERBALISM | Challenges::NO_SCROLLS,
             require_blacksmith: true,
             exclude_blacksmith_rewards: true,
+            wandmaker_quest: None,
             fast_mode: true,
         };
         let document = encode(&query);
@@ -668,6 +710,7 @@ mod tests {
             challenges: Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         };
         assert_eq!(

@@ -223,6 +223,7 @@ pub fn generate_main_world_with_challenges(
             &self,
             _completed_depth: u8,
             _items: &[crate::model::WorldItem],
+            _quests: &crate::quests::QuestSummary,
         ) -> bool {
             true
         }
@@ -385,7 +386,7 @@ fn generate_gated_world_with_roots(
         next_choice_group = remap_floor_choice_groups(&mut floor_items, next_choice_group);
         items.extend(floor_items);
         let completed = u8::try_from(depth).expect("main-path depths fit u8");
-        if completed < target && !gate.continue_after_floor(completed, &items) {
+        if completed < target && !gate.continue_after_floor(completed, &items, &quests.summary()) {
             return Ok(None);
         }
     }
@@ -440,7 +441,12 @@ mod tests {
     struct OpenGate;
 
     impl FloorGate for OpenGate {
-        fn continue_after_floor(&self, _depth: u8, _items: &[WorldItem]) -> bool {
+        fn continue_after_floor(
+            &self,
+            _depth: u8,
+            _items: &[WorldItem],
+            _quests: &crate::quests::QuestSummary,
+        ) -> bool {
             true
         }
     }
@@ -481,6 +487,7 @@ mod tests {
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode,
         };
         let queries = [
@@ -546,6 +553,74 @@ mod tests {
         assert!(total_matches > 0);
     }
 
+    /// The three Wandmaker quests partition the seed space: every run reaching
+    /// floor nine has exactly one, so filtering by each variant in turn must
+    /// reproduce the unfiltered results without overlap. This is what proves
+    /// the gate's early rejection agrees with the matcher.
+    #[test]
+    fn wandmaker_quest_filters_partition_the_unfiltered_results() {
+        use crate::quests::WandmakerQuestType;
+
+        let base = SearchQuery {
+            requirements: vec![Requirement {
+                kind: ItemKind::Wand,
+                weapon_category: None,
+                item: None,
+                tier: TierRequirement::Any,
+                upgrade: UpgradeRequirement::AtLeast(1),
+                effect: None,
+                require_uncursed: false,
+                source: None,
+                identity_group: None,
+                max_depth: None,
+            }],
+            max_depth: 24,
+            challenges: crate::challenges::Challenges::NONE,
+            require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
+            fast_mode: false,
+        };
+        let seeds = (0..48)
+            .map(|value| DungeonSeed::new(value).unwrap())
+            .collect::<Vec<_>>();
+        let matching = |query: &SearchQuery| {
+            let plan = QueryPlan::analyze(query);
+            CanonicalMainWorldGenerator
+                .generate_batch_gated(&seeds, plan.generation_depth(), &plan)
+                .into_iter()
+                .flatten()
+                .filter(|world| query.matches(world))
+                .map(|world| world.seed)
+                .collect::<Vec<_>>()
+        };
+
+        let unfiltered = matching(&base);
+        assert!(!unfiltered.is_empty());
+        let mut partitioned = WandmakerQuestType::ALL
+            .into_iter()
+            .flat_map(|variant| {
+                matching(&SearchQuery {
+                    wandmaker_quest: Some(variant),
+                    ..base.clone()
+                })
+            })
+            .collect::<Vec<_>>();
+        // No seed may land in two variants, and none may go missing.
+        let found = partitioned.len();
+        partitioned.sort_unstable();
+        partitioned.dedup();
+        assert_eq!(partitioned.len(), found);
+        assert_eq!(partitioned, unfiltered);
+
+        // Seed AAA-AAA-AAA's Wandmaker rolls elemental embers on floor nine.
+        let canonical = generate_main_world(DungeonSeed::MIN, 9).unwrap();
+        assert_eq!(
+            canonical.quests.wandmaker.map(|quest| quest.variant),
+            Some(WandmakerQuestType::ElementalEmbers)
+        );
+    }
+
     /// Seed AAA-AAA-ACO (66) holds a +3 throwing hammer in a depth-24
     /// special-room chest. A thrown +3 plan must not treat +3 as quest-only
     /// outside fast mode, or this seed would be silently skipped.
@@ -570,6 +645,7 @@ mod tests {
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         };
         let plan = QueryPlan::analyze(&query);
@@ -607,6 +683,7 @@ mod tests {
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: true,
         };
         let plan = QueryPlan::analyze(&query);
@@ -725,6 +802,7 @@ mod tests {
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
             fast_mode: false,
         };
         assert_eq!(query.validate(), Ok(()));

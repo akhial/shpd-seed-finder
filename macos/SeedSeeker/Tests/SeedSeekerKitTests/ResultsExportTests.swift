@@ -17,10 +17,10 @@ final class ResultsExportTests: XCTestCase {
             challenges: Challenge.noHerbalism.rawValue)
     }
 
-    /// The canonical frozen version-1 fixture, read straight from the Rust
-    /// core's test data so this codec can never silently drift from it.
-    /// Files exported today must always stay readable; never edit the
-    /// fixture.
+    /// The canonical frozen fixture, read straight from the Rust core's test
+    /// data so this codec can never silently drift from it. It still carries
+    /// the `"format_version": 1` older releases wrote: files exported by an
+    /// older release must always stay readable; never edit the fixture.
     private static let version1Fixture: String = {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent() // ResultsExportTests.swift -> SeedSeekerKitTests
@@ -33,6 +33,19 @@ final class ResultsExportTests: XCTestCase {
         return (try? String(contentsOf: fixture, encoding: .utf8)) ?? ""
     }()
     private var version1Fixture: String { Self.version1Fixture }
+
+    /// The canonical frozen quest fixture, read from the same place.
+    private static let wandmakerQuestFixture: String = {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let fixture = repoRoot.appendingPathComponent(
+            "crates/seedfinder-core/tests/fixtures/results-export-wandmaker-quest.json")
+        return (try? String(contentsOf: fixture, encoding: .utf8)) ?? ""
+    }()
 
     func testEncodeThenDecodeRoundTripsQueryAndSeeds() throws {
         let query = try loadedQuery()
@@ -57,7 +70,7 @@ final class ResultsExportTests: XCTestCase {
         let document = try XCTUnwrap(
             try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
         XCTAssertEqual(document["format"] as? String, "seed-seeker-results")
-        XCTAssertEqual(document["format_version"] as? Int, 1)
+        XCTAssertNil(document["format_version"])
         XCTAssertEqual(document["app_version"] as? String, "0.6.1")
         XCTAssertEqual(document["shpd_version"] as? String, "3.3.8")
         let results = try XCTUnwrap(document["results"] as? [[String: Any]])
@@ -92,9 +105,8 @@ final class ResultsExportTests: XCTestCase {
         XCTAssertNotNil(imported.query.validated())
     }
 
-    /// The narrowed weapon kinds are additive within format version 1;
-    /// widening them to "weapon" on either side would silently change the
-    /// query's meaning.
+    /// Widening the narrowed weapon kinds back to "weapon" on either side
+    /// would silently change the query's meaning.
     func testWeaponCategoryFixtureDecodesAndRoundTrips() throws {
         let repoRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -120,15 +132,16 @@ final class ResultsExportTests: XCTestCase {
         XCTAssertEqual(expected, actual)
     }
 
-    func testFormatVersionMustBeAPositiveInteger() {
-        for version in ["0", "1.5", "true", "\"1\"", "-1"] {
-            XCTAssertThrowsError(try ResultsExport.decode("""
+    /// The number carried no meaning for a reader newer than the file, so it
+    /// is now just another unknown envelope field.
+    func testAnyDeclaredFormatVersionIsIgnored() throws {
+        for version in ["1", "2", "99", "0", "1.5", "true", "\"1\"", "-1"] {
+            let imported = try ResultsExport.decode("""
                 {"format":"seed-seeker-results","format_version":\(version),
-                 "query":{"requirements":[{"item":"sword"}]},"results":[]}
-                """)) { error in
-                let message = (error as? ResultsExportError)?.message ?? ""
-                XCTAssertTrue(message.contains("format version"), "\(version): \(message)")
-            }
+                 "query":{"requirements":[{"item":"sword"}]},
+                 "results":[{"seed":"AAA-AAA-AAB"}]}
+                """)
+            XCTAssertEqual(imported.seeds, ["AAA-AAA-AAB"], version)
         }
     }
 
@@ -144,7 +157,7 @@ final class ResultsExportTests: XCTestCase {
         ]
         for query in payloads {
             XCTAssertThrowsError(try ResultsExport.decode("""
-                {"format":"seed-seeker-results","format_version":1,
+                {"format":"seed-seeker-results",
                  "query":\(query),"results":[]}
                 """), query)
         }
@@ -153,7 +166,7 @@ final class ResultsExportTests: XCTestCase {
     func testOnlyCanonicalSeedCodesAreAccepted() {
         for seed in ["aaa-aaa-aab", "AAAAAAAAB", "AAA AAA AAB", " AAA-AAA-AAB"] {
             XCTAssertThrowsError(try ResultsExport.decode("""
-                {"format":"seed-seeker-results","format_version":1,
+                {"format":"seed-seeker-results",
                  "query":{"requirements":[{"item":"sword"}]},
                  "results":[{"seed":"\(seed)"}]}
                 """)) { error in
@@ -174,14 +187,33 @@ final class ResultsExportTests: XCTestCase {
         XCTAssertEqual(imported.query.maximumDepth, 24)
     }
 
-    func testFutureFormatVersionsFailWithAnUpdateMessage() {
+    func testAWandmakerQuestRoundTrips() throws {
+        var quested = try loadedQuery()
+        quested.wandmakerQuest = .corpseDust
+        let text = ResultsExport.encode(quested, seeds: ["AAA-AAA-BUH"], appVersion: "0.6.1")
+        let document = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+        let query = try XCTUnwrap(document["query"] as? [String: Any])
+        XCTAssertEqual(query["wandmaker_quest"] as? String, "corpse_dust")
+        XCTAssertEqual(try ResultsExport.decode(text).query.wandmakerQuest, .corpseDust)
+    }
+
+    func testWandmakerQuestFixtureCarriesTheQuest() throws {
+        XCTAssertFalse(Self.wandmakerQuestFixture.isEmpty, "canonical quest fixture not found")
+        let imported = try ResultsExport.decode(Self.wandmakerQuestFixture)
+        XCTAssertEqual(imported.query.wandmakerQuest, .rotberry)
+        XCTAssertEqual(imported.query.maximumDepth, 9)
+        XCTAssertEqual(imported.seeds, ["AAA-AAA-BUH", "ABC-DEF-GHI"])
+    }
+
+    func testUnknownWandmakerQuestIsRejected() {
         XCTAssertThrowsError(try ResultsExport.decode("""
-            {"format":"seed-seeker-results","format_version":2,
-             "query":{"requirements":[{"item":"sword"}]},"results":[]}
+            {"format":"seed-seeker-results",
+             "query":{"requirements":[{"item":"sword"}],"wandmaker_quest":"seed_of_rotberry"},
+             "results":[]}
             """)) { error in
             let message = (error as? ResultsExportError)?.message ?? ""
-            XCTAssertTrue(message.contains("format version 2"), message)
-            XCTAssertTrue(message.contains("Update Seed Seeker"), message)
+            XCTAssertTrue(message.contains("Wandmaker quest"), message)
         }
     }
 
@@ -196,14 +228,14 @@ final class ResultsExportTests: XCTestCase {
 
     func testUnknownQueryContentFailsInsteadOfChangingMeaning() {
         XCTAssertThrowsError(try ResultsExport.decode("""
-            {"format":"seed-seeker-results","format_version":1,
+            {"format":"seed-seeker-results",
              "query":{"requirements":[{"item":"item_from_the_future"}]},"results":[]}
             """)) { error in
             let message = (error as? ResultsExportError)?.message ?? ""
             XCTAssertTrue(message.contains("item_from_the_future"), message)
         }
         XCTAssertThrowsError(try ResultsExport.decode("""
-            {"format":"seed-seeker-results","format_version":1,
+            {"format":"seed-seeker-results",
              "query":{"requirements":[{"item":"sword"}],"wished_luck":7},"results":[]}
             """)) { error in
             let message = (error as? ResultsExportError)?.message ?? ""
@@ -213,7 +245,7 @@ final class ResultsExportTests: XCTestCase {
 
     func testInvalidSeedCodesNameTheOffendingResult() {
         XCTAssertThrowsError(try ResultsExport.decode("""
-            {"format":"seed-seeker-results","format_version":1,
+            {"format":"seed-seeker-results",
              "query":{"requirements":[{"item":"sword"}]},
              "results":[{"seed":"AAA-AAA-AAB"},{"seed":"AAA-AAA-AA0"}]}
             """)) { error in
@@ -224,7 +256,7 @@ final class ResultsExportTests: XCTestCase {
 
     func testDecodeAcceptsAllCoreTierAndUpgradeForms() throws {
         let imported = try ResultsExport.decode("""
-            {"format":"seed-seeker-results","format_version":1,
+            {"format":"seed-seeker-results",
              "query":{"requirements":[
                {"kind":"weapon","tier":"any","upgrade":"any"},
                {"kind":"weapon","tier":{"exact":2},"upgrade":{"exact":3}},

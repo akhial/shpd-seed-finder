@@ -61,6 +61,8 @@ export interface QueryState {
   maxDepth: number
   requireBlacksmith: boolean
   excludeBlacksmithRewards: boolean
+  /** Which Wandmaker quest a seed must roll; undefined matches any. */
+  wandmakerQuest?: WandmakerQuest
   fastMode: boolean
   challenges: ChallengeName[]
 }
@@ -85,6 +87,7 @@ export interface QueryDocument {
   max_depth?: number
   require_blacksmith?: true
   exclude_blacksmith_rewards?: true
+  wandmaker_quest?: WandmakerQuest
   fast_mode?: true
   challenges?: ChallengeName[]
 }
@@ -135,6 +138,11 @@ export interface ScoutRequest {
 }
 
 export type QuestName = 'ghost' | 'wandmaker' | 'blacksmith' | 'imp'
+
+/** The three quests the Prison's Wandmaker can roll, in wire-id order. */
+export const WANDMAKER_QUESTS = ['corpse_dust', 'elemental_embers', 'rotberry'] as const
+
+export type WandmakerQuest = (typeof WANDMAKER_QUESTS)[number]
 
 export type QuestVariant =
   | 'fetid_rat'

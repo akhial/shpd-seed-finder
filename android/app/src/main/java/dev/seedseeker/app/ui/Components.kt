@@ -36,6 +36,7 @@ import dev.seedseeker.app.model.SearchState
 import dev.seedseeker.app.model.SearchStatus
 import dev.seedseeker.app.model.TierMatch
 import dev.seedseeker.app.model.UpgradeMatch
+import dev.seedseeker.app.model.WandmakerQuest
 import dev.seedseeker.app.ui.theme.RegionCaves
 import dev.seedseeker.app.ui.theme.RegionCity
 import dev.seedseeker.app.ui.theme.RegionHalls
@@ -256,10 +257,12 @@ fun scopeSummaryText(
     maximumDepth: Int,
     requireBlacksmith: Boolean,
     excludeBlacksmithRewards: Boolean,
+    wandmakerQuest: WandmakerQuest? = null,
     fastMode: Boolean,
     challenges: Int,
 ): String = buildList {
     add("≤ floor $maximumDepth")
+    wandmakerQuest?.let { add(it.label.lowercase()) }
     if (requireBlacksmith) add("smith")
     if (excludeBlacksmithRewards) add("no smith rewards")
     if (fastMode) add("fast")

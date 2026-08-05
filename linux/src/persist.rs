@@ -10,6 +10,7 @@ use shpd_seedfinder_core::catalog::{Effect, ItemKind, WeaponCategory, item, item
 use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::model::ItemSource;
 use shpd_seedfinder_core::query::{TierRequirement, UpgradeRequirement};
+use shpd_seedfinder_core::quests::WandmakerQuestType;
 
 use crate::config::APP_ID;
 use crate::state::{ALL_SOURCES, AppState, UiRequirement, normalize_floor_limit};
@@ -22,6 +23,8 @@ struct SavedState {
     require_blacksmith: bool,
     #[serde(default)]
     exclude_blacksmith_rewards: bool,
+    #[serde(default)]
+    wandmaker_quest: Option<String>,
     #[serde(default)]
     fast_mode: bool,
     #[serde(default)]
@@ -131,6 +134,9 @@ fn save_state(state: &AppState) -> SavedState {
         max_depth: Some(state.max_depth),
         require_blacksmith: state.require_blacksmith,
         exclude_blacksmith_rewards: state.exclude_blacksmith_rewards,
+        wandmaker_quest: state
+            .wandmaker_quest
+            .map(|variant| variant.document_name().to_owned()),
         fast_mode: state.fast_mode,
         challenges: state.challenges.bits(),
     }
@@ -143,6 +149,10 @@ fn restore_state(saved: SavedState) -> AppState {
     state.max_depth = normalize_floor_limit(saved.max_depth.unwrap_or(24).clamp(1, 24));
     state.require_blacksmith = saved.require_blacksmith;
     state.exclude_blacksmith_rewards = saved.exclude_blacksmith_rewards;
+    state.wandmaker_quest = saved
+        .wandmaker_quest
+        .as_deref()
+        .and_then(WandmakerQuestType::from_document_name);
     state.fast_mode = saved.fast_mode;
     state.challenges = Challenges::new(saved.challenges).unwrap_or(Challenges::NONE);
     for requirement in saved.requirements {
@@ -334,8 +344,34 @@ mod tests {
     use shpd_seedfinder_core::model::ItemSource;
     use shpd_seedfinder_core::query::{TierRequirement, UpgradeRequirement};
 
-    use super::{SavedPreset, decode_presets, restore_requirement, save_requirement, save_state};
+    use super::{
+        SavedPreset, decode_presets, restore_requirement, restore_state, save_requirement,
+        save_state,
+    };
     use crate::state::{AppState, UiRequirement};
+
+    #[test]
+    fn wandmaker_quest_round_trips_and_ignores_unknown_names() {
+        use shpd_seedfinder_core::quests::WandmakerQuestType;
+
+        let mut state = AppState::default();
+        assert_eq!(save_state(&state).wandmaker_quest, None);
+        for variant in WandmakerQuestType::ALL {
+            state.wandmaker_quest = Some(variant);
+            let saved = save_state(&state);
+            assert_eq!(
+                saved.wandmaker_quest.as_deref(),
+                Some(variant.document_name())
+            );
+            assert_eq!(restore_state(saved).wandmaker_quest, Some(variant));
+        }
+
+        // A file written by a newer build falls back to "any" rather than
+        // dropping the whole saved query.
+        let mut saved = save_state(&state);
+        saved.wandmaker_quest = Some("something_new".to_owned());
+        assert_eq!(restore_state(saved).wandmaker_quest, None);
+    }
 
     #[test]
     fn requirements_round_trip() {
