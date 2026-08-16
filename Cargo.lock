@@ -1017,6 +1017,7 @@ name = "shpd-seedfinder-jni"
 version = "0.7.0"
 dependencies = [
  "jni",
+ "shpd-seedfinder-core",
  "shpd-seedfinder-session",
 ]
 
