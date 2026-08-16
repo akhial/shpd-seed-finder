@@ -17,10 +17,12 @@ code from a `q=` parameter introduced by `#`, `?`, or `&` (ending at the next
 code text.
 
 The canonical implementation and its compatibility tests live in
-`crates/seedfinder-core/src/deep_link.rs`, reached from the web app through
-WebAssembly and from the macOS and Windows apps through the C FFI
-(`seedfinder_share_encode` / `seedfinder_share_decode`). Android re-implements
-the codec in Kotlin and pins it against the same frozen fixtures.
+`crates/seedfinder-core/src/deep_link.rs` — it is the only implementation.
+The web app reaches it through WebAssembly, the macOS and Windows apps
+through the C FFI (`seedfinder_share_encode` / `seedfinder_share_decode`),
+and Android through JNI (`JniBindings.shareEncode` / `shareDecode` /
+`shareExtract`); each platform converts between its own models and the
+canonical JSON query document at that boundary.
 
 ## Payload
 

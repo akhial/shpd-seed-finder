@@ -5,6 +5,7 @@
 use jni::JNIEnv;
 use jni::objects::{JByteArray, JClass, JLongArray};
 use jni::sys::{JNI_FALSE, jboolean, jint, jlong};
+use shpd_seedfinder_core::{deep_link, json_query};
 use shpd_seedfinder_session::{
     FilterPacketError, NativeSession, ScoutCallError, ScoutPacketError, SearchError,
     StartSessionError, close_session, production_filter_packet, production_scout_packet,
@@ -274,6 +275,104 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_queryContinues
             throw_illegal_argument(&mut env, error.to_string());
             JNI_FALSE
         }
+    }
+}
+
+/// Reads a UTF-8 string argument, throwing `IllegalArgumentException` and
+/// returning `None` when the array cannot be read or is not UTF-8.
+fn utf8_argument(env: &mut JNIEnv<'_>, array: &JByteArray<'_>, what: &str) -> Option<String> {
+    let bytes = match env.convert_byte_array(array) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            throw_illegal_argument(env, format!("invalid {what} array: {error}"));
+            return None;
+        }
+    };
+    let Ok(text) = String::from_utf8(bytes) else {
+        throw_illegal_argument(env, format!("the {what} is not valid UTF-8"));
+        return None;
+    };
+    Some(text)
+}
+
+fn utf8_response<'local>(env: &mut JNIEnv<'local>, text: &str, what: &str) -> JByteArray<'local> {
+    match env.byte_array_from_slice(text.as_bytes()) {
+        Ok(array) => array,
+        Err(error) => {
+            throw_illegal_state(env, format!("cannot allocate {what}: {error}"));
+            JByteArray::default()
+        }
+    }
+}
+
+/// Encodes the canonical JSON query document in `queryDocument` as a full
+/// shareable web link (both UTF-8 bytes). The codec is
+/// `crates/seedfinder-core/src/deep_link.rs`, specified in
+/// `docs/share-link-format.md`; failures throw with the codec's own message.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_shareEncode<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    query_document: JByteArray<'local>,
+) -> JByteArray<'local> {
+    let Some(document) = utf8_argument(&mut env, &query_document, "query document") else {
+        return JByteArray::default();
+    };
+    let query = match json_query::decode(&document) {
+        Ok(query) => query,
+        Err(error) => {
+            throw_illegal_argument(&mut env, error);
+            return JByteArray::default();
+        }
+    };
+    match deep_link::encode_link(&query) {
+        Ok(link) => utf8_response(&mut env, &link, "share link"),
+        Err(error) => {
+            throw_illegal_argument(&mut env, error);
+            JByteArray::default()
+        }
+    }
+}
+
+/// Decodes any accepted share-link form (full web link, custom-scheme link,
+/// or bare code) back into the canonical JSON query document, both UTF-8
+/// bytes. Failures throw with the codec's own message.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_shareDecode<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    text: JByteArray<'local>,
+) -> JByteArray<'local> {
+    let Some(text) = utf8_argument(&mut env, &text, "share link text") else {
+        return JByteArray::default();
+    };
+    match deep_link::decode_text(&text) {
+        Ok(query) => {
+            let document = json_query::encode(&query).to_string();
+            utf8_response(&mut env, &document, "query document")
+        }
+        Err(error) => {
+            throw_illegal_argument(&mut env, error);
+            JByteArray::default()
+        }
+    }
+}
+
+/// Pulls the share code out of user-facing link text, or returns null when
+/// the text carries no plausible code — the non-throwing probe frontends use
+/// to ignore links (e.g. the bare site URL) that are not share links.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_shareExtract<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    text: JByteArray<'local>,
+) -> JByteArray<'local> {
+    let Some(text) = utf8_argument(&mut env, &text, "share link text") else {
+        return JByteArray::default();
+    };
+    match deep_link::extract_code(&text) {
+        Some(code) => utf8_response(&mut env, code, "share code"),
+        None => JByteArray::default(),
     }
 }
 
