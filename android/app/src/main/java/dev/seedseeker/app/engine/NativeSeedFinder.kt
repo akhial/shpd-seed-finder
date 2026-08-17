@@ -17,8 +17,6 @@ import dev.seedseeker.app.model.ScoutQuestGiver
 import dev.seedseeker.app.model.ScoutQuestVariant
 import dev.seedseeker.app.model.ScoutWorld
 import dev.seedseeker.app.model.SeedResult
-import dev.seedseeker.app.model.TierMatch
-import dev.seedseeker.app.model.UpgradeMatch
 import dev.seedseeker.app.catalog.ItemCatalog
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -95,84 +93,12 @@ class DemoNativeSeedFinder : NativeSeedFinder {
     override fun filterSeeds(request: SearchRequest, seeds: List<String>): List<String> =
         seeds.filterIndexed { index, _ -> index % 2 == 0 }
 
-    /**
-     * The one demo answer that is not a stand-in shape but the real rule: a demo APK ships no
-     * `.so`, and a wrong continuation verdict would send every demo search down a refine branch
-     * the shipped app would never take. It mirrors `SearchQuery::continues` — an identical floor
-     * limit, challenge set and fast mode, world conditions (the blacksmith flags and the
-     * Wandmaker filter) at least as strict as the base's,
-     * and every base requirement covered by a distinct candidate requirement at least as strict
-     * (equal or strengthened: a named item, a tightened bound), ignoring UI list keys. Coverage
-     * is a bipartite matching, found with augmenting paths just like the engine's, because a
-     * strengthened requirement can cover several base rows and greedy claiming picks wrongly.
-     */
-    override fun queryContinues(candidate: SearchRequest, base: SearchRequest): Boolean {
-        // The blacksmith flags and the quest filter are conditions on an
-        // unchanged world, so switching one on only removes seeds and
-        // strengthens the base; switching it off, or swapping the quest for
-        // another variant, widens the query and must rescan.
-        if (candidate.maximumDepth != base.maximumDepth ||
-            candidate.challenges != base.challenges ||
-            (base.requireBlacksmith && !candidate.requireBlacksmith) ||
-            (base.excludeBlacksmithRewards && !candidate.excludeBlacksmithRewards) ||
-            (base.wandmakerQuest != null && candidate.wandmakerQuest != base.wandmakerQuest) ||
-            candidate.fastMode != base.fastMode
-        ) {
-            return false
-        }
-        if (candidate.requirements.size < base.requirements.size) return false
-        val owner = arrayOfNulls<Int>(candidate.requirements.size)
-        fun cover(baseIndex: Int, visited: BooleanArray): Boolean {
-            candidate.requirements.forEachIndexed { candidateIndex, requirement ->
-                if (visited[candidateIndex] || !requirement.implies(base.requirements[baseIndex])) {
-                    return@forEachIndexed
-                }
-                visited[candidateIndex] = true
-                val displaced = owner[candidateIndex]
-                if (displaced == null || cover(displaced, visited)) {
-                    owner[candidateIndex] = baseIndex
-                    return true
-                }
-            }
-            return false
-        }
-        return base.requirements.indices.all { cover(it, BooleanArray(candidate.requirements.size)) }
-    }
-
-    /**
-     * Whether every item this requirement accepts is also accepted by `base`, given identical
-     * query scope — the per-requirement half of the continuation rule, mirroring
-     * `Requirement::implies`. A base identity group must be carried by label; a base per-item
-     * floor limit of null means the query's own (identical) limit, so null implies only null.
-     */
-    private fun ItemRequirement.implies(base: ItemRequirement): Boolean =
-        kind.family == base.kind.family &&
-            (base.kind.weaponClass == null || kind.weaponClass == base.kind.weaponClass) &&
-            (base.item == null || item?.id == base.item.id) &&
-            tierImplies(base) &&
-            upgradeImplies(base) &&
-            (base.modifier == null || modifier == base.modifier) &&
-            (requireUncursed || !base.requireUncursed) &&
-            (base.source == null || source == base.source) &&
-            (base.identityGroup == null || identityGroup == base.identityGroup) &&
-            (base.maximumDepth == null || (maximumDepth != null && maximumDepth <= base.maximumDepth))
-
-    private fun ItemRequirement.tierImplies(base: ItemRequirement): Boolean =
-        when (base.tierMatch) {
-            TierMatch.ANY -> true
-            TierMatch.EXACT -> tierMatch == TierMatch.EXACT && tier == base.tier
-            TierMatch.AT_LEAST ->
-                tierMatch in setOf(TierMatch.EXACT, TierMatch.AT_LEAST) && tier >= base.tier
-            TierMatch.AT_MOST ->
-                tierMatch in setOf(TierMatch.EXACT, TierMatch.AT_MOST) && tier <= base.tier
-        }
-
-    private fun ItemRequirement.upgradeImplies(base: ItemRequirement): Boolean =
-        when (base.upgradeMatch) {
-            UpgradeMatch.ANY -> true
-            UpgradeMatch.EXACT -> upgradeMatch == UpgradeMatch.EXACT && upgrade == base.upgrade
-            UpgradeMatch.AT_LEAST -> upgradeMatch != UpgradeMatch.ANY && upgrade >= base.upgrade
-        }
+    // A wrong continuation verdict would send a demo search down a refine
+    // branch the shipped app would never take, so this is the one answer the
+    // demo never stands in for: the engine owns the rule
+    // (docs/search-semantics.md), and every APK packages its library.
+    override fun queryContinues(candidate: SearchRequest, base: SearchRequest): Boolean =
+        JniBindings.queryContinues(QueryCodec.encode(candidate), QueryCodec.encode(base))
 
     override fun scoutSeed(seed: String, challenges: Int): ScoutWorld {
         require(SeedCode.isCanonical(seed)) { "Seed must use XXX-XXX-XXX format" }
