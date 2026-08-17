@@ -27,6 +27,32 @@ pub enum ItemSource {
     ImpReward,
 }
 
+impl ItemSource {
+    /// Every source, in the engine's canonical order. Frontends list sources
+    /// in this order and the share-link codec numbers them by it, so the
+    /// sequence is part of the engine's contract rather than a display
+    /// preference.
+    pub const ALL: &'static [Self] = &[
+        Self::Heap,
+        Self::Chest,
+        Self::LockedChest,
+        Self::CrystalChest,
+        Self::Tomb,
+        Self::Skeleton,
+        Self::SacrificialFire,
+        Self::Mimic,
+        Self::GoldenMimic,
+        Self::CrystalMimic,
+        Self::Statue,
+        Self::ArmoredStatue,
+        Self::Shop,
+        Self::GhostReward,
+        Self::WandmakerReward,
+        Self::BlacksmithReward,
+        Self::ImpReward,
+    ];
+}
+
 /// Co-acquisition constraints for a generated reward.
 ///
 /// Most rewards are independent. Simple quest/chest choices use one option,

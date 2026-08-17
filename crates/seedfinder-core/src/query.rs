@@ -11,6 +11,31 @@ use crate::quests::WandmakerQuestType;
 type CandidateMatch = (usize, ItemId);
 type RequirementCandidates = (Option<u8>, Vec<CandidateMatch>);
 
+/// Deepest floor a query may be limited to: the main dungeon ends at 24.
+pub const MAX_SEARCH_DEPTH: u8 = 24;
+
+/// Inclusive tier range an exact tier filter accepts. Tier 1 equipment is
+/// starting gear the generator never places.
+pub const EXACT_TIER_MIN: u8 = 2;
+/// Upper end of [`EXACT_TIER_MIN`]'s range.
+pub const EXACT_TIER_MAX: u8 = 5;
+
+/// Inclusive tier range an at-least/at-most filter accepts; the bounds
+/// outside it are redundant with no filter at all.
+pub const BOUNDED_TIER_MIN: u8 = 3;
+/// Upper end of [`BOUNDED_TIER_MIN`]'s range.
+pub const BOUNDED_TIER_MAX: u8 = 4;
+
+/// Identity group label reserved for "no group", which is why groups start
+/// at 1. [`Requirement::validate`] rejects exactly this label.
+pub const RESERVED_IDENTITY_GROUP: u8 = 0;
+
+/// Highest identity group label the portable formats and every app's editor
+/// can express (groups A..D). The matcher itself accepts any non-reserved
+/// label, but a query that travels — as a share link or a results file —
+/// must stay inside this range.
+pub const MAX_IDENTITY_GROUP: u8 = 4;
+
 /// Upgrade predicate attached to one item requirement.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UpgradeRequirement {
@@ -189,9 +214,11 @@ impl Requirement {
             self.item.is_none() && matches!(self.kind, ItemKind::Weapon | ItemKind::Armor);
         let valid_tier = match self.tier {
             TierRequirement::Any => true,
-            TierRequirement::Exact(tier) => tierable && (2..=5).contains(&tier),
+            TierRequirement::Exact(tier) => {
+                tierable && (EXACT_TIER_MIN..=EXACT_TIER_MAX).contains(&tier)
+            }
             TierRequirement::AtLeast(tier) | TierRequirement::AtMost(tier) => {
-                tierable && (3..=4).contains(&tier)
+                tierable && (BOUNDED_TIER_MIN..=BOUNDED_TIER_MAX).contains(&tier)
             }
         };
         if !valid_tier {
@@ -206,12 +233,12 @@ impl Requirement {
         if !valid_upgrade {
             return Err(QueryError::InvalidUpgrade);
         }
-        if self.identity_group == Some(0) {
+        if self.identity_group == Some(RESERVED_IDENTITY_GROUP) {
             return Err(QueryError::InvalidIdentityGroup);
         }
         if self
             .max_depth
-            .is_some_and(|depth| !(1..=24).contains(&depth))
+            .is_some_and(|depth| !(1..=MAX_SEARCH_DEPTH).contains(&depth))
         {
             return Err(QueryError::InvalidDepth);
         }
@@ -294,7 +321,7 @@ impl SearchQuery {
         if self.requirements.is_empty() {
             return Err(QueryError::Empty);
         }
-        if !(1..=24).contains(&self.max_depth) {
+        if !(1..=MAX_SEARCH_DEPTH).contains(&self.max_depth) {
             return Err(QueryError::InvalidDepth);
         }
         let mut identity_groups: BTreeMap<u8, (ItemKind, Option<ItemId>)> = BTreeMap::new();

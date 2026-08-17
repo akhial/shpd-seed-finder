@@ -19,6 +19,25 @@ impl Challenges {
     pub const STRONGER_BOSSES: Self = Self(256);
     pub const MAX_VALUE: u16 = 511;
 
+    /// The only challenges the generator consults, and therefore the only
+    /// ones that change what a seed contains: Barren Land removes the grass
+    /// the floor builders would have planted, Into Darkness changes the
+    /// torches the item placer schedules, and Forbidden Runes halves the
+    /// scheduled Scroll of Upgrade drops. Every other challenge changes
+    /// combat or hunger only, so two masks differing solely in those bits
+    /// generate identical worlds.
+    pub const LEVEL_GENERATION: Self =
+        Self(Self::NO_HERBALISM.0 | Self::DARKNESS.0 | Self::NO_SCROLLS.0);
+
+    /// Whether this mask changes generated seed content — that is, whether it
+    /// enables any of [`Self::LEVEL_GENERATION`]. Frontends use it to tell
+    /// which challenge toggles invalidate results and which are cosmetic to
+    /// the search.
+    #[must_use]
+    pub const fn changes_level_generation(self) -> bool {
+        self.0 & Self::LEVEL_GENERATION.0 != 0
+    }
+
     /// Validates an upstream challenge mask.
     ///
     /// # Errors
@@ -80,5 +99,30 @@ mod tests {
     fn accepts_only_upstream_mask_bits() {
         assert_eq!(Challenges::new(511).unwrap().bits(), 511);
         assert_eq!(Challenges::new(512), Err(InvalidChallenges(512)));
+    }
+
+    #[test]
+    fn only_the_generator_consulted_bits_change_seed_content() {
+        for challenge in [
+            Challenges::NO_HERBALISM,
+            Challenges::DARKNESS,
+            Challenges::NO_SCROLLS,
+        ] {
+            assert!(challenge.changes_level_generation());
+        }
+        for challenge in [
+            Challenges::NONE,
+            Challenges::NO_FOOD,
+            Challenges::NO_ARMOR,
+            Challenges::NO_HEALING,
+            Challenges::SWARM_INTELLIGENCE,
+            Challenges::CHAMPION_ENEMIES,
+            Challenges::STRONGER_BOSSES,
+        ] {
+            assert!(!challenge.changes_level_generation());
+        }
+        // One relevant bit among irrelevant ones still counts.
+        assert!((Challenges::NO_FOOD | Challenges::DARKNESS).changes_level_generation());
+        assert_eq!(Challenges::LEVEL_GENERATION.bits(), 8 | 32 | 64);
     }
 }

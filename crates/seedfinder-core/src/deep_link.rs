@@ -15,7 +15,9 @@ use crate::catalog::{
 };
 use crate::challenges::Challenges;
 use crate::model::ItemSource;
-use crate::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
+use crate::query::{
+    MAX_IDENTITY_GROUP, Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
+};
 use crate::quests::WandmakerQuestType;
 
 /// Canonical prefix for shared links; the code follows the `#q=` fragment.
@@ -31,25 +33,9 @@ const MAX_REQUIREMENTS: usize = 63;
 const BASE64URL: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 /// Item sources in frozen code order (indices are part of the link format).
-const SOURCE_CODES: &[ItemSource] = &[
-    ItemSource::Heap,
-    ItemSource::Chest,
-    ItemSource::LockedChest,
-    ItemSource::CrystalChest,
-    ItemSource::Tomb,
-    ItemSource::Skeleton,
-    ItemSource::SacrificialFire,
-    ItemSource::Mimic,
-    ItemSource::GoldenMimic,
-    ItemSource::CrystalMimic,
-    ItemSource::Statue,
-    ItemSource::ArmoredStatue,
-    ItemSource::Shop,
-    ItemSource::GhostReward,
-    ItemSource::WandmakerReward,
-    ItemSource::BlacksmithReward,
-    ItemSource::ImpReward,
-];
+/// The order is the engine's own [`ItemSource::ALL`], which the format froze;
+/// a test pins the two together so the list can only ever grow at the end.
+const SOURCE_CODES: &[ItemSource] = ItemSource::ALL;
 
 /// Encodes a validated query as a bare share code (no URL prefix).
 ///
@@ -71,9 +57,12 @@ pub fn encode(query: &SearchQuery) -> Result<String, String> {
         // Like the results-file format, links restrict same-item groups to
         // what every app's editor can express (A..D), even though the engine
         // allows more.
-        if requirement.identity_group.is_some_and(|group| group > 4) {
+        if requirement
+            .identity_group
+            .is_some_and(|group| group > MAX_IDENTITY_GROUP)
+        {
             return Err(format!(
-                "requirement {}: same-item group must be between 1 and 4 (A..D)",
+                "requirement {}: same-item group must be between 1 and {MAX_IDENTITY_GROUP} (A..D)",
                 index + 1
             ));
         }
@@ -1056,6 +1045,16 @@ mod tests {
                 .collect::<Vec<_>>(),
             expected_sources
         );
+        // The frozen link order is the engine's own source order, so the two
+        // can never drift apart — the shared list may only grow at its end.
+        assert_eq!(SOURCE_CODES, ItemSource::ALL);
+        for (code, source) in ItemSource::ALL.iter().enumerate() {
+            assert_eq!(super::source_code(*source), u32::try_from(code).unwrap());
+            assert_eq!(
+                super::source_from(u32::try_from(code).unwrap()),
+                Ok(*source)
+            );
+        }
 
         // Challenge bits are the upstream mask bits, pinned in mask order.
         let expected_challenges: Vec<u16> = (0..9).map(|bit| 1 << bit).collect();

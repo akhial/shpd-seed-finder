@@ -16,6 +16,8 @@ pub mod city_floor;
 pub mod city_mobs;
 pub mod city_rooms;
 pub mod deep_link;
+#[cfg(feature = "json-query")]
+pub mod engine_info;
 pub mod equipment;
 pub mod feasibility;
 pub mod generator;

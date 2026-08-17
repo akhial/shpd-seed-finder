@@ -24,7 +24,7 @@
 use serde_json::{Map, Value, json};
 
 use crate::json_query;
-use crate::query::SearchQuery;
+use crate::query::{MAX_IDENTITY_GROUP, SearchQuery};
 use crate::seed::DungeonSeed;
 
 /// Identifies a Seed Seeker results file.
@@ -98,9 +98,12 @@ pub fn decode(contents: &str) -> Result<ResultsFile, String> {
     for (index, requirement) in query.requirements.iter().enumerate() {
         // The results format restricts same-item groups to what every app's
         // editor can express (A..D), even though the engine allows more.
-        if requirement.identity_group.is_some_and(|group| group > 4) {
+        if requirement
+            .identity_group
+            .is_some_and(|group| group > MAX_IDENTITY_GROUP)
+        {
             return Err(format!(
-                "requirement {}: same-item group must be between 1 and 4 (A..D)",
+                "requirement {}: same-item group must be between 1 and {MAX_IDENTITY_GROUP} (A..D)",
                 index + 1
             ));
         }

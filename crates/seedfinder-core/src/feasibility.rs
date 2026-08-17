@@ -40,14 +40,15 @@ use crate::search::FloorGate;
 /// choice, so each can satisfy at most one requirement.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
-enum Quest {
+pub enum Quest {
     Ghost,
     Wandmaker,
     Blacksmith,
     Imp,
 }
 
-const QUESTS: [Quest; 4] = [
+/// Every reward quest, in dungeon order.
+pub const QUESTS: [Quest; 4] = [
     Quest::Ghost,
     Quest::Wandmaker,
     Quest::Blacksmith,
@@ -58,7 +59,8 @@ impl Quest {
     /// The inclusive depth window inside which the quest can first spawn. The
     /// spawn chance reaches certainty on the final floor, so a run whose item
     /// list has no reward items past the window can never gain them.
-    const fn window(self) -> (u8, u8) {
+    #[must_use]
+    pub const fn window(self) -> (u8, u8) {
         match self {
             Self::Ghost => (2, 4),
             Self::Wandmaker => (7, 9),
@@ -528,6 +530,24 @@ mod tests {
             accessibility: Accessibility::Independent,
             secret: false,
         }
+    }
+
+    #[test]
+    fn published_quest_windows_match_the_dungeon_and_the_quest_model() {
+        use super::{QUESTS, Quest};
+
+        assert_eq!(
+            QUESTS.map(Quest::window),
+            [(2, 4), (7, 9), (12, 14), (17, 19)]
+        );
+        // The Wandmaker's own window is the same fact spelled out in
+        // `quests`, so the two views can never disagree.
+        let (start, end) = Quest::Wandmaker.window();
+        assert_eq!(
+            start..=end,
+            crate::quests::WandmakerQuestType::WINDOW,
+            "the Wandmaker window must agree with the quest model"
+        );
     }
 
     #[test]

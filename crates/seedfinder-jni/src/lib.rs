@@ -8,7 +8,7 @@ use jni::sys::{JNI_FALSE, jboolean, jint, jlong};
 use serde_json::Value;
 use shpd_seedfinder_core::seed::{self, DungeonSeed};
 use shpd_seedfinder_core::wire::WireError;
-use shpd_seedfinder_core::{deep_link, json_query, results_export};
+use shpd_seedfinder_core::{deep_link, engine_info, json_query, results_export};
 use shpd_seedfinder_session::{
     FilterPacketError, MAX_ACCEPTED_RESULTS, NativeSession, ScoutCallError, ScoutMatchError,
     ScoutPacketError, SearchError, StartDecision, StartSessionError, close_session,
@@ -467,6 +467,21 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_shareEncode<'l
     }
 }
 
+/// Returns the engine's own constants as UTF-8 JSON: the pinned upstream
+/// version, the seed-space size, the query bounds, the empty boss floors, the
+/// quest depth windows, the challenge list with each bit's effect on
+/// generation, and the search start stride. Frontends read their limits from
+/// here instead of hardcoding mirrors. The document is
+/// `engine_info::document`, shared with the C and browser bridges.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_engineInfo<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+) -> JByteArray<'local> {
+    let document = engine_info::document(MAX_ACCEPTED_RESULTS).to_string();
+    utf8_response(&mut env, &document, "engine info document")
+}
+
 /// Masks partial, as-you-type UTF-8 seed input into uppercase groups of three
 /// (both UTF-8 bytes): non-letters are dropped, the first nine ASCII letters
 /// are kept, and only those are uppercased — never a locale-dependent
@@ -749,6 +764,58 @@ mod tests {
         decide_start_name, results_decode_document, results_encode_document,
         scout_matches_document, seed_parse_document,
     };
+
+    #[test]
+    fn engine_info_publishes_the_shared_constants() {
+        // The bridge only serializes this document, so pinning it here pins
+        // exactly what Android reads.
+        let info = shpd_seedfinder_core::engine_info::document(MAX_ACCEPTED_RESULTS);
+
+        assert_eq!(info["shpdVersion"], shpd_seedfinder_core::SHPD_VERSION);
+        assert_eq!(info["shpdCommit"], shpd_seedfinder_core::SHPD_COMMIT);
+        assert_eq!(info["totalSeeds"], shpd_seedfinder_core::seed::TOTAL_SEEDS);
+        assert_eq!(info["maxResults"], MAX_ACCEPTED_RESULTS);
+        assert_eq!(
+            info["limits"],
+            json!({
+                "max_depth": 24,
+                "exact_tier_min": 2,
+                "exact_tier_max": 5,
+                "bounded_tier_min": 3,
+                "bounded_tier_max": 4,
+                "identity_group_max": 4,
+                "max_upgrade_default": 3,
+                "max_upgrade_ring": 4,
+                "max_results": MAX_ACCEPTED_RESULTS,
+                "results_file_max_bytes": shpd_seedfinder_core::results_export::MAX_FILE_BYTES,
+            })
+        );
+        assert_eq!(info["empty_boss_floors"], json!([5, 10, 15]));
+        assert_eq!(
+            info["quest_windows"],
+            json!({
+                "ghost": [2, 4],
+                "wandmaker": [7, 9],
+                "blacksmith": [12, 14],
+                "imp": [17, 19],
+            })
+        );
+        assert_eq!(
+            info["challenges"],
+            json!([
+                {"name": "on_diet", "mask": 1, "changes_level_generation": false},
+                {"name": "faith_is_my_armor", "mask": 2, "changes_level_generation": false},
+                {"name": "pharmacophobia", "mask": 4, "changes_level_generation": false},
+                {"name": "barren_land", "mask": 8, "changes_level_generation": true},
+                {"name": "swarm_intelligence", "mask": 16, "changes_level_generation": false},
+                {"name": "into_darkness", "mask": 32, "changes_level_generation": true},
+                {"name": "forbidden_runes", "mask": 64, "changes_level_generation": true},
+                {"name": "hostile_champions", "mask": 128, "changes_level_generation": false},
+                {"name": "badder_bosses", "mask": 256, "changes_level_generation": false},
+            ])
+        );
+        assert_eq!(info["search_start_stride"], 3_355_211_884_971_u64);
+    }
 
     #[test]
     fn seed_bridge_masks_input_and_parses_codes() {

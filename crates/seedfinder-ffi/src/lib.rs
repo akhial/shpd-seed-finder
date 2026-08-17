@@ -7,7 +7,7 @@ use std::ptr;
 
 use serde_json::Value;
 use shpd_seedfinder_core::seed::{self, DungeonSeed};
-use shpd_seedfinder_core::{deep_link, json_query, results_export};
+use shpd_seedfinder_core::{deep_link, engine_info, json_query, results_export};
 use shpd_seedfinder_session::{
     FilterPacketError, MAX_ACCEPTED_RESULTS, NativeSession, ScoutCallError, ScoutMatchError,
     ScoutPacketError, SearchError, StartSessionError, close_session, decide_start_packets,
@@ -359,6 +359,27 @@ fn scout_matches_document(request: &[u8], query: &[u8]) -> Result<String, ScoutM
         "total_requirements": marks.total_requirements,
     })
     .to_string())
+}
+
+/// Returns the engine's own constants as UTF-8 JSON: the pinned upstream
+/// version, the seed-space size, the query bounds, the empty boss floors, the
+/// quest depth windows, the challenge list with each bit's effect on
+/// generation, and the search start stride. Frontends read their limits from
+/// here instead of hardcoding mirrors. The document is
+/// `engine_info::document`, shared with the Android and browser bridges.
+#[unsafe(no_mangle)]
+pub extern "C" fn seedfinder_engine_info(out_packet: *mut *mut u8, out_len: *mut usize) -> i32 {
+    clear_outputs(out_packet, out_len);
+    catch_unwind(AssertUnwindSafe(|| {
+        return_packet(
+            engine_info::document(MAX_ACCEPTED_RESULTS)
+                .to_string()
+                .into_bytes(),
+            out_packet,
+            out_len,
+        )
+    }))
+    .unwrap_or(INTERNAL)
 }
 
 /// Masks partial, as-you-type UTF-8 seed input into uppercase groups of three
@@ -893,6 +914,64 @@ mod tests {
             return Err(code);
         }
         Ok(String::from_utf8(unsafe { take_packet(pointer, len) }).unwrap())
+    }
+
+    #[test]
+    fn engine_info_publishes_the_shared_constants() {
+        let mut pointer = ptr::null_mut();
+        let mut len = 0;
+        assert_eq!(seedfinder_engine_info(&raw mut pointer, &raw mut len), OK);
+        let info: Value = serde_json::from_slice(&unsafe { take_packet(pointer, len) }).unwrap();
+
+        assert_eq!(info["shpdVersion"], shpd_seedfinder_core::SHPD_VERSION);
+        assert_eq!(info["shpdCommit"], shpd_seedfinder_core::SHPD_COMMIT);
+        assert_eq!(info["totalSeeds"], shpd_seedfinder_core::seed::TOTAL_SEEDS);
+        assert_eq!(info["maxResults"], MAX_ACCEPTED_RESULTS);
+        assert_eq!(
+            info["limits"],
+            serde_json::json!({
+                "max_depth": 24,
+                "exact_tier_min": 2,
+                "exact_tier_max": 5,
+                "bounded_tier_min": 3,
+                "bounded_tier_max": 4,
+                "identity_group_max": 4,
+                "max_upgrade_default": 3,
+                "max_upgrade_ring": 4,
+                "max_results": MAX_ACCEPTED_RESULTS,
+                "results_file_max_bytes": results_export::MAX_FILE_BYTES,
+            })
+        );
+        assert_eq!(info["empty_boss_floors"], serde_json::json!([5, 10, 15]));
+        assert_eq!(
+            info["quest_windows"],
+            serde_json::json!({
+                "ghost": [2, 4],
+                "wandmaker": [7, 9],
+                "blacksmith": [12, 14],
+                "imp": [17, 19],
+            })
+        );
+        assert_eq!(
+            info["challenges"],
+            serde_json::json!([
+                {"name": "on_diet", "mask": 1, "changes_level_generation": false},
+                {"name": "faith_is_my_armor", "mask": 2, "changes_level_generation": false},
+                {"name": "pharmacophobia", "mask": 4, "changes_level_generation": false},
+                {"name": "barren_land", "mask": 8, "changes_level_generation": true},
+                {"name": "swarm_intelligence", "mask": 16, "changes_level_generation": false},
+                {"name": "into_darkness", "mask": 32, "changes_level_generation": true},
+                {"name": "forbidden_runes", "mask": 64, "changes_level_generation": true},
+                {"name": "hostile_champions", "mask": 128, "changes_level_generation": false},
+                {"name": "badder_bosses", "mask": 256, "changes_level_generation": false},
+            ])
+        );
+        assert_eq!(info["search_start_stride"], 3_355_211_884_971_u64);
+
+        assert_eq!(
+            seedfinder_engine_info(ptr::null_mut(), &raw mut len),
+            INVALID
+        );
     }
 
     #[test]
