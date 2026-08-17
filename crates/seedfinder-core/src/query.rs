@@ -389,6 +389,28 @@ impl SearchQuery {
         false
     }
 
+    /// Whether this query and `base` name a common item: some requirement of
+    /// each has the same kind, and either both name the same item or at least
+    /// one names none (a kind-level requirement subsumes every item of its
+    /// kind). Scope and challenge differences are irrelevant — a filter
+    /// re-verifies seeds from scratch — so this deliberately checks nothing
+    /// else: it only estimates whether a previous search's results are
+    /// enriched for this query's matches, which is what makes filtering them
+    /// worthwhile. The relation is symmetric.
+    ///
+    /// This is the weaker sibling of [`SearchQuery::continues`] used by the
+    /// start decision in `docs/search-semantics.md`; frontends must consult it
+    /// rather than re-deriving it.
+    #[must_use]
+    pub fn shares_item(&self, base: &SearchQuery) -> bool {
+        self.requirements.iter().any(|left| {
+            base.requirements.iter().any(|right| {
+                left.kind == right.kind
+                    && (left.item.is_none() || right.item.is_none() || left.item == right.item)
+            })
+        })
+    }
+
     /// Matches requirements as an AND query while respecting distinct item
     /// instances and mutually exclusive quest/chest reward branches.
     #[must_use]
@@ -707,6 +729,86 @@ impl BestSubset<'_> {
     }
 }
 
+/// What pressing Start Search does with a query, per `docs/search-semantics.md`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StartDecision {
+    /// Fresh full-range scan that establishes the Target on conclusion.
+    Anchor,
+    /// Filter the Target Set, then resume the target's uncovered remainder.
+    TargetRefine,
+    /// Filter the Target Set only; the set and its coverage stay untouched.
+    TargetFilter,
+    /// Continue the previous detached scan (filter its results, resume its
+    /// remainder). The Target is untouched.
+    ContinueDetached,
+    /// Fresh full-range scan that leaves the Target untouched.
+    Detached,
+}
+
+impl StartDecision {
+    /// The lowercase name every boundary reports, matching the terminology of
+    /// `docs/search-semantics.md`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Anchor => "anchor",
+            Self::TargetRefine => "target-refine",
+            Self::TargetFilter => "target-filter",
+            Self::ContinueDetached => "continue-detached",
+            Self::Detached => "detached",
+        }
+    }
+}
+
+/// The single gate for what Start Search does with `candidate`, per
+/// `docs/search-semantics.md`. The Target Set is the anchor: a continuation of
+/// the Target Query refines it, a query sharing an item filters it (always
+/// from the full set, so loosening a requirement brings seeds back), and
+/// anything else scans the full range without touching it — continuing the
+/// last detached run when `detached_base` says that is sound.
+///
+/// `target` is the Target Query, or `None` when there is no Target at all
+/// (boot, after Clear, or after a failed first run), which always anchors.
+/// `target_set_empty` says the Target Set holds no seeds: it holds nothing
+/// worth preserving, so only a continuation with range left to scan
+/// (`target_has_uncovered_seeds`) resumes it and every other query re-anchors.
+/// `detached_base` is the last concluded run's query when — and only when —
+/// that run was itself detached; a failed run is never a continuation base.
+///
+/// Continuation itself is [`SearchQuery::continues`] and sharing is
+/// [`SearchQuery::shares_item`], both consulted here: callers get the whole
+/// decision from this one call and must not re-derive either half.
+#[must_use]
+pub fn decide_start(
+    candidate: &SearchQuery,
+    target: Option<&SearchQuery>,
+    target_set_empty: bool,
+    target_has_uncovered_seeds: bool,
+    detached_base: Option<&SearchQuery>,
+) -> StartDecision {
+    let Some(target) = target else {
+        return StartDecision::Anchor;
+    };
+    let continues_target = candidate.continues(target);
+    if target_set_empty {
+        return if continues_target && target_has_uncovered_seeds {
+            StartDecision::TargetRefine
+        } else {
+            StartDecision::Anchor
+        };
+    }
+    if continues_target {
+        return StartDecision::TargetRefine;
+    }
+    if candidate.shares_item(target) {
+        return StartDecision::TargetFilter;
+    }
+    match detached_base {
+        Some(base) if candidate.continues(base) => StartDecision::ContinueDetached,
+        _ => StartDecision::Detached,
+    }
+}
+
 /// Invalid user query.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum QueryError {
@@ -937,6 +1039,57 @@ mod tests {
         assert!(query(vec![grouped]).continues(&query(vec![grouped])));
         assert!(query(vec![grouped]).continues(&base));
         assert!(!base.continues(&query(vec![grouped])));
+    }
+
+    #[test]
+    fn sharing_compares_kinds_and_named_items_only() {
+        let query = |kind: ItemKind, item: Option<ItemId>| SearchQuery {
+            requirements: vec![Requirement {
+                kind,
+                weapon_category: None,
+                item,
+                tier: TierRequirement::Any,
+                upgrade: UpgradeRequirement::Any,
+                effect: None,
+                require_uncursed: false,
+                source: None,
+                identity_group: None,
+                max_depth: None,
+            }],
+            max_depth: 24,
+            challenges: crate::challenges::Challenges::NONE,
+            require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
+            fast_mode: false,
+        };
+        let any_ring = query(ItemKind::Ring, None);
+        let tenacity = query(ItemKind::Ring, Some(ItemId::RingTenacity));
+        let greatsword = query(ItemKind::Weapon, Some(ItemId::Greatsword));
+        let sword = query(ItemKind::Weapon, Some(ItemId::Sword));
+
+        // A kind-level requirement subsumes every item of its kind, in either
+        // direction: sharing is symmetric.
+        assert!(any_ring.shares_item(&tenacity));
+        assert!(tenacity.shares_item(&any_ring));
+        assert!(tenacity.shares_item(&tenacity));
+
+        // Different kinds never share, and neither do two distinct named
+        // items of the same kind.
+        assert!(!greatsword.shares_item(&any_ring));
+        assert!(!greatsword.shares_item(&sword));
+
+        // One shared pair is enough, however many requirements surround it.
+        let mut mixed = greatsword.clone();
+        mixed.requirements.push(any_ring.requirements[0]);
+        assert!(mixed.shares_item(&tenacity));
+        assert!(tenacity.shares_item(&mixed));
+
+        // Scope differences are irrelevant: a filter re-verifies from scratch.
+        let mut deep_ring = any_ring.clone();
+        deep_ring.max_depth = 5;
+        deep_ring.fast_mode = true;
+        assert!(deep_ring.shares_item(&tenacity));
     }
 
     #[test]

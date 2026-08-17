@@ -10,8 +10,9 @@ use shpd_seedfinder_core::seed::DungeonSeed;
 use shpd_seedfinder_core::{deep_link, json_query, results_export};
 use shpd_seedfinder_session::{
     FilterPacketError, MAX_ACCEPTED_RESULTS, NativeSession, ScoutCallError, ScoutMatchError,
-    ScoutPacketError, SearchError, StartSessionError, close_session, production_filter_packet,
-    production_scout_matches, production_scout_packet, queries_continue, registry,
+    ScoutPacketError, SearchError, StartSessionError, close_session, decide_start_packets,
+    production_filter_packet, production_scout_matches, production_scout_packet, queries_continue,
+    registry,
 };
 
 const OK: i32 = 0;
@@ -179,6 +180,55 @@ pub extern "C" fn seedfinder_query_continues(
         };
         match queries_continue(candidate, base) {
             Ok(continues) => i32::from(continues),
+            Err(_) => INVALID,
+        }
+    }))
+    .unwrap_or(INTERNAL)
+}
+
+/// Reports what pressing Start Search must do with the `SSF8` query in
+/// `candidate`, per `docs/search-semantics.md`. `target` is the Target Query
+/// (null when there is no Target, which always anchors), `target_set_empty`
+/// and `target_has_uncovered_seeds` describe the Target Set and its coverage,
+/// and `detached_base` is the last concluded run's query when — and only when
+/// — that run was itself detached (null otherwise). The returned UTF-8 text is
+/// one of `anchor`, `target-refine`, `target-filter`, `continue-detached` or
+/// `detached`.
+///
+/// The continuation predicate is part of this decision: callers must not call
+/// `seedfinder_query_continues` separately for it.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)] // The C ABI spells every input out flat.
+pub extern "C" fn seedfinder_decide_start(
+    candidate: *const u8,
+    candidate_len: usize,
+    target: *const u8,
+    target_len: usize,
+    target_set_empty: i32,
+    target_has_uncovered_seeds: i32,
+    detached_base: *const u8,
+    detached_base_len: usize,
+    out_packet: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    clear_outputs(out_packet, out_len);
+    catch_unwind(AssertUnwindSafe(|| {
+        if out_packet.is_null() || out_len.is_null() {
+            return INVALID;
+        }
+        let Some(candidate) = request_slice(candidate, candidate_len) else {
+            return INVALID;
+        };
+        match decide_start_packets(
+            candidate,
+            request_slice(target, target_len),
+            target_set_empty != 0,
+            target_has_uncovered_seeds != 0,
+            request_slice(detached_base, detached_base_len),
+        ) {
+            Ok(decision) => {
+                return_packet(decision.as_str().as_bytes().to_vec(), out_packet, out_len)
+            }
             Err(_) => INVALID,
         }
     }))
@@ -735,6 +785,143 @@ mod tests {
         );
         assert_eq!(
             seedfinder_query_continues(ptr::null(), 0, request.as_ptr(), request.len()),
+            INVALID
+        );
+    }
+
+    fn call_decide_start(
+        candidate: &[u8],
+        target: Option<&[u8]>,
+        target_set_empty: bool,
+        target_has_uncovered_seeds: bool,
+        detached_base: Option<&[u8]>,
+    ) -> Result<String, i32> {
+        let mut pointer = ptr::null_mut();
+        let mut len = 0;
+        let (target_pointer, target_len) =
+            target.map_or((ptr::null(), 0), |packet| (packet.as_ptr(), packet.len()));
+        let (base_pointer, base_len) =
+            detached_base.map_or((ptr::null(), 0), |packet| (packet.as_ptr(), packet.len()));
+        let code = seedfinder_decide_start(
+            candidate.as_ptr(),
+            candidate.len(),
+            target_pointer,
+            target_len,
+            i32::from(target_set_empty),
+            i32::from(target_has_uncovered_seeds),
+            base_pointer,
+            base_len,
+            &raw mut pointer,
+            &raw mut len,
+        );
+        if code != OK {
+            return Err(code);
+        }
+        Ok(String::from_utf8(unsafe { take_packet(pointer, len) }).unwrap())
+    }
+
+    #[test]
+    fn start_decision_bridge_reports_the_documented_names() {
+        use shpd_seedfinder_core::catalog::ItemKind;
+        use shpd_seedfinder_core::challenges::Challenges;
+        use shpd_seedfinder_core::query::{
+            Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
+        };
+        use shpd_seedfinder_core::wire::encode_query;
+
+        let requirement = |kind| Requirement {
+            kind,
+            weapon_category: None,
+            item: None,
+            tier: TierRequirement::Any,
+            upgrade: UpgradeRequirement::Any,
+            effect: None,
+            require_uncursed: false,
+            source: None,
+            identity_group: None,
+            max_depth: None,
+        };
+        let query = |kind| SearchQuery {
+            requirements: vec![requirement(kind)],
+            max_depth: 24,
+            challenges: Challenges::NONE,
+            require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
+            fast_mode: false,
+        };
+        let target = encode_query(&query(ItemKind::Ring)).unwrap();
+        let deeper = encode_query(&SearchQuery {
+            max_depth: 9,
+            ..query(ItemKind::Ring)
+        })
+        .unwrap();
+        let armor = encode_query(&query(ItemKind::Armor)).unwrap();
+        let mut narrowed_query = query(ItemKind::Armor);
+        narrowed_query.requirements.push(Requirement {
+            upgrade: UpgradeRequirement::AtLeast(2),
+            ..requirement(ItemKind::Armor)
+        });
+        let narrowed = encode_query(&narrowed_query).unwrap();
+
+        assert_eq!(
+            call_decide_start(&target, Some(&target), false, true, None).unwrap(),
+            "target-refine"
+        );
+        assert_eq!(
+            call_decide_start(&deeper, Some(&target), false, true, None).unwrap(),
+            "target-filter"
+        );
+        assert_eq!(
+            call_decide_start(&armor, Some(&target), false, true, None).unwrap(),
+            "detached"
+        );
+        assert_eq!(
+            call_decide_start(&narrowed, Some(&target), false, true, Some(&armor)).unwrap(),
+            "continue-detached"
+        );
+        // A null Target anchors, and so does an empty Target Set the query
+        // does not continue.
+        assert_eq!(
+            call_decide_start(&target, None, false, true, None).unwrap(),
+            "anchor"
+        );
+        assert_eq!(
+            call_decide_start(&deeper, Some(&target), true, true, None).unwrap(),
+            "anchor"
+        );
+
+        // Every undecodable packet is rejected, as are missing output slots.
+        assert_eq!(
+            call_decide_start(b"bad", Some(&target), false, true, None),
+            Err(INVALID)
+        );
+        assert_eq!(
+            call_decide_start(&target, Some(b"bad"), false, true, None),
+            Err(INVALID)
+        );
+        assert_eq!(
+            call_decide_start(&target, Some(&target), false, true, Some(b"bad")),
+            Err(INVALID)
+        );
+        assert_eq!(
+            call_decide_start(&[], Some(&target), false, true, None),
+            Err(INVALID)
+        );
+        let mut len = 0;
+        assert_eq!(
+            seedfinder_decide_start(
+                target.as_ptr(),
+                target.len(),
+                ptr::null(),
+                0,
+                0,
+                1,
+                ptr::null(),
+                0,
+                ptr::null_mut(),
+                &raw mut len
+            ),
             INVALID
         );
     }
