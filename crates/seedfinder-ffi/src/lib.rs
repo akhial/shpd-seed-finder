@@ -6,7 +6,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 
 use serde_json::Value;
-use shpd_seedfinder_core::seed::DungeonSeed;
+use shpd_seedfinder_core::seed::{self, DungeonSeed};
 use shpd_seedfinder_core::{deep_link, json_query, results_export};
 use shpd_seedfinder_session::{
     FilterPacketError, MAX_ACCEPTED_RESULTS, NativeSession, ScoutCallError, ScoutMatchError,
@@ -359,6 +359,68 @@ fn scout_matches_document(request: &[u8], query: &[u8]) -> Result<String, ScoutM
         "total_requirements": marks.total_requirements,
     })
     .to_string())
+}
+
+/// Masks partial, as-you-type UTF-8 seed input into uppercase groups of three
+/// and returns it as UTF-8 text: non-letters are dropped, the first nine ASCII
+/// letters are kept, and only those are uppercased. The masker is
+/// `seed::format_input`, shared with every other frontend.
+#[unsafe(no_mangle)]
+pub extern "C" fn seedfinder_seed_format(
+    input: *const u8,
+    input_len: usize,
+    out_packet: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    clear_outputs(out_packet, out_len);
+    catch_unwind(AssertUnwindSafe(|| {
+        if out_packet.is_null() || out_len.is_null() {
+            return INVALID;
+        }
+        let Some(bytes) = request_slice(input, input_len) else {
+            return INVALID;
+        };
+        let Ok(input) = std::str::from_utf8(bytes) else {
+            return INVALID;
+        };
+        return_packet(seed::format_input(input).into_bytes(), out_packet, out_len)
+    }))
+    .unwrap_or(INTERNAL)
+}
+
+/// Parses UTF-8 seed-code text with the game's own rules and returns the UTF-8
+/// JSON `{"code": "XXX-XXX-XXX", "value": <number>}`: the canonical code for
+/// display and the numeric value `seedfinder_filter_seeds` takes. Input that
+/// is not a seed code is rejected like every other invalid input.
+#[unsafe(no_mangle)]
+pub extern "C" fn seedfinder_seed_parse(
+    input: *const u8,
+    input_len: usize,
+    out_packet: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    clear_outputs(out_packet, out_len);
+    catch_unwind(AssertUnwindSafe(|| {
+        if out_packet.is_null() || out_len.is_null() {
+            return INVALID;
+        }
+        let Some(bytes) = request_slice(input, input_len) else {
+            return INVALID;
+        };
+        let Ok(input) = std::str::from_utf8(bytes) else {
+            return INVALID;
+        };
+        match seed_parse_document(input) {
+            Ok(document) => return_packet(document.into_bytes(), out_packet, out_len),
+            Err(_) => INVALID,
+        }
+    }))
+    .unwrap_or(INTERNAL)
+}
+
+fn seed_parse_document(input: &str) -> Result<String, shpd_seedfinder_core::seed::SeedError> {
+    let seed = DungeonSeed::from_code(input)?;
+    Ok(serde_json::json!({ "code": seed.to_code(), "value": seed.value() }).to_string())
 }
 
 #[unsafe(no_mangle)]
@@ -818,6 +880,61 @@ mod tests {
             return Err(code);
         }
         Ok(String::from_utf8(unsafe { take_packet(pointer, len) }).unwrap())
+    }
+
+    fn call_text_entry(
+        entry: extern "C" fn(*const u8, usize, *mut *mut u8, *mut usize) -> i32,
+        input: &str,
+    ) -> Result<String, i32> {
+        let mut pointer = ptr::null_mut();
+        let mut len = 0;
+        let code = entry(input.as_ptr(), input.len(), &raw mut pointer, &raw mut len);
+        if code != OK {
+            return Err(code);
+        }
+        Ok(String::from_utf8(unsafe { take_packet(pointer, len) }).unwrap())
+    }
+
+    #[test]
+    fn seed_bridge_masks_input_and_parses_codes() {
+        let format = |input| call_text_entry(seedfinder_seed_format, input);
+        let parse = |input| call_text_entry(seedfinder_seed_parse, input);
+
+        // The masker filters ASCII letters before uppercasing, so non-ASCII
+        // input contributes nothing.
+        assert_eq!(format("abcD").unwrap(), "ABC-D");
+        assert_eq!(format(" 1a!b@c#d$e%f^g&h*i extra").unwrap(), "ABC-DEF-GHI");
+        assert_eq!(format("\u{131}ab").unwrap(), "AB");
+        assert_eq!(format("").unwrap(), "");
+
+        let parsed: Value = serde_json::from_str(&parse("AAA-AAA-AAB").unwrap()).unwrap();
+        assert_eq!(parsed["code"], "AAA-AAA-AAB");
+        assert_eq!(parsed["value"], 1);
+        // Non-canonical but parseable input round-trips to the canonical code.
+        let lowercase: Value = serde_json::from_str(&parse("aaa-aaa-aab").unwrap()).unwrap();
+        assert_eq!(lowercase, parsed);
+        let masked_code = format("aaaaaaaab").unwrap();
+        let masked: Value = serde_json::from_str(&parse(&masked_code).unwrap()).unwrap();
+        assert_eq!(masked, parsed);
+
+        // Undashed lowercase is not a code by the game's own rules.
+        assert_eq!(parse("aaaaaaaab"), Err(INVALID));
+        assert_eq!(parse("AAA-AAA-AA0"), Err(INVALID));
+
+        let mut pointer = ptr::null_mut();
+        let mut len = 0;
+        assert_eq!(
+            seedfinder_seed_format(ptr::null(), 0, &raw mut pointer, &raw mut len),
+            INVALID
+        );
+        assert_eq!(
+            seedfinder_seed_parse(ptr::null(), 0, &raw mut pointer, &raw mut len),
+            INVALID
+        );
+        assert_eq!(
+            seedfinder_seed_parse(b"AAA-AAA-AAB".as_ptr(), 11, ptr::null_mut(), &raw mut len),
+            INVALID
+        );
     }
 
     #[test]
