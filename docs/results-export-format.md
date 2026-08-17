@@ -4,9 +4,13 @@ Every Seed Seeker frontend can export the current search results — together
 with the query that found them — to a JSON file, and import such a file to
 restore both the results list and the query editor. All platforms read and
 write the same schema. The canonical implementation and its compatibility
-tests live in `crates/seedfinder-core/src/results_export.rs`; frontends that
-cannot link the core crate (web, Android, macOS, Windows) re-implement the
-schema and pin it against the shared frozen fixture with their own tests.
+tests live in `crates/seedfinder-core/src/results_export.rs`, and every
+platform links that engine: the codec is exposed over FFI
+(`seedfinder_results_encode`/`seedfinder_results_decode`), WASM
+(`encode_results_file`/`decode_results_file`) and JNI
+(`resultsEncode`/`resultsDecode`). Frontends must delegate to those entry
+points rather than re-implement the schema, so there is exactly one reader and
+one writer of this format.
 
 Exports always contain the query **that produced the listed results**: every
 app snapshots the query when a search starts (or when a file is imported) and
@@ -129,16 +133,20 @@ importable forever:
    A JSON `null` for an optional string/integer field counts as absent.
 4. **Validate seed codes strictly** (canonical form, rule table above) and
    report the index of the first invalid entry.
-5. **Deduplicate, then cap.** After decoding, importers drop duplicate seed
-   codes (keeping the first occurrence) and cap the restored list at the
-   shared result limit (1,024 seeds), in that order, and must tell the user
-   how many entries were dropped. This keeps a given file restoring the same
-   list on every platform, keeps UI list keys unique, and bounds the work an
-   adversarial file can cause.
-6. **Bound resource use.** Apps refuse files larger than 2 MiB (a maximal
-   legal file is far smaller) and parse imports off the UI thread. Parsers
-   may also impose implementation nesting limits (serde_json caps recursion
-   at 128 levels), so ignored unknown fields should stay shallow.
+5. **Deduplicate, then cap.** After decoding, duplicate seed codes are dropped
+   (keeping the first occurrence) and the restored list is capped at the
+   shared result limit (1,024 seeds), in that order; apps must tell the user
+   how many entries were dropped. The decode entry points apply this rule
+   themselves and report the count as `dropped` alongside the restored
+   `seeds`, so a given file restores the same list on every platform, UI list
+   keys stay unique, and an adversarial file's cost stays bounded.
+6. **Bound resource use.** Files larger than 2 MiB are refused (a maximal
+   legal file is far smaller). The cap is enforced by the engine —
+   `results_export::MAX_FILE_BYTES`, applied by `decode` and therefore by
+   every platform's decode entry point — so apps only need to parse imports
+   off the UI thread. Parsers may also impose implementation nesting limits
+   (serde_json caps recursion at 128 levels), so ignored unknown fields should
+   stay shallow.
 
 Writers must:
 

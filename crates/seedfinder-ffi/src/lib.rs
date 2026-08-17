@@ -5,11 +5,13 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 
-use shpd_seedfinder_core::{deep_link, json_query};
+use serde_json::Value;
+use shpd_seedfinder_core::seed::DungeonSeed;
+use shpd_seedfinder_core::{deep_link, json_query, results_export};
 use shpd_seedfinder_session::{
-    FilterPacketError, NativeSession, ScoutCallError, ScoutPacketError, SearchError,
-    StartSessionError, close_session, production_filter_packet, production_scout_packet,
-    queries_continue, registry,
+    FilterPacketError, MAX_ACCEPTED_RESULTS, NativeSession, ScoutCallError, ScoutPacketError,
+    SearchError, StartSessionError, close_session, production_filter_packet,
+    production_scout_packet, queries_continue, registry,
 };
 
 const OK: i32 = 0;
@@ -323,6 +325,116 @@ pub extern "C" fn seedfinder_share_decode(
     .unwrap_or(INTERNAL)
 }
 
+/// Encodes a results file from `{"query": <canonical query document>,
+/// "seeds": ["AAA-AAA-AAA", ...], "app_version": "..."}` (UTF-8 JSON) into the
+/// results-file text. Validation is the codec's:
+/// `crates/seedfinder-core/src/results_export.rs`.
+#[unsafe(no_mangle)]
+pub extern "C" fn seedfinder_results_encode(
+    request: *const u8,
+    request_len: usize,
+    out_packet: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    clear_outputs(out_packet, out_len);
+    catch_unwind(AssertUnwindSafe(|| {
+        if out_packet.is_null() || out_len.is_null() {
+            return INVALID;
+        }
+        let Some(bytes) = request_slice(request, request_len) else {
+            return INVALID;
+        };
+        let Ok(request) = std::str::from_utf8(bytes) else {
+            return INVALID;
+        };
+        match results_encode_document(request) {
+            Ok(contents) => return_packet(contents.into_bytes(), out_packet, out_len),
+            Err(_) => INVALID,
+        }
+    }))
+    .unwrap_or(INTERNAL)
+}
+
+/// Decodes results-file text into `{"query": <canonical query document>,
+/// "seeds": [...], "dropped": <number>, "app_version": ..., "shpd_version":
+/// ...}` (UTF-8 JSON). The seeds are already deduplicated and capped at the
+/// shared result limit, `dropped` counts the exported entries that step
+/// removed, and input above the codec's 2 MiB cap is rejected.
+#[unsafe(no_mangle)]
+pub extern "C" fn seedfinder_results_decode(
+    contents: *const u8,
+    contents_len: usize,
+    out_packet: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    clear_outputs(out_packet, out_len);
+    catch_unwind(AssertUnwindSafe(|| {
+        if out_packet.is_null() || out_len.is_null() {
+            return INVALID;
+        }
+        let Some(bytes) = request_slice(contents, contents_len) else {
+            return INVALID;
+        };
+        let Ok(contents) = std::str::from_utf8(bytes) else {
+            return INVALID;
+        };
+        match results_decode_document(contents) {
+            Ok(document) => return_packet(document.into_bytes(), out_packet, out_len),
+            Err(_) => INVALID,
+        }
+    }))
+    .unwrap_or(INTERNAL)
+}
+
+fn results_encode_document(request_json: &str) -> Result<String, String> {
+    let request: Value = serde_json::from_str(request_json)
+        .map_err(|error| format!("invalid results request JSON: {error}"))?;
+    let query_value = request
+        .get("query")
+        .filter(|value| value.is_object())
+        .ok_or("the results request is missing its \"query\" object")?;
+    let query = json_query::decode(&query_value.to_string())?;
+    let seeds = request
+        .get("seeds")
+        .and_then(Value::as_array)
+        .ok_or("the results request is missing its \"seeds\" list")?
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| results_request_seed(index, entry))
+        .collect::<Result<Vec<_>, _>>()?;
+    let app_version = request
+        .get("app_version")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    Ok(results_export::encode(&query, &seeds, app_version))
+}
+
+fn results_request_seed(index: usize, entry: &Value) -> Result<DungeonSeed, String> {
+    let code = entry
+        .as_str()
+        .ok_or_else(|| format!("seed {}: expected a seed code string", index + 1))?;
+    if !results_export::is_canonical_code(code) {
+        return Err(format!(
+            "seed {}: seed code must use the canonical XXX-XXX-XXX form",
+            index + 1
+        ));
+    }
+    DungeonSeed::from_code(code).map_err(|error| format!("seed {}: {error}", index + 1))
+}
+
+fn results_decode_document(contents: &str) -> Result<String, String> {
+    let file = results_export::decode(contents)?;
+    let (seeds, dropped) = results_export::dedupe_and_cap(&file.seeds, MAX_ACCEPTED_RESULTS);
+    Ok(serde_json::json!({
+        "query": json_query::encode(&file.query),
+        "seeds": seeds.iter().copied().map(DungeonSeed::to_code).collect::<Vec<_>>(),
+        "dropped": dropped,
+        "app_version": file.app_version,
+        "shpd_version": file.shpd_version,
+    })
+    .to_string())
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn seedfinder_buffer_free(pointer: *mut u8, len: usize) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
@@ -582,6 +694,122 @@ mod tests {
                 ptr::null_mut(),
                 &raw mut len
             ),
+            INVALID
+        );
+    }
+
+    /// The frozen cross-platform fixtures: the Apple bridge decodes exactly
+    /// the documents every other platform decodes.
+    const RESULTS_FIXTURES: [&str; 3] = [
+        include_str!("../../seedfinder-core/tests/fixtures/results-export-v1.json"),
+        include_str!(
+            "../../seedfinder-core/tests/fixtures/results-export-v1-weapon-categories.json"
+        ),
+        include_str!("../../seedfinder-core/tests/fixtures/results-export-wandmaker-quest.json"),
+    ];
+
+    fn call_results(
+        function: extern "C" fn(*const u8, usize, *mut *mut u8, *mut usize) -> i32,
+        input: &str,
+    ) -> Result<String, i32> {
+        let mut pointer = ptr::null_mut();
+        let mut len = 0;
+        let code = function(input.as_ptr(), input.len(), &raw mut pointer, &raw mut len);
+        if code != OK {
+            return Err(code);
+        }
+        let packet = unsafe { take_packet(pointer, len) };
+        Ok(String::from_utf8(packet).unwrap())
+    }
+
+    #[test]
+    fn results_files_round_trip_through_the_frozen_fixtures() {
+        for fixture in RESULTS_FIXTURES {
+            let decoded: Value =
+                serde_json::from_str(&call_results(seedfinder_results_decode, fixture).unwrap())
+                    .unwrap();
+            assert_eq!(decoded["shpd_version"], "3.3.8");
+            assert!(!decoded["seeds"].as_array().unwrap().is_empty());
+            assert_eq!(decoded["dropped"], 0);
+
+            let request = serde_json::json!({
+                "query": decoded["query"],
+                "seeds": decoded["seeds"],
+                "app_version": "test",
+            })
+            .to_string();
+            let encoded = call_results(seedfinder_results_encode, &request).unwrap();
+            let round_tripped: Value =
+                serde_json::from_str(&call_results(seedfinder_results_decode, &encoded).unwrap())
+                    .unwrap();
+            assert_eq!(round_tripped["query"], decoded["query"]);
+            assert_eq!(round_tripped["seeds"], decoded["seeds"]);
+            assert_eq!(round_tripped["dropped"], 0);
+            assert_eq!(round_tripped["app_version"], "test");
+        }
+    }
+
+    #[test]
+    fn results_decoding_dedupes_caps_and_refuses_oversized_files() {
+        let results = (0..MAX_ACCEPTED_RESULTS + 10)
+            .map(|index| {
+                serde_json::json!({
+                    "seed": DungeonSeed::new(
+                        u64::try_from(index % MAX_ACCEPTED_RESULTS).unwrap(),
+                    )
+                    .unwrap()
+                    .to_code()
+                })
+            })
+            .collect::<Vec<_>>();
+        let file = serde_json::json!({
+            "format": "seed-seeker-results",
+            "query": {"requirements": [{"item": "sword"}]},
+            "results": results,
+        })
+        .to_string();
+        let decoded: Value =
+            serde_json::from_str(&call_results(seedfinder_results_decode, &file).unwrap()).unwrap();
+        assert_eq!(
+            decoded["seeds"].as_array().unwrap().len(),
+            MAX_ACCEPTED_RESULTS
+        );
+        // Ten duplicates: importers report exactly what dedupe-and-cap removed.
+        assert_eq!(decoded["dropped"], 10);
+        assert!(decoded["app_version"].is_null());
+
+        let oversized = " ".repeat(results_export::MAX_FILE_BYTES + 1);
+        assert_eq!(
+            call_results(seedfinder_results_decode, &oversized),
+            Err(INVALID)
+        );
+    }
+
+    #[test]
+    fn results_encoding_rejects_invalid_requests() {
+        let invalid_query = r#"{"query":{"requirements":[]},"seeds":[]}"#;
+        assert_eq!(
+            call_results(seedfinder_results_encode, invalid_query),
+            Err(INVALID)
+        );
+        let invalid_seed =
+            r#"{"query":{"requirements":[{"item":"sword"}]},"seeds":["aaa-aaa-aab"]}"#;
+        assert_eq!(
+            call_results(seedfinder_results_encode, invalid_seed),
+            Err(INVALID)
+        );
+        assert_eq!(
+            call_results(seedfinder_results_encode, "not json"),
+            Err(INVALID)
+        );
+
+        let mut len = 0;
+        assert_eq!(
+            seedfinder_results_encode(ptr::null(), 0, ptr::null_mut(), &raw mut len),
+            INVALID
+        );
+        assert_eq!(
+            seedfinder_results_decode(ptr::null(), 0, ptr::null_mut(), &raw mut len),
             INVALID
         );
     }

@@ -56,6 +56,18 @@ int32_t seedfinder_filter_seeds(const uint8_t *request, size_t request_len, cons
 // seedfinder_buffer_free.
 int32_t seedfinder_share_encode(const uint8_t *query_json, size_t query_json_len, uint8_t **out_packet, size_t *out_len);
 int32_t seedfinder_share_decode(const uint8_t *text, size_t text_len, uint8_t **out_packet, size_t *out_len);
+// Results files carry a query plus the seeds it found (docs/results-export-format.md).
+// Encode takes UTF-8 JSON {"query": <canonical query document>, "seeds":
+// ["AAA-AAA-AAA", ...], "app_version": "..."} and returns the UTF-8 results-file
+// text; a non-canonical seed code or an invalid query is rejected. Decode takes
+// the UTF-8 file text and returns UTF-8 JSON {"query": <canonical query
+// document>, "seeds": [...], "dropped": <number>, "app_version": ...,
+// "shpd_version": ...} with the seeds already deduplicated and capped at the
+// shared result limit and "dropped" counting the exported entries that step
+// removed; input above the engine's 2 MiB import cap is rejected. Both return
+// packets are freed with seedfinder_buffer_free.
+int32_t seedfinder_results_encode(const uint8_t *request, size_t request_len, uint8_t **out_packet, size_t *out_len);
+int32_t seedfinder_results_decode(const uint8_t *contents, size_t contents_len, uint8_t **out_packet, size_t *out_len);
 void    seedfinder_buffer_free(uint8_t *ptr, size_t len);
 
 #ifdef __cplusplus

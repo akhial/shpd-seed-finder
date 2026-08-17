@@ -5,11 +5,13 @@
 use jni::JNIEnv;
 use jni::objects::{JByteArray, JClass, JLongArray};
 use jni::sys::{JNI_FALSE, jboolean, jint, jlong};
-use shpd_seedfinder_core::{deep_link, json_query};
+use serde_json::Value;
+use shpd_seedfinder_core::seed::DungeonSeed;
+use shpd_seedfinder_core::{deep_link, json_query, results_export};
 use shpd_seedfinder_session::{
-    FilterPacketError, NativeSession, ScoutCallError, ScoutPacketError, SearchError,
-    StartSessionError, close_session, production_filter_packet, production_scout_packet,
-    queries_continue, registry,
+    FilterPacketError, MAX_ACCEPTED_RESULTS, NativeSession, ScoutCallError, ScoutPacketError,
+    SearchError, StartSessionError, close_session, production_filter_packet,
+    production_scout_packet, queries_continue, registry,
 };
 
 fn throw_illegal_argument(env: &mut JNIEnv<'_>, message: impl AsRef<str>) {
@@ -376,6 +378,103 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_shareExtract<'
     }
 }
 
+/// Encodes a results file from the UTF-8 JSON request `{"query": <canonical
+/// query document>, "seeds": ["AAA-AAA-AAA", ...], "app_version": "..."}`,
+/// returning the UTF-8 results-file text. The codec is
+/// `crates/seedfinder-core/src/results_export.rs`, specified in
+/// `docs/results-export-format.md`; failures throw with the codec's own
+/// message.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_resultsEncode<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    request: JByteArray<'local>,
+) -> JByteArray<'local> {
+    let Some(request) = utf8_argument(&mut env, &request, "results request") else {
+        return JByteArray::default();
+    };
+    match results_encode_document(&request) {
+        Ok(contents) => utf8_response(&mut env, &contents, "results file"),
+        Err(error) => {
+            throw_illegal_argument(&mut env, error);
+            JByteArray::default()
+        }
+    }
+}
+
+/// Decodes UTF-8 results-file text into the UTF-8 JSON document `{"query":
+/// <canonical query document>, "seeds": [...], "dropped": <number>,
+/// "app_version": ..., "shpd_version": ...}`. The seeds are already
+/// deduplicated and capped at the shared result limit, `dropped` counts the
+/// exported entries that step removed, and input above the engine's 2 MiB
+/// import cap is rejected. Failures throw with the codec's own message.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_resultsDecode<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    contents: JByteArray<'local>,
+) -> JByteArray<'local> {
+    let Some(contents) = utf8_argument(&mut env, &contents, "results file") else {
+        return JByteArray::default();
+    };
+    match results_decode_document(&contents) {
+        Ok(document) => utf8_response(&mut env, &document, "results document"),
+        Err(error) => {
+            throw_illegal_argument(&mut env, error);
+            JByteArray::default()
+        }
+    }
+}
+
+fn results_encode_document(request_json: &str) -> Result<String, String> {
+    let request: Value = serde_json::from_str(request_json)
+        .map_err(|error| format!("invalid results request JSON: {error}"))?;
+    let query_value = request
+        .get("query")
+        .filter(|value| value.is_object())
+        .ok_or("the results request is missing its \"query\" object")?;
+    let query = json_query::decode(&query_value.to_string())?;
+    let seeds = request
+        .get("seeds")
+        .and_then(Value::as_array)
+        .ok_or("the results request is missing its \"seeds\" list")?
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| results_request_seed(index, entry))
+        .collect::<Result<Vec<_>, _>>()?;
+    let app_version = request
+        .get("app_version")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    Ok(results_export::encode(&query, &seeds, app_version))
+}
+
+fn results_request_seed(index: usize, entry: &Value) -> Result<DungeonSeed, String> {
+    let code = entry
+        .as_str()
+        .ok_or_else(|| format!("seed {}: expected a seed code string", index + 1))?;
+    if !results_export::is_canonical_code(code) {
+        return Err(format!(
+            "seed {}: seed code must use the canonical XXX-XXX-XXX form",
+            index + 1
+        ));
+    }
+    DungeonSeed::from_code(code).map_err(|error| format!("seed {}: {error}", index + 1))
+}
+
+fn results_decode_document(contents: &str) -> Result<String, String> {
+    let file = results_export::decode(contents)?;
+    let (seeds, dropped) = results_export::dedupe_and_cap(&file.seeds, MAX_ACCEPTED_RESULTS);
+    Ok(serde_json::json!({
+        "query": json_query::encode(&file.query),
+        "seeds": seeds.iter().copied().map(DungeonSeed::to_code).collect::<Vec<_>>(),
+        "dropped": dropped,
+        "app_version": file.app_version,
+        "shpd_version": file.shpd_version,
+    })
+    .to_string())
+}
+
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_poll<'local>(
     mut env: JNIEnv<'local>,
@@ -455,4 +554,95 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_close<'local>(
     handle: jlong,
 ) {
     close_session(registry(), handle);
+}
+
+#[cfg(test)]
+mod tests {
+    // The bridge functions themselves need a live JVM; these cover the codec
+    // delegation behind them, which is where every platform-visible rule lives.
+    use serde_json::{Value, json};
+    use shpd_seedfinder_core::seed::DungeonSeed;
+    use shpd_seedfinder_session::MAX_ACCEPTED_RESULTS;
+
+    use super::{results_decode_document, results_encode_document};
+
+    /// The frozen cross-platform fixtures: the Android bridge decodes exactly
+    /// the documents every other platform decodes.
+    const RESULTS_FIXTURES: [&str; 3] = [
+        include_str!("../../seedfinder-core/tests/fixtures/results-export-v1.json"),
+        include_str!(
+            "../../seedfinder-core/tests/fixtures/results-export-v1-weapon-categories.json"
+        ),
+        include_str!("../../seedfinder-core/tests/fixtures/results-export-wandmaker-quest.json"),
+    ];
+
+    #[test]
+    fn results_files_round_trip_through_the_frozen_fixtures() {
+        for fixture in RESULTS_FIXTURES {
+            let decoded: Value =
+                serde_json::from_str(&results_decode_document(fixture).unwrap()).unwrap();
+            assert_eq!(decoded["shpd_version"], "3.3.8");
+            assert!(!decoded["seeds"].as_array().unwrap().is_empty());
+            assert_eq!(decoded["dropped"], 0);
+
+            let request = json!({
+                "query": decoded["query"],
+                "seeds": decoded["seeds"],
+                "app_version": "test",
+            });
+            let encoded = results_encode_document(&request.to_string()).unwrap();
+            let round_tripped: Value =
+                serde_json::from_str(&results_decode_document(&encoded).unwrap()).unwrap();
+            assert_eq!(round_tripped["query"], decoded["query"]);
+            assert_eq!(round_tripped["seeds"], decoded["seeds"]);
+            assert_eq!(round_tripped["dropped"], 0);
+            assert_eq!(round_tripped["app_version"], "test");
+        }
+    }
+
+    #[test]
+    fn results_decoding_dedupes_caps_and_refuses_oversized_files() {
+        let file = json!({
+            "format": "seed-seeker-results",
+            "query": {"requirements": [{"item": "sword"}]},
+            "results": (0..MAX_ACCEPTED_RESULTS + 10)
+                .map(|index| json!({
+                    "seed": DungeonSeed::new(
+                        u64::try_from(index % MAX_ACCEPTED_RESULTS).unwrap(),
+                    )
+                    .unwrap()
+                    .to_code()
+                }))
+                .collect::<Vec<_>>(),
+        });
+        let decoded: Value =
+            serde_json::from_str(&results_decode_document(&file.to_string()).unwrap()).unwrap();
+        assert_eq!(
+            decoded["seeds"].as_array().unwrap().len(),
+            MAX_ACCEPTED_RESULTS
+        );
+        // Ten duplicates: importers report exactly what dedupe-and-cap removed.
+        assert_eq!(decoded["dropped"], 10);
+        assert!(decoded["app_version"].is_null());
+
+        let oversized = " ".repeat(super::results_export::MAX_FILE_BYTES + 1);
+        let error = results_decode_document(&oversized).unwrap_err();
+        assert!(error.contains("too large"), "{error}");
+    }
+
+    #[test]
+    fn results_encoding_fails_on_invalid_queries_and_seed_codes() {
+        let invalid_query = json!({"query": {"requirements": []}, "seeds": []});
+        assert!(results_encode_document(&invalid_query.to_string()).is_err());
+
+        let invalid_seed = json!({
+            "query": {"requirements": [{"item": "sword"}]},
+            "seeds": ["aaa-aaa-aab"],
+        });
+        let error = results_encode_document(&invalid_seed.to_string()).unwrap_err();
+        assert!(error.contains("canonical"), "{error}");
+
+        assert!(results_encode_document("not json").is_err());
+        assert!(results_encode_document(r#"{"seeds":[]}"#).is_err());
+    }
 }

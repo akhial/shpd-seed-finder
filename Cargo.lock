@@ -994,6 +994,7 @@ dependencies = [
 name = "shpd-seedfinder-ffi"
 version = "0.7.0"
 dependencies = [
+ "serde_json",
  "shpd-seedfinder-core",
  "shpd-seedfinder-session",
 ]
@@ -1017,6 +1018,7 @@ name = "shpd-seedfinder-jni"
 version = "0.7.0"
 dependencies = [
  "jni",
+ "serde_json",
  "shpd-seedfinder-core",
  "shpd-seedfinder-session",
 ]
