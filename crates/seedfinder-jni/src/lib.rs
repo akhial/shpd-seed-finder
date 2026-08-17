@@ -7,11 +7,13 @@ use jni::objects::{JByteArray, JClass, JLongArray};
 use jni::sys::{JNI_FALSE, jboolean, jint, jlong};
 use serde_json::Value;
 use shpd_seedfinder_core::seed::DungeonSeed;
+use shpd_seedfinder_core::wire::WireError;
 use shpd_seedfinder_core::{deep_link, json_query, results_export};
 use shpd_seedfinder_session::{
     FilterPacketError, MAX_ACCEPTED_RESULTS, NativeSession, ScoutCallError, ScoutMatchError,
-    ScoutPacketError, SearchError, StartSessionError, close_session, production_filter_packet,
-    production_scout_matches, production_scout_packet, queries_continue, registry,
+    ScoutPacketError, SearchError, StartDecision, StartSessionError, close_session,
+    decide_start_packets, production_filter_packet, production_scout_matches,
+    production_scout_packet, queries_continue, registry,
 };
 
 fn throw_illegal_argument(env: &mut JNIEnv<'_>, message: impl AsRef<str>) {
@@ -329,6 +331,86 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_queryContinues
     }
 }
 
+/// Reports what pressing Start Search must do with the `SSF8` query in
+/// `candidate`, per `docs/search-semantics.md`. `target` is the Target Query
+/// (`null` when there is no Target, which always anchors), `targetSetEmpty`
+/// and `targetHasUncoveredSeeds` describe the Target Set and its coverage, and
+/// `detachedBase` is the last concluded run's query when — and only when —
+/// that run was itself detached (`null` otherwise). The returned UTF-8 text is
+/// one of `anchor`, `target-refine`, `target-filter`, `continue-detached` or
+/// `detached`.
+///
+/// The continuation predicate is part of this decision: callers must not call
+/// `queryContinues` separately for it.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_decideStart<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    candidate: JByteArray<'local>,
+    target: JByteArray<'local>,
+    target_set_empty: jboolean,
+    target_has_uncovered_seeds: jboolean,
+    detached_base: JByteArray<'local>,
+) -> JByteArray<'local> {
+    type Packets = (Vec<u8>, Option<Vec<u8>>, Option<Vec<u8>>);
+    let packets: Result<Packets, jni::errors::Error> = (|| {
+        Ok((
+            env.convert_byte_array(&candidate)?,
+            optional_packet(&env, &target)?,
+            optional_packet(&env, &detached_base)?,
+        ))
+    })();
+    let (candidate, target, detached_base) = match packets {
+        Ok(packets) => packets,
+        Err(error) => {
+            throw_illegal_argument(&mut env, format!("invalid request array: {error}"));
+            return JByteArray::default();
+        }
+    };
+    match decide_start_name(
+        &candidate,
+        target.as_deref(),
+        target_set_empty != JNI_FALSE,
+        target_has_uncovered_seeds != JNI_FALSE,
+        detached_base.as_deref(),
+    ) {
+        Ok(decision) => utf8_response(&mut env, decision, "start decision"),
+        Err(error) => {
+            throw_illegal_argument(&mut env, error.to_string());
+            JByteArray::default()
+        }
+    }
+}
+
+fn decide_start_name(
+    candidate: &[u8],
+    target: Option<&[u8]>,
+    target_set_empty: bool,
+    target_has_uncovered_seeds: bool,
+    detached_base: Option<&[u8]>,
+) -> Result<&'static str, WireError> {
+    decide_start_packets(
+        candidate,
+        target,
+        target_set_empty,
+        target_has_uncovered_seeds,
+        detached_base,
+    )
+    .map(StartDecision::as_str)
+}
+
+/// Reads a nullable `byte[]` argument: Java `null` means the packet is absent,
+/// which the start decision reads as "no Target" / "no detached base".
+fn optional_packet(
+    env: &JNIEnv<'_>,
+    array: &JByteArray<'_>,
+) -> Result<Option<Vec<u8>>, jni::errors::Error> {
+    if array.is_null() {
+        return Ok(None);
+    }
+    env.convert_byte_array(array).map(Some)
+}
+
 /// Reads a UTF-8 string argument, throwing `IllegalArgumentException` and
 /// returning `None` when the array cannot be read or is not UTF-8.
 fn utf8_argument(env: &mut JNIEnv<'_>, array: &JByteArray<'_>, what: &str) -> Option<String> {
@@ -619,7 +701,83 @@ mod tests {
         MAX_ACCEPTED_RESULTS, production_scout_packet, production_scout_world,
     };
 
-    use super::{results_decode_document, results_encode_document, scout_matches_document};
+    use super::{
+        decide_start_name, results_decode_document, results_encode_document, scout_matches_document,
+    };
+
+    #[test]
+    fn start_decision_bridge_reports_the_documented_names() {
+        use shpd_seedfinder_core::catalog::ItemKind;
+        use shpd_seedfinder_core::query::{
+            Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
+        };
+
+        let requirement = |kind| Requirement {
+            kind,
+            weapon_category: None,
+            item: None,
+            tier: TierRequirement::Any,
+            upgrade: UpgradeRequirement::Any,
+            effect: None,
+            require_uncursed: false,
+            source: None,
+            identity_group: None,
+            max_depth: None,
+        };
+        let query = |kind| SearchQuery {
+            requirements: vec![requirement(kind)],
+            max_depth: 24,
+            challenges: Challenges::NONE,
+            require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
+            fast_mode: false,
+        };
+        let target = encode_query(&query(ItemKind::Ring)).unwrap();
+        let deeper = encode_query(&SearchQuery {
+            max_depth: 9,
+            ..query(ItemKind::Ring)
+        })
+        .unwrap();
+        let armor = encode_query(&query(ItemKind::Armor)).unwrap();
+        let mut narrowed_query = query(ItemKind::Armor);
+        narrowed_query.requirements.push(Requirement {
+            upgrade: UpgradeRequirement::AtLeast(2),
+            ..requirement(ItemKind::Armor)
+        });
+        let narrowed = encode_query(&narrowed_query).unwrap();
+
+        assert_eq!(
+            decide_start_name(&target, Some(&target), false, true, None).unwrap(),
+            "target-refine"
+        );
+        assert_eq!(
+            decide_start_name(&deeper, Some(&target), false, true, None).unwrap(),
+            "target-filter"
+        );
+        assert_eq!(
+            decide_start_name(&armor, Some(&target), false, true, None).unwrap(),
+            "detached"
+        );
+        assert_eq!(
+            decide_start_name(&narrowed, Some(&target), false, true, Some(&armor)).unwrap(),
+            "continue-detached"
+        );
+        // A missing Target anchors, and so does an empty Target Set the query
+        // does not continue.
+        assert_eq!(
+            decide_start_name(&target, None, false, true, None).unwrap(),
+            "anchor"
+        );
+        assert_eq!(
+            decide_start_name(&deeper, Some(&target), true, true, None).unwrap(),
+            "anchor"
+        );
+
+        assert!(decide_start_name(b"bad", Some(&target), false, true, None).is_err());
+        assert!(decide_start_name(&target, Some(b"bad"), false, true, None).is_err());
+        assert!(decide_start_name(&target, None, false, true, Some(b"bad")).is_err());
+    }
 
     #[test]
     fn scout_match_envelope_indexes_the_scout_packet() {
