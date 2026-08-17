@@ -1,10 +1,8 @@
 //! Thin JSON and cooperative-search adapter for browser WebAssembly.
 
-use std::collections::BTreeMap;
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use shpd_seedfinder_core::catalog::{Effect, ItemId, ItemKind, item};
+use shpd_seedfinder_core::catalog::{Effect, ItemKind, item};
 use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::deep_link;
 use shpd_seedfinder_core::feasibility::QueryPlan;
@@ -12,9 +10,9 @@ use shpd_seedfinder_core::json_query;
 use shpd_seedfinder_core::main_world::{
     CanonicalMainWorldGenerator, ConfiguredMainWorldGenerator, generate_main_world_with_challenges,
 };
-use shpd_seedfinder_core::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
+use shpd_seedfinder_core::model::{Accessibility, ItemSource, WorldItem};
 use shpd_seedfinder_core::probability::estimate_match_probability;
-use shpd_seedfinder_core::query::SearchQuery;
+use shpd_seedfinder_core::query::{SearchQuery, scout_matches};
 use shpd_seedfinder_core::quests::{
     BlacksmithQuestType, GhostQuestType, ImpTarget, QuestSummary, WandmakerQuestType,
 };
@@ -546,12 +544,10 @@ fn scout_impl(request_json: &str) -> Result<String, String> {
         .transpose()?;
     let world = generate_main_world_with_challenges(seed, 24, challenges)
         .map_err(|error| format!("world generation failed: {error}"))?;
-    let matched = query.as_ref().map_or_else(
-        || vec![false; world.items.len()],
-        |query| scout_matches(&world, query),
-    );
-    let matched_requirements = matched.iter().filter(|value| **value).count();
-    let total_requirements = query.as_ref().map_or(0, |query| query.requirements.len());
+    let marks = query.as_ref().map(|query| scout_matches(&world, query));
+    let matched_requirements = marks.as_ref().map_or(0, |marks| marks.matched_requirements);
+    let total_requirements = marks.as_ref().map_or(0, |marks| marks.total_requirements);
+    let matched = marks.map_or_else(|| vec![false; world.items.len()], |marks| marks.matched);
     let items = world
         .items
         .iter()
@@ -682,119 +678,6 @@ fn accessibility_output(accessibility: Accessibility) -> AccessibilityOutput {
             group,
             mask: format!("0x{mask:x}"),
         },
-    }
-}
-
-type RequirementCandidates = (Option<u8>, Vec<(usize, ItemId)>);
-
-fn scout_matches(world: &GeneratedWorld, query: &SearchQuery) -> Vec<bool> {
-    let mut candidates: Vec<RequirementCandidates> = query
-        .requirements
-        .iter()
-        .map(|requirement| {
-            (
-                requirement.identity_group,
-                world
-                    .items
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, candidate)| {
-                        candidate.depth <= query.max_depth
-                            && candidate.depth <= requirement.max_depth.unwrap_or(query.max_depth)
-                            && (!query.exclude_blacksmith_rewards
-                                || candidate.source != ItemSource::BlacksmithReward)
-                            && requirement.matches(candidate)
-                    })
-                    .map(|(index, candidate)| (index, candidate.item))
-                    .collect(),
-            )
-        })
-        .collect();
-    candidates.sort_by_key(|(_, values)| values.len());
-    let mut search = BestSubset {
-        candidates: &candidates,
-        items: &world.items,
-        used: vec![false; world.items.len()],
-        selected: Vec::new(),
-        best: Vec::new(),
-        scenarios: BTreeMap::new(),
-        identities: BTreeMap::new(),
-    };
-    search.visit(0);
-    let mut matched = vec![false; world.items.len()];
-    for index in search.best {
-        matched[index] = true;
-    }
-    matched
-}
-
-struct BestSubset<'a> {
-    candidates: &'a [RequirementCandidates],
-    items: &'a [WorldItem],
-    used: Vec<bool>,
-    selected: Vec<usize>,
-    best: Vec<usize>,
-    scenarios: BTreeMap<u16, u64>,
-    identities: BTreeMap<u8, ItemId>,
-}
-
-impl BestSubset<'_> {
-    fn visit(&mut self, position: usize) {
-        if position == self.candidates.len() {
-            if self.selected.len() > self.best.len() {
-                self.best.clone_from(&self.selected);
-            }
-            return;
-        }
-        if self.selected.len() + (self.candidates.len() - position) <= self.best.len() {
-            return;
-        }
-
-        let (identity_group, candidates) = &self.candidates[position];
-        for &(index, identity) in candidates {
-            if self.used[index] {
-                continue;
-            }
-            let mut previous_identity = None;
-            if let Some(group) = identity_group {
-                if self
-                    .identities
-                    .get(group)
-                    .is_some_and(|wanted| *wanted != identity)
-                {
-                    continue;
-                }
-                previous_identity = Some((*group, self.identities.insert(*group, identity)));
-            }
-            let mut previous_scenarios = None;
-            if let Some((group, mask)) = self.items[index].accessibility.scenario_constraint() {
-                let compatible = self.scenarios.get(&group).copied().unwrap_or(u64::MAX) & mask;
-                if compatible == 0 {
-                    Self::rewind(&mut self.identities, previous_identity);
-                    continue;
-                }
-                previous_scenarios = Some((group, self.scenarios.insert(group, compatible)));
-            }
-
-            self.used[index] = true;
-            self.selected.push(index);
-            self.visit(position + 1);
-            self.selected.pop();
-            self.used[index] = false;
-            Self::rewind(&mut self.scenarios, previous_scenarios);
-            Self::rewind(&mut self.identities, previous_identity);
-        }
-        self.visit(position + 1);
-    }
-
-    fn rewind<K: Ord, V>(map: &mut BTreeMap<K, V>, previous: Option<(K, Option<V>)>) {
-        if let Some((key, previous)) = previous {
-            if let Some(previous) = previous {
-                map.insert(key, previous);
-            } else {
-                map.remove(&key);
-            }
-        }
     }
 }
 

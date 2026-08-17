@@ -9,9 +9,9 @@ use serde_json::Value;
 use shpd_seedfinder_core::seed::DungeonSeed;
 use shpd_seedfinder_core::{deep_link, json_query, results_export};
 use shpd_seedfinder_session::{
-    FilterPacketError, MAX_ACCEPTED_RESULTS, NativeSession, ScoutCallError, ScoutPacketError,
-    SearchError, StartSessionError, close_session, production_filter_packet,
-    production_scout_packet, queries_continue, registry,
+    FilterPacketError, MAX_ACCEPTED_RESULTS, NativeSession, ScoutCallError, ScoutMatchError,
+    ScoutPacketError, SearchError, StartSessionError, close_session, production_filter_packet,
+    production_scout_matches, production_scout_packet, queries_continue, registry,
 };
 
 const OK: i32 = 0;
@@ -266,6 +266,51 @@ pub extern "C" fn seedfinder_scout(
     .unwrap_or(INTERNAL)
 }
 
+/// Marks which items of a scouted world satisfy the `SSF8` query in `query`.
+/// The scout request identifies the world exactly like `seedfinder_scout`, and
+/// the returned UTF-8 JSON `{"matched": [<item indices>],
+/// "matched_requirements": <n>, "total_requirements": <n>}` indexes the item
+/// list of the `SSC2` packet `seedfinder_scout` returns for that same request:
+/// scouting is deterministic, so both calls describe the same world.
+#[unsafe(no_mangle)]
+pub extern "C" fn seedfinder_scout_matches(
+    request: *const u8,
+    request_len: usize,
+    query: *const u8,
+    query_len: usize,
+    out_packet: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    clear_outputs(out_packet, out_len);
+    catch_unwind(AssertUnwindSafe(|| {
+        if out_packet.is_null() || out_len.is_null() {
+            return INVALID;
+        }
+        let (Some(request), Some(query)) = (
+            request_slice(request, request_len),
+            request_slice(query, query_len),
+        ) else {
+            return INVALID;
+        };
+        match scout_matches_document(request, query) {
+            Ok(document) => return_packet(document.into_bytes(), out_packet, out_len),
+            Err(ScoutMatchError::Request(_) | ScoutMatchError::Query(_)) => INVALID,
+            Err(ScoutMatchError::Panicked) => INTERNAL,
+        }
+    }))
+    .unwrap_or(INTERNAL)
+}
+
+fn scout_matches_document(request: &[u8], query: &[u8]) -> Result<String, ScoutMatchError> {
+    let marks = production_scout_matches(request, query)?;
+    Ok(serde_json::json!({
+        "matched": marks.matched_indices(),
+        "matched_requirements": marks.matched_requirements,
+        "total_requirements": marks.total_requirements,
+    })
+    .to_string())
+}
+
 /// Encodes a results file from `{"query": <canonical query document>,
 /// "seeds": ["AAA-AAA-AAA", ...], "app_version": "..."}` (UTF-8 JSON) into the
 /// results-file text. Validation is the codec's:
@@ -484,6 +529,115 @@ mod tests {
         let packet = unsafe { take_packet(pointer, len) };
         assert_eq!(&packet[..4], b"SSC2");
         seedfinder_buffer_free(ptr::null_mut(), 0);
+    }
+
+    fn call_scout_matches(request: &[u8], query: &[u8]) -> Result<Value, i32> {
+        let mut pointer = ptr::null_mut();
+        let mut len = 0;
+        let code = seedfinder_scout_matches(
+            request.as_ptr(),
+            request.len(),
+            query.as_ptr(),
+            query.len(),
+            &raw mut pointer,
+            &raw mut len,
+        );
+        if code != OK {
+            return Err(code);
+        }
+        let packet = unsafe { take_packet(pointer, len) };
+        Ok(serde_json::from_str(&String::from_utf8(packet).unwrap()).unwrap())
+    }
+
+    /// Scouting is deterministic, so the marks index exactly the item list of
+    /// the `SSC2` packet a scout of the same request returns.
+    fn scouted_world(request: &[u8]) -> shpd_seedfinder_core::model::GeneratedWorld {
+        let mut pointer = ptr::null_mut();
+        let mut len = 0;
+        assert_eq!(
+            seedfinder_scout(
+                request.as_ptr(),
+                request.len(),
+                &raw mut pointer,
+                &raw mut len
+            ),
+            OK
+        );
+        let packet = unsafe { take_packet(pointer, len) };
+        shpd_seedfinder_core::wire::decode_scout_world(&packet).unwrap()
+    }
+
+    #[test]
+    fn scout_matches_envelope_indexes_the_scout_packet() {
+        use shpd_seedfinder_core::catalog::item;
+
+        let request = b"AAA-AAA-AAA";
+        let world = scouted_world(request);
+        let envelope = call_scout_matches(request, &query_packet()).unwrap();
+        assert_eq!(envelope["total_requirements"], 1);
+        let matched = envelope["matched"].as_array().unwrap();
+        assert_eq!(
+            u64::try_from(matched.len()).unwrap(),
+            envelope["matched_requirements"].as_u64().unwrap()
+        );
+        for index in matched {
+            let index = usize::try_from(index.as_u64().unwrap()).unwrap();
+            assert!(index < world.items.len());
+            // The pinned query asks for exactly one Wand of Frost.
+            assert_eq!(item(world.items[index].item).stable_id, "wand_frost");
+        }
+
+        // A requirement taken from the world itself must mark that very item.
+        let known = &world.items[0];
+        let document = serde_json::json!({
+            "requirements": [{
+                "item": item(known.item).stable_id,
+                "max_depth": known.depth,
+            }],
+        });
+        let query = shpd_seedfinder_core::wire::encode_query(
+            &json_query::decode(&document.to_string()).unwrap(),
+        )
+        .unwrap();
+        let envelope = call_scout_matches(request, &query).unwrap();
+        assert_eq!(envelope["matched_requirements"], 1);
+        assert_eq!(envelope["total_requirements"], 1);
+        let matched = envelope["matched"].as_array().unwrap();
+        assert_eq!(matched.len(), 1);
+        let index = usize::try_from(matched[0].as_u64().unwrap()).unwrap();
+        assert_eq!(world.items[index].item, known.item);
+    }
+
+    #[test]
+    fn scout_matches_rejects_invalid_input() {
+        let query = query_packet();
+        assert_eq!(call_scout_matches(b"AAA-AAA-AAA", b"bad"), Err(INVALID));
+        assert_eq!(call_scout_matches(b"AAA-AAA-AA0", &query), Err(INVALID));
+
+        let mut pointer = ptr::null_mut();
+        let mut len = 0;
+        assert_eq!(
+            seedfinder_scout_matches(
+                b"AAA-AAA-AAA".as_ptr(),
+                11,
+                ptr::null(),
+                0,
+                &raw mut pointer,
+                &raw mut len
+            ),
+            INVALID
+        );
+        assert_eq!(
+            seedfinder_scout_matches(
+                b"AAA-AAA-AAA".as_ptr(),
+                11,
+                query.as_ptr(),
+                query.len(),
+                ptr::null_mut(),
+                &raw mut len
+            ),
+            INVALID
+        );
     }
 
     #[test]

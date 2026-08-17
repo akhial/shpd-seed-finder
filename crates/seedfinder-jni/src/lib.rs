@@ -9,9 +9,9 @@ use serde_json::Value;
 use shpd_seedfinder_core::seed::DungeonSeed;
 use shpd_seedfinder_core::{deep_link, json_query, results_export};
 use shpd_seedfinder_session::{
-    FilterPacketError, MAX_ACCEPTED_RESULTS, NativeSession, ScoutCallError, ScoutPacketError,
-    SearchError, StartSessionError, close_session, production_filter_packet,
-    production_scout_packet, queries_continue, registry,
+    FilterPacketError, MAX_ACCEPTED_RESULTS, NativeSession, ScoutCallError, ScoutMatchError,
+    ScoutPacketError, SearchError, StartSessionError, close_session, production_filter_packet,
+    production_scout_matches, production_scout_packet, queries_continue, registry,
 };
 
 fn throw_illegal_argument(env: &mut JNIEnv<'_>, message: impl AsRef<str>) {
@@ -81,6 +81,55 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_scoutSeed<'loc
             JByteArray::default()
         }
     }
+}
+
+/// Marks which items of a scouted world satisfy the `SSF8` query in `query`.
+/// The scout request identifies the world exactly like `scoutSeed`, and the
+/// returned UTF-8 JSON `{"matched": [<item indices>], "matched_requirements":
+/// <n>, "total_requirements": <n>}` indexes the item list of the `SSC2` packet
+/// `scoutSeed` returns for that same request: scouting is deterministic, so
+/// both calls describe the same world. Requirements claim distinct items and
+/// the marks are a largest satisfiable selection, so a partially matching
+/// query marks only the items it could explain.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_scoutMatches<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    request: JByteArray<'local>,
+    query: JByteArray<'local>,
+) -> JByteArray<'local> {
+    let (request, query) = match (
+        env.convert_byte_array(&request),
+        env.convert_byte_array(&query),
+    ) {
+        (Ok(request), Ok(query)) => (request, query),
+        (Err(error), _) | (_, Err(error)) => {
+            throw_illegal_argument(&mut env, format!("invalid request array: {error}"));
+            return JByteArray::default();
+        }
+    };
+    match scout_matches_document(&request, &query) {
+        Ok(document) => utf8_response(&mut env, &document, "scout match document"),
+        Err(ScoutMatchError::Request(error) | ScoutMatchError::Query(error)) => {
+            throw_illegal_argument(&mut env, error.to_string());
+            JByteArray::default()
+        }
+        Err(ScoutMatchError::Panicked) => {
+            android_error("canonical depth-24 scouting generation panicked");
+            throw_illegal_state(&mut env, "native scouting generation failed");
+            JByteArray::default()
+        }
+    }
+}
+
+fn scout_matches_document(request: &[u8], query: &[u8]) -> Result<String, ScoutMatchError> {
+    let marks = production_scout_matches(request, query)?;
+    Ok(serde_json::json!({
+        "matched": marks.matched_indices(),
+        "matched_requirements": marks.matched_requirements,
+        "total_requirements": marks.total_requirements,
+    })
+    .to_string())
 }
 
 #[unsafe(no_mangle)]
@@ -561,10 +610,61 @@ mod tests {
     // The bridge functions themselves need a live JVM; these cover the codec
     // delegation behind them, which is where every platform-visible rule lives.
     use serde_json::{Value, json};
+    use shpd_seedfinder_core::catalog::item;
+    use shpd_seedfinder_core::challenges::Challenges;
+    use shpd_seedfinder_core::json_query;
     use shpd_seedfinder_core::seed::DungeonSeed;
-    use shpd_seedfinder_session::MAX_ACCEPTED_RESULTS;
+    use shpd_seedfinder_core::wire::{decode_scout_world, encode_query};
+    use shpd_seedfinder_session::{
+        MAX_ACCEPTED_RESULTS, production_scout_packet, production_scout_world,
+    };
 
-    use super::{results_decode_document, results_encode_document};
+    use super::{results_decode_document, results_encode_document, scout_matches_document};
+
+    #[test]
+    fn scout_match_envelope_indexes_the_scout_packet() {
+        // Scouting is deterministic, so the marks index exactly the item list
+        // the SSC2 packet of the same request carries.
+        let seed = DungeonSeed::MIN;
+        let world = production_scout_world(seed, Challenges::NONE).unwrap();
+        let known = &world.items[0];
+        let document = json!({
+            "requirements": [{
+                "item": item(known.item).stable_id,
+                "max_depth": known.depth,
+            }],
+        });
+        let query = encode_query(&json_query::decode(&document.to_string()).unwrap()).unwrap();
+
+        let envelope: Value =
+            serde_json::from_str(&scout_matches_document(b"AAA-AAA-AAA", &query).unwrap()).unwrap();
+        assert_eq!(envelope["total_requirements"], 1);
+        assert_eq!(envelope["matched_requirements"], 1);
+        let matched = envelope["matched"].as_array().unwrap();
+        assert_eq!(matched.len(), 1);
+        let index = usize::try_from(matched[0].as_u64().unwrap()).unwrap();
+        let packet = production_scout_packet(b"AAA-AAA-AAA").unwrap();
+        let scouted = decode_scout_world(&packet).unwrap();
+        assert!(index < scouted.items.len());
+        assert_eq!(scouted.items[index].item, known.item);
+
+        // An unsatisfiable requirement still reports the requirement count.
+        let impossible = encode_query(
+            &json_query::decode(
+                r#"{"requirements":[{"item":"sword","max_depth":1}],"max_depth":1}"#,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let envelope: Value =
+            serde_json::from_str(&scout_matches_document(b"AAA-AAA-AAA", &impossible).unwrap())
+                .unwrap();
+        assert_eq!(envelope["total_requirements"], 1);
+        assert!(envelope["matched"].as_array().unwrap().len() <= 1);
+
+        assert!(scout_matches_document(b"AAA-AAA-AA0", &query).is_err());
+        assert!(scout_matches_document(b"AAA-AAA-AAA", b"bad").is_err());
+    }
 
     /// The frozen cross-platform fixtures: the Android bridge decodes exactly
     /// the documents every other platform decodes.
