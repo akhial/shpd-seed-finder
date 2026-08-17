@@ -15,7 +15,7 @@ use shpd_seedfinder_core::model::GeneratedWorld;
 use shpd_seedfinder_core::probability::estimate_match_probability;
 use shpd_seedfinder_core::query::{ScoutMatches, SearchQuery, scout_matches};
 pub use shpd_seedfinder_core::query::{StartDecision, decide_start};
-pub use shpd_seedfinder_core::search::SearchError;
+pub use shpd_seedfinder_core::search::{PRODUCTION_SEARCH_START_STRIDE, SearchError};
 use shpd_seedfinder_core::search::{
     SearchOptions, StreamingSearchHandle, StreamingSearchState, WorldGenerator,
     spawn_partial_streaming_search, spawn_rotated_streaming_search, spawn_streaming_search,
@@ -33,11 +33,6 @@ pub const ERROR_NONE: i64 = 0;
 pub const ERROR_SEARCH_WORKER_FAILED: i64 = 2_001;
 pub const SEARCH_CHUNK_SIZE: usize = 4;
 pub const MAX_ACCEPTED_RESULTS: usize = 1_024;
-
-// Approximately one golden-ratio turn of the seed circle. TOTAL_SEEDS only
-// has 2 and 13 as prime factors; this odd, non-multiple-of-13 stride is
-// therefore coprime and visits every possible start before repeating.
-const PRODUCTION_SEARCH_START_STRIDE: u64 = 3_355_211_884_971;
 
 static REGISTRY: OnceLock<SessionRegistry> = OnceLock::new();
 static CANONICAL_GENERATORS: OnceLock<Mutex<HashMap<u16, Arc<ConfiguredMainWorldGenerator>>>> =

@@ -5,6 +5,7 @@ use serde_json::Value;
 use shpd_seedfinder_core::catalog::{Effect, ItemKind, item};
 use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::deep_link;
+use shpd_seedfinder_core::engine_info::document as engine_info_document;
 use shpd_seedfinder_core::feasibility::QueryPlan;
 use shpd_seedfinder_core::json_query;
 use shpd_seedfinder_core::main_world::{
@@ -19,21 +20,11 @@ use shpd_seedfinder_core::quests::{
 use shpd_seedfinder_core::results_export;
 use shpd_seedfinder_core::search::WorldGenerator;
 use shpd_seedfinder_core::seed::{self, DungeonSeed, TOTAL_SEEDS};
-use shpd_seedfinder_core::{SHPD_COMMIT, SHPD_VERSION};
 use wasm_bindgen::prelude::*;
 
 /// Maximum number of matches retained by one browser search session.
 pub const MAX_RESULTS: usize = 1_024;
 const SEARCH_BATCH_SIZE: u64 = 256;
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct EngineInfo {
-    shpd_version: &'static str,
-    shpd_commit: &'static str,
-    total_seeds: u64,
-    max_results: usize,
-}
 
 #[derive(Serialize)]
 struct SeedOutput {
@@ -161,16 +152,15 @@ struct AdvanceOutput {
     matches: Vec<SeedOutput>,
 }
 
-/// Returns the pinned engine version and browser-session limits as JSON.
+/// Returns the pinned engine version, the browser-session limits, and the
+/// engine constants every frontend must agree on — the query bounds, the
+/// empty boss floors, the quest windows, the challenge list and the search
+/// start stride — as JSON. The document is `engine_info::document`, shared
+/// with the C and Android bridges.
 #[wasm_bindgen]
 #[must_use]
 pub fn engine_info() -> String {
-    to_json(&EngineInfo {
-        shpd_version: SHPD_VERSION,
-        shpd_commit: SHPD_COMMIT,
-        total_seeds: TOTAL_SEEDS,
-        max_results: MAX_RESULTS,
-    })
+    engine_info_document(MAX_RESULTS).to_string()
 }
 
 /// Formats partial interactive seed input as uppercase groups of three. The
@@ -933,6 +923,47 @@ mod tests {
         assert_eq!(info["shpdCommit"], shpd_seedfinder_core::SHPD_COMMIT);
         assert_eq!(info["totalSeeds"], TOTAL_SEEDS);
         assert_eq!(info["maxResults"], MAX_RESULTS);
+
+        assert_eq!(
+            info["limits"],
+            json!({
+                "max_depth": 24,
+                "exact_tier_min": 2,
+                "exact_tier_max": 5,
+                "bounded_tier_min": 3,
+                "bounded_tier_max": 4,
+                "identity_group_max": 4,
+                "max_upgrade_default": 3,
+                "max_upgrade_ring": 4,
+                "max_results": MAX_RESULTS,
+                "results_file_max_bytes": super::results_export::MAX_FILE_BYTES,
+            })
+        );
+        assert_eq!(info["empty_boss_floors"], json!([5, 10, 15]));
+        assert_eq!(
+            info["quest_windows"],
+            json!({
+                "ghost": [2, 4],
+                "wandmaker": [7, 9],
+                "blacksmith": [12, 14],
+                "imp": [17, 19],
+            })
+        );
+        assert_eq!(
+            info["challenges"],
+            json!([
+                {"name": "on_diet", "mask": 1, "changes_level_generation": false},
+                {"name": "faith_is_my_armor", "mask": 2, "changes_level_generation": false},
+                {"name": "pharmacophobia", "mask": 4, "changes_level_generation": false},
+                {"name": "barren_land", "mask": 8, "changes_level_generation": true},
+                {"name": "swarm_intelligence", "mask": 16, "changes_level_generation": false},
+                {"name": "into_darkness", "mask": 32, "changes_level_generation": true},
+                {"name": "forbidden_runes", "mask": 64, "changes_level_generation": true},
+                {"name": "hostile_champions", "mask": 128, "changes_level_generation": false},
+                {"name": "badder_bosses", "mask": 256, "changes_level_generation": false},
+            ])
+        );
+        assert_eq!(info["search_start_stride"], 3_355_211_884_971_u64);
     }
 
     #[test]
