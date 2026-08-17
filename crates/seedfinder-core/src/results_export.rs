@@ -1,8 +1,11 @@
 //! Results-export documents: search results plus the query that found them.
 //!
 //! This module is the canonical implementation of the format described in
-//! `docs/results-export-format.md`. Frontends that cannot link this crate
-//! re-implement the same schema and pin it with fixture tests.
+//! `docs/results-export-format.md`. Every frontend links this engine, so the
+//! codec is exposed over FFI (`seedfinder_results_encode`/`_decode`), WASM
+//! (`encode_results_file`/`decode_results_file`) and JNI
+//! (`resultsEncode`/`resultsDecode`): frontends delegate to it instead of
+//! re-implementing the schema.
 //!
 //! Compatibility contract:
 //!
@@ -26,6 +29,12 @@ use crate::seed::DungeonSeed;
 
 /// Identifies a Seed Seeker results file.
 pub const FILE_FORMAT: &str = "seed-seeker-results";
+
+/// Largest input [`decode`] accepts, in bytes. Part of the cross-platform
+/// import contract: every frontend refuses larger files (a maximal legal file
+/// is far smaller), and the engine enforces the same bound so no platform can
+/// drift from it.
+pub const MAX_FILE_BYTES: usize = 2 * 1024 * 1024;
 
 /// One decoded results file.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -61,9 +70,15 @@ pub fn encode(query: &SearchQuery, seeds: &[DungeonSeed], app_version: &str) -> 
 ///
 /// # Errors
 ///
-/// Returns a human-readable message for files that are not Seed Seeker
-/// results documents or that contain an invalid query or seed code.
+/// Returns a human-readable message for input above [`MAX_FILE_BYTES`], for
+/// files that are not Seed Seeker results documents, and for files that
+/// contain an invalid query or seed code.
 pub fn decode(contents: &str) -> Result<ResultsFile, String> {
+    if contents.len() > MAX_FILE_BYTES {
+        return Err(
+            "this file is too large to be a Seed Seeker results file (2 MiB limit)".to_owned(),
+        );
+    }
     let document: Value = serde_json::from_str(contents)
         .map_err(|error| format!("this is not a Seed Seeker results file: {error}"))?;
     let document = document
@@ -143,7 +158,11 @@ fn decode_result_seed(index: usize, entry: &Value) -> Result<DungeonSeed, String
     DungeonSeed::from_code(code).map_err(|error| format!("result {}: {error}", index + 1))
 }
 
-fn is_canonical_code(code: &str) -> bool {
+/// Reports whether `code` is in the strictly canonical `XXX-XXX-XXX` form the
+/// file format requires. Writers going through [`encode`] must check it too,
+/// so a file exported on one platform imports on all of them.
+#[must_use]
+pub fn is_canonical_code(code: &str) -> bool {
     let bytes = code.as_bytes();
     bytes.len() == 11
         && bytes.iter().enumerate().all(|(index, byte)| {
@@ -168,7 +187,7 @@ mod tests {
     use crate::quests::WandmakerQuestType;
     use crate::seed::DungeonSeed;
 
-    use super::{decode, dedupe_and_cap, encode};
+    use super::{MAX_FILE_BYTES, decode, dedupe_and_cap, encode, is_canonical_code};
 
     fn sample_query() -> SearchQuery {
         SearchQuery {
@@ -427,6 +446,35 @@ mod tests {
         }"#;
         let error = decode(contents).unwrap_err();
         assert!(error.contains("1 and 4"), "{error}");
+    }
+
+    #[test]
+    fn oversized_files_are_refused_before_parsing() {
+        // The engine enforces the shared import cap so no frontend has to.
+        let padding = " ".repeat(MAX_FILE_BYTES);
+        let contents = format!(
+            r#"{{"format":"seed-seeker-results",{padding}
+                "query":{{"requirements":[{{"item":"sword"}}]}},
+                "results":[{{"seed":"AAA-AAA-AAB"}}]}}"#
+        );
+        assert!(contents.len() > MAX_FILE_BYTES);
+        let error = decode(&contents).unwrap_err();
+        assert!(error.contains("too large"), "{error}");
+        assert!(error.contains("2 MiB"), "{error}");
+
+        // A document of exactly the cap is still parsed (and here rejected on
+        // its contents, not its size).
+        let padded = "not json".to_owned() + &" ".repeat(MAX_FILE_BYTES - "not json".len());
+        assert_eq!(padded.len(), MAX_FILE_BYTES);
+        assert!(decode(&padded).unwrap_err().contains("not a Seed Seeker"));
+    }
+
+    #[test]
+    fn canonical_seed_codes_are_recognized_for_writers() {
+        assert!(is_canonical_code("AAA-AAA-AAB"));
+        for code in ["aaa-aaa-aab", "AAAAAAAAB", "AAA AAA AAB", " AAA-AAA-AAB"] {
+            assert!(!is_canonical_code(code), "{code}");
+        }
     }
 
     #[test]
