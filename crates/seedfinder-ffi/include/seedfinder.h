@@ -77,6 +77,16 @@ int32_t seedfinder_filter_seeds(const uint8_t *request, size_t request_len, cons
 // seedfinder_buffer_free.
 int32_t seedfinder_share_encode(const uint8_t *query_json, size_t query_json_len, uint8_t **out_packet, size_t *out_len);
 int32_t seedfinder_share_decode(const uint8_t *text, size_t text_len, uint8_t **out_packet, size_t *out_len);
+// Seed codes are the game's own base-26 text. Format masks partial,
+// as-you-type UTF-8 input into uppercase groups of three — non-letters
+// dropped, the first nine ASCII letters kept, and only those uppercased — and
+// returns the UTF-8 text. Parse takes UTF-8 seed-code text and returns the
+// UTF-8 JSON {"code": "XXX-XXX-XXX", "value": <number>}: the canonical code
+// for display and the numeric value seedfinder_filter_seeds takes. Text that
+// is not a seed code is rejected. Both return packets are freed with
+// seedfinder_buffer_free.
+int32_t seedfinder_seed_format(const uint8_t *input, size_t input_len, uint8_t **out_packet, size_t *out_len);
+int32_t seedfinder_seed_parse(const uint8_t *input, size_t input_len, uint8_t **out_packet, size_t *out_len);
 // Results files carry a query plus the seeds it found (docs/results-export-format.md).
 // Encode takes UTF-8 JSON {"query": <canonical query document>, "seeds":
 // ["AAA-AAA-AAA", ...], "app_version": "..."} and returns the UTF-8 results-file

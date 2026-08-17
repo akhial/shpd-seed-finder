@@ -18,7 +18,7 @@ use shpd_seedfinder_core::quests::{
 };
 use shpd_seedfinder_core::results_export;
 use shpd_seedfinder_core::search::WorldGenerator;
-use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
+use shpd_seedfinder_core::seed::{self, DungeonSeed, TOTAL_SEEDS};
 use shpd_seedfinder_core::{SHPD_COMMIT, SHPD_VERSION};
 use wasm_bindgen::prelude::*;
 
@@ -173,23 +173,12 @@ pub fn engine_info() -> String {
     })
 }
 
-/// Formats partial interactive seed input as uppercase groups of three.
+/// Formats partial interactive seed input as uppercase groups of three. The
+/// masker is `seed::format_input`, shared with every other frontend.
 #[wasm_bindgen]
 #[must_use]
 pub fn format_seed_code(input: &str) -> String {
-    let mut output = String::with_capacity(11);
-    for (index, byte) in input
-        .bytes()
-        .filter(u8::is_ascii_alphabetic)
-        .take(9)
-        .enumerate()
-    {
-        if index == 3 || index == 6 {
-            output.push('-');
-        }
-        output.push(char::from(byte.to_ascii_uppercase()));
-    }
-    output
+    seed::format_input(input)
 }
 
 /// Parses a seed using the core game's seed-code semantics and returns JSON.

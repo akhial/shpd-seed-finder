@@ -6,7 +6,7 @@ use jni::JNIEnv;
 use jni::objects::{JByteArray, JClass, JLongArray};
 use jni::sys::{JNI_FALSE, jboolean, jint, jlong};
 use serde_json::Value;
-use shpd_seedfinder_core::seed::DungeonSeed;
+use shpd_seedfinder_core::seed::{self, DungeonSeed};
 use shpd_seedfinder_core::wire::WireError;
 use shpd_seedfinder_core::{deep_link, json_query, results_export};
 use shpd_seedfinder_session::{
@@ -467,6 +467,50 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_shareEncode<'l
     }
 }
 
+/// Masks partial, as-you-type UTF-8 seed input into uppercase groups of three
+/// (both UTF-8 bytes): non-letters are dropped, the first nine ASCII letters
+/// are kept, and only those are uppercased — never a locale-dependent
+/// uppercase of the whole string. The masker is `seed::format_input`, shared
+/// with every other frontend.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_formatSeedCode<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    input: JByteArray<'local>,
+) -> JByteArray<'local> {
+    let Some(input) = utf8_argument(&mut env, &input, "seed input") else {
+        return JByteArray::default();
+    };
+    utf8_response(&mut env, &seed::format_input(&input), "seed input")
+}
+
+/// Parses UTF-8 seed-code text with the game's own rules, returning the UTF-8
+/// JSON `{"code": "XXX-XXX-XXX", "value": <number>}`: the canonical code for
+/// display and the numeric value `filterSeeds` takes. Text that is not a seed
+/// code throws with the codec's own message.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_parseSeedCode<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    input: JByteArray<'local>,
+) -> JByteArray<'local> {
+    let Some(input) = utf8_argument(&mut env, &input, "seed code") else {
+        return JByteArray::default();
+    };
+    match seed_parse_document(&input) {
+        Ok(document) => utf8_response(&mut env, &document, "seed document"),
+        Err(error) => {
+            throw_illegal_argument(&mut env, error.to_string());
+            JByteArray::default()
+        }
+    }
+}
+
+fn seed_parse_document(input: &str) -> Result<String, seed::SeedError> {
+    let seed = DungeonSeed::from_code(input)?;
+    Ok(serde_json::json!({ "code": seed.to_code(), "value": seed.value() }).to_string())
+}
+
 /// Encodes a results file from the UTF-8 JSON request `{"query": <canonical
 /// query document>, "seeds": ["AAA-AAA-AAA", ...], "app_version": "..."}`,
 /// returning the UTF-8 results-file text. The codec is
@@ -702,8 +746,38 @@ mod tests {
     };
 
     use super::{
-        decide_start_name, results_decode_document, results_encode_document, scout_matches_document,
+        decide_start_name, results_decode_document, results_encode_document,
+        scout_matches_document, seed_parse_document,
     };
+
+    #[test]
+    fn seed_bridge_masks_input_and_parses_codes() {
+        use shpd_seedfinder_core::seed::format_input;
+
+        // The masker filters ASCII letters before uppercasing, so a
+        // locale-dependent uppercase-then-filter port cannot pass this.
+        assert_eq!(format_input("abcD"), "ABC-D");
+        assert_eq!(format_input(" 1a!b@c#d$e%f^g&h*i extra"), "ABC-DEF-GHI");
+        assert_eq!(format_input("\u{131}ab"), "AB");
+
+        let parsed: Value =
+            serde_json::from_str(&seed_parse_document("AAA-AAA-AAB").unwrap()).unwrap();
+        assert_eq!(parsed["code"], "AAA-AAA-AAB");
+        assert_eq!(parsed["value"], 1);
+
+        // Non-canonical but parseable input round-trips to the canonical code.
+        let lowercase: Value =
+            serde_json::from_str(&seed_parse_document("aaa-aaa-aab").unwrap()).unwrap();
+        assert_eq!(lowercase, parsed);
+        let masked: Value =
+            serde_json::from_str(&seed_parse_document(&format_input("aaaaaaaab")).unwrap())
+                .unwrap();
+        assert_eq!(masked, parsed);
+
+        // Undashed lowercase is not a code by the game's own rules.
+        assert!(seed_parse_document("aaaaaaaab").is_err());
+        assert!(seed_parse_document("AAA-AAA-AA0").is_err());
+    }
 
     #[test]
     fn start_decision_bridge_reports_the_documented_names() {
