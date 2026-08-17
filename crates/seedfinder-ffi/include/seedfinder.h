@@ -46,6 +46,16 @@ int32_t seedfinder_query_continues(const uint8_t *candidate, size_t candidate_le
 void    seedfinder_cancel(int64_t handle);
 void    seedfinder_close(int64_t handle);
 int32_t seedfinder_scout(const uint8_t *request, size_t request_len, uint8_t **out_packet, size_t *out_len);
+// Marks which items of a scouted world satisfy the SSF8 query in query. The
+// scout request identifies the world exactly like seedfinder_scout, and the
+// returned UTF-8 JSON {"matched": [<item indices>], "matched_requirements":
+// <n>, "total_requirements": <n>} indexes the item list of the SSC2 packet
+// seedfinder_scout returns for that same request: scouting is deterministic,
+// so both calls describe the same world. Requirements claim distinct items and
+// the marks are a largest satisfiable selection, so "matched" has exactly
+// "matched_requirements" entries and a partial match marks only the items it
+// could explain. The return packet is freed with seedfinder_buffer_free.
+int32_t seedfinder_scout_matches(const uint8_t *request, size_t request_len, const uint8_t *query, size_t query_len, uint8_t **out_packet, size_t *out_len);
 // Re-verifies seeds_len numeric seed values against the SSF8 query in request
 // and returns the surviving seeds as an SSR1 packet in input order.
 int32_t seedfinder_filter_seeds(const uint8_t *request, size_t request_len, const uint64_t *seeds, size_t seeds_len, uint8_t **out_packet, size_t *out_len);

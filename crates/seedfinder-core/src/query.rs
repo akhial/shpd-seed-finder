@@ -537,6 +537,176 @@ fn match_recursive(
     false
 }
 
+/// Which items of a scouted world satisfy which requirements of a query.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ScoutMatches {
+    /// One flag per world item, in the scouted world's own item order — the
+    /// order [`crate::wire::encode_scout_world`] emits — set for every item
+    /// the selection claimed.
+    pub matched: Vec<bool>,
+    /// How many requirements the selection satisfies. Every requirement claims
+    /// a distinct item, so this is also the number of flags set.
+    pub matched_requirements: usize,
+    /// How many requirements the query has in total.
+    pub total_requirements: usize,
+}
+
+impl ScoutMatches {
+    /// Indices of the selected items, ascending.
+    #[must_use]
+    pub fn matched_indices(&self) -> Vec<usize> {
+        self.matched
+            .iter()
+            .enumerate()
+            .filter_map(|(index, matched)| matched.then_some(index))
+            .collect()
+    }
+}
+
+/// Selects a largest set of distinct world items satisfying as many of
+/// `query`'s requirements as possible, for explaining a scouted seed: the
+/// partial-assignment variant of [`SearchQuery::matches`], which answers the
+/// same question but only all-or-nothing.
+///
+/// The rules are the matcher's: the query's floor limit and each
+/// requirement's own, the blacksmith-reward exclusion, one item per
+/// requirement, identity groups bound to a single item ID, and accessibility
+/// scenarios intersected per group. World-level conditions
+/// (`require_blacksmith`, the Wandmaker filter) are *not* applied — they say
+/// nothing about which item explains which requirement.
+///
+/// A full selection is therefore equivalent to
+/// [`SearchQuery::matches`] on a query without those world conditions.
+#[must_use]
+pub fn scout_matches(world: &GeneratedWorld, query: &SearchQuery) -> ScoutMatches {
+    let mut candidates: Vec<RequirementCandidates> = query
+        .requirements
+        .iter()
+        .map(|requirement| {
+            (
+                requirement.identity_group,
+                world
+                    .items
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, candidate)| {
+                        (candidate.depth <= query.max_depth
+                            && candidate.depth <= requirement.max_depth.unwrap_or(query.max_depth)
+                            && (!query.exclude_blacksmith_rewards
+                                || candidate.source != ItemSource::BlacksmithReward))
+                            .then(|| {
+                                // Identity groups bind to the identity the
+                                // requirement matched on, exactly like
+                                // `SearchQuery::matches`. That is the
+                                // candidate's own item on every path today,
+                                // but the requirement owns the notion of
+                                // identity and must keep owning it here.
+                                requirement
+                                    .matching_identity(candidate)
+                                    .map(|identity| (index, identity))
+                            })
+                            .flatten()
+                    })
+                    .collect(),
+            )
+        })
+        .collect();
+    // Try the most constrained requirement first, like the matcher does.
+    candidates.sort_by_key(|(_, values)| values.len());
+    let mut search = BestSubset {
+        candidates: &candidates,
+        items: &world.items,
+        used: vec![false; world.items.len()],
+        selected: Vec::new(),
+        best: Vec::new(),
+        scenarios: BTreeMap::new(),
+        identities: BTreeMap::new(),
+    };
+    search.visit(0);
+    let mut matched = vec![false; world.items.len()];
+    for index in &search.best {
+        matched[*index] = true;
+    }
+    ScoutMatches {
+        matched,
+        matched_requirements: search.best.len(),
+        total_requirements: query.requirements.len(),
+    }
+}
+
+/// Backtracking search for the largest assignment, keeping the best selection
+/// seen so far and pruning branches which can no longer beat it.
+struct BestSubset<'a> {
+    candidates: &'a [RequirementCandidates],
+    items: &'a [WorldItem],
+    used: Vec<bool>,
+    selected: Vec<usize>,
+    best: Vec<usize>,
+    scenarios: BTreeMap<u16, u64>,
+    identities: BTreeMap<u8, ItemId>,
+}
+
+impl BestSubset<'_> {
+    fn visit(&mut self, position: usize) {
+        if position == self.candidates.len() {
+            if self.selected.len() > self.best.len() {
+                self.best.clone_from(&self.selected);
+            }
+            return;
+        }
+        if self.selected.len() + (self.candidates.len() - position) <= self.best.len() {
+            return;
+        }
+
+        let (identity_group, candidates) = &self.candidates[position];
+        for &(index, identity) in candidates {
+            if self.used[index] {
+                continue;
+            }
+            let mut previous_identity = None;
+            if let Some(group) = identity_group {
+                if self
+                    .identities
+                    .get(group)
+                    .is_some_and(|wanted| *wanted != identity)
+                {
+                    continue;
+                }
+                previous_identity = Some((*group, self.identities.insert(*group, identity)));
+            }
+            let mut previous_scenarios = None;
+            if let Some((group, mask)) = self.items[index].accessibility.scenario_constraint() {
+                let compatible = self.scenarios.get(&group).copied().unwrap_or(u64::MAX) & mask;
+                if compatible == 0 {
+                    Self::rewind(&mut self.identities, previous_identity);
+                    continue;
+                }
+                previous_scenarios = Some((group, self.scenarios.insert(group, compatible)));
+            }
+
+            self.used[index] = true;
+            self.selected.push(index);
+            self.visit(position + 1);
+            self.selected.pop();
+            self.used[index] = false;
+            Self::rewind(&mut self.scenarios, previous_scenarios);
+            Self::rewind(&mut self.identities, previous_identity);
+        }
+        // Skipping this requirement keeps the rest of the selection available.
+        self.visit(position + 1);
+    }
+
+    fn rewind<K: Ord, V>(map: &mut BTreeMap<K, V>, previous: Option<(K, Option<V>)>) {
+        if let Some((key, previous)) = previous {
+            if let Some(previous) = previous {
+                map.insert(key, previous);
+            } else {
+                map.remove(&key);
+            }
+        }
+    }
+}
+
 /// Invalid user query.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum QueryError {
@@ -584,7 +754,9 @@ mod tests {
     use crate::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
     use crate::seed::DungeonSeed;
 
-    use super::{QueryError, Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
+    use super::{
+        QueryError, Requirement, SearchQuery, TierRequirement, UpgradeRequirement, scout_matches,
+    };
 
     fn world_item(item: ItemId, accessibility: Accessibility) -> WorldItem {
         WorldItem {
@@ -1357,5 +1529,237 @@ mod tests {
         };
 
         assert_eq!(query.validate(), Err(QueryError::InconsistentIdentityGroup));
+    }
+
+    fn scout_query(requirements: Vec<Requirement>) -> SearchQuery {
+        SearchQuery {
+            requirements,
+            max_depth: 24,
+            challenges: crate::challenges::Challenges::NONE,
+            require_blacksmith: false,
+            exclude_blacksmith_rewards: false,
+            wandmaker_quest: None,
+            fast_mode: false,
+        }
+    }
+
+    fn scout_world(items: Vec<WorldItem>) -> GeneratedWorld {
+        GeneratedWorld {
+            quests: crate::quests::QuestSummary::default(),
+            seed: DungeonSeed::MIN,
+            items,
+        }
+    }
+
+    fn any_requirement(kind: ItemKind) -> Requirement {
+        Requirement {
+            kind,
+            weapon_category: None,
+            item: None,
+            tier: TierRequirement::Any,
+            upgrade: UpgradeRequirement::Any,
+            effect: None,
+            require_uncursed: false,
+            source: None,
+            identity_group: None,
+            max_depth: None,
+        }
+    }
+
+    #[test]
+    fn scout_marks_the_largest_satisfiable_selection() {
+        let world = scout_world(vec![
+            world_item(ItemId::Sword, Accessibility::Independent),
+            world_item(ItemId::WandFrost, Accessibility::Independent),
+        ]);
+
+        // Two swords wanted, one present: the marks explain the requirement
+        // that can be satisfied instead of reporting nothing at all.
+        let query = scout_query(vec![requirement(ItemId::Sword), requirement(ItemId::Sword)]);
+        assert!(!query.matches(&world));
+        let marks = scout_matches(&world, &query);
+        assert_eq!(marks.matched, vec![true, false]);
+        assert_eq!(marks.matched_indices(), vec![0]);
+        assert_eq!(marks.matched_requirements, 1);
+        assert_eq!(marks.total_requirements, 2);
+
+        // Every requirement satisfied marks every item it claimed.
+        let query = scout_query(vec![
+            requirement(ItemId::Sword),
+            requirement(ItemId::WandFrost),
+        ]);
+        let marks = scout_matches(&world, &query);
+        assert_eq!(marks.matched, vec![true, true]);
+        assert_eq!(marks.matched_requirements, 2);
+        assert_eq!(marks.total_requirements, 2);
+
+        // Nothing matching marks nothing.
+        let marks = scout_matches(
+            &world,
+            &scout_query(vec![requirement(ItemId::WandLightning)]),
+        );
+        assert_eq!(marks.matched, vec![false, false]);
+        assert_eq!(marks.matched_requirements, 0);
+        assert_eq!(marks.total_requirements, 1);
+    }
+
+    #[test]
+    fn scout_marks_bind_identity_groups_to_one_item() {
+        let linked = Requirement {
+            identity_group: Some(1),
+            ..any_requirement(ItemKind::Wand)
+        };
+        let query = scout_query(vec![linked, linked]);
+
+        // Two different wands cannot both answer a linked pair: the group
+        // binds the second requirement to the first's item.
+        let mixed = scout_world(vec![
+            world_item(ItemId::WandFrost, Accessibility::Independent),
+            world_item(ItemId::WandLightning, Accessibility::Independent),
+        ]);
+        assert!(!query.matches(&mixed));
+        let marks = scout_matches(&mixed, &query);
+        assert_eq!(marks.matched_requirements, 1);
+        assert_eq!(marks.matched_indices().len(), 1);
+
+        // Two copies of one wand satisfy both.
+        let paired = scout_world(vec![
+            world_item(ItemId::WandFrost, Accessibility::Independent),
+            world_item(ItemId::WandFrost, Accessibility::Independent),
+        ]);
+        assert!(query.matches(&paired));
+        assert_eq!(scout_matches(&paired, &query).matched, vec![true, true]);
+    }
+
+    #[test]
+    fn scout_marks_respect_accessibility_scenarios() {
+        let query = scout_query(vec![requirement(ItemId::Sword), requirement(ItemId::Sword)]);
+
+        // Two swords on mutually exclusive acquisition plans of one group:
+        // only one of them is ever obtainable, so only one is marked.
+        let exclusive = scout_world(vec![
+            world_item(
+                ItemId::Sword,
+                Accessibility::Scenarios {
+                    group: 1,
+                    mask: 0b01,
+                },
+            ),
+            world_item(
+                ItemId::Sword,
+                Accessibility::Scenarios {
+                    group: 1,
+                    mask: 0b10,
+                },
+            ),
+        ]);
+        assert!(!query.matches(&exclusive));
+        assert_eq!(scout_matches(&exclusive, &query).matched_requirements, 1);
+
+        // A shared plan lets both count.
+        let compatible = scout_world(vec![
+            world_item(
+                ItemId::Sword,
+                Accessibility::Scenarios {
+                    group: 1,
+                    mask: 0b11,
+                },
+            ),
+            world_item(
+                ItemId::Sword,
+                Accessibility::Scenarios {
+                    group: 1,
+                    mask: 0b10,
+                },
+            ),
+        ]);
+        assert!(query.matches(&compatible));
+        assert_eq!(scout_matches(&compatible, &query).matched, vec![true, true]);
+    }
+
+    #[test]
+    fn scout_marks_honour_floor_limits_and_the_blacksmith_exclusion() {
+        let world = scout_world(vec![
+            WorldItem {
+                depth: 5,
+                source: ItemSource::BlacksmithReward,
+                ..world_item(ItemId::Sword, Accessibility::Independent)
+            },
+            WorldItem {
+                depth: 9,
+                ..world_item(ItemId::Sword, Accessibility::Independent)
+            },
+        ]);
+        let mut query = scout_query(vec![requirement(ItemId::Sword)]);
+        assert_eq!(scout_matches(&world, &query).matched_indices(), vec![0]);
+
+        // The query's own floor limit hides the deeper copy, then both.
+        query.max_depth = 5;
+        assert_eq!(scout_matches(&world, &query).matched_indices(), vec![0]);
+        query.max_depth = 4;
+        assert_eq!(scout_matches(&world, &query).matched_requirements, 0);
+
+        // A per-requirement limit narrows the same way on its own.
+        query.max_depth = 24;
+        query.requirements[0].max_depth = Some(8);
+        assert_eq!(scout_matches(&world, &query).matched_indices(), vec![0]);
+        query.requirements[0].max_depth = Some(4);
+        assert_eq!(scout_matches(&world, &query).matched_requirements, 0);
+
+        // Excluding Smith rewards drops the shallow copy for the deep one.
+        query.requirements[0].max_depth = None;
+        query.exclude_blacksmith_rewards = true;
+        assert_eq!(scout_matches(&world, &query).matched_indices(), vec![1]);
+    }
+
+    #[test]
+    fn scout_marks_agree_with_the_matcher_on_scouted_seeds() {
+        let linked = |kind| Requirement {
+            identity_group: Some(1),
+            ..any_requirement(kind)
+        };
+        let mut shallow = scout_query(vec![any_requirement(ItemKind::Ring)]);
+        shallow.max_depth = 6;
+        let queries = [
+            scout_query(vec![any_requirement(ItemKind::Ring)]),
+            scout_query(vec![
+                any_requirement(ItemKind::Wand),
+                any_requirement(ItemKind::Wand),
+                any_requirement(ItemKind::Wand),
+            ]),
+            scout_query(vec![
+                requirement(ItemId::Sword),
+                any_requirement(ItemKind::Armor),
+            ]),
+            scout_query(vec![linked(ItemKind::Ring), linked(ItemKind::Ring)]),
+            scout_query(vec![Requirement {
+                upgrade: UpgradeRequirement::AtLeast(3),
+                ..any_requirement(ItemKind::Weapon)
+            }]),
+            shallow,
+        ];
+
+        let (mut satisfied, mut unsatisfied) = (0, 0);
+        for value in [0_u64, 1, 7, 99] {
+            let seed = DungeonSeed::new(value).unwrap();
+            let world = crate::main_world::generate_main_world(seed, 12).unwrap();
+            for query in &queries {
+                let marks = scout_matches(&world, query);
+                assert_eq!(marks.total_requirements, query.requirements.len());
+                assert_eq!(marks.matched_indices().len(), marks.matched_requirements);
+                assert_eq!(marks.matched.len(), world.items.len());
+                // A full selection is exactly what the search matcher accepts.
+                let complete = marks.matched_requirements == marks.total_requirements;
+                assert_eq!(complete, query.matches(&world), "seed {value}");
+                if complete {
+                    satisfied += 1;
+                } else {
+                    unsatisfied += 1;
+                }
+            }
+        }
+        // Both outcomes must occur, or the agreement above proves nothing.
+        assert!(satisfied > 0, "no query was fully satisfied");
+        assert!(unsatisfied > 0, "every query was fully satisfied");
     }
 }

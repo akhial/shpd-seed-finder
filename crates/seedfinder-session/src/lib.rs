@@ -13,7 +13,7 @@ use shpd_seedfinder_core::feasibility::QueryPlan;
 use shpd_seedfinder_core::main_world::{CanonicalMainWorldGenerator, ConfiguredMainWorldGenerator};
 use shpd_seedfinder_core::model::GeneratedWorld;
 use shpd_seedfinder_core::probability::estimate_match_probability;
-use shpd_seedfinder_core::query::SearchQuery;
+use shpd_seedfinder_core::query::{ScoutMatches, SearchQuery, scout_matches};
 pub use shpd_seedfinder_core::search::SearchError;
 use shpd_seedfinder_core::search::{
     SearchOptions, StreamingSearchHandle, StreamingSearchState, WorldGenerator,
@@ -152,6 +152,35 @@ pub fn production_scout_world(
     let generator = canonical_generator(challenges);
     catch_unwind(AssertUnwindSafe(|| generator.generate(seed, 24)))
         .map_err(|_| ScoutCallError::Panicked)
+}
+
+/// Failure modes of [`production_scout_matches`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScoutMatchError {
+    Request(WireError),
+    Query(WireError),
+    Panicked,
+}
+
+/// Scouts the world named by an `SSQ2` (or legacy raw seed) scout request and
+/// reports which of its items satisfy the `SSF8` query in `query_packet`.
+///
+/// The world is generated exactly like [`production_scout_packet`]'s, so the
+/// reported item indices address the item list of the `SSC2` packet that
+/// request produces.
+///
+/// # Errors
+///
+/// Returns the scout request's or the query packet's decode error, or
+/// [`ScoutMatchError::Panicked`] when world generation panics.
+pub fn production_scout_matches(
+    request: &[u8],
+    query_packet: &[u8],
+) -> Result<ScoutMatches, ScoutMatchError> {
+    let (seed, challenges) = decode_scout_request(request).map_err(ScoutMatchError::Request)?;
+    let query = decode_query(query_packet).map_err(ScoutMatchError::Query)?;
+    let world = production_scout_world(seed, challenges).map_err(|_| ScoutMatchError::Panicked)?;
+    Ok(scout_matches(&world, &query))
 }
 
 /// Re-verifies specific seeds against a full query, returning the matching
