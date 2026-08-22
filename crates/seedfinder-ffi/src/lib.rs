@@ -5,11 +5,11 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 
-use shpd_seedfinder_core::{deep_link, json_query};
+use shpd_seedfinder_core::{deep_link, engine_info, json_query, results_export, seed};
 use shpd_seedfinder_session::{
-    FilterPacketError, NativeSession, ScoutCallError, ScoutPacketError, SearchError,
-    StartSessionError, close_session, production_filter_packet, production_scout_packet,
-    queries_continue, registry,
+    FilterPacketError, MAX_RESULTS, NativeSession, ScoutCallError, ScoutMatchError,
+    ScoutPacketError, SearchError, StartSessionError, close_session, decide_start_packets, json,
+    production_filter_packet, production_scout_packet, queries_continue, registry,
 };
 
 const OK: i32 = 0;
@@ -183,6 +183,55 @@ pub extern "C" fn seedfinder_query_continues(
     .unwrap_or(INTERNAL)
 }
 
+/// Reports what pressing Start Search must do with the `SSF8` query in
+/// `candidate`, per `docs/search-semantics.md`. `target` is the Target Query
+/// (null when there is no Target, which always anchors), `target_set_empty`
+/// and `target_has_uncovered_seeds` describe the Target Set and its coverage,
+/// and `detached_base` is the last concluded run's query when — and only when
+/// — that run was itself detached (null otherwise). The returned UTF-8 text is
+/// one of `anchor`, `target-refine`, `target-filter`, `continue-detached` or
+/// `detached`.
+///
+/// The continuation predicate is part of this decision: callers must not call
+/// `seedfinder_query_continues` separately for it.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)] // The C ABI spells every input out flat.
+pub extern "C" fn seedfinder_decide_start(
+    candidate: *const u8,
+    candidate_len: usize,
+    target: *const u8,
+    target_len: usize,
+    target_set_empty: i32,
+    target_has_uncovered_seeds: i32,
+    detached_base: *const u8,
+    detached_base_len: usize,
+    out_packet: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    clear_outputs(out_packet, out_len);
+    catch_unwind(AssertUnwindSafe(|| {
+        if out_packet.is_null() || out_len.is_null() {
+            return INVALID;
+        }
+        let Some(candidate) = request_slice(candidate, candidate_len) else {
+            return INVALID;
+        };
+        match decide_start_packets(
+            candidate,
+            request_slice(target, target_len),
+            target_set_empty != 0,
+            target_has_uncovered_seeds != 0,
+            request_slice(detached_base, detached_base_len),
+        ) {
+            Ok(decision) => {
+                return_packet(decision.as_str().as_bytes().to_vec(), out_packet, out_len)
+            }
+            Err(_) => INVALID,
+        }
+    }))
+    .unwrap_or(INTERNAL)
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn seedfinder_poll(
     handle: i64,
@@ -192,7 +241,10 @@ pub extern "C" fn seedfinder_poll(
 ) -> i32 {
     clear_outputs(out_packet, out_len);
     catch_unwind(AssertUnwindSafe(|| {
-        if out_packet.is_null() || out_len.is_null() || !(1..=1024).contains(&max_results) {
+        if out_packet.is_null()
+            || out_len.is_null()
+            || !usize::try_from(max_results).is_ok_and(|limit| (1..=MAX_RESULTS).contains(&limit))
+        {
             return INVALID;
         }
         let Some(session) = registry().get(handle) else {
@@ -259,6 +311,178 @@ pub extern "C" fn seedfinder_scout(
             Err(
                 ScoutCallError::Packet(ScoutPacketError::Response(_)) | ScoutCallError::Panicked,
             ) => INTERNAL,
+        }
+    }))
+    .unwrap_or(INTERNAL)
+}
+
+/// Marks which items of a scouted world satisfy the `SSF8` query in `query`.
+/// The scout request identifies the world exactly like `seedfinder_scout`, and
+/// the returned UTF-8 JSON `{"matched": [<item indices>],
+/// "matchedRequirements": <n>, "totalRequirements": <n>}` indexes the item
+/// list of the `SSC2` packet `seedfinder_scout` returns for that same request:
+/// scouting is deterministic, so both calls describe the same world.
+#[unsafe(no_mangle)]
+pub extern "C" fn seedfinder_scout_matches(
+    request: *const u8,
+    request_len: usize,
+    query: *const u8,
+    query_len: usize,
+    out_packet: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    clear_outputs(out_packet, out_len);
+    catch_unwind(AssertUnwindSafe(|| {
+        if out_packet.is_null() || out_len.is_null() {
+            return INVALID;
+        }
+        let (Some(request), Some(query)) = (
+            request_slice(request, request_len),
+            request_slice(query, query_len),
+        ) else {
+            return INVALID;
+        };
+        match json::scout_matches_document(request, query) {
+            Ok(document) => return_packet(document.into_bytes(), out_packet, out_len),
+            Err(ScoutMatchError::Request(_) | ScoutMatchError::Query(_)) => INVALID,
+            Err(ScoutMatchError::Panicked) => INTERNAL,
+        }
+    }))
+    .unwrap_or(INTERNAL)
+}
+
+/// Returns the engine's own constants as UTF-8 JSON: the pinned upstream
+/// version, the seed-space size, the query bounds, the empty boss floors, the
+/// quest depth windows, the challenge list with each bit's effect on
+/// generation, and the search start stride. Frontends read their limits from
+/// here instead of hardcoding mirrors. The document is
+/// `engine_info::document`, shared with the Android and browser bridges.
+#[unsafe(no_mangle)]
+pub extern "C" fn seedfinder_engine_info(out_packet: *mut *mut u8, out_len: *mut usize) -> i32 {
+    clear_outputs(out_packet, out_len);
+    catch_unwind(AssertUnwindSafe(|| {
+        return_packet(
+            engine_info::document().to_string().into_bytes(),
+            out_packet,
+            out_len,
+        )
+    }))
+    .unwrap_or(INTERNAL)
+}
+
+/// Masks partial, as-you-type UTF-8 seed input into uppercase groups of three
+/// and returns it as UTF-8 text: non-letters are dropped, the first nine ASCII
+/// letters are kept, and only those are uppercased. The masker is
+/// `seed::format_input`, shared with every other frontend.
+#[unsafe(no_mangle)]
+pub extern "C" fn seedfinder_seed_format(
+    input: *const u8,
+    input_len: usize,
+    out_packet: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    clear_outputs(out_packet, out_len);
+    catch_unwind(AssertUnwindSafe(|| {
+        if out_packet.is_null() || out_len.is_null() {
+            return INVALID;
+        }
+        let Some(bytes) = request_slice(input, input_len) else {
+            return INVALID;
+        };
+        let Ok(input) = std::str::from_utf8(bytes) else {
+            return INVALID;
+        };
+        return_packet(seed::format_input(input).into_bytes(), out_packet, out_len)
+    }))
+    .unwrap_or(INTERNAL)
+}
+
+/// Parses UTF-8 seed-code text with the game's own rules and returns the UTF-8
+/// JSON `{"code": "XXX-XXX-XXX", "value": <number>}`: the canonical code for
+/// display and the numeric value `seedfinder_filter_seeds` takes. Input that
+/// is not a seed code is rejected like every other invalid input.
+#[unsafe(no_mangle)]
+pub extern "C" fn seedfinder_seed_parse(
+    input: *const u8,
+    input_len: usize,
+    out_packet: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    clear_outputs(out_packet, out_len);
+    catch_unwind(AssertUnwindSafe(|| {
+        if out_packet.is_null() || out_len.is_null() {
+            return INVALID;
+        }
+        let Some(bytes) = request_slice(input, input_len) else {
+            return INVALID;
+        };
+        let Ok(input) = std::str::from_utf8(bytes) else {
+            return INVALID;
+        };
+        match seed::parse_document(input) {
+            Ok(document) => return_packet(document.into_bytes(), out_packet, out_len),
+            Err(_) => INVALID,
+        }
+    }))
+    .unwrap_or(INTERNAL)
+}
+
+/// Encodes a results file from `{"query": <canonical query document>,
+/// "seeds": ["AAA-AAA-AAA", ...], "app_version": "..."}` (UTF-8 JSON) into the
+/// results-file text. Validation is the codec's:
+/// `crates/seedfinder-core/src/results_export.rs`.
+#[unsafe(no_mangle)]
+pub extern "C" fn seedfinder_results_encode(
+    request: *const u8,
+    request_len: usize,
+    out_packet: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    clear_outputs(out_packet, out_len);
+    catch_unwind(AssertUnwindSafe(|| {
+        if out_packet.is_null() || out_len.is_null() {
+            return INVALID;
+        }
+        let Some(bytes) = request_slice(request, request_len) else {
+            return INVALID;
+        };
+        let Ok(request) = std::str::from_utf8(bytes) else {
+            return INVALID;
+        };
+        match results_export::encode_document(request) {
+            Ok(contents) => return_packet(contents.into_bytes(), out_packet, out_len),
+            Err(_) => INVALID,
+        }
+    }))
+    .unwrap_or(INTERNAL)
+}
+
+/// Decodes results-file text into `{"query": <canonical query document>,
+/// "seeds": [...], "dropped": <number>, "app_version": ..., "shpd_version":
+/// ...}` (UTF-8 JSON). The seeds are already deduplicated and capped at the
+/// shared result limit, `dropped` counts the exported entries that step
+/// removed, and input above the codec's 2 MiB cap is rejected.
+#[unsafe(no_mangle)]
+pub extern "C" fn seedfinder_results_decode(
+    contents: *const u8,
+    contents_len: usize,
+    out_packet: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    clear_outputs(out_packet, out_len);
+    catch_unwind(AssertUnwindSafe(|| {
+        if out_packet.is_null() || out_len.is_null() {
+            return INVALID;
+        }
+        let Some(bytes) = request_slice(contents, contents_len) else {
+            return INVALID;
+        };
+        let Ok(contents) = std::str::from_utf8(bytes) else {
+            return INVALID;
+        };
+        match results_export::decode_document(contents) {
+            Ok(document) => return_packet(document.into_bytes(), out_packet, out_len),
+            Err(_) => INVALID,
         }
     }))
     .unwrap_or(INTERNAL)
@@ -337,6 +561,8 @@ pub extern "C" fn seedfinder_buffer_free(pointer: *mut u8, len: usize) {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::Value;
+
     use super::*;
 
     fn query_packet() -> Vec<u8> {
@@ -374,6 +600,59 @@ mod tests {
         seedfinder_buffer_free(ptr::null_mut(), 0);
     }
 
+    #[test]
+    fn scout_matches_bridge_returns_the_shared_envelope_and_maps_errors() {
+        let request = b"AAA-AAA-AAA";
+        let query = query_packet();
+        let call = |request: &[u8], query: &[u8]| {
+            let mut pointer = ptr::null_mut();
+            let mut len = 0;
+            let code = seedfinder_scout_matches(
+                request.as_ptr(),
+                request.len(),
+                query.as_ptr(),
+                query.len(),
+                &raw mut pointer,
+                &raw mut len,
+            );
+            if code != OK {
+                return Err(code);
+            }
+            Ok(String::from_utf8(unsafe { take_packet(pointer, len) }).unwrap())
+        };
+
+        assert_eq!(
+            call(request, &query).unwrap(),
+            json::scout_matches_document(request, &query).unwrap()
+        );
+        assert_eq!(call(request, b"bad"), Err(INVALID));
+        assert_eq!(call(b"AAA-AAA-AA0", &query), Err(INVALID));
+
+        let mut pointer = ptr::null_mut();
+        let mut len = 0;
+        assert_eq!(
+            seedfinder_scout_matches(
+                request.as_ptr(),
+                request.len(),
+                ptr::null(),
+                0,
+                &raw mut pointer,
+                &raw mut len
+            ),
+            INVALID
+        );
+        assert_eq!(
+            seedfinder_scout_matches(
+                request.as_ptr(),
+                request.len(),
+                query.as_ptr(),
+                query.len(),
+                ptr::null_mut(),
+                &raw mut len
+            ),
+            INVALID
+        );
+    }
     #[test]
     fn start_poll_status_cancel_close_lifecycle() {
         let request = query_packet();
@@ -474,6 +753,113 @@ mod tests {
     }
 
     #[test]
+    fn engine_info_returns_the_shared_document() {
+        let mut pointer = ptr::null_mut();
+        let mut len = 0;
+        assert_eq!(seedfinder_engine_info(&raw mut pointer, &raw mut len), OK);
+        let info: Value = serde_json::from_slice(&unsafe { take_packet(pointer, len) }).unwrap();
+        assert_eq!(info, engine_info::document());
+
+        assert_eq!(
+            seedfinder_engine_info(ptr::null_mut(), &raw mut len),
+            INVALID
+        );
+    }
+
+    #[test]
+    fn seed_bridge_returns_the_shared_text_and_rejects_bad_input() {
+        assert_eq!(
+            call_text_entry(seedfinder_seed_format, " 1a!b@c").unwrap(),
+            seed::format_input(" 1a!b@c")
+        );
+        assert_eq!(
+            call_text_entry(seedfinder_seed_parse, "aaa-aaa-aab").unwrap(),
+            seed::parse_document("aaa-aaa-aab").unwrap()
+        );
+        assert_eq!(
+            call_text_entry(seedfinder_seed_parse, "AAA-AAA-AA0"),
+            Err(INVALID)
+        );
+
+        let mut pointer = ptr::null_mut();
+        let mut len = 0;
+        assert_eq!(
+            seedfinder_seed_format(ptr::null(), 0, &raw mut pointer, &raw mut len),
+            INVALID
+        );
+        assert_eq!(
+            seedfinder_seed_parse(ptr::null(), 0, &raw mut pointer, &raw mut len),
+            INVALID
+        );
+        assert_eq!(
+            seedfinder_seed_parse(b"AAA-AAA-AAB".as_ptr(), 11, ptr::null_mut(), &raw mut len),
+            INVALID
+        );
+    }
+
+    #[test]
+    fn start_decision_bridge_maps_nulls_flags_and_error_codes() {
+        let target = query_packet();
+        let call = |candidate: &[u8], target: Option<&[u8]>, base: Option<&[u8]>| {
+            let mut pointer = ptr::null_mut();
+            let mut len = 0;
+            let (target_pointer, target_len) =
+                target.map_or((ptr::null(), 0), |packet| (packet.as_ptr(), packet.len()));
+            let (base_pointer, base_len) =
+                base.map_or((ptr::null(), 0), |packet| (packet.as_ptr(), packet.len()));
+            let code = seedfinder_decide_start(
+                candidate.as_ptr(),
+                candidate.len(),
+                target_pointer,
+                target_len,
+                0,
+                1,
+                base_pointer,
+                base_len,
+                &raw mut pointer,
+                &raw mut len,
+            );
+            if code != OK {
+                return Err(code);
+            }
+            Ok(String::from_utf8(unsafe { take_packet(pointer, len) }).unwrap())
+        };
+
+        // A null Target is "no Target"; a present one reaches the decision.
+        assert_eq!(
+            call(&target, None, None).unwrap(),
+            json::decide_start_name(&target, None, false, true, None).unwrap()
+        );
+        assert_eq!(
+            call(&target, Some(&target), None).unwrap(),
+            json::decide_start_name(&target, Some(&target), false, true, None).unwrap()
+        );
+        assert_eq!(call(&target, Some(&target), None).unwrap(), "target-refine");
+
+        // Every undecodable packet is rejected, as is a null candidate.
+        assert_eq!(call(b"bad", Some(&target), None), Err(INVALID));
+        assert_eq!(call(&target, Some(b"bad"), None), Err(INVALID));
+        assert_eq!(call(&target, None, Some(b"bad")), Err(INVALID));
+        assert_eq!(call(&[], Some(&target), None), Err(INVALID));
+
+        let mut len = 0;
+        assert_eq!(
+            seedfinder_decide_start(
+                target.as_ptr(),
+                target.len(),
+                ptr::null(),
+                0,
+                0,
+                1,
+                ptr::null(),
+                0,
+                ptr::null_mut(),
+                &raw mut len
+            ),
+            INVALID
+        );
+    }
+    #[test]
     fn filter_seeds_returns_ssr1_and_rejects_invalid_input() {
         let request = query_packet();
         let seeds = [0_u64, 5];
@@ -533,6 +919,60 @@ mod tests {
         );
     }
 
+    /// The frozen cross-platform fixtures: the Apple bridge decodes exactly
+    /// the documents every other platform decodes.
+    /// Text-in, text-out entry points only marshal bytes around one shared
+    /// function, so each is checked against that function plus its own
+    /// null and error-code handling; behaviour is tested where it lives.
+    fn call_text_entry(
+        entry: extern "C" fn(*const u8, usize, *mut *mut u8, *mut usize) -> i32,
+        input: &str,
+    ) -> Result<String, i32> {
+        let mut pointer = ptr::null_mut();
+        let mut len = 0;
+        let code = entry(input.as_ptr(), input.len(), &raw mut pointer, &raw mut len);
+        if code != OK {
+            return Err(code);
+        }
+        Ok(String::from_utf8(unsafe { take_packet(pointer, len) }).unwrap())
+    }
+
+    #[test]
+    fn results_bridge_returns_the_shared_documents_and_rejects_bad_input() {
+        let fixture = include_str!("../../seedfinder-core/tests/fixtures/results-export-v1.json");
+        let decoded = call_text_entry(seedfinder_results_decode, fixture).unwrap();
+        assert_eq!(decoded, results_export::decode_document(fixture).unwrap());
+
+        let decoded: Value = serde_json::from_str(&decoded).unwrap();
+        let request = serde_json::json!({
+            "query": decoded["query"],
+            "seeds": decoded["seeds"],
+            "app_version": "test",
+        })
+        .to_string();
+        assert_eq!(
+            call_text_entry(seedfinder_results_encode, &request).unwrap(),
+            results_export::encode_document(&request).unwrap()
+        );
+
+        assert_eq!(
+            call_text_entry(seedfinder_results_decode, "not json"),
+            Err(INVALID)
+        );
+        assert_eq!(
+            call_text_entry(seedfinder_results_encode, r#"{"seeds":[]}"#),
+            Err(INVALID)
+        );
+        let mut len = 0;
+        assert_eq!(
+            seedfinder_results_encode(ptr::null(), 0, ptr::null_mut(), &raw mut len),
+            INVALID
+        );
+        assert_eq!(
+            seedfinder_results_decode(ptr::null(), 0, ptr::null_mut(), &raw mut len),
+            INVALID
+        );
+    }
     #[test]
     fn share_links_round_trip_and_reject_garbage() {
         let document = br#"{"requirements":[{"item":"wand_fireblast","upgrade":{"at_least":3}}]}"#;

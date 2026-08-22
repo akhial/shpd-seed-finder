@@ -225,6 +225,31 @@ const fn default_max_depth() -> u8 {
 /// Returns a human-readable message for malformed JSON, unknown items,
 /// effects, upgrade modes, or challenge names, and for invalid queries.
 pub fn decode(contents: &str) -> Result<SearchQuery, String> {
+    let query = decode_unvalidated(contents)?;
+    query
+        .validate()
+        .map_err(|error| format!("invalid query: {error}"))?;
+    Ok(query)
+}
+
+/// Decodes a JSON query document into a [`SearchQuery`] without checking that
+/// the result is a runnable search.
+///
+/// This is the entry point for persistence and editor state: a frontend that
+/// saves whatever the user has typed so far needs to reload documents that
+/// [`decode`] rejects, such as one with no requirements yet but a floor limit,
+/// challenges, or flags already chosen. The document is parsed exactly as
+/// strictly as [`decode`] parses it — unknown fields, unknown items, effects,
+/// upgrade modes, tier modes, Wandmaker quests, and challenge names are all
+/// still errors — only [`SearchQuery::validate`] is skipped, so the returned
+/// query may well fail it. [`encode`] is the intended round-trip pair; it
+/// accepts an empty requirement list and emits it verbatim.
+///
+/// # Errors
+///
+/// Returns a human-readable message for malformed JSON, unknown items,
+/// effects, upgrade modes, or challenge names.
+pub fn decode_unvalidated(contents: &str) -> Result<SearchQuery, String> {
     let document: QueryDocument =
         serde_json::from_str(contents).map_err(|error| format!("invalid JSON: {error}"))?;
     let requirements = document
@@ -244,7 +269,7 @@ pub fn decode(contents: &str) -> Result<SearchQuery, String> {
                 .ok_or_else(|| format!("unknown Wandmaker quest '{name}'"))
         })
         .transpose()?;
-    let query = SearchQuery {
+    Ok(SearchQuery {
         requirements,
         max_depth: document.max_depth,
         challenges: document
@@ -255,11 +280,7 @@ pub fn decode(contents: &str) -> Result<SearchQuery, String> {
         exclude_blacksmith_rewards: document.exclude_blacksmith_rewards,
         wandmaker_quest,
         fast_mode: document.fast_mode,
-    };
-    query
-        .validate()
-        .map_err(|error| format!("invalid query: {error}"))?;
-    Ok(query)
+    })
 }
 
 fn convert_requirement(requirement: FileRequirement) -> Result<Requirement, String> {
@@ -463,8 +484,9 @@ mod tests {
     use crate::challenges::Challenges;
     use crate::model::ItemSource;
     use crate::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
+    use crate::quests::WandmakerQuestType;
 
-    use super::{decode, encode};
+    use super::{decode, decode_unvalidated, encode};
 
     #[test]
     fn decodes_concrete_and_wildcard_requirements() {
@@ -626,6 +648,43 @@ mod tests {
         assert!(decode(r#"{"requirements":[],"maximum_depth":4}"#).is_err());
         assert!(decode(r#"{"requirements":[{"item":"not_an_item"}]}"#).is_err());
         assert!(decode(r#"{"requirements":[{"kind":"wand","item":"sword"}]}"#).is_err());
+    }
+
+    #[test]
+    fn parse_only_decoding_keeps_editor_state_without_requirements() {
+        let contents = r#"{
+            "requirements": [],
+            "max_depth": 11,
+            "require_blacksmith": true,
+            "exclude_blacksmith_rewards": true,
+            "fast_mode": true,
+            "wandmaker_quest": "corpse_dust",
+            "challenges": ["barren_land", "forbidden_runes"]
+        }"#;
+
+        let query = decode_unvalidated(contents).unwrap();
+        assert!(query.requirements.is_empty());
+        assert_eq!(query.max_depth, 11);
+        assert!(query.require_blacksmith);
+        assert!(query.exclude_blacksmith_rewards);
+        assert!(query.fast_mode);
+        assert_eq!(
+            query.challenges,
+            Challenges::NO_HERBALISM | Challenges::NO_SCROLLS
+        );
+        assert_eq!(query.wandmaker_quest, Some(WandmakerQuestType::CorpseDust));
+
+        // The editor state survives a save/load round trip through `encode`.
+        let reloaded = decode_unvalidated(&encode(&query).to_string()).unwrap();
+        assert_eq!(reloaded, query);
+        assert_eq!(encode(&reloaded), encode(&query));
+
+        // The very same document is not a runnable search.
+        let error = decode(contents).unwrap_err();
+        assert!(error.contains("at least one item requirement"), "{error}");
+
+        // Parse-only decoding is still strict about the document shape.
+        assert!(decode_unvalidated(r#"{"requirements":[],"maximum_depth":4}"#).is_err());
     }
 
     #[test]

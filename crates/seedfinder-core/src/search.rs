@@ -14,6 +14,13 @@ use crate::query::{QueryError, SearchQuery};
 use crate::quests::QuestSummary;
 use crate::seed::{DungeonSeed, TOTAL_SEEDS};
 
+/// Distance between the starting points of consecutive production searches.
+///
+/// Approximately one golden-ratio turn of the seed circle. [`TOTAL_SEEDS`]
+/// only has 2 and 13 as prime factors; this odd, non-multiple-of-13 stride is
+/// therefore coprime and visits every possible start before repeating.
+pub const PRODUCTION_SEARCH_START_STRIDE: u64 = 3_355_211_884_971;
+
 /// Per-floor cancellation oracle consulted between floors of one seed.
 ///
 /// Returning `false` promises that no continuation of the partial world can

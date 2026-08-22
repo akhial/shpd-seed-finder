@@ -130,6 +130,44 @@ pub fn format_text(input: &str) -> String {
     DungeonSeed::from_code(input).map_or_else(|_| input.to_owned(), DungeonSeed::to_code)
 }
 
+/// Masks partial, as-you-type seed input into uppercase groups of three.
+///
+/// Every byte that is not an ASCII letter is dropped, the first nine of the
+/// survivors are kept, and only then are they uppercased — so non-ASCII input
+/// contributes nothing, whatever case mapping its own alphabet would use. The
+/// result is a prefix of a canonical `XXX-XXX-XXX` code, which
+/// [`DungeonSeed::from_code`] accepts once nine letters have arrived.
+#[must_use]
+pub fn format_input(input: &str) -> String {
+    let mut output = String::with_capacity(11);
+    for (index, byte) in input
+        .bytes()
+        .filter(u8::is_ascii_alphabetic)
+        .take(9)
+        .enumerate()
+    {
+        if index == 3 || index == 6 {
+            output.push('-');
+        }
+        output.push(char::from(byte.to_ascii_uppercase()));
+    }
+    output
+}
+
+/// Parses seed-code text with the game's own rules into the bridge document
+/// `{"code": "XXX-XXX-XXX", "value": <number>}`: the canonical code for
+/// display and the numeric value the seed filters take. Built here so every
+/// thin bridge (C, JNI, wasm) hands its frontend the identical document.
+///
+/// # Errors
+///
+/// Returns the seed parser's error when the input is not a seed code.
+#[cfg(feature = "json-query")]
+pub fn parse_document(input: &str) -> Result<String, SeedError> {
+    let seed = DungeonSeed::from_code(input)?;
+    Ok(serde_json::json!({ "code": seed.to_code(), "value": seed.value() }).to_string())
+}
+
 impl fmt::Display for DungeonSeed {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(&self.to_code())
@@ -167,7 +205,7 @@ const fn java_regex_whitespace(character: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{DungeonSeed, SeedError, TOTAL_SEEDS, format_text, from_text};
+    use super::{DungeonSeed, SeedError, TOTAL_SEEDS, format_input, format_text, from_text};
 
     #[test]
     fn known_code_boundaries_match_upstream() {
@@ -225,5 +263,47 @@ mod tests {
     fn formatting_only_canonicalizes_codes() {
         assert_eq!(format_text("abc-def-ghi"), "ABC-DEF-GHI");
         assert_eq!(format_text("abcdefghi"), "abcdefghi");
+    }
+
+    #[test]
+    fn masking_groups_the_first_nine_ascii_letters() {
+        assert_eq!(format_input(""), "");
+        assert_eq!(format_input("a"), "A");
+        assert_eq!(format_input("abcD"), "ABC-D");
+        assert_eq!(format_input("abc-def-ghi"), "ABC-DEF-GHI");
+        assert_eq!(format_input(" 1a!b@c#d$e%f^g&h*i extra"), "ABC-DEF-GHI");
+        // Every masked prefix of nine letters is a parseable canonical code.
+        assert_eq!(
+            DungeonSeed::from_code(&format_input("aaa aaa aab")).unwrap(),
+            DungeonSeed::from_code("AAA-AAA-AAB").unwrap()
+        );
+
+        // Filtering happens before uppercasing, so non-ASCII letters are
+        // dropped whatever their own case mapping would produce: Turkish
+        // dotless i (U+0131) uppercases to ASCII 'I' but never reaches the
+        // mask, unlike a port that uppercases the string first.
+        assert_eq!(format_input("åa😀b"), "AB");
+        assert_eq!(format_input("\u{131}ab"), "AB");
+        assert_eq!(format_input("\u{131}"), "");
+    }
+
+    #[test]
+    fn parse_documents_carry_the_canonical_code_and_value() {
+        let parsed: serde_json::Value =
+            serde_json::from_str(&super::parse_document("AAA-AAA-AAB").unwrap()).unwrap();
+        assert_eq!(parsed["code"], "AAA-AAA-AAB");
+        assert_eq!(parsed["value"], 1);
+
+        // Non-canonical but parseable input round-trips to the canonical
+        // code, and so does every nine-letter masked prefix.
+        for input in ["aaa-aaa-aab", &format_input("aaaaaaaab")] {
+            let document: serde_json::Value =
+                serde_json::from_str(&super::parse_document(input).unwrap()).unwrap();
+            assert_eq!(document, parsed, "{input}");
+        }
+
+        // Undashed lowercase is not a code by the game's own rules.
+        assert!(super::parse_document("aaaaaaaab").is_err());
+        assert!(super::parse_document("AAA-AAA-AA0").is_err());
     }
 }

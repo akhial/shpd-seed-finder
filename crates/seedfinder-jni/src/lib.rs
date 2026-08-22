@@ -5,11 +5,11 @@
 use jni::JNIEnv;
 use jni::objects::{JByteArray, JClass, JLongArray};
 use jni::sys::{JNI_FALSE, jboolean, jint, jlong};
-use shpd_seedfinder_core::{deep_link, json_query};
+use shpd_seedfinder_core::{deep_link, engine_info, json_query, results_export, seed};
 use shpd_seedfinder_session::{
-    FilterPacketError, NativeSession, ScoutCallError, ScoutPacketError, SearchError,
-    StartSessionError, close_session, production_filter_packet, production_scout_packet,
-    queries_continue, registry,
+    FilterPacketError, MAX_RESULTS, NativeSession, ScoutCallError, ScoutMatchError,
+    ScoutPacketError, SearchError, StartSessionError, close_session, json,
+    production_filter_packet, production_scout_packet, queries_continue, registry,
 };
 
 fn throw_illegal_argument(env: &mut JNIEnv<'_>, message: impl AsRef<str>) {
@@ -76,6 +76,45 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_scoutSeed<'loc
         Ok(array) => array,
         Err(error) => {
             throw_illegal_state(&mut env, format!("cannot allocate scout response: {error}"));
+            JByteArray::default()
+        }
+    }
+}
+
+/// Marks which items of a scouted world satisfy the `SSF8` query in `query`.
+/// The scout request identifies the world exactly like `scoutSeed`, and the
+/// returned UTF-8 JSON `{"matched": [<item indices>], "matchedRequirements":
+/// <n>, "totalRequirements": <n>}` indexes the item list of the `SSC2` packet
+/// `scoutSeed` returns for that same request: scouting is deterministic, so
+/// both calls describe the same world. Requirements claim distinct items and
+/// the marks are a largest satisfiable selection, so a partially matching
+/// query marks only the items it could explain.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_scoutMatches<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    request: JByteArray<'local>,
+    query: JByteArray<'local>,
+) -> JByteArray<'local> {
+    let (request, query) = match (
+        env.convert_byte_array(&request),
+        env.convert_byte_array(&query),
+    ) {
+        (Ok(request), Ok(query)) => (request, query),
+        (Err(error), _) | (_, Err(error)) => {
+            throw_illegal_argument(&mut env, format!("invalid request array: {error}"));
+            return JByteArray::default();
+        }
+    };
+    match json::scout_matches_document(&request, &query) {
+        Ok(document) => utf8_response(&mut env, &document, "scout match document"),
+        Err(ScoutMatchError::Request(error) | ScoutMatchError::Query(error)) => {
+            throw_illegal_argument(&mut env, error.to_string());
+            JByteArray::default()
+        }
+        Err(ScoutMatchError::Panicked) => {
+            android_error("canonical depth-24 scouting generation panicked");
+            throw_illegal_state(&mut env, "native scouting generation failed");
             JByteArray::default()
         }
     }
@@ -278,6 +317,69 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_queryContinues
     }
 }
 
+/// Reports what pressing Start Search must do with the `SSF8` query in
+/// `candidate`, per `docs/search-semantics.md`. `target` is the Target Query
+/// (`null` when there is no Target, which always anchors), `targetSetEmpty`
+/// and `targetHasUncoveredSeeds` describe the Target Set and its coverage, and
+/// `detachedBase` is the last concluded run's query when — and only when —
+/// that run was itself detached (`null` otherwise). The returned UTF-8 text is
+/// one of `anchor`, `target-refine`, `target-filter`, `continue-detached` or
+/// `detached`.
+///
+/// The continuation predicate is part of this decision: callers must not call
+/// `queryContinues` separately for it.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_decideStart<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    candidate: JByteArray<'local>,
+    target: JByteArray<'local>,
+    target_set_empty: jboolean,
+    target_has_uncovered_seeds: jboolean,
+    detached_base: JByteArray<'local>,
+) -> JByteArray<'local> {
+    type Packets = (Vec<u8>, Option<Vec<u8>>, Option<Vec<u8>>);
+    let packets: Result<Packets, jni::errors::Error> = (|| {
+        Ok((
+            env.convert_byte_array(&candidate)?,
+            optional_packet(&env, &target)?,
+            optional_packet(&env, &detached_base)?,
+        ))
+    })();
+    let (candidate, target, detached_base) = match packets {
+        Ok(packets) => packets,
+        Err(error) => {
+            throw_illegal_argument(&mut env, format!("invalid request array: {error}"));
+            return JByteArray::default();
+        }
+    };
+    match json::decide_start_name(
+        &candidate,
+        target.as_deref(),
+        target_set_empty != JNI_FALSE,
+        target_has_uncovered_seeds != JNI_FALSE,
+        detached_base.as_deref(),
+    ) {
+        Ok(decision) => utf8_response(&mut env, decision, "start decision"),
+        Err(error) => {
+            throw_illegal_argument(&mut env, error.to_string());
+            JByteArray::default()
+        }
+    }
+}
+
+/// Reads a nullable `byte[]` argument: Java `null` means the packet is absent,
+/// which the start decision reads as "no Target" / "no detached base".
+fn optional_packet(
+    env: &JNIEnv<'_>,
+    array: &JByteArray<'_>,
+) -> Result<Option<Vec<u8>>, jni::errors::Error> {
+    if array.is_null() {
+        return Ok(None);
+    }
+    env.convert_byte_array(array).map(Some)
+}
+
 /// Reads a UTF-8 string argument, throwing `IllegalArgumentException` and
 /// returning `None` when the array cannot be read or is not UTF-8.
 fn utf8_argument(env: &mut JNIEnv<'_>, array: &JByteArray<'_>, what: &str) -> Option<String> {
@@ -334,6 +436,87 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_shareEncode<'l
     }
 }
 
+/// Returns the engine's own constants as UTF-8 JSON: the pinned upstream
+/// version, the seed-space size, the query bounds, the empty boss floors, the
+/// quest depth windows, the challenge list with each bit's effect on
+/// generation, and the search start stride. Frontends read their limits from
+/// here instead of hardcoding mirrors. The document is
+/// `engine_info::document`, shared with the C and browser bridges.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_engineInfo<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+) -> JByteArray<'local> {
+    utf8_response(
+        &mut env,
+        &engine_info::document().to_string(),
+        "engine info document",
+    )
+}
+
+/// Masks partial, as-you-type UTF-8 seed input into uppercase groups of three
+/// (both UTF-8 bytes): non-letters are dropped, the first nine ASCII letters
+/// are kept, and only those are uppercased — never a locale-dependent
+/// uppercase of the whole string. The masker is `seed::format_input`, shared
+/// with every other frontend.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_formatSeedCode<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    input: JByteArray<'local>,
+) -> JByteArray<'local> {
+    let Some(input) = utf8_argument(&mut env, &input, "seed input") else {
+        return JByteArray::default();
+    };
+    utf8_response(&mut env, &seed::format_input(&input), "seed input")
+}
+
+/// Parses UTF-8 seed-code text with the game's own rules, returning the UTF-8
+/// JSON `{"code": "XXX-XXX-XXX", "value": <number>}`: the canonical code for
+/// display and the numeric value `filterSeeds` takes. Text that is not a seed
+/// code throws with the codec's own message.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_parseSeedCode<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    input: JByteArray<'local>,
+) -> JByteArray<'local> {
+    let Some(input) = utf8_argument(&mut env, &input, "seed code") else {
+        return JByteArray::default();
+    };
+    match seed::parse_document(&input) {
+        Ok(document) => utf8_response(&mut env, &document, "seed document"),
+        Err(error) => {
+            throw_illegal_argument(&mut env, error.to_string());
+            JByteArray::default()
+        }
+    }
+}
+
+/// Encodes a results file from the UTF-8 JSON request `{"query": <canonical
+/// query document>, "seeds": ["AAA-AAA-AAA", ...], "app_version": "..."}`,
+/// returning the UTF-8 results-file text. The codec is
+/// `crates/seedfinder-core/src/results_export.rs`, specified in
+/// `docs/results-export-format.md`; failures throw with the codec's own
+/// message.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_resultsEncode<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    request: JByteArray<'local>,
+) -> JByteArray<'local> {
+    let Some(request) = utf8_argument(&mut env, &request, "results request") else {
+        return JByteArray::default();
+    };
+    match results_export::encode_document(&request) {
+        Ok(contents) => utf8_response(&mut env, &contents, "results file"),
+        Err(error) => {
+            throw_illegal_argument(&mut env, error);
+            JByteArray::default()
+        }
+    }
+}
+
 /// Decodes any accepted share-link form (full web link, custom-scheme link,
 /// or bare code) back into the canonical JSON query document, both UTF-8
 /// bytes. Failures throw with the codec's own message.
@@ -351,6 +534,30 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_shareDecode<'l
             let document = json_query::encode(&query).to_string();
             utf8_response(&mut env, &document, "query document")
         }
+        Err(error) => {
+            throw_illegal_argument(&mut env, error);
+            JByteArray::default()
+        }
+    }
+}
+
+/// Decodes UTF-8 results-file text into the UTF-8 JSON document `{"query":
+/// <canonical query document>, "seeds": [...], "dropped": <number>,
+/// "app_version": ..., "shpd_version": ...}`. The seeds are already
+/// deduplicated and capped at the shared result limit, `dropped` counts the
+/// exported entries that step removed, and input above the engine's 2 MiB
+/// import cap is rejected. Failures throw with the codec's own message.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_resultsDecode<'local>(
+    mut env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    contents: JByteArray<'local>,
+) -> JByteArray<'local> {
+    let Some(contents) = utf8_argument(&mut env, &contents, "results file") else {
+        return JByteArray::default();
+    };
+    match results_export::decode_document(&contents) {
+        Ok(document) => utf8_response(&mut env, &document, "results document"),
         Err(error) => {
             throw_illegal_argument(&mut env, error);
             JByteArray::default()
@@ -383,8 +590,8 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_poll<'local>(
     handle: jlong,
     max_results: jint,
 ) -> JByteArray<'local> {
-    if !(1..=1024).contains(&max_results) {
-        throw_illegal_argument(&mut env, "maxResults must be 1..=1024");
+    if !usize::try_from(max_results).is_ok_and(|limit| (1..=MAX_RESULTS).contains(&limit)) {
+        throw_illegal_argument(&mut env, format!("maxResults must be 1..={MAX_RESULTS}"));
         return JByteArray::default();
     }
     let Some(session) = registry().get(handle) else {
