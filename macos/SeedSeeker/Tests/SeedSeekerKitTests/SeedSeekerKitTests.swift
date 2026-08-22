@@ -106,53 +106,81 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertEqual(decoded, [valid])
     }
 
-    func testScoutMatchesSelectOnlyOneMutuallyExclusiveReward() throws {
-        let warding = try XCTUnwrap(ItemCatalog.findById("wand_warding"))
-        let light = try XCTUnwrap(ItemCatalog.findById("wand_prismatic_light"))
-        let requirement = try ItemRequirement(key: 1, item: nil, upgrade: 3, kind: .wand,
-                                              upgradeMatch: .exactly, source: .wandmakerReward)
-        let items = [
-            ScoutItem(item: warding, depth: 8, upgrade: 3, source: .wandmakerReward,
-                      accessibility: .choice(group: 2, option: 0)),
-            ScoutItem(item: light, depth: 8, upgrade: 3, source: .wandmakerReward,
-                      accessibility: .choice(group: 2, option: 1)),
-        ]
-
-        XCTAssertEqual(scoutMatchIndices(items: items, requirements: [requirement]), [0])
+    /// The scouted world of a pinned seed, generated once: the marks index
+    /// this very item list, so the assertions below name its entries.
+    private static let pinnedSeed = "AAA-AAA-BUH"
+    private func pinnedWorld() async throws -> ScoutWorld {
+        try await ProductionSeedFinderEngine().scoutSeed(Self.pinnedSeed, challenges: 0)
+    }
+    private func marks(_ requirements: [ItemRequirement], maximumDepth: Int = 24,
+                       excludeBlacksmithRewards: Bool = false) throws -> ScoutMatches {
+        try ScoutMatches.mark(
+            seed: Self.pinnedSeed, challenges: 0,
+            query: SearchRequest(requirements: requirements, maximumDepth: maximumDepth,
+                                 excludeBlacksmithRewards: excludeBlacksmithRewards))
     }
 
-    func testScoutMatchesRespectCompatibleScenarioMasksAndDistinctRequirements() throws {
-        let warding = try XCTUnwrap(ItemCatalog.findById("wand_warding"))
-        let light = try XCTUnwrap(ItemCatalog.findById("wand_prismatic_light"))
-        let requirements = try [warding, light].enumerated().map { index, item in
-            try ItemRequirement(key: Int64(index), item: item, upgrade: 3, kind: .wand,
-                                upgradeMatch: .exactly)
-        }
-        let compatible = [
-            ScoutItem(item: warding, depth: 8, upgrade: 3, source: .wandmakerReward,
-                      accessibility: .scenarios(group: 4, mask: 0b11)),
-            ScoutItem(item: light, depth: 8, upgrade: 3, source: .wandmakerReward,
-                      accessibility: .scenarios(group: 4, mask: 0b10)),
-        ]
-        let incompatible = [compatible[0],
-            ScoutItem(item: light, depth: 8, upgrade: 3, source: .wandmakerReward,
-                      accessibility: .scenarios(group: 4, mask: 0b100))]
+    /// The Wandmaker hands out one of two wands, so a query asking for both
+    /// can only ever be explained by one of them — and the engine says so,
+    /// marking a partial match rather than an impossible pair.
+    func testEngineMarksOnlyOneMutuallyExclusiveRewardAndReportsPartialMatches() async throws {
+        let world = try await pinnedWorld()
+        let corrosion = try ItemRequirement(key: 1, item: nil, upgrade: 3, kind: .wand,
+                                            upgradeMatch: .exactly, source: .wandmakerReward)
+        let warding = try ItemRequirement(key: 2, item: nil, upgrade: 1, kind: .wand,
+                                          upgradeMatch: .exactly, source: .wandmakerReward)
 
-        XCTAssertEqual(scoutMatchIndices(items: compatible, requirements: requirements), [0, 1])
-        XCTAssertEqual(scoutMatchIndices(items: incompatible, requirements: requirements).count, 1)
+        let single = try marks([corrosion])
+        XCTAssertEqual(single.matchedRequirements, 1)
+        XCTAssertEqual(single.totalRequirements, 1)
+        let index = try XCTUnwrap(single.matched.first)
+        XCTAssertEqual(single.matched.count, 1)
+        XCTAssertEqual(world.items[index].item.id, "wand_corrosion")
+        XCTAssertEqual(world.items[index].source, .wandmakerReward)
+
+        let both = try marks([corrosion, warding])
+        XCTAssertEqual(both.totalRequirements, 2)
+        XCTAssertEqual(both.matchedRequirements, 1, "the two rewards exclude each other")
+        XCTAssertEqual(both.matched.count, 1)
     }
 
-    func testScoutMatchesRequireUncursedItems() throws {
-        let warding = try XCTUnwrap(ItemCatalog.findById("wand_warding"))
-        let requirement = try ItemRequirement(key: 1, item: warding, upgrade: 3,
-                                               kind: .wand, requireUncursed: true)
-        let clean = ScoutItem(item: warding, depth: 8, upgrade: 3,
-                              source: .wandmakerReward)
-        let cursed = ScoutItem(item: warding, depth: 8, upgrade: 3, cursed: true,
-                               source: .wandmakerReward)
+    /// Item, upgrade, curse, floor-limit and blacksmith-exclusion predicates
+    /// all reach the engine's selection through the same query packet.
+    func testEngineMarksRespectTheQueryPredicates() async throws {
+        let world = try await pinnedWorld()
+        let sharpshooting = try XCTUnwrap(ItemCatalog.findById("ring_sharpshooting"))
+        let named = try ItemRequirement(key: 1, item: sharpshooting, upgrade: 1, kind: .ring,
+                                        upgradeMatch: .exactly)
+        let found = try marks([named])
+        let index = try XCTUnwrap(found.matched.first)
+        XCTAssertEqual(found.matched.count, 1)
+        XCTAssertEqual(world.items[index].item.id, "ring_sharpshooting")
+        XCTAssertEqual(world.items[index].depth, 9)
 
-        XCTAssertEqual(scoutMatchIndices(items: [clean, cursed], requirements: [requirement]), [0])
-        XCTAssertTrue(scoutMatchIndices(items: [cursed], requirements: [requirement]).isEmpty)
+        // The world's only one sits on floor 9, out of reach of a shallower run.
+        XCTAssertTrue(try marks([named], maximumDepth: 8).matched.isEmpty)
+        XCTAssertEqual(try marks([named], maximumDepth: 8).matchedRequirements, 0)
+        // Two requirements cannot both claim that single ring.
+        let second = try ItemRequirement(key: 2, item: sharpshooting, upgrade: 1, kind: .ring,
+                                         upgradeMatch: .exactly)
+        XCTAssertEqual(try marks([named, second]).matchedRequirements, 1)
+
+        // The world's only Wand of Fireblast is cursed.
+        let fireblast = try XCTUnwrap(ItemCatalog.findById("wand_fireblast"))
+        XCTAssertEqual(try marks([ItemRequirement(key: 1, item: fireblast, upgrade: 0,
+                                                  kind: .wand, upgradeMatch: .any)])
+                           .matchedRequirements, 1)
+        XCTAssertTrue(try marks([ItemRequirement(key: 1, item: fireblast, upgrade: 0, kind: .wand,
+                                                 upgradeMatch: .any, requireUncursed: true)])
+                          .matched.isEmpty)
+
+        // A crossbow is both a Smith reward and shop stock; excluding the
+        // reward leaves the shop's.
+        let crossbow = try XCTUnwrap(ItemCatalog.findById("crossbow"))
+        let anyCrossbow = try ItemRequirement(key: 1, item: crossbow, upgrade: 0, kind: .weapon,
+                                              upgradeMatch: .any, source: .blacksmithReward)
+        XCTAssertEqual(try marks([anyCrossbow]).matchedRequirements, 1)
+        XCTAssertTrue(try marks([anyCrossbow], excludeBlacksmithRewards: true).matched.isEmpty)
     }
 
     func testQueryCodecTierPredicateUsesSSF8WithZeroChallengesAndAnyQuest() throws {
