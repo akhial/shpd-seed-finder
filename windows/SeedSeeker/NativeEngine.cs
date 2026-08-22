@@ -90,8 +90,11 @@ public static class SeedCode
             (ulong?)document["value"] ?? throw new InvalidDataException("Seed document has no value"));
     }
 
-    /// <summary>Whether the text names a complete seed the engine accepts.</summary>
-    public static bool IsCanonical(string value) => TryParse(value) is not null;
+    /// <summary>
+    /// Whether the text is already written the way the engine spells it: the
+    /// canonical <c>XXX-XXX-XXX</c> form the field shows and files carry.
+    /// </summary>
+    public static bool IsCanonical(string value) => TryParse(value)?.Code == value;
 
     /// <summary>The numeric seed a code names.</summary>
     public static ulong Value(string value) => TryParse(value)?.Value

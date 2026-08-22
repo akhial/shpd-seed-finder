@@ -59,6 +59,16 @@ public sealed class SeedCodeTests
         Assert.Equal(("AAA-AAA-AAI", 8UL), SeedCode.TryParse("AAA-AAA-Aaı"));
     }
 
+    [Fact]
+    public void OnlyTheCanonicalSpellingIsCanonical()
+    {
+        // Parseable is not the same as canonical: like Android and macOS, the
+        // text must already be the XXX-XXX-XXX form the engine spells.
+        Assert.True(SeedCode.IsCanonical("AAA-AAA-AAB"));
+        Assert.False(SeedCode.IsCanonical("aaa-aaa-aab"));
+        Assert.False(SeedCode.IsCanonical("AAAAAAAAB"));
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("AAA-AAA-AA")]
