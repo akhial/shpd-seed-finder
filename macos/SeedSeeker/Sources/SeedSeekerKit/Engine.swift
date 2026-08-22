@@ -79,6 +79,58 @@ public enum QueryContinuation {
     }
 }
 
+/// Which items of a scouted world explain a query's requirements, decided by
+/// the engine rather than re-derived: `seedfinder_scout_matches` runs the same
+/// maximum-partial-assignment the matcher uses, so the marks agree with the
+/// search that produced the seed.
+///
+/// Like `QueryContinuation` this is synchronous and outside `SeedFinderEngine`:
+/// the selection is the engine's whatever engine ran the search.
+public struct ScoutMatches: Sendable {
+    /// Indices into the scouted world's item list, in the order
+    /// `scoutSeed(_:challenges:)` returns it.
+    public let matched: Set<Int>
+    /// How many requirements the marks explain, and how many there are.
+    public let matchedRequirements: Int
+    public let totalRequirements: Int
+
+    public init(matched: Set<Int>, matchedRequirements: Int, totalRequirements: Int) {
+        self.matched = matched
+        self.matchedRequirements = matchedRequirements
+        self.totalRequirements = totalRequirements
+    }
+
+    /// Marks the world identified by `request` — the very SSQ2 packet the
+    /// scout call took, so both describe the same world — against the SSF8
+    /// query in `query`.
+    public static func mark(_ request: Data, query: Data) throws -> ScoutMatches {
+        let packet = try enginePacket { out, length in
+            request.withUnsafeBytes { requestBytes in
+                query.withUnsafeBytes { queryBytes in
+                    seedfinder_scout_matches(
+                        requestBytes.bindMemory(to: UInt8.self).baseAddress, requestBytes.count,
+                        queryBytes.bindMemory(to: UInt8.self).baseAddress, queryBytes.count,
+                        out, length)
+                }
+            }
+        }
+        guard let document = (try? JSONSerialization.jsonObject(with: packet)) as? [String: Any],
+              let matched = document["matched"] as? [Int],
+              let matchedRequirements = document["matched_requirements"] as? Int,
+              let totalRequirements = document["total_requirements"] as? Int else {
+            throw SeedFinderEngineError.invalidResponse
+        }
+        return ScoutMatches(matched: Set(matched), matchedRequirements: matchedRequirements,
+                            totalRequirements: totalRequirements)
+    }
+
+    /// Marks the world `seed` generates under `challenges` against `query`.
+    public static func mark(seed: String, challenges: Int, query: SearchRequest) throws -> ScoutMatches {
+        try mark(ScoutCodec.encodeRequest(seed: seed, challenges: challenges),
+                 query: QueryCodec.encode(query))
+    }
+}
+
 public struct ProductionSeedFinderEngine: SeedFinderEngine {
     public init() {}
 
