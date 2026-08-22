@@ -24,8 +24,9 @@ use crate::{SHPD_COMMIT, SHPD_VERSION};
 
 /// Builds the engine-info document. `max_results` is the caller's own
 /// result cap — the browser session and the native sessions cap alike, but
-/// each owns its constant — and appears both as the pre-existing
-/// `maxResults` key and inside `limits`.
+/// each owns its constant — and is published once, as the top-level
+/// `maxResults`. Every key is camelCase: the four keys the browser already
+/// read set the convention, and the rest follow it.
 #[must_use]
 pub fn document(max_results: usize) -> Value {
     json!({
@@ -34,21 +35,20 @@ pub fn document(max_results: usize) -> Value {
         "totalSeeds": TOTAL_SEEDS,
         "maxResults": max_results,
         "limits": {
-            "max_depth": MAX_SEARCH_DEPTH,
-            "exact_tier_min": EXACT_TIER_MIN,
-            "exact_tier_max": EXACT_TIER_MAX,
-            "bounded_tier_min": BOUNDED_TIER_MIN,
-            "bounded_tier_max": BOUNDED_TIER_MAX,
-            "identity_group_max": MAX_IDENTITY_GROUP,
-            "max_upgrade_default": ItemKind::Weapon.maximum_search_upgrade(),
-            "max_upgrade_ring": ItemKind::Ring.maximum_search_upgrade(),
-            "max_results": max_results,
-            "results_file_max_bytes": MAX_FILE_BYTES,
+            "maxDepth": MAX_SEARCH_DEPTH,
+            "exactTierMin": EXACT_TIER_MIN,
+            "exactTierMax": EXACT_TIER_MAX,
+            "boundedTierMin": BOUNDED_TIER_MIN,
+            "boundedTierMax": BOUNDED_TIER_MAX,
+            "identityGroupMax": MAX_IDENTITY_GROUP,
+            "maxUpgradeDefault": ItemKind::Weapon.maximum_search_upgrade(),
+            "maxUpgradeRing": ItemKind::Ring.maximum_search_upgrade(),
+            "resultsFileMaxBytes": MAX_FILE_BYTES,
         },
-        "empty_boss_floors": EMPTY_BOSS_FLOORS,
-        "quest_windows": quest_windows(),
+        "emptyBossFloors": EMPTY_BOSS_FLOORS,
+        "questWindows": quest_windows(),
         "challenges": challenges(),
-        "search_start_stride": PRODUCTION_SEARCH_START_STRIDE,
+        "searchStartStride": PRODUCTION_SEARCH_START_STRIDE,
     })
 }
 
@@ -73,7 +73,7 @@ fn challenges() -> Value {
                 json!({
                     "name": name,
                     "mask": challenge.bits(),
-                    "changes_level_generation": challenge.changes_level_generation(),
+                    "changesLevelGeneration": challenge.changes_level_generation(),
                 })
             })
             .collect(),
@@ -92,18 +92,49 @@ mod tests {
         assert_eq!(info["shpdVersion"], crate::SHPD_VERSION);
         assert_eq!(info["totalSeeds"], crate::seed::TOTAL_SEEDS);
         assert_eq!(info["maxResults"], 1_024);
-        assert_eq!(info["limits"]["max_depth"], 24);
-        assert_eq!(info["limits"]["exact_tier_min"], 2);
-        assert_eq!(info["limits"]["exact_tier_max"], 5);
-        assert_eq!(info["limits"]["bounded_tier_min"], 3);
-        assert_eq!(info["limits"]["bounded_tier_max"], 4);
-        assert_eq!(info["limits"]["identity_group_max"], 4);
-        assert_eq!(info["limits"]["max_upgrade_default"], 3);
-        assert_eq!(info["limits"]["max_upgrade_ring"], 4);
-        assert_eq!(info["limits"]["max_results"], 1_024);
-        assert_eq!(info["limits"]["results_file_max_bytes"], 2 * 1_024 * 1_024);
-        assert_eq!(info["empty_boss_floors"], serde_json::json!([5, 10, 15]));
-        assert_eq!(info["search_start_stride"], 3_355_211_884_971_u64);
+        assert_eq!(info["limits"]["maxDepth"], 24);
+        assert_eq!(info["limits"]["exactTierMin"], 2);
+        assert_eq!(info["limits"]["exactTierMax"], 5);
+        assert_eq!(info["limits"]["boundedTierMin"], 3);
+        assert_eq!(info["limits"]["boundedTierMax"], 4);
+        assert_eq!(info["limits"]["identityGroupMax"], 4);
+        assert_eq!(info["limits"]["maxUpgradeDefault"], 3);
+        assert_eq!(info["limits"]["maxUpgradeRing"], 4);
+        assert_eq!(info["limits"]["resultsFileMaxBytes"], 2 * 1_024 * 1_024);
+        assert_eq!(
+            info["limits"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .collect::<Vec<_>>(),
+            [
+                "boundedTierMax",
+                "boundedTierMin",
+                "exactTierMax",
+                "exactTierMin",
+                "identityGroupMax",
+                "maxDepth",
+                "maxUpgradeDefault",
+                "maxUpgradeRing",
+                "resultsFileMaxBytes",
+            ]
+        );
+        assert_eq!(
+            info.as_object().unwrap().keys().collect::<Vec<_>>(),
+            [
+                "challenges",
+                "emptyBossFloors",
+                "limits",
+                "maxResults",
+                "questWindows",
+                "searchStartStride",
+                "shpdCommit",
+                "shpdVersion",
+                "totalSeeds",
+            ]
+        );
+        assert_eq!(info["emptyBossFloors"], serde_json::json!([5, 10, 15]));
+        assert_eq!(info["searchStartStride"], 3_355_211_884_971_u64);
 
         // Every quest window is the feasibility model's own.
         for (name, quest) in ["ghost", "wandmaker", "blacksmith", "imp"]
@@ -111,12 +142,9 @@ mod tests {
             .zip(QUESTS)
         {
             let (start, end) = Quest::window(quest);
-            assert_eq!(info["quest_windows"][name], serde_json::json!([start, end]));
+            assert_eq!(info["questWindows"][name], serde_json::json!([start, end]));
         }
-        assert_eq!(
-            info["quest_windows"]["wandmaker"],
-            serde_json::json!([7, 9])
-        );
+        assert_eq!(info["questWindows"]["wandmaker"], serde_json::json!([7, 9]));
 
         // The challenges are listed in mask order with their generation
         // relevance; only the three the generator consults are marked.
@@ -127,7 +155,7 @@ mod tests {
         }
         let generating: Vec<&str> = challenges
             .iter()
-            .filter(|challenge| challenge["changes_level_generation"] == true)
+            .filter(|challenge| challenge["changesLevelGeneration"] == true)
             .map(|challenge| challenge["name"].as_str().unwrap())
             .collect();
         assert_eq!(

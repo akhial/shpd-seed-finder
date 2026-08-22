@@ -78,14 +78,14 @@ int32_t seedfinder_filter_seeds(const uint8_t *request, size_t request_len, cons
 int32_t seedfinder_share_encode(const uint8_t *query_json, size_t query_json_len, uint8_t **out_packet, size_t *out_len);
 int32_t seedfinder_share_decode(const uint8_t *text, size_t text_len, uint8_t **out_packet, size_t *out_len);
 // Returns the engine's own constants as UTF-8 JSON: {"shpdVersion", "shpdCommit",
-// "totalSeeds", "maxResults", "limits": {"max_depth", "exact_tier_min",
-// "exact_tier_max", "bounded_tier_min", "bounded_tier_max", "identity_group_max",
-// "max_upgrade_default", "max_upgrade_ring", "max_results",
-// "results_file_max_bytes"}, "empty_boss_floors": [5,10,15], "quest_windows":
-// {"ghost", "wandmaker", "blacksmith", "imp"} each [first, last],
-// "challenges": [{"name", "mask", "changes_level_generation"}, ...] in mask
-// order, "search_start_stride"}. Frontends read their limits from here instead
-// of hardcoding mirrors. The return packet is freed with seedfinder_buffer_free.
+// "totalSeeds", "maxResults", "limits": {"maxDepth", "exactTierMin",
+// "exactTierMax", "boundedTierMin", "boundedTierMax", "identityGroupMax",
+// "maxUpgradeDefault", "maxUpgradeRing", "resultsFileMaxBytes"},
+// "emptyBossFloors": [5,10,15], "questWindows": {"ghost", "wandmaker",
+// "blacksmith", "imp"} each [first, last], "challenges": [{"name", "mask",
+// "changesLevelGeneration"}, ...] in mask order, "searchStartStride"}. Every
+// key is camelCase. Frontends read their limits from here instead of
+// hardcoding mirrors. The return packet is freed with seedfinder_buffer_free.
 int32_t seedfinder_engine_info(uint8_t **out_packet, size_t *out_len);
 // Seed codes are the game's own base-26 text. Format masks partial,
 // as-you-type UTF-8 input into uppercase groups of three — non-letters

@@ -398,21 +398,20 @@ mod tests {
         assert_eq!(
             info["limits"],
             json!({
-                "max_depth": 24,
-                "exact_tier_min": 2,
-                "exact_tier_max": 5,
-                "bounded_tier_min": 3,
-                "bounded_tier_max": 4,
-                "identity_group_max": 4,
-                "max_upgrade_default": 3,
-                "max_upgrade_ring": 4,
-                "max_results": MAX_ACCEPTED_RESULTS,
-                "results_file_max_bytes": results_export::MAX_FILE_BYTES,
+                "maxDepth": 24,
+                "exactTierMin": 2,
+                "exactTierMax": 5,
+                "boundedTierMin": 3,
+                "boundedTierMax": 4,
+                "identityGroupMax": 4,
+                "maxUpgradeDefault": 3,
+                "maxUpgradeRing": 4,
+                "resultsFileMaxBytes": results_export::MAX_FILE_BYTES,
             })
         );
-        assert_eq!(info["empty_boss_floors"], json!([5, 10, 15]));
+        assert_eq!(info["emptyBossFloors"], json!([5, 10, 15]));
         assert_eq!(
-            info["quest_windows"],
+            info["questWindows"],
             json!({
                 "ghost": [2, 4],
                 "wandmaker": [7, 9],
@@ -423,18 +422,18 @@ mod tests {
         assert_eq!(
             info["challenges"],
             json!([
-                {"name": "on_diet", "mask": 1, "changes_level_generation": false},
-                {"name": "faith_is_my_armor", "mask": 2, "changes_level_generation": false},
-                {"name": "pharmacophobia", "mask": 4, "changes_level_generation": false},
-                {"name": "barren_land", "mask": 8, "changes_level_generation": true},
-                {"name": "swarm_intelligence", "mask": 16, "changes_level_generation": false},
-                {"name": "into_darkness", "mask": 32, "changes_level_generation": true},
-                {"name": "forbidden_runes", "mask": 64, "changes_level_generation": true},
-                {"name": "hostile_champions", "mask": 128, "changes_level_generation": false},
-                {"name": "badder_bosses", "mask": 256, "changes_level_generation": false},
+                {"name": "on_diet", "mask": 1, "changesLevelGeneration": false},
+                {"name": "faith_is_my_armor", "mask": 2, "changesLevelGeneration": false},
+                {"name": "pharmacophobia", "mask": 4, "changesLevelGeneration": false},
+                {"name": "barren_land", "mask": 8, "changesLevelGeneration": true},
+                {"name": "swarm_intelligence", "mask": 16, "changesLevelGeneration": false},
+                {"name": "into_darkness", "mask": 32, "changesLevelGeneration": true},
+                {"name": "forbidden_runes", "mask": 64, "changesLevelGeneration": true},
+                {"name": "hostile_champions", "mask": 128, "changesLevelGeneration": false},
+                {"name": "badder_bosses", "mask": 256, "changesLevelGeneration": false},
             ])
         );
-        assert_eq!(info["search_start_stride"], 3_355_211_884_971_u64);
+        assert_eq!(info["searchStartStride"], 3_355_211_884_971_u64);
         assert_eq!(info.as_object().unwrap().len(), 9);
     }
 }
