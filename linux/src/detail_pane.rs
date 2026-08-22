@@ -10,10 +10,10 @@ use std::rc::Rc;
 use adw::prelude::*;
 use shpd_seedfinder_core::catalog::{Effect, item};
 use shpd_seedfinder_core::model::{Accessibility, GeneratedWorld, WorldItem};
+use shpd_seedfinder_core::query::{SearchQuery, scout_matches};
 use shpd_seedfinder_core::seed::DungeonSeed;
 use shpd_seedfinder_session::production_scout_world;
 
-use crate::scout_match::scout_match_indices;
 use crate::state::{AppState, QuestRow, quest_rows, region, source_label};
 use crate::{glow, sprites};
 
@@ -279,12 +279,8 @@ impl DetailPane {
         self.stack.set_visible_child_name("manifest");
         self.copy_button.set_visible(true);
 
-        let matches = scout_match_indices(
-            &world.items,
-            &state.requirements,
-            state.max_depth,
-            state.exclude_blacksmith_rewards,
-        );
+        let marks = scout_matches(world, &manifest_query(state));
+        let matched = marks.matched_requirements;
         let mut by_depth: BTreeMap<u8, Vec<usize>> = BTreeMap::new();
         for (index, world_item) in world.items.iter().enumerate() {
             by_depth.entry(world_item.depth).or_default().push(index);
@@ -300,11 +296,11 @@ impl DetailPane {
         } else {
             self.summary_matches.set_label(&format!(
                 "· {} requirement match{}",
-                matches.len(),
-                if matches.len() == 1 { "" } else { "es" }
+                matched,
+                if matched == 1 { "" } else { "es" }
             ));
         }
-        if matches.is_empty() {
+        if matched == 0 {
             self.summary_matches.remove_css_class("success");
             self.summary_matches.add_css_class("dim-label");
         } else {
@@ -328,10 +324,27 @@ impl DetailPane {
                 .description(description)
                 .build();
             for index in indices {
-                group.add(&item_row(&world.items[*index], matches.contains(index)));
+                group.add(&item_row(&world.items[*index], marks.matched[*index]));
             }
             self.manifest_box.append(&group);
         }
+    }
+}
+
+/// The editor's requirements as an engine query for
+/// [`scout_matches`], which reads only the requirements, the floor limit and
+/// the blacksmith-reward exclusion. Unlike [`AppState::to_query`] this never
+/// rejects the state: a manifest is rendered while the query is still empty
+/// or half-edited.
+fn manifest_query(state: &AppState) -> SearchQuery {
+    SearchQuery {
+        requirements: state.requirements.iter().map(|r| r.to_core()).collect(),
+        max_depth: state.max_depth,
+        challenges: state.challenges,
+        require_blacksmith: false,
+        exclude_blacksmith_rewards: state.exclude_blacksmith_rewards,
+        wandmaker_quest: None,
+        fast_mode: false,
     }
 }
 
