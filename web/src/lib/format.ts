@@ -1,8 +1,3 @@
-export function formatSeedInput(input: string): string {
-  const letters = input.replace(/[^a-z]/gi, '').slice(0, 9).toUpperCase()
-  return letters.match(/.{1,3}/g)?.join('-') ?? ''
-}
-
 export function compactNumber(value: number): string {
   if (value < 1_000) return Math.round(value).toLocaleString()
   const units = [['T', 1e12], ['B', 1e9], ['M', 1e6], ['K', 1e3]] as const

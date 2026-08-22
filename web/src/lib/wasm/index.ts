@@ -24,8 +24,14 @@ export async function getEngineInfo(): Promise<EngineInfo> {
   return JSON.parse(engine_info()) as EngineInfo
 }
 
-export async function formatSeedCode(input: string): Promise<string> {
-  await initEngine()
+/**
+ * Masks partial interactive seed input into uppercase groups of three, using
+ * the engine's own masker so every frontend accepts the same keystrokes.
+ *
+ * Synchronous, like `queryContinues`: it runs on every keystroke of a
+ * controlled input. Callers must have awaited `initEngine()`.
+ */
+export function formatSeedCode(input: string): string {
   return format_seed_code(input)
 }
 
