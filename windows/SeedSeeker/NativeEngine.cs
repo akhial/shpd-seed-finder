@@ -16,6 +16,7 @@ internal static partial class Native
     [LibraryImport(Library)] internal static partial void seedfinder_cancel(long handle);
     [LibraryImport(Library)] internal static partial void seedfinder_close(long handle);
     [LibraryImport(Library)] internal static partial int seedfinder_scout(byte[] request, nuint length, out nint packet, out nuint outputLength);
+    [LibraryImport(Library)] internal static partial int seedfinder_scout_matches(byte[] request, nuint length, byte[] query, nuint queryLength, out nint packet, out nuint outputLength);
     [LibraryImport(Library)] internal static partial int seedfinder_filter_seeds(byte[] request, nuint length, ulong[] seeds, nuint seedsLength, out nint packet, out nuint outputLength);
     [LibraryImport(Library)] internal static partial int seedfinder_query_continues(byte[] candidate, nuint candidateLength, byte[] baseline, nuint baselineLength);
     [LibraryImport(Library)] internal static partial int seedfinder_share_encode(byte[] queryJson, nuint length, out nint packet, out nuint outputLength);
@@ -136,11 +137,18 @@ public sealed class NativeEngine
         return w.Finish();
     }
 
-    public ScoutWorld Scout(string seed, int challenges)
+    /// <summary>The SSQ2 request naming one scouted world; scouting it is deterministic.</summary>
+    private static byte[] EncodeScoutRequest(string seed, int challenges)
     {
         if (!SeedCode.IsCanonical(seed)) throw new ArgumentException("Seed must use XXX-XXX-XXX format");
         var w = new Writer(); w.Bytes("SSQ2"u8.ToArray()); w.U16Le(challenges); w.Bytes(Encoding.ASCII.GetBytes(seed));
-        var request = w.Finish(); var code = Native.seedfinder_scout(request, (nuint)request.Length, out var ptr, out var len);
+        return w.Finish();
+    }
+
+    public ScoutWorld Scout(string seed, int challenges)
+    {
+        var request = EncodeScoutRequest(seed, challenges);
+        var code = Native.seedfinder_scout(request, (nuint)request.Length, out var ptr, out var len);
         if (code != 0) throw new InvalidOperationException($"Native scout failed ({code}).");
         var bytes = CopyAndFree(ptr, len); var r = new Reader(bytes); r.Magic("SSC2");
         var returnedSeed = r.Text(r.U8()); var quests = r.Quests(); var items = new List<ScoutItem>(); var count = r.U16();
@@ -154,6 +162,32 @@ public sealed class NativeEngine
         }
         if (r.Remaining != 0) throw new InvalidDataException("Trailing native data");
         return new(returnedSeed, quests, items);
+    }
+
+    /// <summary>
+    /// Which items of the world scouted by <paramref name="seed"/> and
+    /// <paramref name="challenges"/> satisfy <paramref name="query"/>, as
+    /// indices into the item list <see cref="Scout"/> returns for the same
+    /// request. The engine owns the selection — the very matcher the search
+    /// runs, so a marked manifest can never disagree with the result list —
+    /// and it is asked over the same SSQ2 request bytes, which name the world
+    /// exactly.
+    /// </summary>
+    public static ScoutMatches ScoutMatches(string seed, int challenges, QuerySettings query)
+    {
+        var request = EncodeScoutRequest(seed, challenges); var packet = EncodeQuery(query);
+        var code = Native.seedfinder_scout_matches(request, (nuint)request.Length, packet, (nuint)packet.Length, out var ptr, out var len);
+        // A query the engine cannot decode — one with no requirements, which
+        // the scout pane shows a manifest for anyway — marks nothing.
+        if (code == -1) return new(new HashSet<int>(), 0, query.Requirements.Count);
+        if (code != 0) throw new InvalidOperationException($"Native scout matches failed ({code}).");
+        var document = JsonNode.Parse(Encoding.UTF8.GetString(CopyAndFree(ptr, len))) as JsonObject
+            ?? throw new InvalidDataException("Unreadable scout match document");
+        var matched = new HashSet<int>();
+        foreach (var index in document["matched"] as JsonArray ?? [])
+            if (index is JsonValue value && value.TryGetValue(out int number)) matched.Add(number);
+        return new(matched, (int?)document["matched_requirements"] ?? matched.Count,
+            (int?)document["total_requirements"] ?? query.Requirements.Count);
     }
 
     /// <summary>The full web share link for a canonical JSON query document, or null when the engine rejects the query.</summary>
