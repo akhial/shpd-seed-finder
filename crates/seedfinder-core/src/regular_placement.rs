@@ -398,9 +398,7 @@ impl<R: RoomPlacementRules> RegularItemPlacement for PaintedRegularPlacement<'_,
     }
 
     fn has_mob(&mut self, cell: i32) -> bool {
-        usize::try_from(cell)
-            .ok()
-            .is_some_and(|cell| self.level.mob_cells[cell])
+        usize::try_from(cell).is_ok_and(|cell| self.level.mob_cells[cell])
     }
 
     fn drop_item(&mut self, cell: i32, item: RegularItem) -> Self::HeapHandle {
