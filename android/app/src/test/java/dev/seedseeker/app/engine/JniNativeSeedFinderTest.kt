@@ -2,6 +2,7 @@
 package dev.seedseeker.app.engine
 
 import dev.seedseeker.app.catalog.ItemCatalog
+import dev.seedseeker.app.catalog.PackagedCatalog
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.SearchState
@@ -13,6 +14,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class JniNativeSeedFinderTest {
+    init { PackagedCatalog.install() }
+
     @Test
     fun sessionBridgesPacketsStatusCancellationAndIdempotentClose() {
         val bindings = RecordingBindings()

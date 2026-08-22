@@ -5,6 +5,7 @@
     <!-- Only used for the update check against GitHub releases. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <application
+        android:name=".SeedSeekerApplication"
         android:allowBackup="true"
         android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"
