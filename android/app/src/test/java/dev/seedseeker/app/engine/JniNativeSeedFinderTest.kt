@@ -251,7 +251,7 @@ class JniNativeSeedFinderTest {
         override fun scoutMatches(request: ByteArray, query: ByteArray): ByteArray {
             scoutMatchRequest = request.copyOf()
             scoutMatchQuery = query.copyOf()
-            return """{"matched":[1,3],"matched_requirements":2,"total_requirements":2}"""
+            return """{"matched":[1,3],"matchedRequirements":2,"totalRequirements":2}"""
                 .encodeToByteArray()
         }
 

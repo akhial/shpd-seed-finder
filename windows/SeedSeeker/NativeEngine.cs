@@ -229,8 +229,8 @@ public sealed class NativeEngine
         var matched = new HashSet<int>();
         foreach (var index in document["matched"] as JsonArray ?? [])
             if (index is JsonValue value && value.TryGetValue(out int number)) matched.Add(number);
-        return new(matched, (int?)document["matched_requirements"] ?? matched.Count,
-            (int?)document["total_requirements"] ?? query.Requirements.Count);
+        return new(matched, (int?)document["matchedRequirements"] ?? matched.Count,
+            (int?)document["totalRequirements"] ?? query.Requirements.Count);
     }
 
     /// <summary>The full web share link for a canonical JSON query document, or null when the engine rejects the query.</summary>

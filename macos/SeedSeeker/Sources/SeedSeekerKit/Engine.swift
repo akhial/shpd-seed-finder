@@ -161,8 +161,8 @@ public struct ScoutMatches: Sendable {
         }
         guard let document = (try? JSONSerialization.jsonObject(with: packet)) as? [String: Any],
               let matched = document["matched"] as? [Int],
-              let matchedRequirements = document["matched_requirements"] as? Int,
-              let totalRequirements = document["total_requirements"] as? Int else {
+              let matchedRequirements = document["matchedRequirements"] as? Int,
+              let totalRequirements = document["totalRequirements"] as? Int else {
             throw SeedFinderEngineError.invalidResponse
         }
         return ScoutMatches(matched: Set(matched), matchedRequirements: matchedRequirements,
