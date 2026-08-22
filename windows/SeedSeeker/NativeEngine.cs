@@ -1,7 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 
 namespace SeedSeeker;
 
@@ -19,6 +18,8 @@ internal static partial class Native
     [LibraryImport(Library)] internal static partial int seedfinder_scout_matches(byte[] request, nuint length, byte[] query, nuint queryLength, out nint packet, out nuint outputLength);
     [LibraryImport(Library)] internal static partial int seedfinder_filter_seeds(byte[] request, nuint length, ulong[] seeds, nuint seedsLength, out nint packet, out nuint outputLength);
     [LibraryImport(Library)] internal static partial int seedfinder_query_continues(byte[] candidate, nuint candidateLength, byte[] baseline, nuint baselineLength);
+    [LibraryImport(Library)] internal static partial int seedfinder_seed_format(byte[] input, nuint length, out nint packet, out nuint outputLength);
+    [LibraryImport(Library)] internal static partial int seedfinder_seed_parse(byte[] input, nuint length, out nint packet, out nuint outputLength);
     [LibraryImport(Library)] internal static partial int seedfinder_decide_start(byte[] candidate, nuint candidateLength, byte[]? target, nuint targetLength, int targetSetEmpty, int targetHasUncoveredSeeds, byte[]? detachedBase, nuint detachedBaseLength, out nint packet, out nuint outputLength);
     [LibraryImport(Library)] internal static partial int seedfinder_share_encode(byte[] queryJson, nuint length, out nint packet, out nuint outputLength);
     [LibraryImport(Library)] internal static partial int seedfinder_share_decode(byte[] text, nuint length, out nint packet, out nuint outputLength);
@@ -53,28 +54,48 @@ internal ref struct Reader
     public IReadOnlyList<ScoutQuest> Quests() => ScoutQuests.Parse(data, ref offset);
 }
 
-public static partial class SeedCode
+/// <summary>
+/// Seed-code text handling: the as-you-type mask and the parser. Both are the
+/// engine's own (<c>seedfinder_seed_format</c> / <c>seedfinder_seed_parse</c>
+/// over <c>seed::format_input</c> and <c>DungeonSeed::from_code</c>), which is
+/// what keeps the code the field shows and the value the search runs on the
+/// game's rules — a locale-dependent C# uppercase, say, turned Turkish dotless
+/// "\u0131" into an "I" the game never sees.
+/// </summary>
+public static class SeedCode
 {
-    [GeneratedRegex("^[A-Z]{3}-[A-Z]{3}-[A-Z]{3}$")] private static partial Regex CanonicalRegex();
-    public static bool IsCanonical(string value) => CanonicalRegex().IsMatch(value);
+    /// <summary>
+    /// Partial, as-you-type input masked into uppercase groups of three:
+    /// non-letters dropped, the first nine ASCII letters kept.
+    /// </summary>
     public static string Format(string value)
     {
-        var letters = new string(value.ToUpperInvariant().Where(c => c is >= 'A' and <= 'Z').Take(9).ToArray());
-        return string.Join('-', Enumerable.Range(0, (letters.Length + 2) / 3).Select(i => letters.Substring(i * 3, Math.Min(3, letters.Length - i * 3))));
+        var bytes = Encoding.UTF8.GetBytes(value);
+        var code = Native.seedfinder_seed_format(bytes, (nuint)bytes.Length, out var ptr, out var len);
+        if (code != 0) throw new InvalidOperationException($"Native seed format failed ({code}).");
+        return Encoding.UTF8.GetString(NativeEngine.CopyAndFree(ptr, len));
     }
-    /// <summary>The numeric seed a canonical code names: nine base-26 letters, A = 0, dashes ignored.</summary>
-    public static ulong Value(string value)
+
+    /// <summary>
+    /// The canonical code and the numeric value of seed-code text, or null
+    /// when the text does not name a seed.
+    /// </summary>
+    public static (string Code, ulong Value)? TryParse(string value)
     {
-        ulong result = 0; var letters = 0;
-        foreach (var c in value)
-        {
-            if (c == '-') continue;
-            if (c is < 'A' or > 'Z' || letters == 9) throw new ArgumentException($"Seed must use XXX-XXX-XXX format: {value}");
-            result = result * 26 + (ulong)(c - 'A'); letters++;
-        }
-        if (letters != 9) throw new ArgumentException($"Seed must use XXX-XXX-XXX format: {value}");
-        return result;
+        var bytes = Encoding.UTF8.GetBytes(value);
+        if (Native.seedfinder_seed_parse(bytes, (nuint)bytes.Length, out var ptr, out var len) != 0) return null;
+        var document = JsonNode.Parse(Encoding.UTF8.GetString(NativeEngine.CopyAndFree(ptr, len))) as JsonObject
+            ?? throw new InvalidDataException("Unreadable seed document");
+        return ((string?)document["code"] ?? throw new InvalidDataException("Seed document has no code"),
+            (ulong?)document["value"] ?? throw new InvalidDataException("Seed document has no value"));
     }
+
+    /// <summary>Whether the text names a complete seed the engine accepts.</summary>
+    public static bool IsCanonical(string value) => TryParse(value) is not null;
+
+    /// <summary>The numeric seed a code names.</summary>
+    public static ulong Value(string value) => TryParse(value)?.Value
+        ?? throw new ArgumentException($"Seed must use XXX-XXX-XXX format: {value}");
 }
 
 public sealed class NativeEngine
