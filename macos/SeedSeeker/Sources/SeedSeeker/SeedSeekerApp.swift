@@ -595,8 +595,9 @@ private struct QueryView: View {
                     }
                 }
                 Section("Blacksmith") {
+                    // A run whose floor limit reaches his last floor always meets him.
                     Toggle("Require accessible blacksmith", isOn: $requireBlacksmith)
-                        .disabled(maximumDepth >= 14)
+                        .disabled(maximumDepth >= ScoutQuestKind.blacksmith.depthRange.upperBound)
                     VStack(alignment: .leading, spacing: 2) {
                         Toggle("Exclude Smith rewards", isOn: $excludeBlacksmithRewards)
                         Text("Required items cannot come from the 2,000-favor Smith choice, leaving favor available for reforging.")
@@ -755,7 +756,7 @@ private struct RequirementEditor: View {
         original = requirement; self.isNew = isNew; self.onFinish = onFinish
         _kind = State(initialValue: requirement.kind); _itemID = State(initialValue: requirement.item?.id ?? "")
         _tierMatch = State(initialValue: requirement.tierMatch)
-        _tier = State(initialValue: requirement.tier < 2 ? 2 : requirement.tier)
+        _tier = State(initialValue: max(SearchLimits.exactTiers.lowerBound, requirement.tier))
         _match = State(initialValue: requirement.upgradeMatch)
         let maximumUpgrade = requirement.kind.maximumSearchUpgrade
         let initialUpgrade = switch requirement.upgradeMatch {
@@ -800,7 +801,7 @@ private struct RequirementEditor: View {
                         Text("Any \(kind.singularLabel)").tag("")
                         if kind.family == .weapon {
                             // Tier-1 weapons are starting gear and never spawn in the dungeon.
-                            ForEach(2...5, id: \.self) { tier in
+                            ForEach(SearchLimits.exactTiers, id: \.self) { tier in
                                 Section("Tier \(tier)") {
                                     ForEach(ItemCatalog.forKind(kind).filter { $0.tier == tier }) { item in
                                         Label { Text(item.name) } icon: {
@@ -825,7 +826,7 @@ private struct RequirementEditor: View {
                         .pickerStyle(.segmented)
                         .onChange(of: tierMatch) { _, value in
                             if value == .atLeast || value == .atMost {
-                                tier = max(3, min(tier, 4))
+                                tier = max(SearchLimits.boundedTiers.lowerBound, min(tier, SearchLimits.boundedTiers.upperBound))
                             }
                         }
                         if tierMatch == .exactly {
@@ -834,12 +835,14 @@ private struct RequirementEditor: View {
                                     Text("Tier \(tier)")
                                         .monospacedDigit().foregroundStyle(.secondary)
                                 }
-                                Slider(value: intBinding($tier), in: 2...5, step: 1)
+                                Slider(value: intBinding($tier),
+                                       in: Double(SearchLimits.exactTiers.lowerBound)...Double(SearchLimits.exactTiers.upperBound),
+                                       step: 1)
                             }
                         } else if tierMatch == .atLeast || tierMatch == .atMost {
                             Picker(tierMatch == .atLeast ? "Minimum tier" : "Maximum tier",
                                    selection: $tier) {
-                                ForEach(3...4, id: \.self) { option in
+                                ForEach(SearchLimits.boundedTiers, id: \.self) { option in
                                     Text(tierMatch == .atLeast ? "Tier \(option) or higher" :
                                         "Tier \(option) or lower").tag(option)
                                 }

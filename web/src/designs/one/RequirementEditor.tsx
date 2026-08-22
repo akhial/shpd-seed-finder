@@ -8,7 +8,16 @@ import {
   weaponCurses,
   weaponEnchantments,
 } from '../../lib/catalog'
-import { FLOOR_LIMIT_OPTIONS, validateRequirement } from '../../lib/query'
+import {
+  BOUNDED_TIER_MAX,
+  BOUNDED_TIER_MIN,
+  EXACT_TIER_MAX,
+  EXACT_TIER_MIN,
+  FLOOR_LIMIT_OPTIONS,
+  IDENTITY_GROUP_MAX,
+  maxUpgradeFor,
+  validateRequirement,
+} from '../../lib/query'
 import type { ItemCategory, ItemSource, RequirementKind, RequirementState } from '../../lib/wasm/types'
 import { Field, Segmented, SliderRow, Sprite } from './parts'
 import { requirementSprite, requirementTitle } from './summary'
@@ -48,13 +57,14 @@ const UPGRADE_OPTIONS = [
   { value: 'at_least', label: 'At least' },
 ] as const
 
+/** "None" then one letter per same-item group, A onwards. */
 const GROUP_OPTIONS = [
   { value: 0, label: 'None' },
-  { value: 1, label: 'A' },
-  { value: 2, label: 'B' },
-  { value: 3, label: 'C' },
-  { value: 4, label: 'D' },
+  ...Array.from({ length: IDENTITY_GROUP_MAX }, (_, index) => ({ value: index + 1, label: String.fromCharCode(65 + index) })),
 ]
+
+/** Every integer from `first` through `last`. */
+const range = (first: number, last: number): number[] => Array.from({ length: last - first + 1 }, (_, index) => first + index)
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
 
@@ -77,7 +87,7 @@ export function RequirementEditor({
 
   const kind = draft.kind ?? 'weapon'
   const family = kindFamily(kind)
-  const maxUpgrade = family === 'ring' ? 4 : 3
+  const maxUpgrade = maxUpgradeFor(family)
   const wildcardGear = !draft.item && (family === 'weapon' || family === 'armor')
   const enchantments = family === 'weapon' ? weaponEnchantments : armorGlyphs
   const curses = family === 'weapon' ? weaponCurses : armorCurses
@@ -96,7 +106,7 @@ export function RequirementEditor({
     // weapon kind or wipe the item, tier, and effect selections.
     if (kindFamily(nextKind) === family) return
     setDraft((current) => {
-      const nextMax = kindFamily(nextKind) === 'ring' ? 4 : 3
+      const nextMax = maxUpgradeFor(kindFamily(nextKind))
       let upgrade = { ...current.upgrade }
       if (upgrade.mode === 'exact') upgrade = { ...upgrade, value: clamp(upgrade.value, 1, nextMax) }
       if (upgrade.mode === 'at_least') upgrade = { ...upgrade, value: clamp(upgrade.value, 1, nextMax - 1) }
@@ -114,15 +124,15 @@ export function RequirementEditor({
   const setTierMode = (mode: (typeof TIER_OPTIONS)[number]['value']) => {
     setDraft((current) => {
       let value = current.tier.value
-      if (mode === 'exact') value = clamp(value, 2, 5)
-      if (mode === 'at_least' || mode === 'at_most') value = clamp(value, 3, 4)
+      if (mode === 'exact') value = clamp(value, EXACT_TIER_MIN, EXACT_TIER_MAX)
+      if (mode === 'at_least' || mode === 'at_most') value = clamp(value, BOUNDED_TIER_MIN, BOUNDED_TIER_MAX)
       return { ...current, tier: { mode, value } }
     })
   }
 
   const setUpgradeMode = (mode: (typeof UPGRADE_OPTIONS)[number]['value']) => {
     setDraft((current) => {
-      const max = kindFamily(current.kind ?? 'weapon') === 'ring' ? 4 : 3
+      const max = maxUpgradeFor(kindFamily(current.kind ?? 'weapon'))
       let value = current.upgrade.value
       if (mode === 'exact') value = clamp(value, 1, max)
       if (mode === 'at_least') value = clamp(value, 1, max - 1)
@@ -181,7 +191,7 @@ export function RequirementEditor({
               >
                 <option value="">{WILDCARD_LABELS[kind]}</option>
                 {family === 'weapon'
-                  ? [2, 3, 4, 5].map((tier) => (
+                  ? range(EXACT_TIER_MIN, EXACT_TIER_MAX).map((tier) => (
                       <optgroup key={tier} label={`Tier ${tier}`}>
                         {itemsForKind(kind)
                           .filter((item) => item.tier === tier)
@@ -222,7 +232,7 @@ export function RequirementEditor({
                         setDraft((current) => ({ ...current, tier: { ...current.tier, value } }))
                       }}
                     >
-                      {[3, 4].map((tier) => (
+                      {range(BOUNDED_TIER_MIN, BOUNDED_TIER_MAX).map((tier) => (
                         <option key={tier} value={tier}>
                           {draft.tier.mode === 'at_least' ? `Tier ${tier} or higher` : `Tier ${tier} or lower`}
                         </option>

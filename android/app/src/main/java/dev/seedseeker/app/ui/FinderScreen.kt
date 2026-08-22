@@ -71,6 +71,7 @@ import androidx.compose.ui.unit.sp
 import dev.seedseeker.app.model.FLOOR_LIMIT_OPTIONS
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.QueryPreset
+import dev.seedseeker.app.model.ScoutQuestGiver
 import dev.seedseeker.app.model.SearchState
 import dev.seedseeker.app.model.SearchStatus
 import dev.seedseeker.app.model.SeedResult
@@ -530,7 +531,8 @@ private fun ScopeSection(
                     supporting = null,
                     checked = requireBlacksmith,
                     onCheckedChange = onRequireBlacksmithChange,
-                    enabled = enabled && maximumDepth < 14,
+                    // A run whose floor limit reaches his last floor always meets him.
+                    enabled = enabled && maximumDepth < ScoutQuestGiver.BLACKSMITH.depths.last,
                 )
                 SwitchRow(
                     label = "Exclude smith rewards",

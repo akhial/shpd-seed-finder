@@ -1,26 +1,28 @@
 export interface SeedRange { startSeed: number; endSeedExclusive: number }
 
-// Mirrors the native session layer: each search claims a fresh traversal start
-// on the seed circle so repeated searches for the same requirements surface
-// different seeds. Starts advance by roughly one golden-ratio turn, which
-// spaces consecutive searches as far apart as possible before repeating.
-const GOLDEN_RATIO_CONJUGATE = 0.618_033_988_749_894_9
+/** The number of dungeon seeds: 26^9, one per `XXX-XXX-XXX` code. */
+export const TOTAL_SEEDS = 5_429_503_678_976
 
-const gcd = (left: number, right: number): number => (right === 0 ? left : gcd(right, left % right))
-
-export function goldenStride(totalSeeds: number): number {
-  if (totalSeeds <= 1) return 1
-  let stride = Math.max(1, Math.round(totalSeeds * GOLDEN_RATIO_CONJUGATE))
-  while (gcd(stride, totalSeeds) !== 1) stride += 1
-  return stride % totalSeeds
-}
+/**
+ * Distance between the starting points of consecutive searches, mirroring the
+ * native session layer's `PRODUCTION_SEARCH_START_STRIDE`: each search claims
+ * a fresh traversal start on the seed circle so repeated searches for the same
+ * requirements surface different seeds.
+ *
+ * Approximately one golden-ratio turn of the seed circle. `TOTAL_SEEDS` only
+ * has 2 and 13 as prime factors; this odd, non-multiple-of-13 stride is
+ * therefore coprime and visits every possible start before repeating. It is
+ * the engine's literal rather than re-derived here: deriving it in doubles
+ * once landed ~406M seeds away from where the native frontends start.
+ */
+export const SEARCH_START_STRIDE = 3_355_211_884_971
 
 export function randomTraversalStart(totalSeeds: number): number {
   return Math.floor(Math.random() * totalSeeds) % totalSeeds
 }
 
 export function advanceTraversalStart(current: number, totalSeeds: number): number {
-  return (current + goldenStride(totalSeeds)) % totalSeeds
+  return (current + SEARCH_START_STRIDE) % totalSeeds
 }
 
 /** Splits the seed circle, rotated to begin at `traversalStart`, into one

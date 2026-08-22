@@ -6,6 +6,7 @@ import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.Challenge
 import dev.seedseeker.app.model.ResumeHint
 import dev.seedseeker.app.model.SearchBatch
+import dev.seedseeker.app.model.SearchLimits
 import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.SearchState
 import dev.seedseeker.app.model.SearchStatus
@@ -27,6 +28,9 @@ import java.nio.charset.StandardCharsets
 import kotlin.math.min
 
 /** A deliberately small boundary shared by the Compose UI, demo engine, and Rust JNI adapter. */
+/** The number of dungeon seeds: 26^9, one per `XXX-XXX-XXX` code. */
+internal const val TOTAL_SEEDS = 5_429_503_678_976L
+
 interface NativeSeedFinder {
     fun startSearch(request: SearchRequest): NativeSearchSession
     fun startResumedSearch(request: SearchRequest, resumeFrom: Long, scanLen: Long): NativeSearchSession
@@ -276,7 +280,6 @@ class DemoNativeSeedFinder : NativeSeedFinder {
     }
 
     private companion object {
-        const val TOTAL_SEEDS = 5_429_503_678_976L // 26^9, rendered as XXX-XXX-XXX.
         const val DEMO_DURATION_MS = 4_250L
         const val RESUMED_DEMO_DURATION_MS = 1_500L
         const val DEMO_SEEDS_PER_MS = 1_277_530_277L
@@ -700,7 +703,9 @@ object ScoutResultCodec {
                     "Unknown catalog item '$stableId' in native scout packet"
                 }
                 val depth = input.readUnsignedByte()
-                check(depth in 1..24) { "Scout item depth must be 1..24" }
+                check(depth in 1..SearchLimits.MAX_DEPTH) {
+                    "Scout item depth must be 1..${SearchLimits.MAX_DEPTH}"
+                }
                 val upgrade = input.readUnsignedByte()
                 check(upgrade in 0..catalogItem.kind.maximumSearchUpgrade) {
                     "Scout item upgrade must be 0..${catalogItem.kind.maximumSearchUpgrade}"

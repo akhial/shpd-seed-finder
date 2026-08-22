@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { useStore } from '@tanstack/react-store'
-import { challenges as challengeOptions, wildcardSprites } from '../../lib/catalog'
+import { LEVEL_GEN_CHALLENGES, challenges as challengeOptions, wildcardSprites } from '../../lib/catalog'
 import { probabilityLabel } from '../../lib/format'
 import { effectGlow } from '../../lib/glow'
 import { CheckIcon, CommandIcon, LinkIcon, PlusIcon, ReturnIcon, XIcon } from '../../lib/icons'
-import { FLOOR_LIMIT_OPTIONS, emptyRequirement, fromQueryJson, toQueryJson, validateRequirement } from '../../lib/query'
+import { BLACKSMITH_LAST_FLOOR, FLOOR_LIMIT_OPTIONS, emptyRequirement, fromQueryJson, toQueryJson, validateRequirement } from '../../lib/query'
 import type { ValidationResult } from '../../lib/query'
 import { questVariantLabel } from '../../lib/quests'
 import { builtInPresets, loadPresets, maxWorkers, queryStore, savePresets, setWorkerCount, workerCountStore } from '../../lib/store'
@@ -17,7 +17,6 @@ import { SliderRow, Sprite } from './parts'
 import { categoryPlural, requirementDetails, requirementKind, requirementSprite, requirementTitle } from './summary'
 
 const KIND_ORDER: ItemCategory[] = ['weapon', 'armor', 'wand', 'ring']
-const LEVEL_GEN_CHALLENGES = new Set<ChallengeName>(['barren_land', 'into_darkness', 'forbidden_runes'])
 
 const patchQuery = (patch: Partial<QueryState>) => queryStore.setState((state) => ({ ...state, ...patch }))
 const cloneQuery = (query: QueryState): QueryState => fromQueryJson(toQueryJson(query))
@@ -337,11 +336,11 @@ export function QueryPanel({
               {blacksmithCount > 0 && <span className="d1-count">{blacksmithCount}</span>}
             </summary>
             <div className="d1-details-body">
-              <label className={`d1-check${query.maxDepth >= 14 ? ' d1-check-disabled' : ''}`}>
+              <label className={`d1-check${query.maxDepth >= BLACKSMITH_LAST_FLOOR ? ' d1-check-disabled' : ''}`}>
                 <input
                   type="checkbox"
                   checked={query.requireBlacksmith}
-                  disabled={query.maxDepth >= 14}
+                  disabled={query.maxDepth >= BLACKSMITH_LAST_FLOOR}
                   onChange={(event) => patchQuery({ requireBlacksmith: event.currentTarget.checked })}
                 />
                 <span>Require accessible blacksmith</span>

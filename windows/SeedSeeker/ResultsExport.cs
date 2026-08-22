@@ -35,11 +35,8 @@ public static class ResultsExport
         "armored_statue", "shop", "ghost_reward", "wandmaker_reward",
         "blacksmith_reward", "imp_reward",
     ];
-    private static readonly (string Name, int Bit)[] ChallengeNames = [
-        ("on_diet", 1), ("faith_is_my_armor", 2), ("pharmacophobia", 4),
-        ("barren_land", 8), ("swarm_intelligence", 16), ("into_darkness", 32),
-        ("forbidden_runes", 64), ("hostile_champions", 128), ("badder_bosses", 256),
-    ];
+    private static readonly (string Name, int Bit)[] ChallengeNames =
+        [.. Challenges.All.Select(entry => (entry.Name, entry.Mask))];
 
     /// <exception cref="ResultsExportException">With a user-facing message.</exception>
     public static string Encode(QuerySettings query, IEnumerable<string> seeds, string appVersion)
