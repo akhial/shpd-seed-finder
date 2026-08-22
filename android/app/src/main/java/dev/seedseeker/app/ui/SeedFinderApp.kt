@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import dev.seedseeker.app.BuildConfig
 import dev.seedseeker.app.catalog.ItemCatalog
+import dev.seedseeker.app.engine.EngineInfo
 import dev.seedseeker.app.engine.NativeSearchSession
 import dev.seedseeker.app.engine.NativeSeedFinder
 import dev.seedseeker.app.engine.SeedCode
@@ -75,19 +76,18 @@ private const val UPDATE_LAST_CHECK_KEY = "update_last_check"
 private const val UPDATE_SKIPPED_KEY = "update_skipped_version"
 private const val UPDATE_CHECK_INTERVAL_MILLIS = 24L * 60 * 60 * 1000
 
-private const val MAX_IMPORTED_RESULTS = 1_024
-
-/** Reads at most `limit` bytes as UTF-8, failing on larger files. */
-private fun readCapped(stream: java.io.InputStream, limit: Int): String {
-    val buffer = ByteArray(limit + 1)
+/**
+ * Reads the picked file as UTF-8, stopping one byte past the engine's own
+ * import cap so an arbitrarily large pick never has to fit in memory. The
+ * engine refuses anything above the cap when it decodes those bytes.
+ */
+private fun readForImport(stream: java.io.InputStream): String {
+    val buffer = ByteArray(EngineInfo.resultsFileMaxBytes + 1)
     var total = 0
     while (total < buffer.size) {
         val read = stream.read(buffer, total, buffer.size - total)
         if (read < 0) break
         total += read
-    }
-    require(total <= limit) {
-        "This file is too large to be a Seed Seeker results file (2 MiB limit)."
     }
     return String(buffer, 0, total, Charsets.UTF_8)
 }
@@ -224,7 +224,7 @@ fun SeedFinderApp(
             val outcome = withContext(Dispatchers.IO) {
                 runCatching {
                     val text = context.contentResolver.openInputStream(uri)?.use { stream ->
-                        readCapped(stream, ResultsExport.MAX_FILE_BYTES)
+                        readForImport(stream)
                     } ?: error("Could not read the selected file.")
                     ResultsExport.decode(text)
                 }
@@ -244,13 +244,10 @@ fun SeedFinderApp(
                 fastMode = imported.query.fastMode
                 challenges = imported.query.challenges
                 preferences.edit().putInt(CHALLENGES_KEY, challenges).apply()
-                // Deduplicate then cap, the shared import rule on every platform.
-                val kept = LinkedHashSet<String>()
-                for (seed in imported.seeds) {
-                    if (kept.size == MAX_IMPORTED_RESULTS) break
-                    kept.add(seed)
-                }
-                val dropped = imported.seeds.size - kept.size
+                // The engine already deduplicated and capped the list and
+                // reported what that removed.
+                val kept = imported.seeds
+                val dropped = imported.dropped
                 val importedResults = kept.map { SeedResult(it, imported.query.requirements.size) }
                 results = importedResults
                 foundCount = importedResults.size
@@ -285,10 +282,10 @@ fun SeedFinderApp(
                         append(" · $dropped duplicate or over-limit entr${if (dropped == 1) "y" else "ies"} dropped")
                     }
                     val fileVersion = imported.shpdVersion
-                    if (fileVersion != null && fileVersion != ResultsExport.SHPD_VERSION) {
+                    if (fileVersion != null && fileVersion != EngineInfo.shpdVersion) {
                         append(
                             " · made for Shattered Pixel Dungeon v$fileVersion; this app targets " +
-                                "v${ResultsExport.SHPD_VERSION}, so seeds may generate differently",
+                                "v${EngineInfo.shpdVersion}, so seeds may generate differently",
                         )
                     }
                 }
