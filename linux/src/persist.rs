@@ -8,12 +8,13 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use shpd_seedfinder_core::catalog::{Effect, ItemKind, WeaponCategory, item, item_by_stable_id};
 use shpd_seedfinder_core::challenges::Challenges;
+use shpd_seedfinder_core::main_world::normalize_floor_limit;
 use shpd_seedfinder_core::model::ItemSource;
 use shpd_seedfinder_core::query::{TierRequirement, UpgradeRequirement};
 use shpd_seedfinder_core::quests::WandmakerQuestType;
 
 use crate::config::APP_ID;
-use crate::state::{ALL_SOURCES, AppState, UiRequirement, normalize_floor_limit};
+use crate::state::{AppState, UiRequirement};
 
 #[derive(Default, Deserialize, Serialize)]
 struct SavedState {
@@ -332,7 +333,7 @@ const fn source_key(source: ItemSource) -> &'static str {
 }
 
 fn source_from_key(key: &str) -> Option<ItemSource> {
-    ALL_SOURCES
+    ItemSource::ALL
         .iter()
         .copied()
         .find(|source| source_key(*source) == key)

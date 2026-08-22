@@ -23,7 +23,7 @@ pub fn present(
     for info in ALL_CHALLENGES {
         let row = adw::SwitchRow::builder()
             .title(info.label)
-            .subtitle(if info.changes_generation {
+            .subtitle(if info.challenge.changes_level_generation() {
                 "Changes level generation"
             } else {
                 "No effect on seed content"
