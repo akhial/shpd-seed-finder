@@ -222,8 +222,6 @@ public sealed class QuerySettings
 /// search session therefore survives until the user explicitly clears it.
 /// The continuation rule itself belongs to the engine and is asked of it, since
 /// soundness of the resumed scan depends on the two agreeing exactly.
-/// <see cref="SharesRequirement"/> stays local by contrast: it gates nothing but
-/// a re-verifying filter, so it is a UI heuristic rather than a soundness rule.
 /// </summary>
 public static class QueryRefinement
 {
@@ -239,18 +237,6 @@ public static class QueryRefinement
     public static bool CanRefine(QuerySettings candidate, QuerySettings baseline) =>
         NativeEngine.QueryContinues(candidate, baseline);
 
-    /// <summary>
-    /// Whether two queries name a common item: some requirement of each has the
-    /// same kind, and either both name the same item or at least one names none
-    /// (a kind-level requirement subsumes every item of its kind). Scope and
-    /// challenge differences are irrelevant — a filter re-verifies seeds from
-    /// scratch — so this deliberately checks nothing else: it only estimates
-    /// whether the Target Set is enriched for the candidate query's matches.
-    /// </summary>
-    public static bool SharesRequirement(QuerySettings candidate, QuerySettings baseline) =>
-        candidate.Requirements.Any(left => baseline.Requirements.Any(right =>
-            left.Kind == right.Kind
-            && (left.Item is null || right.Item is null || left.Item.Id == right.Item.Id)));
 }
 
 /// <summary>What pressing Start Search does with a query, per docs/search-semantics.md.</summary>
@@ -276,36 +262,6 @@ public enum StartMode
 /// are filter-only.
 /// </summary>
 public sealed record TargetRun(QuerySettings Query, IReadOnlyList<string> Seeds, long ResumeFrom, long Remaining);
-
-/// <summary>
-/// The single gate for what Start Search does (docs/search-semantics.md). The
-/// Target Set is the anchor: a continuation of the Target Query refines it, a
-/// query sharing an item filters it (always from the full set, so loosening a
-/// requirement brings seeds back), and anything else scans the full range
-/// without touching it — continuing the previous detached scan when that is
-/// sound. An empty Target Set holds nothing worth preserving, so a
-/// non-continuing query re-anchors on this search instead of filtering nothing.
-/// </summary>
-public static class SearchPlan
-{
-    /// <param name="query">The query about to run.</param>
-    /// <param name="target">The session's Target, if one has been established.</param>
-    /// <param name="lastDetachedQuery">The query of the previous run when that
-    /// run was a detached scan that concluded (completed or cancelled), null
-    /// otherwise. Only such a run may be continued by a query unrelated to the
-    /// Target; a failed run is never a continuation base.</param>
-    public static StartMode DecideStart(QuerySettings query, TargetRun? target, QuerySettings? lastDetachedQuery = null)
-    {
-        if (target is null) return StartMode.Anchor;
-        var continuesTarget = QueryRefinement.CanRefine(query, target.Query);
-        if (target.Seeds.Count == 0)
-            return continuesTarget && target.Remaining > 0 ? StartMode.TargetRefine : StartMode.Anchor;
-        if (continuesTarget) return StartMode.TargetRefine;
-        if (QueryRefinement.SharesRequirement(query, target.Query)) return StartMode.TargetFilter;
-        if (lastDetachedQuery is not null && QueryRefinement.CanRefine(query, lastDetachedQuery)) return StartMode.ContinueDetached;
-        return StartMode.Detached;
-    }
-}
 
 public sealed class QueryPreset
 {
@@ -357,111 +313,12 @@ public sealed record ScoutItem(CatalogItem Item, int Depth, int Upgrade, string?
 public sealed record ScoutWorld(string Seed, IReadOnlyList<ScoutQuest> Quests, IReadOnlyList<ScoutItem> Items);
 public sealed record SearchStatus(SearchState State, long Scanned, long Total, long ErrorCode, double Probability);
 
-public static class ScoutMatcher
-{
-    public static HashSet<int> SelectMatches(IReadOnlyList<ScoutItem> items,
-        IEnumerable<ItemRequirement> requirements, int maximumDepth = 24,
-        bool excludeBlacksmithRewards = false)
-    {
-        bool Matches(ScoutItem item, ItemRequirement requirement)
-        {
-            var tierMatches = requirement.TierMatch switch
-            {
-                TierMatch.Any => true,
-                TierMatch.Exactly => item.Item.Tier == requirement.Tier,
-                TierMatch.AtLeast => item.Item.Tier >= requirement.Tier,
-                TierMatch.AtMost => item.Item.Tier <= requirement.Tier,
-                _ => false,
-            };
-            var upgradeMatches = requirement.UpgradeMatch switch
-            {
-                UpgradeMatch.Any => true,
-                UpgradeMatch.Exactly => item.Upgrade == requirement.Upgrade,
-                UpgradeMatch.AtLeast => item.Upgrade >= requirement.Upgrade,
-                _ => false,
-            };
-            return item.Depth <= maximumDepth
-                && item.Depth <= (requirement.MaximumDepth ?? maximumDepth)
-                && (!excludeBlacksmithRewards || item.Source != ScoutItemSource.BlacksmithReward)
-                && requirement.Kind.Accepts(item.Item)
-                && (requirement.Item is null || requirement.Item.Id == item.Item.Id)
-                && tierMatches && upgradeMatches
-                && (requirement.Modifier is null || requirement.Modifier == item.Effect)
-                && (!requirement.RequireUncursed || !item.Cursed)
-                && (requirement.Source is null || requirement.Source == item.Source);
-        }
-
-        var candidates = requirements
-            .Select(requirement => (Requirement: requirement, Items: Enumerable.Range(0, items.Count)
-                .Where(index => Matches(items[index], requirement)).ToArray()))
-            .OrderBy(candidate => candidate.Items.Length).ToArray();
-        var used = new HashSet<int>();
-        var selected = new HashSet<int>();
-        var best = new HashSet<int>();
-        var scenarios = new Dictionary<int, ulong>();
-        var identities = new Dictionary<int, string>();
-
-        void Visit(int position)
-        {
-            if (position == candidates.Length)
-            {
-                if (selected.Count > best.Count) best = [.. selected];
-                return;
-            }
-            if (selected.Count + candidates.Length - position <= best.Count) return;
-            var (requirement, itemCandidates) = candidates[position];
-            foreach (var index in itemCandidates)
-            {
-                if (used.Contains(index)) continue;
-                var item = items[index];
-                string? previousIdentity = null;
-                if (requirement.IdentityGroup is int identityGroup)
-                {
-                    identities.TryGetValue(identityGroup, out previousIdentity);
-                    if (previousIdentity is not null && previousIdentity != item.Item.Id) continue;
-                    identities[identityGroup] = item.Item.Id;
-                }
-                (int Group, ulong Mask)? constraint = item.AccessibilityTag switch
-                {
-                    1 => (item.AccessibilityGroup, 1UL << (int)item.AccessibilityValue),
-                    2 => (item.AccessibilityGroup, item.AccessibilityValue),
-                    _ => null,
-                };
-                ulong? previousScenarios = null;
-                if (constraint is { } value)
-                {
-                    if (scenarios.TryGetValue(value.Group, out var previous)) previousScenarios = previous;
-                    var compatible = (previousScenarios ?? ulong.MaxValue) & value.Mask;
-                    if (compatible == 0)
-                    {
-                        RestoreIdentity(requirement, previousIdentity);
-                        continue;
-                    }
-                    scenarios[value.Group] = compatible;
-                }
-                used.Add(index); selected.Add(index);
-                Visit(position + 1);
-                used.Remove(index); selected.Remove(index);
-                if (constraint is { } oldConstraint)
-                {
-                    if (previousScenarios is ulong previous) scenarios[oldConstraint.Group] = previous;
-                    else scenarios.Remove(oldConstraint.Group);
-                }
-                RestoreIdentity(requirement, previousIdentity);
-            }
-            Visit(position + 1);
-        }
-
-        void RestoreIdentity(ItemRequirement requirement, string? previous)
-        {
-            if (requirement.IdentityGroup is not int group) return;
-            if (previous is null) identities.Remove(group); else identities[group] = previous;
-        }
-
-        Visit(0);
-        return best;
-    }
-}
+/// <summary>
+/// The engine's marks for one scouted world: which items satisfy the query,
+/// as indices into the scout manifest, and how many of the requirements that
+/// selection explains. Produced by <see cref="NativeEngine.ScoutMatches"/>.
+/// </summary>
+public sealed record ScoutMatches(IReadOnlySet<int> Matched, int MatchedRequirements, int TotalRequirements);
 
 public static class ItemCatalog
 {

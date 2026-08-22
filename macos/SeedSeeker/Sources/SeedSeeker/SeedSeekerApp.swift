@@ -1185,12 +1185,21 @@ private struct SeedDetailView: View {
         }.padding([.horizontal, .top]).padding(.bottom, 8)
     }
 
+    /// The engine's own marks for the scouted world, taken from the same
+    /// request the scout used. Without requirements there is nothing to mark.
+    private func engineMatches(in world: ScoutWorld) -> Set<Int> {
+        guard let query = try? SearchRequest(
+                  requirements: requirements, maximumDepth: maximumDepth,
+                  excludeBlacksmithRewards: excludeBlacksmithRewards, challenges: challenges),
+              let marks = try? ScoutMatches.mark(seed: world.seed, challenges: challenges,
+                                                 query: query) else { return [] }
+        return marks.matched
+    }
+
     private func manifest(_ world: ScoutWorld) -> some View {
         let byDepth = Dictionary(grouping: world.items, by: \.depth)
         let depths = byDepth.keys.sorted()
-        let matches = scoutMatchIndices(items: world.items, requirements: requirements,
-                                        maximumDepth: maximumDepth,
-                                        excludeBlacksmithRewards: excludeBlacksmithRewards)
+        let matches = engineMatches(in: world)
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 4) {
                 Text("\(world.items.count) items across \(depths.count) floors")

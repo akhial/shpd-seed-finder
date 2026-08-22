@@ -1,5 +1,6 @@
 import init, {
   analyze_query,
+  decide_start,
   decode_results_file,
   decode_share_text,
   encode_results_file,
@@ -51,6 +52,28 @@ export async function analyzeQuery(queryJson: string): Promise<AnalysisResult> {
  */
 export function queryContinues(candidateJson: string, baseJson: string): boolean {
   return query_continues(candidateJson, baseJson)
+}
+
+/**
+ * The engine's Start Search decision, per `docs/search-semantics.md`:
+ * `anchor`, `target-refine`, `target-filter`, `continue-detached` or
+ * `detached`. `targetJson` is the Target Query (absent when there is no
+ * Target), `detachedBaseJson` the last concluded run's query when — and only
+ * when — that run was itself detached. The continuation and sharing
+ * predicates are both part of this answer, so callers must not consult either
+ * separately. Throws when a supplied query fails to decode.
+ *
+ * Synchronous, like `queryContinues`, because the decision sits on the
+ * synchronous Start path.
+ */
+export function decideStart(
+  candidateJson: string,
+  targetJson: string | undefined,
+  targetSetEmpty: boolean,
+  targetHasUncoveredSeeds: boolean,
+  detachedBaseJson: string | undefined,
+): string {
+  return decide_start(candidateJson, targetJson, targetSetEmpty, targetHasUncoveredSeeds, detachedBaseJson)
 }
 
 /** Encodes a canonical query document as a full shareable web link. */

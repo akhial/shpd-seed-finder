@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use adw::prelude::*;
 use gtk::glib;
 use shpd_seedfinder_core::model::GeneratedWorld;
-use shpd_seedfinder_core::query::SearchQuery;
+use shpd_seedfinder_core::query::{SearchQuery, StartDecision, decide_start};
 use shpd_seedfinder_core::search::SearchError;
 use shpd_seedfinder_core::seed::DungeonSeed;
 use shpd_seedfinder_session::{
@@ -21,7 +21,6 @@ use shpd_seedfinder_session::{
 
 use crate::format::{duration, estimate_duration, group_digits, probability_percent, seed_rate};
 use crate::result_navigation;
-use crate::state::{self, StartMode};
 
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 const DRAIN_BATCH: usize = 256;
@@ -38,7 +37,7 @@ struct ActiveSearch {
     query: SearchQuery,
     /// How this run relates to the session's Target, fixed at start; the
     /// conclusion folds the run into the Target accordingly.
-    mode: StartMode,
+    mode: StartDecision,
     matches: u64,
     last_tested: u64,
     last_tick: Instant,
@@ -82,7 +81,7 @@ struct Target {
 struct PendingRefine {
     receiver: mpsc::Receiver<Result<Vec<GeneratedWorld>, SearchError>>,
     query: SearchQuery,
-    mode: StartMode,
+    mode: StartDecision,
     resume_from: u64,
     remaining: u64,
     previous_matches: u64,
@@ -255,13 +254,9 @@ impl ResultsPane {
     /// Target Set, filtering it, continuing the last detached scan, and a
     /// fresh scan. The choice is silent — the user only ever presses one
     /// search action.
-    fn decide(&self, query: &SearchQuery) -> StartMode {
+    fn decide(&self, query: &SearchQuery) -> StartDecision {
         let target_slot = self.target.borrow();
-        let facts = target_slot.as_ref().map(|target| state::TargetFacts {
-            query: &target.query,
-            set_size: target.seeds.len(),
-            remaining: target.remaining,
-        });
+        let target = target_slot.as_ref();
         let base_slot = self.base.borrow();
         // A failed run never leaves a base behind, so `Some` here always
         // describes a concluded run.
@@ -269,7 +264,13 @@ impl ResultsPane {
             .as_ref()
             .filter(|base| base.detached)
             .map(|base| &base.query);
-        state::start_mode(query, facts.as_ref(), detached_base)
+        decide_start(
+            query,
+            target.map(|target| &target.query),
+            target.is_none_or(|target| target.seeds.is_empty()),
+            target.is_some_and(|target| target.remaining > 0),
+            detached_base,
+        )
     }
 
     /// Whether there is anything for "Clear Results" to discard: listed seeds,
@@ -413,7 +414,7 @@ impl ResultsPane {
             return;
         }
         match self.decide(&query) {
-            mode @ (StartMode::TargetRefine | StartMode::TargetFilter) => {
+            mode @ (StartDecision::TargetRefine | StartDecision::TargetFilter) => {
                 let Some((target_query, seeds, resume_from, remaining)) =
                     self.target.borrow().as_ref().map(|target| {
                         (
@@ -424,15 +425,15 @@ impl ResultsPane {
                         )
                     })
                 else {
-                    self.start_scan(query, StartMode::Anchor);
+                    self.start_scan(query, StartDecision::Anchor);
                     return;
                 };
                 // Re-assert the equal-or-superset invariant here rather than
                 // trusting the decision helper: the soundness of resuming
                 // depends on it. A filter never scans at all.
-                let (resume_from, remaining) = if mode == StartMode::TargetRefine {
+                let (resume_from, remaining) = if mode == StartDecision::TargetRefine {
                     if !query.continues(&target_query) {
-                        self.start_scan(query, StartMode::Detached);
+                        self.start_scan(query, StartDecision::Detached);
                         return;
                     }
                     (resume_from, remaining)
@@ -441,7 +442,7 @@ impl ResultsPane {
                 };
                 self.begin_filter(query, &seeds, resume_from, remaining, mode);
             }
-            StartMode::ContinueDetached => {
+            StartDecision::ContinueDetached => {
                 // The classic pre-Target refine, scoped to the detached
                 // thread: filter the last run's listed seeds and resume its
                 // remainder. The Target is untouched throughout.
@@ -451,11 +452,11 @@ impl ResultsPane {
                     .as_ref()
                     .map(|base| (base.query.clone(), base.resume_from, base.remaining))
                 else {
-                    self.start_scan(query, StartMode::Detached);
+                    self.start_scan(query, StartDecision::Detached);
                     return;
                 };
                 if !query.continues(&base_query) {
-                    self.start_scan(query, StartMode::Detached);
+                    self.start_scan(query, StartDecision::Detached);
                     return;
                 }
                 let seeds = self.seeds.borrow().clone();
@@ -464,19 +465,21 @@ impl ResultsPane {
                     &seeds,
                     resume_from,
                     remaining,
-                    StartMode::ContinueDetached,
+                    StartDecision::ContinueDetached,
                 );
             }
-            mode @ (StartMode::Anchor | StartMode::Detached) => self.start_scan(query, mode),
+            mode @ (StartDecision::Anchor | StartDecision::Detached) => {
+                self.start_scan(query, mode);
+            }
         }
     }
 
     /// Starts a full-range production search; a failure to spawn is reported
     /// as a toast and leaves the pane idle. An `Anchor` run establishes the
     /// Target when it concludes; a `Detached` run leaves it untouched.
-    fn start_scan(self: &Rc<Self>, query: SearchQuery, mode: StartMode) {
+    fn start_scan(self: &Rc<Self>, query: SearchQuery, mode: StartDecision) {
         self.base.replace(None);
-        if mode == StartMode::Detached {
+        if mode == StartDecision::Detached {
             // The display and the Target Set diverge here: the earlier
             // results stay held by the Target until a related search.
             self.toasts.add_toast(adw::Toast::new(
@@ -534,7 +537,7 @@ impl ResultsPane {
         seed_codes: &[String],
         resume_from: u64,
         remaining: u64,
-        mode: StartMode,
+        mode: StartDecision,
     ) {
         let seed_values: Vec<u64> = seed_codes
             .iter()
@@ -632,7 +635,7 @@ impl ResultsPane {
                 query: pending.query,
                 resume_from: pending.resume_from,
                 remaining: 0,
-                detached: pending.mode == StartMode::ContinueDetached,
+                detached: pending.mode == StartDecision::ContinueDetached,
             }));
             self.conclude_refined_filter_only(kept, pending.previous_matches, pending.mode);
             return glib::ControlFlow::Break;
@@ -677,12 +680,12 @@ impl ResultsPane {
         glib::ControlFlow::Break
     }
 
-    fn conclude_refined_filter_only(&self, kept: u64, previous: u64, mode: StartMode) {
+    fn conclude_refined_filter_only(&self, kept: u64, previous: u64, mode: StartDecision) {
         self.progress_line.set_visible(false);
         self.restore_count_subtitle();
         // A target filter deliberately skipped scanning; the other filter-only
         // conclusions arrive here because their coverage was already complete.
-        let filtered_only = mode == StartMode::TargetFilter;
+        let filtered_only = mode == StartDecision::TargetFilter;
         if kept == 0 {
             let description = if filtered_only {
                 format!(
@@ -719,9 +722,9 @@ impl ResultsPane {
     /// refine grows the set with the resumed scan's new finds and advances
     /// the coverage, and a detached run leaves it exactly as it was. Failed
     /// runs never reach this. The stored set is never capped by the display.
-    fn settle_target(&self, mode: StartMode, query: &SearchQuery, concluded: &BaseRun) {
+    fn settle_target(&self, mode: StartDecision, query: &SearchQuery, concluded: &BaseRun) {
         match mode {
-            StartMode::Anchor => {
+            StartDecision::Anchor => {
                 self.target.replace(Some(Target {
                     query: query.clone(),
                     seeds: self.seeds.borrow().clone(),
@@ -729,7 +732,7 @@ impl ResultsPane {
                     remaining: concluded.remaining,
                 }));
             }
-            StartMode::TargetRefine => {
+            StartDecision::TargetRefine => {
                 let mut target_slot = self.target.borrow_mut();
                 if let Some(target) = target_slot.as_mut() {
                     // The filter's survivors were already members; only the
@@ -748,7 +751,9 @@ impl ResultsPane {
                     target.remaining = concluded.remaining;
                 }
             }
-            StartMode::TargetFilter | StartMode::ContinueDetached | StartMode::Detached => {}
+            StartDecision::TargetFilter
+            | StartDecision::ContinueDetached
+            | StartDecision::Detached => {}
         }
     }
 
@@ -827,7 +832,10 @@ impl ResultsPane {
                     query: active.query.clone(),
                     resume_from: resume_from.max(0).unsigned_abs(),
                     remaining: remaining.max(0).unsigned_abs(),
-                    detached: matches!(mode, StartMode::Detached | StartMode::ContinueDetached),
+                    detached: matches!(
+                        mode,
+                        StartDecision::Detached | StartDecision::ContinueDetached
+                    ),
                 }
             });
         if let Some(concluded) = base.as_ref() {

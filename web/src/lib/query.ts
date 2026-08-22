@@ -58,7 +58,11 @@ export const defaultQueryState = (): QueryState => ({
 
 function requirementToDocument(requirement: RequirementState): RequirementDocument {
   const output: RequirementDocument = {}
-  if (requirement.kind) output.kind = requirement.kind
+  // The category is always written, derived from the item when the editor
+  // state has none: the engine's start decision compares kinds for equality,
+  // so a requirement that omits its kind would share with nothing.
+  const kind = requirement.kind ?? (requirement.item ? getItem(requirement.item)?.type : undefined)
+  if (kind) output.kind = kind
   if (requirement.item) output.item = requirement.item
   if (requirement.tier.mode !== 'any') {
     output.tier = { [requirement.tier.mode]: requirement.tier.value } as NonNullable<RequirementDocument['tier']>
@@ -131,7 +135,10 @@ function wandmakerQuestFromDocument(value: unknown): WandmakerQuest | undefined 
 function requirementFromDocument(value: RequirementDocument): RequirementState {
   const raw = value as Record<string, unknown>
   return {
-    kind: value.kind,
+    // Same rule as the encoder: an item-only requirement gets its item's
+    // category, so the state a share link or a results file restores carries
+    // the kind the start decision needs.
+    kind: value.kind ?? (value.item ? getItem(value.item)?.type : undefined),
     item: value.item,
     tier: tierFromDocument(raw.tier),
     upgrade: upgradeFromDocument(raw.upgrade),
