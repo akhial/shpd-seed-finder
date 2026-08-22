@@ -91,19 +91,13 @@ public sealed class ScoutQuestsTests
         Assert.Throws<InvalidDataException>(() => ScoutQuests.Entry(quest, variant, depth, 0));
     }
 
-    [Theory]
-    [InlineData(1, 0)]
-    [InlineData(1, 1)] // The Ghost sits on floors 2-4.
-    [InlineData(1, 5)]
-    [InlineData(2, 6)] // The Wandmaker on 7-9.
-    [InlineData(2, 10)]
-    [InlineData(3, 11)] // The Blacksmith on 12-14.
-    [InlineData(3, 15)]
-    [InlineData(4, 16)] // The Imp on 17-19.
-    [InlineData(4, 20)]
-    public void EntryRejectsDepthsOutsideTheGiversFloors(byte quest, byte depth)
+    [Fact]
+    public void EntryTakesTheDepthAsGiven()
     {
-        Assert.Throws<InvalidDataException>(() => ScoutQuests.Entry(quest, 1, depth, 0));
+        // The giver's floor window belongs to the engine's feasibility model,
+        // and the packet came from the engine, so decoding does not re-check it.
+        Assert.Equal(1, ScoutQuests.Entry(1, 1, 1, 0).Depth);
+        Assert.Equal(24, ScoutQuests.Entry(2, 1, 24, 0).Depth);
     }
 
     [Fact]

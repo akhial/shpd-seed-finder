@@ -33,6 +33,14 @@ public static class ItemKindExtensions
     /// <summary>Whether a catalog item can satisfy a requirement of this kind.</summary>
     public static bool Accepts(this ItemKind kind, CatalogItem item) =>
         item.Kind == kind.Family() && (kind.WeaponClass() is not { } weaponClass || item.Class == weaponClass);
+
+    /// <summary>
+    /// The highest upgrade a requirement of this kind may demand. Rings reach
+    /// one higher than everything else; both bounds are the engine's own, so
+    /// the editor can never offer an upgrade a search would reject.
+    /// </summary>
+    public static int MaximumSearchUpgrade(this ItemKind kind) =>
+        kind == ItemKind.Ring ? EngineInfo.MaxUpgradeRing : EngineInfo.MaxUpgradeDefault;
 }
 public enum UpgradeMatch { Any, Exactly, AtLeast }
 public enum TierMatch { Any, Exactly, AtLeast, AtMost }
@@ -60,6 +68,15 @@ public static class Labels
 {
     public static string Kind(ItemKind value) => value switch { ItemKind.Weapon => "Weapons", ItemKind.Armor => "Armor", ItemKind.Wand => "Wands", ItemKind.MeleeWeapon => "Melee weapons", ItemKind.ThrownWeapon => "Thrown weapons", _ => "Rings" };
     public static string Singular(ItemKind value) => Kind(value).TrimEnd('s').ToLowerInvariant();
+    /// <summary>
+    /// A challenge's display name from the engine's document name: the words
+    /// it already carries, with only the first capitalised ("faith_is_my_armor"
+    /// → "Faith is my armor").
+    /// </summary>
+    public static string Challenge(string documentName) =>
+        documentName.Length == 0 ? documentName
+        : char.ToUpperInvariant(documentName[0]) + documentName.Replace('_', ' ')[1..];
+
     public static string Source(ScoutItemSource value) => value switch
     {
         ScoutItemSource.LockedChest => "Locked chest", ScoutItemSource.CrystalChest => "Crystal chest",
@@ -110,10 +127,11 @@ public sealed partial class ItemRequirement
 /// </summary>
 public static class FloorLimits
 {
-    public static readonly int[] EmptyBossFloors = [5, 10, 15];
+    public static IReadOnlyList<int> EmptyBossFloors => EngineInfo.EmptyBossFloors;
 
-    /// <summary>Floors offered by floor-limit selectors: 1..24 minus the empty boss floors.</summary>
-    public static readonly int[] Options = Enumerable.Range(1, 24).Where(f => !EmptyBossFloors.Contains(f)).ToArray();
+    /// <summary>Floors offered by floor-limit selectors: the searchable range minus the empty boss floors.</summary>
+    public static readonly int[] Options =
+        [.. Enumerable.Range(1, EngineInfo.MaxDepth).Where(f => !EngineInfo.EmptyBossFloors.Contains(f))];
 
     /// <summary>Snaps an empty boss-floor limit to the equivalent floor below it (5→4, 10→9, 15→14).</summary>
     public static int Normalize(int depth) => EmptyBossFloors.Contains(depth) ? depth - 1 : depth;

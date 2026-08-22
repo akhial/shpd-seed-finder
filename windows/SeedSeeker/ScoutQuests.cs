@@ -55,8 +55,10 @@ public static class ScoutQuests
     }
 
     /// <summary>
-    /// Validates one wire quest record and maps it to a typed
-    /// <see cref="ScoutQuest"/>. <paramref name="previousQuest"/> is the wire
+    /// Maps one wire quest record to a typed <see cref="ScoutQuest"/>,
+    /// checking only what decoding needs: a known giver, a variant its table
+    /// has, and the block's canonical order.
+    /// <paramref name="previousQuest"/> is the wire
     /// id of the record before it (0 for the first): ids must be strictly
     /// ascending, so each giver appears at most once, in a canonical order.
     /// </summary>
@@ -73,14 +75,9 @@ public static class ScoutQuests
             _ => ImpVariants,
         };
         if (variant < 1 || variant > variants.Length) throw new InvalidDataException("Unknown quest variant in scout packet");
-        var (minimum, maximum) = giver switch
-        {
-            QuestGiver.Ghost => (2, 4),
-            QuestGiver.Wandmaker => (7, 9),
-            QuestGiver.Blacksmith => (12, 14),
-            _ => (17, 19),
-        };
-        if (depth < minimum || depth > maximum) throw new InvalidDataException("Quest depth out of range in scout packet");
+        // The floor a giver may sit on is the engine's own feasibility model,
+        // and this packet came from the engine: re-checking it here would only
+        // mirror a constant that can drift. Decoding takes the depth as given.
         return new(giver, variants[variant - 1], depth);
     }
 

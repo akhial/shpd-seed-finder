@@ -320,11 +320,17 @@ public sealed class NativeEngine
 
 /// <summary>
 /// The engine's own constants, read once from <c>seedfinder_engine_info</c>
-/// instead of mirrored in C#: the pinned upstream version and commit, and the
-/// limits the shared codecs enforce.
+/// instead of mirrored in C#: the pinned upstream version and commit, the
+/// bounds the query validator applies, the boss floors that generate nothing,
+/// and the challenge list with each bit's effect on level generation. Every
+/// value below is the one the engine itself uses, so no editor clamp, floor
+/// selector or import limit here can drift from what a search accepts.
 /// </summary>
 public static class EngineInfo
 {
+    /// <summary>One challenge bit: its document name, its wire mask, and whether it changes level generation.</summary>
+    public sealed record Challenge(string Name, int Mask, bool ChangesLevelGeneration);
+
     private static readonly JsonObject Document =
         JsonNode.Parse(NativeEngine.EngineInfoJson()) as JsonObject
         ?? throw new InvalidOperationException("The engine returned an unreadable info document.");
@@ -335,8 +341,43 @@ public static class EngineInfo
     /// <summary>The upstream commit the reproduction was ported from.</summary>
     public static string ShpdCommit { get; } = Text("shpdCommit");
 
+    /// <summary>The deepest floor a search may cover.</summary>
+    public static int MaxDepth { get; } = Limit("max_depth");
+
+    /// <summary>The tier range an "exactly tier N" requirement may name.</summary>
+    public static int ExactTierMin { get; } = Limit("exact_tier_min");
+    public static int ExactTierMax { get; } = Limit("exact_tier_max");
+
+    /// <summary>The tier range an "at least"/"at most" requirement may name.</summary>
+    public static int BoundedTierMin { get; } = Limit("bounded_tier_min");
+    public static int BoundedTierMax { get; } = Limit("bounded_tier_max");
+
+    /// <summary>The highest same-item group number, so groups run A..this.</summary>
+    public static int IdentityGroupMax { get; } = Limit("identity_group_max");
+
+    /// <summary>The highest upgrade a requirement may demand, by item family.</summary>
+    public static int MaxUpgradeDefault { get; } = Limit("max_upgrade_default");
+    public static int MaxUpgradeRing { get; } = Limit("max_upgrade_ring");
+
+    /// <summary>The number of results a session keeps.</summary>
+    public static int MaxResults { get; } = Limit("max_results");
+
     /// <summary>The import cap the results codec enforces on file text.</summary>
     public static int ResultsFileMaxBytes { get; } = Limit("results_file_max_bytes");
+
+    /// <summary>Boss floors that generate no searchable items, so a floor limit there means the floor below.</summary>
+    public static IReadOnlyList<int> EmptyBossFloors { get; } =
+        [.. (Document["empty_boss_floors"] as JsonArray ?? []).Select(floor => (int?)floor
+            ?? throw new InvalidOperationException("The engine info document has a malformed empty boss floor."))];
+
+    /// <summary>Every challenge bit, in mask order.</summary>
+    public static IReadOnlyList<Challenge> Challenges { get; } =
+        [.. (Document["challenges"] as JsonArray ?? []).Select(entry => entry as JsonObject
+            ?? throw new InvalidOperationException("The engine info document has a malformed challenge."))
+            .Select(challenge => new Challenge(
+                (string?)challenge["name"] ?? throw new InvalidOperationException("A challenge has no name."),
+                (int?)challenge["mask"] ?? throw new InvalidOperationException("A challenge has no mask."),
+                (bool?)challenge["changes_level_generation"] ?? false))];
 
     private static string Text(string key) => (string?)Document[key]
         ?? throw new InvalidOperationException($"The engine info document has no \"{key}\".");

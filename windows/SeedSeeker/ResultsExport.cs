@@ -35,11 +35,6 @@ public static class ResultsExport
         "armored_statue", "shop", "ghost_reward", "wandmaker_reward",
         "blacksmith_reward", "imp_reward",
     ];
-    private static readonly (string Name, int Bit)[] ChallengeNames = [
-        ("on_diet", 1), ("faith_is_my_armor", 2), ("pharmacophobia", 4),
-        ("barren_land", 8), ("swarm_intelligence", 16), ("into_darkness", 32),
-        ("forbidden_runes", 64), ("hostile_champions", 128), ("badder_bosses", 256),
-    ];
 
     /// <exception cref="ResultsExportException">With a user-facing message.</exception>
     public static string Encode(QuerySettings query, IEnumerable<string> seeds, string appVersion)
@@ -99,7 +94,7 @@ public static class ResultsExport
         if (query.ExcludeBlacksmithRewards) output["exclude_blacksmith_rewards"] = true;
         if (WandmakerQuests.DocumentName(query.WandmakerQuest) is string quest) output["wandmaker_quest"] = quest;
         if (query.FastMode) output["fast_mode"] = true;
-        var challenges = ChallengeNames.Where(c => (query.Challenges & c.Bit) != 0).Select(c => c.Name).ToArray();
+        var challenges = EngineInfo.Challenges.Where(c => (query.Challenges & c.Mask) != 0).Select(c => c.Name).ToArray();
         if (challenges.Length != 0)
             output["challenges"] = new JsonArray([.. challenges.Select(name => (JsonNode)name)]);
         return output;
@@ -142,8 +137,7 @@ public static class ResultsExport
         {
             string? name = null;
             if (nameValue is JsonValue nameJson) nameJson.TryGetValue(out name);
-            var match = ChallengeNames.FirstOrDefault(c => c.Name == name);
-            if (match.Name is not null) challenges |= match.Bit;
+            if (EngineInfo.Challenges.FirstOrDefault(c => c.Name == name) is { } match) challenges |= match.Mask;
         }
         return new QuerySettings
         {
