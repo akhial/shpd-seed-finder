@@ -3,22 +3,49 @@ package dev.seedseeker.app.model
 
 import dev.seedseeker.app.catalog.ItemCatalog
 
+/**
+ * Local copies of the engine's query bounds
+ * (`crates/seedfinder-core/src/engine_info.rs`). They stay constants so the
+ * models need nothing from the native library to validate; EngineConstantsTest
+ * asserts each of them against the engine's `engineInfo` document.
+ */
+object SearchLimits {
+    /** Deepest floor a search may cover. */
+    const val MAX_DEPTH = 24
+
+    /** Tiers an "exactly tier N" requirement may name (tier 1 is starting gear). */
+    val EXACT_TIERS: IntRange = 2..5
+
+    /** Tiers an "at least / at most tier N" requirement may name. */
+    val BOUNDED_TIERS: IntRange = 3..4
+
+    /** Highest same-item group number (groups run 1..this, shown as A..D). */
+    const val IDENTITY_GROUP_MAX = 4
+
+    /** Highest upgrade a search may name, for everything but rings. */
+    const val MAX_UPGRADE_DEFAULT = 3
+
+    /** Highest upgrade a ring requirement may name. */
+    const val MAX_UPGRADE_RING = 4
+}
+
 enum class ItemKind(
     val label: String,
     val singularLabel: String,
     val modifierLabel: String?,
+    /** The highest upgrade a search may name for this family. */
     val maximumSearchUpgrade: Int,
 ) {
-    WEAPON("Weapons", "weapon", "Enchantment", 3),
-    ARMOR("Armor", "armor", "Glyph", 3),
-    WAND("Wands", "wand", null, 3),
-    RING("Rings", "ring", null, 4),
+    WEAPON("Weapons", "weapon", "Enchantment", SearchLimits.MAX_UPGRADE_DEFAULT),
+    ARMOR("Armor", "armor", "Glyph", SearchLimits.MAX_UPGRADE_DEFAULT),
+    WAND("Wands", "wand", null, SearchLimits.MAX_UPGRADE_DEFAULT),
+    RING("Rings", "ring", null, SearchLimits.MAX_UPGRADE_RING),
 
     // Wire kind IDs 4 and 5 (the enum ordinal is the wire ID): weapon
     // requirements narrowed to one weapon class. Catalog items always carry
     // the WEAPON family, never a narrowed kind.
-    MELEE_WEAPON("Melee weapons", "melee weapon", "Enchantment", 3),
-    THROWN_WEAPON("Thrown weapons", "thrown weapon", "Enchantment", 3),
+    MELEE_WEAPON("Melee weapons", "melee weapon", "Enchantment", SearchLimits.MAX_UPGRADE_DEFAULT),
+    THROWN_WEAPON("Thrown weapons", "thrown weapon", "Enchantment", SearchLimits.MAX_UPGRADE_DEFAULT),
     ;
 
     /** The broad item family this kind belongs to. */
@@ -70,8 +97,8 @@ data class ItemRequirement(
         val tierable = item == null && kind.family in setOf(ItemKind.WEAPON, ItemKind.ARMOR)
         val validTier = when (tierMatch) {
             TierMatch.ANY -> tier == 0
-            TierMatch.EXACT -> tierable && tier in 2..5
-            TierMatch.AT_LEAST, TierMatch.AT_MOST -> tierable && tier in 3..4
+            TierMatch.EXACT -> tierable && tier in SearchLimits.EXACT_TIERS
+            TierMatch.AT_LEAST, TierMatch.AT_MOST -> tierable && tier in SearchLimits.BOUNDED_TIERS
         }
         require(validTier) {
             "Tier predicate requires a wildcard weapon or armor and a non-redundant tier"
@@ -90,8 +117,12 @@ data class ItemRequirement(
         require(!requireUncursed || modifier !in ItemCatalog.cursesFor(kind)) {
             "An uncursed item cannot have a curse"
         }
-        require(identityGroup == null || identityGroup in 1..4) { "Same-item group must be A..D" }
-        require(maximumDepth == null || maximumDepth in 1..24) { "Item floor limit must be 1..24" }
+        require(identityGroup == null || identityGroup in 1..SearchLimits.IDENTITY_GROUP_MAX) {
+            "Same-item group must be A..${('A'.code + SearchLimits.IDENTITY_GROUP_MAX - 1).toChar()}"
+        }
+        require(maximumDepth == null || maximumDepth in 1..SearchLimits.MAX_DEPTH) {
+            "Item floor limit must be 1..${SearchLimits.MAX_DEPTH}"
+        }
     }
 
     val description: String
@@ -151,8 +182,8 @@ enum class UpgradeMatch(val label: String) {
  */
 val EMPTY_BOSS_FLOORS: Set<Int> = setOf(5, 10, 15)
 
-/** Floors offered by floor-limit selectors: 1..24 minus the empty boss floors. */
-val FLOOR_LIMIT_OPTIONS: List<Int> = (1..24).filterNot(EMPTY_BOSS_FLOORS::contains)
+/** Floors offered by floor-limit selectors: 1..MAX_DEPTH minus the empty boss floors. */
+val FLOOR_LIMIT_OPTIONS: List<Int> = (1..SearchLimits.MAX_DEPTH).filterNot(EMPTY_BOSS_FLOORS::contains)
 
 /** Snaps an empty boss-floor limit to the equivalent floor below it (5→4, 10→9, 15→14). */
 fun normalizeFloorLimit(depth: Int): Int = if (depth in EMPTY_BOSS_FLOORS) depth - 1 else depth
@@ -196,7 +227,7 @@ enum class WandmakerQuest(val variant: ScoutQuestVariant, val documentName: Stri
 
 data class SearchRequest(
     val requirements: List<ItemRequirement>,
-    val maximumDepth: Int = 24,
+    val maximumDepth: Int = SearchLimits.MAX_DEPTH,
     val challenges: Int = 0,
     val requireBlacksmith: Boolean = false,
     /** Prevent the Blacksmith's 2,000-favor Smith choice from satisfying item requirements. */
@@ -212,7 +243,7 @@ data class SearchRequest(
 ) {
     init {
         require(requirements.isNotEmpty()) { "At least one requirement is needed" }
-        require(maximumDepth in 1..24) { "Maximum floor must be 1..24" }
+        require(maximumDepth in 1..SearchLimits.MAX_DEPTH) { "Maximum floor must be 1..${SearchLimits.MAX_DEPTH}" }
         require(challenges in 0..Challenge.ALL_MASK) { "Challenge mask must be 0..${Challenge.ALL_MASK}" }
     }
 }
@@ -234,6 +265,7 @@ enum class Challenge(
     ;
 
     companion object {
+        /** Every challenge bit together: the largest legal challenge mask. */
         const val ALL_MASK = 511
     }
 }

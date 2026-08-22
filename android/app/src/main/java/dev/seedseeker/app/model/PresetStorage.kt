@@ -65,7 +65,7 @@ class PresetStorage(private val preferences: SharedPreferences) {
     private fun decodeQuery(value: JSONObject): PresetQuery {
         val maximumDepth = value.getInt("maximumDepth")
         val challenges = value.optInt("challenges", 0)
-        require(maximumDepth in 1..24 && challenges in 0..Challenge.ALL_MASK)
+        require(maximumDepth in 1..SearchLimits.MAX_DEPTH && challenges in 0..Challenge.ALL_MASK)
         val encodedRequirements = value.getJSONArray("requirements")
         val requirements = buildList {
             for (index in 0 until encodedRequirements.length()) {
