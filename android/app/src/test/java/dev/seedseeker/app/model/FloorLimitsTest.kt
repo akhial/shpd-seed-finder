@@ -16,6 +16,8 @@ class FloorLimitsTest {
     @Test
     fun theEngineNamesTheEmptyBossFloorsAndTheGeneratingChallenges() {
         assertEquals(setOf(5, 10, 15), EMPTY_BOSS_FLOORS)
+        // Every challenge bit the engine lists, OR-ed together.
+        assertEquals(511, Challenge.ALL_MASK)
         assertEquals(
             listOf(Challenge.NO_HERBALISM, Challenge.DARKNESS, Challenge.NO_SCROLLS),
             Challenge.entries.filter { it.changesLevelGeneration },

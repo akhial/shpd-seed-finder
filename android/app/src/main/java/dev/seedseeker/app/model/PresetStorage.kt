@@ -3,6 +3,7 @@ package dev.seedseeker.app.model
 
 import android.content.SharedPreferences
 import dev.seedseeker.app.catalog.ItemCatalog
+import dev.seedseeker.app.engine.EngineInfo
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -65,7 +66,7 @@ class PresetStorage(private val preferences: SharedPreferences) {
     private fun decodeQuery(value: JSONObject): PresetQuery {
         val maximumDepth = value.getInt("maximumDepth")
         val challenges = value.optInt("challenges", 0)
-        require(maximumDepth in 1..24 && challenges in 0..Challenge.ALL_MASK)
+        require(maximumDepth in 1..EngineInfo.maxDepth && challenges in 0..Challenge.ALL_MASK)
         val encodedRequirements = value.getJSONArray("requirements")
         val requirements = buildList {
             for (index in 0 until encodedRequirements.length()) {

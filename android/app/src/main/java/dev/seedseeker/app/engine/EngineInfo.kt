@@ -68,15 +68,18 @@ object EngineInfo {
     /** Whether a challenge bit changes level generation, and so the seeds a search finds. */
     fun changesLevelGeneration(mask: Int): Boolean = generatingChallengeMask and mask != 0
 
+    /** Every challenge bit the engine knows, as one mask. */
+    val allChallengesMask: Int by lazy { challengeMask { true } }
+
     private val generatingChallengeMask: Int by lazy {
+        challengeMask { it.getBoolean("changes_level_generation") }
+    }
+
+    private fun challengeMask(include: (JSONObject) -> Boolean): Int {
         val challenges = document.getJSONArray("challenges")
-        (0 until challenges.length()).fold(0) { mask, index ->
+        return (0 until challenges.length()).fold(0) { mask, index ->
             val challenge = challenges.getJSONObject(index)
-            if (challenge.getBoolean("changes_level_generation")) {
-                mask or challenge.getInt("mask")
-            } else {
-                mask
-            }
+            if (include(challenge)) mask or challenge.getInt("mask") else mask
         }
     }
 }

@@ -696,7 +696,9 @@ object ScoutResultCodec {
                     "Unknown catalog item '$stableId' in native scout packet"
                 }
                 val depth = input.readUnsignedByte()
-                check(depth in 1..24) { "Scout item depth must be 1..24" }
+                check(depth in 1..EngineInfo.maxDepth) {
+                    "Scout item depth must be 1..${EngineInfo.maxDepth}"
+                }
                 val upgrade = input.readUnsignedByte()
                 check(upgrade in 0..catalogItem.kind.maximumSearchUpgrade) {
                     "Scout item upgrade must be 0..${catalogItem.kind.maximumSearchUpgrade}"

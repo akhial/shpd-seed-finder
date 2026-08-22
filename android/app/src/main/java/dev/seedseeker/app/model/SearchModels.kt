@@ -250,7 +250,8 @@ enum class Challenge(
         get() = EngineInfo.changesLevelGeneration(bit)
 
     companion object {
-        const val ALL_MASK = 511
+        /** Every challenge bit, as the engine's own challenge list names them. */
+        val ALL_MASK: Int get() = EngineInfo.allChallengesMask
     }
 }
 
