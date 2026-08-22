@@ -1,6 +1,8 @@
 import init, {
   analyze_query,
+  decode_results_file,
   decode_share_text,
+  encode_results_file,
   encode_share_link,
   engine_info,
   format_seed_code,
@@ -61,4 +63,42 @@ export async function encodeShareLink(queryJson: string): Promise<string> {
 export async function decodeShareText(text: string): Promise<string> {
   await initEngine()
   return decode_share_text(text)
+}
+
+/**
+ * Parses a canonical seed code into `{code, value}` using the engine's own
+ * base-26 seed semantics.
+ *
+ * Synchronous, like `queryContinues`: the results-import path turns a whole
+ * decoded file into seeds in one synchronous step. Callers must have awaited
+ * `initEngine()`.
+ */
+export function parseSeedCodeSync(input: string): ParsedSeed {
+  return JSON.parse(parse_seed_code(input)) as ParsedSeed
+}
+
+/**
+ * The engine's results-file encoder. `requestJson` is
+ * `{"query", "seeds", "app_version"}`; the answer is the file text. Throws
+ * with the codec's own message for an invalid query or seed code.
+ *
+ * Synchronous, like `queryContinues`, because export and import both sit on
+ * synchronous UI paths. Callers must have awaited `initEngine()`.
+ */
+export function encodeResultsFileText(requestJson: string): string {
+  return encode_results_file(requestJson)
+}
+
+/**
+ * The engine's results-file decoder, answering
+ * `{"query", "seeds", "dropped", "app_version", "shpd_version"}` as JSON. The
+ * seeds arrive deduplicated and capped, and the 2 MiB import limit, the
+ * envelope rules and the query validation are all the engine's. Throws with
+ * the codec's own message for an unusable file.
+ *
+ * Synchronous, like `queryContinues`. Callers must have awaited
+ * `initEngine()`.
+ */
+export function decodeResultsFileText(contents: string): string {
+  return decode_results_file(contents)
 }
