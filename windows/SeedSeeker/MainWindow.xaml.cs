@@ -560,7 +560,7 @@ public sealed partial class MainWindow : Window
         // the whole range without touching the Target — continuing the
         // previous detached scan when that is sound. None of this is a user
         // decision; only Clear Results discards anything.
-        switch (SearchPlan.DecideStart(query, target, lastRunDetached ? baseRun?.Query : null))
+        switch (NativeEngine.DecideStart(query, target, lastRunDetached ? baseRun?.Query : null))
         {
             case StartMode.TargetRefine: await RefineTarget(target!, resume: true); return;
             case StartMode.TargetFilter: await RefineTarget(target!, resume: false); return;

@@ -19,6 +19,7 @@ internal static partial class Native
     [LibraryImport(Library)] internal static partial int seedfinder_scout_matches(byte[] request, nuint length, byte[] query, nuint queryLength, out nint packet, out nuint outputLength);
     [LibraryImport(Library)] internal static partial int seedfinder_filter_seeds(byte[] request, nuint length, ulong[] seeds, nuint seedsLength, out nint packet, out nuint outputLength);
     [LibraryImport(Library)] internal static partial int seedfinder_query_continues(byte[] candidate, nuint candidateLength, byte[] baseline, nuint baselineLength);
+    [LibraryImport(Library)] internal static partial int seedfinder_decide_start(byte[] candidate, nuint candidateLength, byte[]? target, nuint targetLength, int targetSetEmpty, int targetHasUncoveredSeeds, byte[]? detachedBase, nuint detachedBaseLength, out nint packet, out nuint outputLength);
     [LibraryImport(Library)] internal static partial int seedfinder_share_encode(byte[] queryJson, nuint length, out nint packet, out nuint outputLength);
     [LibraryImport(Library)] internal static partial int seedfinder_share_decode(byte[] text, nuint length, out nint packet, out nuint outputLength);
     [LibraryImport(Library)] internal static partial int seedfinder_results_encode(byte[] request, nuint length, out nint packet, out nuint outputLength);
@@ -135,6 +136,48 @@ public sealed class NativeEngine
             w.U8(r.Source is null ? 0 : (int)r.Source + 1); w.U8(r.IdentityGroup ?? 0); w.U8(r.MaximumDepth ?? 0); w.U8(r.RequireUncursed ? 1 : 0);
         }
         return w.Finish();
+    }
+
+    /// <summary>
+    /// What pressing Start Search must do with <paramref name="query"/>, per
+    /// docs/search-semantics.md. The Target Set is the anchor: a continuation
+    /// of the Target Query refines it, a query sharing an item filters it, and
+    /// anything else scans the full range without touching it — continuing the
+    /// previous detached scan when that is sound.
+    ///
+    /// The engine decides. <c>seedfinder_decide_start</c> is handed both
+    /// encoded queries, whether the Target Set is empty and whether the target
+    /// still has uncovered seeds, so the continuation predicate that gates a
+    /// resumed scan and the dispatch built on it can never disagree.
+    /// </summary>
+    /// <param name="target">The session's Target, if one has been established.</param>
+    /// <param name="lastDetachedQuery">The query of the previous run when that
+    /// run was a detached scan that concluded (completed or cancelled), null
+    /// otherwise. Only such a run may be continued by a query unrelated to the
+    /// Target; a failed run is never a continuation base.</param>
+    public static StartMode DecideStart(QuerySettings query, TargetRun? target, QuerySettings? lastDetachedQuery = null)
+    {
+        var candidate = EncodeQuery(query);
+        var targetPacket = target is null ? null : EncodeQuery(target.Query);
+        var detachedPacket = lastDetachedQuery is null ? null : EncodeQuery(lastDetachedQuery);
+        var code = Native.seedfinder_decide_start(
+            candidate, (nuint)candidate.Length,
+            targetPacket, (nuint)(targetPacket?.Length ?? 0),
+            target is { Seeds.Count: 0 } ? 1 : 0,
+            target is { Remaining: > 0 } ? 1 : 0,
+            detachedPacket, (nuint)(detachedPacket?.Length ?? 0),
+            out var ptr, out var len);
+        if (code != 0) throw new InvalidOperationException($"Native start decision failed ({code}).");
+        var decision = Encoding.UTF8.GetString(CopyAndFree(ptr, len));
+        return decision switch
+        {
+            "anchor" => StartMode.Anchor,
+            "target-refine" => StartMode.TargetRefine,
+            "target-filter" => StartMode.TargetFilter,
+            "continue-detached" => StartMode.ContinueDetached,
+            "detached" => StartMode.Detached,
+            _ => throw new InvalidDataException($"Unknown start decision \"{decision}\""),
+        };
     }
 
     /// <summary>The SSQ2 request naming one scouted world; scouting it is deterministic.</summary>
