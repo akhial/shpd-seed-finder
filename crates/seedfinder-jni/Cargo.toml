@@ -12,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 jni = { version = "0.21.1", default-features = false }
+shpd-seedfinder-core = { path = "../seedfinder-core", features = ["json-query"] }
 shpd-seedfinder-session = { path = "../seedfinder-session" }
 
 [lints]

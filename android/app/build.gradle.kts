@@ -71,8 +71,11 @@ android {
         disable += setOf("GradleDependency", "AndroidGradlePluginVersion")
     }
 
-    // Debug builds use DemoNativeSeedFinder and must not pick up stale release JNI outputs.
-    sourceSets.getByName("release").jniLibs.directories.add("build/generated/jniLibs")
+    // Every APK packages the Rust library. Release runs the whole engine
+    // through it; debug keeps DemoNativeSeedFinder as its search engine but
+    // still routes the share-link codec through the canonical Rust
+    // implementation, so wire formats are never re-derived in Kotlin.
+    sourceSets.getByName("main").jniLibs.directories.add("build/generated/jniLibs")
 }
 
 val rustJniOutput = layout.buildDirectory.dir("generated/jniLibs")
@@ -96,7 +99,9 @@ val buildRustJni by tasks.registering(Exec::class) {
     outputs.dir(rustJniOutput)
 }
 
-tasks.matching { it.name == "mergeReleaseJniLibFolders" }.configureEach {
+tasks.matching {
+    it.name == "mergeDebugJniLibFolders" || it.name == "mergeReleaseJniLibFolders"
+}.configureEach {
     dependsOn(buildRustJni)
 }
 

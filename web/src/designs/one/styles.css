@@ -16,6 +16,11 @@
   --d1-amber-dim: rgba(255, 255, 85, 0.14);
   --d1-amber-fill: rgb(255, 255, 85);
   --d1-danger: #d96c5f;
+  /* Solid danger fill and its edge, shared by Cancel Search and the
+     full-bleed share-link error. */
+  --d1-danger-fill: rgb(141, 54, 51);
+  --d1-danger-edge: rgb(178, 87, 65);
+  --d1-danger-fill-hover: rgb(158, 68, 64);
   --d1-accent: rgb(86, 189, 82);
   --d1-accent-hover: rgb(99, 202, 95);
   --d1-accent-border: #3f9a3c;
@@ -453,13 +458,13 @@ body {
 
 .d1-btn-danger {
   color: #fff;
-  background: rgb(141, 54, 51);
-  border-color: rgb(178, 87, 65);
+  background: var(--d1-danger-fill);
+  border-color: var(--d1-danger-edge);
 }
 
 .d1-btn-danger:hover:not(:disabled) {
-  background: rgb(158, 68, 64);
-  border-color: rgb(178, 87, 65);
+  background: var(--d1-danger-fill-hover);
+  border-color: var(--d1-danger-edge);
 }
 
 .d1-btn-big {
@@ -1118,6 +1123,40 @@ input[type='range']::-moz-range-thumb {
   color: var(--d1-text-2);
   background: var(--d1-raised);
   border: 1px solid var(--d1-border-strong);
+}
+
+/* A banner with a trailing dismiss control (share-link errors). */
+.d1-banner:has(.d1-banner-dismiss) {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* The share-link error spans the query pane, which carries no padding of its
+   own — so like the impossible-search warning it is a solid full-bleed band
+   on the section grid, not an inset card like the results-pane banners. It
+   takes the Cancel Search red: the one alarming colour in the palette. */
+.d1-banner-bleed {
+  padding: 12px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--d1-danger-edge);
+  border-radius: 0;
+  color: #fff;
+  background: var(--d1-danger-fill);
+}
+
+.d1-banner-dismiss {
+  display: inline-flex;
+  padding: 1px;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.d1-banner-dismiss:hover {
+  opacity: 1;
 }
 
 .d1-results-empty {

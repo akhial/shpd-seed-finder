@@ -2,6 +2,7 @@
 package dev.seedseeker.app.ui
 
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
@@ -44,6 +45,7 @@ import dev.seedseeker.app.engine.NativeSeedFinder
 import dev.seedseeker.app.engine.SeedCode
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.Challenge
+import dev.seedseeker.app.model.DeepLink
 import dev.seedseeker.app.model.BuiltInPresets
 import dev.seedseeker.app.model.PresetQuery
 import dev.seedseeker.app.model.PresetStorage
@@ -100,8 +102,19 @@ private data class SearchRun(
 
 private data class ScoutRun(val id: Long, val seed: String, val challenges: Int)
 
+/**
+ * Link text received through an incoming intent. A plain class, not a data
+ * class: every arrival is a fresh instance so re-tapping the same link still
+ * re-applies it.
+ */
+class SharedLink(val text: String)
+
 @Composable
-fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
+fun SeedFinderApp(
+    engine: NativeSeedFinder,
+    fakeLatestVersion: String? = null,
+    sharedLink: SharedLink? = null,
+) {
     val context = LocalContext.current
     val atlas = remember(context) {
         runCatching {
@@ -178,6 +191,7 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
     // Survives the activity recreation a document picker can trigger.
     var pendingExport by rememberSaveable { mutableStateOf<String?>(null) }
     var transferError by remember { mutableStateOf<String?>(null) }
+    var linkError by remember { mutableStateOf<String?>(null) }
     var importNotice by remember { mutableStateOf<String?>(null) }
     // The query that produced the current results, snapshotted at search
     // start (or import) so an export never reflects later editor changes.
@@ -281,6 +295,35 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
             }.onFailure { failure ->
                 transferError = failure.message ?: "The results file could not be imported."
             }
+        }
+    }
+
+    LaunchedEffect(sharedLink) {
+        val text = sharedLink?.text ?: return@LaunchedEffect
+        // App Links deliver every URL on the host; only ones that carry a
+        // share code touch the query.
+        val code = DeepLink.extractCode(text) ?: return@LaunchedEffect
+        if (isSearching) {
+            linkError = "Stop the search before opening a shared search."
+            return@LaunchedEffect
+        }
+        runCatching { DeepLink.decode(code) }.onSuccess { query ->
+            requirements = query.requirements.map { it.copy(key = nextRequirementKey++) }
+            maximumDepth = query.maximumDepth
+            requireBlacksmith = query.requireBlacksmith
+            excludeBlacksmithRewards = query.excludeBlacksmithRewards
+            wandmakerQuest = query.wandmakerQuest
+            fastMode = query.fastMode
+            challenges = query.challenges
+            preferences.edit().putInt(CHALLENGES_KEY, challenges).apply()
+            results = emptyList()
+            searchedQuery = null
+            searchStatus = null
+            searchError = null
+            importNotice = "Loaded shared search"
+            destination = Destination.FINDER
+        }.onFailure { failure ->
+            linkError = failure.message ?: "This shared search link could not be read."
         }
     }
 
@@ -702,6 +745,28 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                         arrayOf("application/json", "text/plain", "application/octet-stream"),
                     )
                 },
+                onShareQuery = {
+                    runCatching {
+                        DeepLink.encodeLink(
+                            PresetQuery(
+                                requirements = requirements,
+                                maximumDepth = maximumDepth,
+                                requireBlacksmith = requireBlacksmith,
+                                excludeBlacksmithRewards = excludeBlacksmithRewards,
+                                wandmakerQuest = wandmakerQuest,
+                                fastMode = fastMode,
+                                challenges = challenges,
+                            ),
+                        )
+                    }.onSuccess { link ->
+                        val send = Intent(Intent.ACTION_SEND)
+                            .setType("text/plain")
+                            .putExtra(Intent.EXTRA_TEXT, link)
+                        context.startActivity(Intent.createChooser(send, "Share search"))
+                    }.onFailure { failure ->
+                        linkError = failure.message ?: "This search could not be shared."
+                    }
+                },
                 onScoutSeed = ::scoutSeed,
                 bottomBar = navBar,
             )
@@ -812,6 +877,17 @@ fun SeedFinderApp(engine: NativeSeedFinder, fakeLatestVersion: String? = null) {
                 text = { Text(message) },
                 confirmButton = {
                     TextButton(onClick = { transferError = null }) { Text("OK") }
+                },
+            )
+        }
+
+        linkError?.let { message ->
+            AlertDialog(
+                onDismissRequest = { linkError = null },
+                title = { Text("Shared search") },
+                text = { Text(message) },
+                confirmButton = {
+                    TextButton(onClick = { linkError = null }) { Text("OK") }
                 },
             )
         }

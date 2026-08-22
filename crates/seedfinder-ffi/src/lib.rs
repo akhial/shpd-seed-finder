@@ -5,6 +5,7 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 
+use shpd_seedfinder_core::{deep_link, json_query};
 use shpd_seedfinder_session::{
     FilterPacketError, NativeSession, ScoutCallError, ScoutPacketError, SearchError,
     StartSessionError, close_session, production_filter_packet, production_scout_packet,
@@ -264,6 +265,65 @@ pub extern "C" fn seedfinder_scout(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn seedfinder_share_encode(
+    query_json: *const u8,
+    query_json_len: usize,
+    out_packet: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    clear_outputs(out_packet, out_len);
+    catch_unwind(AssertUnwindSafe(|| {
+        if out_packet.is_null() || out_len.is_null() {
+            return INVALID;
+        }
+        let Some(bytes) = request_slice(query_json, query_json_len) else {
+            return INVALID;
+        };
+        let Ok(document) = std::str::from_utf8(bytes) else {
+            return INVALID;
+        };
+        let Ok(query) = json_query::decode(document) else {
+            return INVALID;
+        };
+        match deep_link::encode_link(&query) {
+            Ok(link) => return_packet(link.into_bytes(), out_packet, out_len),
+            Err(_) => INVALID,
+        }
+    }))
+    .unwrap_or(INTERNAL)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn seedfinder_share_decode(
+    text: *const u8,
+    text_len: usize,
+    out_packet: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    clear_outputs(out_packet, out_len);
+    catch_unwind(AssertUnwindSafe(|| {
+        if out_packet.is_null() || out_len.is_null() {
+            return INVALID;
+        }
+        let Some(bytes) = request_slice(text, text_len) else {
+            return INVALID;
+        };
+        let Ok(text) = std::str::from_utf8(bytes) else {
+            return INVALID;
+        };
+        match deep_link::decode_text(text) {
+            Ok(query) => return_packet(
+                json_query::encode(&query).to_string().into_bytes(),
+                out_packet,
+                out_len,
+            ),
+            Err(_) => INVALID,
+        }
+    }))
+    .unwrap_or(INTERNAL)
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn seedfinder_buffer_free(pointer: *mut u8, len: usize) {
     let _ = catch_unwind(AssertUnwindSafe(|| {
         if pointer.is_null() {
@@ -467,6 +527,59 @@ mod tests {
                 seeds.as_ptr(),
                 seeds.len(),
                 &raw mut pointer,
+                &raw mut len
+            ),
+            INVALID
+        );
+    }
+
+    #[test]
+    fn share_links_round_trip_and_reject_garbage() {
+        let document = br#"{"requirements":[{"item":"wand_fireblast","upgrade":{"at_least":3}}]}"#;
+        let mut pointer = ptr::null_mut();
+        let mut len = 0;
+        assert_eq!(
+            seedfinder_share_encode(
+                document.as_ptr(),
+                document.len(),
+                &raw mut pointer,
+                &raw mut len
+            ),
+            OK
+        );
+        let link = unsafe { take_packet(pointer, len) };
+        assert_eq!(
+            std::str::from_utf8(&link).unwrap(),
+            "https://shpd-seed-seeker.web.app/#q=EAGWhMA"
+        );
+        assert_eq!(
+            seedfinder_share_decode(link.as_ptr(), link.len(), &raw mut pointer, &raw mut len),
+            OK
+        );
+        let decoded = unsafe { take_packet(pointer, len) };
+        // Decoding returns the canonical document, which spells out the kind.
+        assert_eq!(
+            std::str::from_utf8(&decoded).unwrap(),
+            r#"{"requirements":[{"item":"wand_fireblast","kind":"wand","upgrade":{"at_least":3}}]}"#
+        );
+
+        assert_eq!(
+            seedfinder_share_encode(b"not json".as_ptr(), 8, &raw mut pointer, &raw mut len),
+            INVALID
+        );
+        assert_eq!(
+            seedfinder_share_decode(b"!!!".as_ptr(), 3, &raw mut pointer, &raw mut len),
+            INVALID
+        );
+        assert_eq!(
+            seedfinder_share_decode(ptr::null(), 0, &raw mut pointer, &raw mut len),
+            INVALID
+        );
+        assert_eq!(
+            seedfinder_share_encode(
+                document.as_ptr(),
+                document.len(),
+                ptr::null_mut(),
                 &raw mut len
             ),
             INVALID

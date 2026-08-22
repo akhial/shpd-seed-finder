@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '@tanstack/react-store'
 import { formatSeedInput } from '../../lib/format'
-import { toQueryDocument, toQueryJson, validateQuery } from '../../lib/query'
+import { fromQueryJson, toQueryDocument, toQueryJson, validateQuery } from '../../lib/query'
 import { resultPosition, stepResult } from '../../lib/scout-nav'
 import { SearchCoordinator, scoutSeed, searchStore } from '../../lib/search/coordinator'
+import { hasShareCode, withoutFragment } from '../../lib/share-link'
 import { queryStore, workerCountStore } from '../../lib/store'
-import { analyzeQuery, getEngineInfo, parseSeedCode } from '../../lib/wasm'
+import { analyzeQuery, decodeShareText, getEngineInfo, parseSeedCode } from '../../lib/wasm'
 import type { AnalysisResult, EngineInfo, ScoutResult } from '../../lib/wasm/types'
 import { DownloadMenu } from './DownloadMenu'
 import { QueryPanel } from './QueryPanel'
@@ -48,6 +49,38 @@ export default function App() {
       .catch(() => undefined)
     return () => {
       active = false
+    }
+  }, [])
+
+  // A share link (#q=CODE) populates the query form, then leaves a clean
+  // address bar so reloads and manually copied URLs don't re-apply it. The
+  // hashchange listener covers links opened into an already-loaded tab, where
+  // the browser navigates without reloading.
+  const [shareNotice, setShareNotice] = useState<string | undefined>(undefined)
+  useEffect(() => {
+    let active = true
+    const openShareLink = () => {
+      if (!hasShareCode(window.location.hash)) return
+      decodeShareText(window.location.href)
+        .then((json) => {
+          if (!active) return
+          if (searchStore.state.state === 'running') {
+            throw new Error('a search is running — stop it first')
+          }
+          queryStore.setState(() => fromQueryJson(json))
+        })
+        .catch((error: unknown) => {
+          if (active) setShareNotice(error instanceof Error ? error.message : String(error))
+        })
+        .finally(() => {
+          if (active) window.history.replaceState(null, '', withoutFragment(window.location.href))
+        })
+    }
+    openShareLink()
+    window.addEventListener('hashchange', openShareLink)
+    return () => {
+      active = false
+      window.removeEventListener('hashchange', openShareLink)
     }
   }, [])
 
@@ -346,6 +379,8 @@ export default function App() {
             engineReady={engine !== undefined}
             onToggleSearch={toggleSearch}
             isMac={isMac}
+            shareNotice={shareNotice}
+            onDismissShareNotice={() => setShareNotice(undefined)}
           />
         </section>
         <section className={paneClass('results')} aria-label="Search results">

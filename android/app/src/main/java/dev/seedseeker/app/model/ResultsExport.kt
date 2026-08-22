@@ -115,7 +115,8 @@ object ResultsExport {
         return Imported(query, seeds, document.opt("shpd_version") as? String)
     }
 
-    private fun encodeQuery(query: PresetQuery) = JSONObject().apply {
+    /** The query half of the document; [DeepLink] shares it with the Rust codec. */
+    internal fun encodeQuery(query: PresetQuery) = JSONObject().apply {
         put(
             "requirements",
             JSONArray().apply { query.requirements.forEach { put(encodeRequirement(it)) } },
@@ -152,7 +153,7 @@ object ResultsExport {
         requirement.maximumDepth?.let { put("max_depth", it) }
     }
 
-    private fun decodeQuery(value: JSONObject): PresetQuery {
+    internal fun decodeQuery(value: JSONObject): PresetQuery {
         for (key in value.keys()) {
             require(key in QUERY_KEYS) {
                 "The query in this results file uses an unknown field \"$key\". " +
