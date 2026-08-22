@@ -8,6 +8,7 @@ import dev.seedseeker.app.model.SearchState
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -153,6 +154,26 @@ class JniNativeSeedFinderTest {
         assertTrue(bindings.continuesBase.contentEquals(QueryCodec.encode(base)))
     }
 
+    @Test
+    fun decideStartPassesTheSessionStateThroughAndReturnsTheEnginesName() {
+        // The decision itself is the engine's (RefinePlanTest asserts it against the real
+        // library); this pins which packet is which and that absent queries travel as null.
+        val bindings = RecordingBindings()
+        val finder = JniNativeSeedFinder(bindings)
+        val candidate = SearchRequest(listOf(ItemRequirement(1, ItemCatalog.wands.first(), 1, null)))
+        val target = SearchRequest(listOf(ItemRequirement(2, ItemCatalog.rings.first(), 2, null)))
+
+        assertEquals("target-filter", finder.decideStart(candidate, target, false, true, null))
+        assertTrue(bindings.decideStartCandidate.contentEquals(QueryCodec.encode(candidate)))
+        assertTrue(bindings.decideStartTarget!!.contentEquals(QueryCodec.encode(target)))
+        assertNull(bindings.decideStartDetachedBase)
+        assertArrayEquals(booleanArrayOf(false, true), bindings.decideStartFlags)
+
+        finder.decideStart(candidate, null, true, false, target)
+        assertNull(bindings.decideStartTarget)
+        assertTrue(bindings.decideStartDetachedBase!!.contentEquals(QueryCodec.encode(target)))
+    }
+
     private class RecordingBindings : NativeBindings {
         var request = byteArrayOf()
         var statusPacket = longArrayOf(1, 123, 456, 0, 0.125.toBits())
@@ -164,6 +185,10 @@ class JniNativeSeedFinderTest {
         var filterValues = longArrayOf()
         var scoutMatchRequest = byteArrayOf()
         var scoutMatchQuery = byteArrayOf()
+        var decideStartCandidate = byteArrayOf()
+        var decideStartTarget: ByteArray? = byteArrayOf()
+        var decideStartDetachedBase: ByteArray? = byteArrayOf()
+        var decideStartFlags = booleanArrayOf()
         var continuesCandidate = byteArrayOf()
         var continuesBase = byteArrayOf()
         var cancelCalls = 0
@@ -234,6 +259,20 @@ class JniNativeSeedFinderTest {
             continuesCandidate = candidate.copyOf()
             continuesBase = base.copyOf()
             return true
+        }
+
+        override fun decideStart(
+            candidate: ByteArray,
+            target: ByteArray?,
+            targetSetEmpty: Boolean,
+            targetHasUncoveredSeeds: Boolean,
+            detachedBase: ByteArray?,
+        ): ByteArray {
+            decideStartCandidate = candidate.copyOf()
+            decideStartTarget = target?.copyOf()
+            decideStartDetachedBase = detachedBase?.copyOf()
+            decideStartFlags = booleanArrayOf(targetSetEmpty, targetHasUncoveredSeeds)
+            return "target-filter".encodeToByteArray()
         }
 
         override fun filterSeeds(request: ByteArray, seeds: LongArray): ByteArray {
