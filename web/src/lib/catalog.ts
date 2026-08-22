@@ -2,14 +2,16 @@ import catalogJson from '../generated/catalog.json'
 import type { ChallengeName, ItemCategory, ItemSource, RequirementKind, WeaponClass } from './wasm/types'
 
 export interface CatalogItem { id: string; name: string; type: ItemCategory; class?: WeaponClass; tier?: number; sprite: number }
+interface CatalogModifiers {
+  weaponEnchantments: string[]
+  weaponCurses: string[]
+  armorGlyphs: string[]
+  armorCurses: string[]
+}
 interface CatalogDocument {
   entries: CatalogItem[]
-  modifiers?: {
-    weaponEnchantments?: string[]
-    weaponCurses?: string[]
-    armorGlyphs?: string[]
-    armorCurses?: string[]
-  }
+  /** Required: the effect tables are the game's, never restated here. */
+  modifiers: CatalogModifiers
 }
 
 const catalog = catalogJson as CatalogDocument
@@ -36,17 +38,17 @@ export const itemsForKind = (kind: RequirementKind): CatalogItem[] => {
 export const getItem = (id: string): CatalogItem | undefined => lookup.get(id)
 export const displayItemName = (id: string): string => getItem(id)?.name ?? id.replaceAll('_', ' ')
 
-const fallback = {
-  weaponEnchantments: ['Blazing', 'Chilling', 'Kinetic', 'Shocking', 'Blocking', 'Blooming', 'Elastic', 'Lucky', 'Projecting', 'Unstable', 'Corrupting', 'Grim', 'Vampiric'],
-  weaponCurses: ['Annoying', 'Displacing', 'Dazzling', 'Explosive', 'Sacrificial', 'Wayward', 'Polarized', 'Friendly'],
-  armorGlyphs: ['Obfuscation', 'Swiftness', 'Viscosity', 'Potential', 'Brimstone', 'Stone', 'Entanglement', 'Repulsion', 'Camouflage', 'Flow', 'Affection', 'Anti-Magic', 'Thorns'],
-  armorCurses: ['Anti-Entropy', 'Corrosion', 'Displacement', 'Metabolism', 'Multiplicity', 'Stench', 'Overgrowth', 'Bulk'],
+// The effect tables are generated from the game itself; a catalog without
+// them is a broken build, not something to paper over with a stale copy.
+const modifiers: CatalogModifiers | undefined = catalog.modifiers
+if (!modifiers) {
+  throw new Error('src/generated/catalog.json is missing its "modifiers" effect tables — rebuild it with scripts/build-web-wasm.sh.')
 }
 
-export const weaponEnchantments = catalog.modifiers?.weaponEnchantments ?? fallback.weaponEnchantments
-export const weaponCurses = catalog.modifiers?.weaponCurses ?? fallback.weaponCurses
-export const armorGlyphs = catalog.modifiers?.armorGlyphs ?? fallback.armorGlyphs
-export const armorCurses = catalog.modifiers?.armorCurses ?? fallback.armorCurses
+export const weaponEnchantments = modifiers.weaponEnchantments
+export const weaponCurses = modifiers.weaponCurses
+export const armorGlyphs = modifiers.armorGlyphs
+export const armorCurses = modifiers.armorCurses
 const weaponish = (category: string): boolean =>
   category === 'weapon' || category === 'melee_weapon' || category === 'thrown_weapon'
 export const effectNamesForCategory = (category: string): string[] => weaponish(category)

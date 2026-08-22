@@ -1,11 +1,23 @@
-import { describe, expect, it } from 'vitest'
+import { readFile } from 'node:fs/promises'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { defaultQueryState, validateQuery } from './query'
 import type { QueryState, RequirementState } from './wasm/types'
+import { engineInfo } from './wasm'
+import init from './wasm/pkg/seedfinder.js'
 
 const requirement = (patch: Partial<RequirementState> = {}): RequirementState => ({
   kind: 'weapon', tier: { mode: 'any', value: 3 }, upgrade: { mode: 'any', value: 1 }, uncursed: false, ...patch,
 })
 const state = (...requirements: RequirementState[]): QueryState => ({ ...defaultQueryState(), requirements })
+
+/**
+ * The validation bounds and the floor list are engine constants read through
+ * `engineInfo()`, so these tests run against the real wasm module. Node has no
+ * `fetch` for `file:` URLs, so it is instantiated from bytes.
+ */
+beforeAll(async () => {
+  await init({ module_or_path: await readFile(new URL('./wasm/pkg/seedfinder_bg.wasm', import.meta.url)) })
+})
 
 describe('query validation', () => {
   it('rejects a tier on an item-specific requirement', () => {
@@ -13,6 +25,21 @@ describe('query validation', () => {
   })
   it('rejects ring upgrade +5', () => {
     expect(validateQuery(state(requirement({ kind: 'ring', item: 'ring_haste', upgrade: { mode: 'exact', value: 5 } }))).valid).toBe(false)
+  })
+  it('accepts a minimum upgrade at the engine maximum', () => {
+    // The editor used to stop one below it, so "+3 or higher" — a query the
+    // engine validates and searches — could not be expressed.
+    const limits = engineInfo().limits
+    expect(validateQuery(state(requirement({ upgrade: { mode: 'at_least', value: limits.max_upgrade_default } })))).toEqual({ valid: true, errors: [] })
+    expect(validateQuery(state(requirement({ kind: 'ring', upgrade: { mode: 'at_least', value: limits.max_upgrade_ring } })))).toEqual({ valid: true, errors: [] })
+    expect(validateQuery(state(requirement({ kind: 'ring', upgrade: { mode: 'at_least', value: limits.max_upgrade_ring + 1 } }))).valid).toBe(false)
+  })
+  it('bounds tiers by the engine limits', () => {
+    const limits = engineInfo().limits
+    expect(validateQuery(state(requirement({ tier: { mode: 'exact', value: limits.exact_tier_max } })))).toEqual({ valid: true, errors: [] })
+    expect(validateQuery(state(requirement({ tier: { mode: 'exact', value: limits.exact_tier_max + 1 } }))).valid).toBe(false)
+    expect(validateQuery(state(requirement({ tier: { mode: 'at_most', value: limits.bounded_tier_max + 1 } }))).valid).toBe(false)
+    expect(validateQuery({ ...state(requirement()), maxDepth: limits.max_depth + 1 }).errors.join(' ')).toMatch(/Maximum floor/)
   })
   it('rejects curse with uncursed', () => {
     expect(validateQuery(state(requirement({ effect: 'Annoying', uncursed: true }))).errors.join(' ')).toMatch(/curse/)

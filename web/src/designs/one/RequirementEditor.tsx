@@ -8,7 +8,8 @@ import {
   weaponCurses,
   weaponEnchantments,
 } from '../../lib/catalog'
-import { FLOOR_LIMIT_OPTIONS, validateRequirement } from '../../lib/query'
+import { floorLimitOptions, maxUpgradeFor, validateRequirement } from '../../lib/query'
+import { engineInfo } from '../../lib/wasm'
 import type { ItemCategory, ItemSource, RequirementKind, RequirementState } from '../../lib/wasm/types'
 import { Field, Segmented, SliderRow, Sprite } from './parts'
 import { requirementSprite, requirementTitle } from './summary'
@@ -77,7 +78,8 @@ export function RequirementEditor({
 
   const kind = draft.kind ?? 'weapon'
   const family = kindFamily(kind)
-  const maxUpgrade = family === 'ring' ? 4 : 3
+  const limits = engineInfo().limits
+  const maxUpgrade = maxUpgradeFor(family)
   const wildcardGear = !draft.item && (family === 'weapon' || family === 'armor')
   const enchantments = family === 'weapon' ? weaponEnchantments : armorGlyphs
   const curses = family === 'weapon' ? weaponCurses : armorCurses
@@ -96,10 +98,12 @@ export function RequirementEditor({
     // weapon kind or wipe the item, tier, and effect selections.
     if (kindFamily(nextKind) === family) return
     setDraft((current) => {
-      const nextMax = kindFamily(nextKind) === 'ring' ? 4 : 3
+      const nextMax = maxUpgradeFor(kindFamily(nextKind))
       let upgrade = { ...current.upgrade }
+      // Both predicates run to the engine's maximum: "+3 or higher" is a
+      // query the engine accepts, so the editor must let it be expressed.
       if (upgrade.mode === 'exact') upgrade = { ...upgrade, value: clamp(upgrade.value, 1, nextMax) }
-      if (upgrade.mode === 'at_least') upgrade = { ...upgrade, value: clamp(upgrade.value, 1, nextMax - 1) }
+      if (upgrade.mode === 'at_least') upgrade = { ...upgrade, value: clamp(upgrade.value, 1, nextMax) }
       return {
         ...current,
         kind: nextKind,
@@ -114,18 +118,18 @@ export function RequirementEditor({
   const setTierMode = (mode: (typeof TIER_OPTIONS)[number]['value']) => {
     setDraft((current) => {
       let value = current.tier.value
-      if (mode === 'exact') value = clamp(value, 2, 5)
-      if (mode === 'at_least' || mode === 'at_most') value = clamp(value, 3, 4)
+      if (mode === 'exact') value = clamp(value, limits.exact_tier_min, limits.exact_tier_max)
+      if (mode === 'at_least' || mode === 'at_most') value = clamp(value, limits.bounded_tier_min, limits.bounded_tier_max)
       return { ...current, tier: { mode, value } }
     })
   }
 
   const setUpgradeMode = (mode: (typeof UPGRADE_OPTIONS)[number]['value']) => {
     setDraft((current) => {
-      const max = kindFamily(current.kind ?? 'weapon') === 'ring' ? 4 : 3
+      const max = maxUpgradeFor(kindFamily(current.kind ?? 'weapon'))
       let value = current.upgrade.value
       if (mode === 'exact') value = clamp(value, 1, max)
-      if (mode === 'at_least') value = clamp(value, 1, max - 1)
+      if (mode === 'at_least') value = clamp(value, 1, max)
       return { ...current, upgrade: { mode, value } }
     })
   }
@@ -248,14 +252,14 @@ export function RequirementEditor({
               />
             )}
             {draft.upgrade.mode === 'at_least' &&
-              // Rings span +1…+3, enough range to warrant a slider; other kinds
-              // have just +1/+2, which read more clearly as a dropdown.
+              // Rings span +1…+4, enough range to warrant a slider; other kinds
+              // have just +1…+3, which read more clearly as a dropdown.
               (family === 'ring' ? (
                 <SliderRow
                   label="Minimum upgrade"
                   valueLabel={`+${draft.upgrade.value} or higher`}
                   min={1}
-                  max={maxUpgrade - 1}
+                  max={maxUpgrade}
                   value={draft.upgrade.value}
                   onChange={(value) => setDraft((current) => ({ ...current, upgrade: { ...current.upgrade, value } }))}
                 />
@@ -269,7 +273,7 @@ export function RequirementEditor({
                       setDraft((current) => ({ ...current, upgrade: { ...current.upgrade, value } }))
                     }}
                   >
-                    {Array.from({ length: maxUpgrade - 1 }, (_, index) => index + 1).map((value) => (
+                    {Array.from({ length: maxUpgrade }, (_, index) => index + 1).map((value) => (
                       <option key={value} value={value}>+{value} or higher</option>
                     ))}
                   </select>
@@ -358,7 +362,7 @@ export function RequirementEditor({
               <SliderRow
                 label="Within first"
                 valueLabel={`${draft.maxDepth} floor${draft.maxDepth === 1 ? '' : 's'}`}
-                values={FLOOR_LIMIT_OPTIONS}
+                values={floorLimitOptions()}
                 value={draft.maxDepth}
                 fill
                 onChange={(value) => setDraft((current) => ({ ...current, maxDepth: value }))}

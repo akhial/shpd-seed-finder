@@ -1,6 +1,17 @@
-import { describe, expect, it } from 'vitest'
-import { FLOOR_LIMIT_OPTIONS, defaultQueryState, fromQueryJson, nearestOptionIndex, normalizeFloorLimit, toQueryJson } from './query'
+import { readFile } from 'node:fs/promises'
+import { beforeAll, describe, expect, it } from 'vitest'
+import { defaultQueryState, floorLimitOptions, fromQueryJson, nearestOptionIndex, normalizeFloorLimit, toQueryJson } from './query'
 import type { QueryState } from './wasm/types'
+import init from './wasm/pkg/seedfinder.js'
+
+/**
+ * The validation bounds and the floor list are engine constants read through
+ * `engineInfo()`, so these tests run against the real wasm module. Node has no
+ * `fetch` for `file:` URLs, so it is instantiated from bytes.
+ */
+beforeAll(async () => {
+  await init({ module_or_path: await readFile(new URL('./wasm/pkg/seedfinder_bg.wasm', import.meta.url)) })
+})
 
 describe('query serialization', () => {
   it('omits query and requirement defaults', () => {
@@ -89,26 +100,26 @@ describe('query serialization', () => {
   })
 
   it('offers every floor except the empty boss floors as a limit', () => {
-    expect(FLOOR_LIMIT_OPTIONS).toHaveLength(21)
-    expect(FLOOR_LIMIT_OPTIONS).not.toContain(5)
-    expect(FLOOR_LIMIT_OPTIONS).not.toContain(10)
-    expect(FLOOR_LIMIT_OPTIONS).not.toContain(15)
-    expect(FLOOR_LIMIT_OPTIONS).toContain(20)
-    expect(FLOOR_LIMIT_OPTIONS).toContain(24)
+    expect(floorLimitOptions()).toHaveLength(21)
+    expect(floorLimitOptions()).not.toContain(5)
+    expect(floorLimitOptions()).not.toContain(10)
+    expect(floorLimitOptions()).not.toContain(15)
+    expect(floorLimitOptions()).toContain(20)
+    expect(floorLimitOptions()).toContain(24)
     expect([4, 5, 9, 10, 14, 15, 20, 24].map(normalizeFloorLimit)).toEqual([4, 4, 9, 9, 14, 14, 20, 24])
   })
 
   it('maps slider values to indices, snapping off-list values to the nearest option below', () => {
     // Every selectable floor maps to its own slot.
-    FLOOR_LIMIT_OPTIONS.forEach((floor, index) => {
-      expect(nearestOptionIndex(FLOOR_LIMIT_OPTIONS, floor)).toBe(index)
+    floorLimitOptions().forEach((floor, index) => {
+      expect(nearestOptionIndex(floorLimitOptions(), floor)).toBe(index)
     })
     // Empty boss floors land on the slot of the equivalent floor below.
-    expect(nearestOptionIndex(FLOOR_LIMIT_OPTIONS, 5)).toBe(FLOOR_LIMIT_OPTIONS.indexOf(4))
-    expect(nearestOptionIndex(FLOOR_LIMIT_OPTIONS, 10)).toBe(FLOOR_LIMIT_OPTIONS.indexOf(9))
-    expect(nearestOptionIndex(FLOOR_LIMIT_OPTIONS, 15)).toBe(FLOOR_LIMIT_OPTIONS.indexOf(14))
+    expect(nearestOptionIndex(floorLimitOptions(), 5)).toBe(floorLimitOptions().indexOf(4))
+    expect(nearestOptionIndex(floorLimitOptions(), 10)).toBe(floorLimitOptions().indexOf(9))
+    expect(nearestOptionIndex(floorLimitOptions(), 15)).toBe(floorLimitOptions().indexOf(14))
     // Out-of-range values snap to the nearest option below, never slot 0.
-    expect(nearestOptionIndex(FLOOR_LIMIT_OPTIONS, 30)).toBe(FLOOR_LIMIT_OPTIONS.length - 1)
-    expect(nearestOptionIndex(FLOOR_LIMIT_OPTIONS, 0)).toBe(0)
+    expect(nearestOptionIndex(floorLimitOptions(), 30)).toBe(floorLimitOptions().length - 1)
+    expect(nearestOptionIndex(floorLimitOptions(), 0)).toBe(0)
   })
 })

@@ -4,12 +4,12 @@ import { challenges as challengeOptions, wildcardSprites } from '../../lib/catal
 import { probabilityLabel } from '../../lib/format'
 import { effectGlow } from '../../lib/glow'
 import { CheckIcon, CommandIcon, LinkIcon, PlusIcon, ReturnIcon, XIcon } from '../../lib/icons'
-import { FLOOR_LIMIT_OPTIONS, emptyRequirement, fromQueryJson, toQueryJson, validateRequirement } from '../../lib/query'
+import { emptyRequirement, floorLimitOptions, fromQueryJson, toQueryJson, validateRequirement } from '../../lib/query'
 import type { ValidationResult } from '../../lib/query'
 import { questVariantLabel } from '../../lib/quests'
 import { builtInPresets, loadPresets, maxWorkers, queryStore, savePresets, setWorkerCount, workerCountStore } from '../../lib/store'
 import type { Preset } from '../../lib/store'
-import { encodeShareLink } from '../../lib/wasm'
+import { encodeShareLink, engineInfo } from '../../lib/wasm'
 import { WANDMAKER_QUESTS } from '../../lib/wasm/types'
 import type { AnalysisResult, ChallengeName, ItemCategory, QueryState, RequirementState, WandmakerQuest } from '../../lib/wasm/types'
 import { RequirementEditor } from './RequirementEditor'
@@ -17,7 +17,12 @@ import { SliderRow, Sprite } from './parts'
 import { categoryPlural, requirementDetails, requirementKind, requirementSprite, requirementTitle } from './summary'
 
 const KIND_ORDER: ItemCategory[] = ['weapon', 'armor', 'wand', 'ring']
-const LEVEL_GEN_CHALLENGES = new Set<ChallengeName>(['barren_land', 'into_darkness', 'forbidden_runes'])
+/** The challenges the level generator itself consults, per the engine. */
+const levelGenChallenges = (): Set<ChallengeName> =>
+  new Set(engineInfo().challenges.filter((challenge) => challenge.changes_level_generation).map((challenge) => challenge.name))
+
+/** Last floor the Blacksmith quest can occupy, per the engine's quest window. */
+const blacksmithLastFloor = (): number => engineInfo().quest_windows.blacksmith[1]
 
 const patchQuery = (patch: Partial<QueryState>) => queryStore.setState((state) => ({ ...state, ...patch }))
 const cloneQuery = (query: QueryState): QueryState => fromQueryJson(toQueryJson(query))
@@ -123,6 +128,7 @@ export function QueryPanel({
   })).filter((group) => group.entries.length > 0)
   const ungrouped = indexed.filter(({ requirement }) => requirementKind(requirement) === undefined)
   const challengeCount = query.challenges.length
+  const levelGen = levelGenChallenges()
   const wandmakerCount = Number(Boolean(query.wandmakerQuest))
   const blacksmithCount = Number(query.requireBlacksmith) + Number(query.excludeBlacksmithRewards)
   const performanceCount = Number(query.fastMode)
@@ -297,7 +303,7 @@ export function QueryPanel({
           <SliderRow
             label="Floor limit"
             valueLabel={`first ${query.maxDepth} floor${query.maxDepth === 1 ? '' : 's'}`}
-            values={FLOOR_LIMIT_OPTIONS}
+            values={floorLimitOptions()}
             value={query.maxDepth}
             fill
             onChange={(value) => patchQuery({ maxDepth: value })}
@@ -337,11 +343,11 @@ export function QueryPanel({
               {blacksmithCount > 0 && <span className="d1-count">{blacksmithCount}</span>}
             </summary>
             <div className="d1-details-body">
-              <label className={`d1-check${query.maxDepth >= 14 ? ' d1-check-disabled' : ''}`}>
+              <label className={`d1-check${query.maxDepth >= blacksmithLastFloor() ? ' d1-check-disabled' : ''}`}>
                 <input
                   type="checkbox"
                   checked={query.requireBlacksmith}
-                  disabled={query.maxDepth >= 14}
+                  disabled={query.maxDepth >= blacksmithLastFloor()}
                   onChange={(event) => patchQuery({ requireBlacksmith: event.currentTarget.checked })}
                 />
                 <span>Require accessible blacksmith</span>
@@ -416,7 +422,7 @@ export function QueryPanel({
                   />
                   <span>
                     {challenge.label}
-                    <em>{LEVEL_GEN_CHALLENGES.has(challenge.value) ? 'changes level generation' : 'no effect on seed content'}</em>
+                    <em>{levelGen.has(challenge.value) ? 'changes level generation' : 'no effect on seed content'}</em>
                   </span>
                 </label>
               ))}

@@ -1,4 +1,5 @@
 import { getItem, isCurseForCategory, kindFamily, kindWeaponClass } from './catalog'
+import { engineInfo } from './wasm'
 import { WANDMAKER_QUESTS } from './wasm/types'
 import type {
   QueryDocument,
@@ -11,20 +12,26 @@ import type {
 } from './wasm/types'
 
 /**
- * Boss floors that generate no searchable items. The core treats a floor
- * limit of 5/10/15 exactly like 4/9/14, so these are useless as bounds and
- * floor-limit selectors skip them. Floor 20 stays: the Imp shop makes the
- * City boss floor carry searchable stock.
+ * Boss floors that generate no searchable items, as the engine lists them.
+ * The core treats a floor limit of 5/10/15 exactly like 4/9/14, so these are
+ * useless as bounds and floor-limit selectors skip them. Floor 20 stays: the
+ * Imp shop makes the City boss floor carry searchable stock.
  */
-export const EMPTY_BOSS_FLOORS: readonly number[] = [5, 10, 15]
+export const emptyBossFloors = (): readonly number[] => engineInfo().empty_boss_floors
 
-/** Floors offered by floor-limit selectors: 1 through 24 minus the empty boss floors. */
-export const FLOOR_LIMIT_OPTIONS: readonly number[] = Array.from({ length: 24 }, (_, index) => index + 1)
-  .filter((floor) => !EMPTY_BOSS_FLOORS.includes(floor))
+let floorLimitOptionsCache: readonly number[] | undefined
+
+/** Floors offered by floor-limit selectors: every searchable floor up to the
+ * engine's maximum depth, minus the empty boss floors. */
+export const floorLimitOptions = (): readonly number[] => {
+  floorLimitOptionsCache ??= Array.from({ length: engineInfo().limits.max_depth }, (_, index) => index + 1)
+    .filter((floor) => !emptyBossFloors().includes(floor))
+  return floorLimitOptionsCache
+}
 
 /** Snaps an empty boss-floor limit to the equivalent floor below it (5→4, 10→9, 15→14). */
 export const normalizeFloorLimit = (value: number): number =>
-  (EMPTY_BOSS_FLOORS.includes(value) ? value - 1 : value)
+  (emptyBossFloors().includes(value) ? value - 1 : value)
 
 /**
  * The selector index of `value` within `options`; off-list values snap to
@@ -49,7 +56,7 @@ export const emptyRequirement = (kind?: RequirementState['kind']): RequirementSt
 
 export const defaultQueryState = (): QueryState => ({
   requirements: [],
-  maxDepth: 24,
+  maxDepth: engineInfo().limits.max_depth,
   requireBlacksmith: false,
   excludeBlacksmithRewards: false,
   fastMode: false,
@@ -79,7 +86,7 @@ function requirementToDocument(requirement: RequirementState): RequirementDocume
 
 export function toQueryDocument(state: QueryState): QueryDocument {
   const output: QueryDocument = { requirements: state.requirements.map(requirementToDocument) }
-  if (state.maxDepth !== 24) output.max_depth = state.maxDepth
+  if (state.maxDepth !== engineInfo().limits.max_depth) output.max_depth = state.maxDepth
   if (state.requireBlacksmith) output.require_blacksmith = true
   if (state.excludeBlacksmithRewards) output.exclude_blacksmith_rewards = true
   if (state.wandmakerQuest) output.wandmaker_quest = state.wandmakerQuest
@@ -156,7 +163,7 @@ export function fromQueryJson(json: string): QueryState {
   if (document.challenges !== undefined && !Array.isArray(document.challenges)) throw new Error('challenges must be a list of challenge names')
   return {
     requirements: document.requirements.map(requirementFromDocument),
-    maxDepth: normalizeFloorLimit(document.max_depth ?? 24),
+    maxDepth: normalizeFloorLimit(document.max_depth ?? engineInfo().limits.max_depth),
     requireBlacksmith: document.require_blacksmith ?? false,
     excludeBlacksmithRewards: document.exclude_blacksmith_rewards ?? false,
     wandmakerQuest: wandmakerQuestFromDocument(document.wandmaker_quest),
@@ -167,7 +174,14 @@ export function fromQueryJson(json: string): QueryState {
 
 export interface ValidationResult { valid: boolean; errors: string[] }
 
+/** The engine's highest searchable upgrade for an item family. */
+export const maxUpgradeFor = (family: string | undefined): number => {
+  const limits = engineInfo().limits
+  return family === 'ring' ? limits.max_upgrade_ring : limits.max_upgrade_default
+}
+
 export function validateRequirement(requirement: RequirementState): string[] {
+  const limits = engineInfo().limits
   const errors: string[] = []
   const item = requirement.item ? getItem(requirement.item) : undefined
   const kind = requirement.kind ?? item?.type
@@ -179,15 +193,15 @@ export function validateRequirement(requirement: RequirementState): string[] {
   if (requirement.tier.mode !== 'any') {
     if (requirement.item || (family !== 'weapon' && family !== 'armor')) errors.push('Tier filters require a wildcard weapon or armor.')
     const { mode, value } = requirement.tier
-    if (mode === 'exact' && (value < 2 || value > 5)) errors.push('Exact tier must be 2 through 5.')
-    if ((mode === 'at_least' || mode === 'at_most') && (value < 3 || value > 4)) errors.push('Tier bounds must be 3 or 4.')
+    if (mode === 'exact' && (value < limits.exact_tier_min || value > limits.exact_tier_max)) errors.push(`Exact tier must be ${limits.exact_tier_min} through ${limits.exact_tier_max}.`)
+    if ((mode === 'at_least' || mode === 'at_most') && (value < limits.bounded_tier_min || value > limits.bounded_tier_max)) errors.push(`Tier bounds must be ${limits.bounded_tier_min} or ${limits.bounded_tier_max}.`)
   }
   if (requirement.upgrade.mode !== 'any') {
-    const maximum = family === 'ring' ? 4 : 3
+    const maximum = maxUpgradeFor(family)
     const minimum = requirement.upgrade.mode === 'exact' ? 1 : 0
     if (requirement.upgrade.value < minimum || requirement.upgrade.value > maximum) errors.push(`Upgrade must be ${minimum} through +${maximum}.`)
   }
-  if (requirement.maxDepth !== undefined && (requirement.maxDepth < 1 || requirement.maxDepth > 24)) errors.push('Requirement floor must be 1 through 24.')
+  if (requirement.maxDepth !== undefined && (requirement.maxDepth < 1 || requirement.maxDepth > limits.max_depth)) errors.push(`Requirement floor must be 1 through ${limits.max_depth}.`)
   if (requirement.effect && family !== 'weapon' && family !== 'armor') errors.push('Effects require a weapon or armor category.')
   if (requirement.effect && kind && !isCurseForCategory(kind, requirement.effect) && !getEffectNames(kind).includes(requirement.effect)) errors.push('The effect does not belong to this category.')
   if (requirement.uncursed && requirement.effect && kind && isCurseForCategory(kind, requirement.effect)) errors.push('An uncursed item cannot have a curse effect.')
@@ -204,9 +218,10 @@ import { effectNamesForCategory } from './catalog'
 const catalogHelpers = { effectNamesForCategory }
 
 export function validateQuery(state: QueryState): ValidationResult {
+  const maxDepth = engineInfo().limits.max_depth
   const errors: string[] = []
   if (!state.requirements.length) errors.push('Add at least one requirement.')
-  if (state.maxDepth < 1 || state.maxDepth > 24) errors.push('Maximum floor must be 1 through 24.')
+  if (state.maxDepth < 1 || state.maxDepth > maxDepth) errors.push(`Maximum floor must be 1 through ${maxDepth}.`)
   state.requirements.forEach((requirement, index) => {
     for (const error of validateRequirement(requirement)) errors.push(`Requirement ${index + 1}: ${error}`)
   })
