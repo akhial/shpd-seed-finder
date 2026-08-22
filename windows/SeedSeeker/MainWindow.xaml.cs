@@ -367,8 +367,8 @@ public sealed partial class MainWindow : Window
     [
         ("Pixel Dungeon", "© 2012–2015 Oleg Dolya / Watabou"),
         ("Shattered Pixel Dungeon", "© 2014–2026 Evan Debenham"),
-        ("Upstream", "Shattered Pixel Dungeon v3.3.8"),
-        ("Commit", "7b8b845a76fe76c6b7c031ae9e570852411f56db"),
+        ("Upstream", $"Shattered Pixel Dungeon v{EngineInfo.ShpdVersion}"),
+        ("Commit", EngineInfo.ShpdCommit),
         ("Atlas SHA-256", "ce2496368660e9b2…a294caacaf"),
         ("Icon SHA-256", "38df728d32842d9f…24d7eb9b72"),
     ];
@@ -431,7 +431,7 @@ public sealed partial class MainWindow : Window
 
         panel.Children.Add(new TextBlock
         {
-            Text = $"Seed Seeker {current} · Shattered Pixel Dungeon v3.3.8 profile",
+            Text = $"Seed Seeker {current} · Shattered Pixel Dungeon v{EngineInfo.ShpdVersion} profile",
             FontSize = 11,
             Foreground = secondary,
             TextWrapping = TextWrapping.Wrap,
@@ -833,7 +833,7 @@ public sealed partial class MainWindow : Window
         try
         {
             var properties = await file.GetBasicPropertiesAsync();
-            if (properties.Size > ResultsExport.MaxFileBytes)
+            if (properties.Size > (ulong)EngineInfo.ResultsFileMaxBytes)
             {
                 await ShowTransferMessage("This file is too large to be a Seed Seeker results file (2 MiB limit).");
                 return;
@@ -856,18 +856,17 @@ public sealed partial class MainWindow : Window
             // no longer describe the listed seeds.
             baseRun = null; lastRunDetached = false;
             results.Clear(); collected.Clear(); collectedSet.Clear(); SetStatusBar(null);
-            // Deduplicate then cap, the shared import rule on every platform.
-            foreach (var seed in imported.Seeds.Distinct())
-                if (results.Count < ResultCap) results.Add(new(seed, results.Count + 1));
+            // The engine already deduplicated and capped the imported seeds.
+            foreach (var seed in imported.Seeds) results.Add(new(seed, results.Count + 1));
             // The imported query and seeds become the session's Target, with
             // no coverage: refines of an import are filter-only.
             target = new(snapshot, results.Select(x => x.Seed).ToList(), 0, 0);
-            var dropped = imported.Seeds.Count - results.Count;
+            var dropped = imported.Dropped;
             var status = $"Imported {results.Count} seed{(results.Count == 1 ? "" : "s")} from file.";
             if (dropped > 0)
                 status += $"\n{dropped} duplicate or over-limit entr{(dropped == 1 ? "y" : "ies")} dropped.";
-            if (imported.FileShpdVersion is string fileVersion && fileVersion != ResultsExport.ShpdVersion)
-                status += $"\nMade for Shattered Pixel Dungeon v{fileVersion}; this app targets v{ResultsExport.ShpdVersion}, so seeds may generate differently.";
+            if (imported.FileShpdVersion is string fileVersion && fileVersion != EngineInfo.ShpdVersion)
+                status += $"\nMade for Shattered Pixel Dungeon v{fileVersion}; this app targets v{EngineInfo.ShpdVersion}, so seeds may generate differently.";
             SearchStatus.Text = status;
             UpdateTransferButtons();
         }

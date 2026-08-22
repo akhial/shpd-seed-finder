@@ -48,7 +48,7 @@ internal static class NativeEngineLibrary
     }
 
     /// <summary>The repository root, found by walking up from the test binary.</summary>
-    private static string? WorkspaceRoot()
+    internal static string? WorkspaceRoot()
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
             if (File.Exists(Path.Combine(directory.FullName, "Cargo.toml"))
