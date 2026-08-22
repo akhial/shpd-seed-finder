@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package dev.seedseeker.app.ui
 
+import dev.seedseeker.app.engine.EngineInfo
 import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.SeedResult
 
@@ -10,7 +11,7 @@ import dev.seedseeker.app.model.SeedResult
  * refine's filter base; only the LazyColumn's rows stop here (an uncapped list is what a
  * several-thousand-row UI hang is made of).
  */
-internal const val RESULT_CAP = 1_024
+internal val RESULT_CAP: Int get() = EngineInfo.maxResults
 
 /** The displayed slice of a run's collected results: discovery order, at most [RESULT_CAP] rows. */
 internal fun displayedResults(collected: List<SeedResult>): List<SeedResult> =

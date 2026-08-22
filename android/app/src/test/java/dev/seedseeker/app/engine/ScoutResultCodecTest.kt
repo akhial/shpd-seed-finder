@@ -177,13 +177,15 @@ class ScoutResultCodecTest {
             ScoutResultCodec.decode(zeroVariant)
         }
 
+        // Quest floors are the giver windows the engine publishes, checked once
+        // by ScoutQuest itself rather than re-asserted by this decoder.
         val ghostDepthTooDeep = scoutPacket(quests = listOf(quest(1, 1, 5)))
-        assertThrows(IllegalStateException::class.java) {
+        assertThrows(IllegalArgumentException::class.java) {
             ScoutResultCodec.decode(ghostDepthTooDeep)
         }
 
         val impDepthTooShallow = scoutPacket(quests = listOf(quest(4, 1, 16)))
-        assertThrows(IllegalStateException::class.java) {
+        assertThrows(IllegalArgumentException::class.java) {
             ScoutResultCodec.decode(impDepthTooShallow)
         }
 

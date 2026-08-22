@@ -2,24 +2,28 @@
 package dev.seedseeker.app.model
 
 import dev.seedseeker.app.catalog.ItemCatalog
+import dev.seedseeker.app.engine.EngineInfo
 
 enum class ItemKind(
     val label: String,
     val singularLabel: String,
     val modifierLabel: String?,
-    val maximumSearchUpgrade: Int,
 ) {
-    WEAPON("Weapons", "weapon", "Enchantment", 3),
-    ARMOR("Armor", "armor", "Glyph", 3),
-    WAND("Wands", "wand", null, 3),
-    RING("Rings", "ring", null, 4),
+    WEAPON("Weapons", "weapon", "Enchantment"),
+    ARMOR("Armor", "armor", "Glyph"),
+    WAND("Wands", "wand", null),
+    RING("Rings", "ring", null),
 
     // Wire kind IDs 4 and 5 (the enum ordinal is the wire ID): weapon
     // requirements narrowed to one weapon class. Catalog items always carry
     // the WEAPON family, never a narrowed kind.
-    MELEE_WEAPON("Melee weapons", "melee weapon", "Enchantment", 3),
-    THROWN_WEAPON("Thrown weapons", "thrown weapon", "Enchantment", 3),
+    MELEE_WEAPON("Melee weapons", "melee weapon", "Enchantment"),
+    THROWN_WEAPON("Thrown weapons", "thrown weapon", "Enchantment"),
     ;
+
+    /** Highest upgrade a search may name for this family, per the engine's bounds. */
+    val maximumSearchUpgrade: Int
+        get() = if (family == RING) EngineInfo.maxUpgradeRing else EngineInfo.maxUpgradeDefault
 
     /** The broad item family this kind belongs to. */
     val family: ItemKind
@@ -70,8 +74,8 @@ data class ItemRequirement(
         val tierable = item == null && kind.family in setOf(ItemKind.WEAPON, ItemKind.ARMOR)
         val validTier = when (tierMatch) {
             TierMatch.ANY -> tier == 0
-            TierMatch.EXACT -> tierable && tier in 2..5
-            TierMatch.AT_LEAST, TierMatch.AT_MOST -> tierable && tier in 3..4
+            TierMatch.EXACT -> tierable && tier in EngineInfo.exactTiers
+            TierMatch.AT_LEAST, TierMatch.AT_MOST -> tierable && tier in EngineInfo.boundedTiers
         }
         require(validTier) {
             "Tier predicate requires a wildcard weapon or armor and a non-redundant tier"
@@ -90,8 +94,12 @@ data class ItemRequirement(
         require(!requireUncursed || modifier !in ItemCatalog.cursesFor(kind)) {
             "An uncursed item cannot have a curse"
         }
-        require(identityGroup == null || identityGroup in 1..4) { "Same-item group must be A..D" }
-        require(maximumDepth == null || maximumDepth in 1..24) { "Item floor limit must be 1..24" }
+        require(identityGroup == null || identityGroup in 1..EngineInfo.identityGroupMax) {
+            "Same-item group must be A..${('A'.code + EngineInfo.identityGroupMax - 1).toChar()}"
+        }
+        require(maximumDepth == null || maximumDepth in 1..EngineInfo.maxDepth) {
+            "Item floor limit must be 1..${EngineInfo.maxDepth}"
+        }
     }
 
     val description: String
@@ -145,14 +153,17 @@ enum class UpgradeMatch(val label: String) {
 }
 
 /**
- * Boss floors that generate no searchable items. The engine treats a floor
- * limit of 5/10/15 exactly like 4/9/14, so floor-limit selectors skip them.
- * Floor 20 stays selectable: the Imp shop gives the City boss floor stock.
+ * Boss floors that generate no searchable items, as the engine names them. It
+ * treats a floor limit of 5/10/15 exactly like 4/9/14, so floor-limit
+ * selectors skip them. Floor 20 stays selectable: the Imp shop gives the City
+ * boss floor stock.
  */
-val EMPTY_BOSS_FLOORS: Set<Int> = setOf(5, 10, 15)
+val EMPTY_BOSS_FLOORS: Set<Int> by lazy { EngineInfo.emptyBossFloors }
 
-/** Floors offered by floor-limit selectors: 1..24 minus the empty boss floors. */
-val FLOOR_LIMIT_OPTIONS: List<Int> = (1..24).filterNot(EMPTY_BOSS_FLOORS::contains)
+/** Floors offered by floor-limit selectors: every searchable floor minus the empty boss floors. */
+val FLOOR_LIMIT_OPTIONS: List<Int> by lazy {
+    (1..EngineInfo.maxDepth).filterNot(EMPTY_BOSS_FLOORS::contains)
+}
 
 /** Snaps an empty boss-floor limit to the equivalent floor below it (5→4, 10→9, 15→14). */
 fun normalizeFloorLimit(depth: Int): Int = if (depth in EMPTY_BOSS_FLOORS) depth - 1 else depth
@@ -212,7 +223,9 @@ data class SearchRequest(
 ) {
     init {
         require(requirements.isNotEmpty()) { "At least one requirement is needed" }
-        require(maximumDepth in 1..24) { "Maximum floor must be 1..24" }
+        require(maximumDepth in 1..EngineInfo.maxDepth) {
+            "Maximum floor must be 1..${EngineInfo.maxDepth}"
+        }
         require(challenges in 0..Challenge.ALL_MASK) { "Challenge mask must be 0..${Challenge.ALL_MASK}" }
     }
 }
@@ -220,18 +233,21 @@ data class SearchRequest(
 enum class Challenge(
     val bit: Int,
     val displayName: String,
-    val changesLevelGeneration: Boolean = false,
 ) {
     NO_FOOD(1, "On diet"),
     NO_ARMOR(2, "Faith is my armor"),
     NO_HEALING(4, "Pharmacophobia"),
-    NO_HERBALISM(8, "Barren land", changesLevelGeneration = true),
+    NO_HERBALISM(8, "Barren land"),
     SWARM_INTELLIGENCE(16, "Swarm intelligence"),
-    DARKNESS(32, "Into darkness", changesLevelGeneration = true),
-    NO_SCROLLS(64, "Forbidden runes", changesLevelGeneration = true),
+    DARKNESS(32, "Into darkness"),
+    NO_SCROLLS(64, "Forbidden runes"),
     CHAMPION_ENEMIES(128, "Hostile champions"),
     STRONGER_BOSSES(256, "Badder bosses"),
     ;
+
+    /** Whether the generator consults this challenge, so turning it on changes which seeds match. */
+    val changesLevelGeneration: Boolean
+        get() = EngineInfo.changesLevelGeneration(bit)
 
     companion object {
         const val ALL_MASK = 511
@@ -264,11 +280,16 @@ data class ScoutQuest(
         get() = variant.giver
 }
 
-enum class ScoutQuestGiver(val label: String, val depths: IntRange) {
-    GHOST("Sad ghost", 2..4),
-    WANDMAKER("Wandmaker", 7..9),
-    BLACKSMITH("Blacksmith", 12..14),
-    IMP("Imp", 17..19),
+enum class ScoutQuestGiver(val label: String) {
+    GHOST("Sad ghost"),
+    WANDMAKER("Wandmaker"),
+    BLACKSMITH("Blacksmith"),
+    IMP("Imp"),
+    ;
+
+    /** The floors this giver's quest can sit on, straight from the engine's feasibility model. */
+    val depths: IntRange
+        get() = EngineInfo.questWindow(name.lowercase())
 }
 
 /** Declaration order within each giver matches the wire variant codes 1..n. */

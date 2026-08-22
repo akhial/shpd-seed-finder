@@ -688,11 +688,7 @@ object ScoutResultCodec {
                 val variantCode = input.readUnsignedByte()
                 val variant = ScoutQuestVariant.variantsFor(giver).getOrNull(variantCode - 1)
                     ?: error("Unknown ${giver.label} quest variant $variantCode")
-                val depth = input.readUnsignedByte()
-                check(depth in giver.depths) {
-                    "${giver.label} quest floor must be in ${giver.depths}"
-                }
-                ScoutQuest(variant = variant, depth = depth)
+                ScoutQuest(variant = variant, depth = input.readUnsignedByte())
             }
             val items = List(input.readUnsignedShort()) {
                 val stableId = readUtf8(input, input.readUnsignedShort())

@@ -55,6 +55,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.seedseeker.app.engine.EngineInfo
 import dev.seedseeker.app.catalog.ItemCatalog
 import dev.seedseeker.app.model.CatalogItem
 import dev.seedseeker.app.model.FLOOR_LIMIT_OPTIONS
@@ -267,7 +268,10 @@ fun RequirementSheet(
                                         onClick = {
                                             tierMatch = match
                                             if (match in setOf(TierMatch.AT_LEAST, TierMatch.AT_MOST)) {
-                                                tier = tier.coerceIn(3, 4)
+                                                tier = tier.coerceIn(
+                                                    EngineInfo.boundedTiers.first,
+                                                    EngineInfo.boundedTiers.last,
+                                                )
                                             }
                                             tierMenuExpanded = false
                                         },
@@ -291,8 +295,9 @@ fun RequirementSheet(
                                     Slider(
                                         value = tier.toFloat(),
                                         onValueChange = { tier = it.roundToInt() },
-                                        valueRange = 2f..5f,
-                                        steps = 2,
+                                        valueRange = EngineInfo.exactTiers.first.toFloat()..
+                                            EngineInfo.exactTiers.last.toFloat(),
+                                        steps = EngineInfo.exactTiers.count() - 2,
                                     )
                                 }
                             } else if (tierMatch in setOf(TierMatch.AT_LEAST, TierMatch.AT_MOST)) {
@@ -324,7 +329,7 @@ fun RequirementSheet(
                                         expanded = tierMenuExpanded,
                                         onDismissRequest = { tierMenuExpanded = false },
                                     ) {
-                                        (3..4).forEach { option ->
+                                        EngineInfo.boundedTiers.forEach { option ->
                                             DropdownMenuItem(
                                                 text = { Text("Tier $option") },
                                                 onClick = {
@@ -633,7 +638,7 @@ fun RequirementSheet(
                             ) {
                                 Text("None", maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
-                            (1..4).forEach { group ->
+                            (1..EngineInfo.identityGroupMax).forEach { group ->
                                 ToggleButton(
                                     checked = identityGroup == group,
                                     onCheckedChange = { if (it) identityGroup = group },
