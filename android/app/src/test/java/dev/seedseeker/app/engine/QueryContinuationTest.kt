@@ -2,6 +2,7 @@
 package dev.seedseeker.app.engine
 
 import dev.seedseeker.app.catalog.ItemCatalog
+import dev.seedseeker.app.catalog.PackagedCatalog
 import dev.seedseeker.app.model.Challenge
 import dev.seedseeker.app.model.ItemKind
 import dev.seedseeker.app.model.ItemRequirement
@@ -21,6 +22,8 @@ import org.junit.Test
  * re-derive the rule — so these cases are the behaviour spec for every APK.
  */
 class QueryContinuationTest {
+    init { PackagedCatalog.install() }
+
     private val native = JniNativeSeedFinder()
 
     private val frost = ItemRequirement(1, ItemCatalog.wands.first { it.id == "wand_frost" }, 2)

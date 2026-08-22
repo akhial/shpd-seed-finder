@@ -3,6 +3,7 @@ package dev.seedseeker.app.ui
 
 import androidx.compose.ui.graphics.Color
 import dev.seedseeker.app.catalog.ItemCatalog
+import dev.seedseeker.app.catalog.PackagedCatalog
 import dev.seedseeker.app.model.ItemKind
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -11,6 +12,8 @@ import org.junit.Test
 
 /** Parity checks against `web/src/lib/glow.ts`, which mirrors `ItemSprite.Glowing`. */
 class ItemGlowTest {
+    init { PackagedCatalog.install() }
+
     private val black = Color(0xFF000000)
 
     @Test

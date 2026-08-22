@@ -322,20 +322,38 @@ public sealed record ScoutMatches(IReadOnlySet<int> Matched, int MatchedRequirem
 
 public static class ItemCatalog
 {
-    private sealed class Root { public Entry[] Entries { get; set; } = []; }
+    private sealed class Root { public Entry[] Entries { get; set; } = []; public EffectTables Modifiers { get; set; } = new(); }
     private sealed class Entry { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string Type { get; set; } = ""; public string? Class { get; set; } public int? Tier { get; set; } public int Sprite { get; set; } }
-    public static IReadOnlyList<CatalogItem> All { get; } = Load();
-    public static readonly string[] Enchantments = ["Blazing", "Blocking", "Blooming", "Chilling", "Corrupting", "Elastic", "Grim", "Kinetic", "Lucky", "Projecting", "Shocking", "Unstable", "Vampiric"];
-    public static readonly string[] WeaponCurses = ["Annoying", "Dazzling", "Displacing", "Explosive", "Friendly", "Polarized", "Sacrificial", "Wayward"];
-    public static readonly string[] Glyphs = ["Affection", "Anti-Magic", "Brimstone", "Camouflage", "Entanglement", "Flow", "Obfuscation", "Potential", "Repulsion", "Stone", "Swiftness", "Thorns", "Viscosity"];
-    public static readonly string[] ArmorCurses = ["Anti-Entropy", "Bulk", "Corrosion", "Displacement", "Metabolism", "Multiplicity", "Overgrowth", "Stench"];
-    private static IReadOnlyList<CatalogItem> Load()
-    {
-        var root = JsonSerializer.Deserialize<Root>(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Assets", "catalog-v3.3.8.json")), new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
-        return root.Entries.Select(e => new CatalogItem(e.Id, e.Name, Enum.Parse<ItemKind>(e.Type, true), e.Sprite, e.Tier,
-            string.IsNullOrEmpty(e.Class) ? null : Enum.Parse<WeaponClass>(e.Class, true))).ToArray();
-    }
+    /// <summary>The upstream effect names, exactly as the shared catalog lists them.</summary>
+    private sealed class EffectTables { public string[] WeaponEnchantments { get; set; } = []; public string[] WeaponCurses { get; set; } = []; public string[] ArmorGlyphs { get; set; } = []; public string[] ArmorCurses { get; set; } = []; }
+    private static readonly Root Catalog = Load();
+    public static IReadOnlyList<CatalogItem> All { get; } = Catalog.Entries.Select(e => new CatalogItem(e.Id, e.Name, Enum.Parse<ItemKind>(e.Type, true), e.Sprite, e.Tier,
+        string.IsNullOrEmpty(e.Class) ? null : Enum.Parse<WeaponClass>(e.Class, true))).ToArray();
+    // The four effect tables come from the same asset as the items, so a
+    // catalog bump carries them and no hand-typed list can fall behind it.
+    public static IReadOnlyList<string> Enchantments => Catalog.Modifiers.WeaponEnchantments;
+    public static IReadOnlyList<string> WeaponCurses => Catalog.Modifiers.WeaponCurses;
+    public static IReadOnlyList<string> Glyphs => Catalog.Modifiers.ArmorGlyphs;
+    public static IReadOnlyList<string> ArmorCurses => Catalog.Modifiers.ArmorCurses;
+    private static Root Load() =>
+        JsonSerializer.Deserialize<Root>(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Assets", "catalog-v3.3.8.json")), new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+    /// <summary>
+    /// The items offered when picking one fresh. Tier-1 items are hidden: they
+    /// are the starting gear, never worth searching for.
+    /// </summary>
     public static IEnumerable<CatalogItem> For(ItemKind kind) => All.Where(x => kind.Accepts(x) && x.Tier != 1);
+
+    /// <summary>
+    /// The items a requirement editor lists for <paramref name="kind"/>: the
+    /// fresh-pick list, plus <paramref name="current"/> when the requirement
+    /// being edited already names an item that list hides. Imports and share
+    /// links resolve items through the whole catalog, so a requirement can name
+    /// a tier-1 item the picker would otherwise be unable to show — and saving
+    /// it unchanged would silently swap it for whichever item took its slot.
+    /// The order stays the catalog's.
+    /// </summary>
+    public static IReadOnlyList<CatalogItem> EditorItems(ItemKind kind, CatalogItem? current) =>
+        [.. All.Where(x => kind.Accepts(x) && (x.Tier != 1 || x.Id == current?.Id))];
     public static CatalogItem? Find(string id) => All.FirstOrDefault(x => x.Id == id);
     public static IEnumerable<string> Modifiers(ItemKind kind) => kind.Family() switch { ItemKind.Weapon => Enchantments.Concat(WeaponCurses), ItemKind.Armor => Glyphs.Concat(ArmorCurses), _ => [] };
     public static bool IsCurse(ItemKind kind, string effect) => (kind.Family() == ItemKind.Weapon ? WeaponCurses : ArmorCurses).Contains(effect);

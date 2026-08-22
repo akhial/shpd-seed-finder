@@ -2,6 +2,7 @@
 package dev.seedseeker.app.model
 
 import dev.seedseeker.app.catalog.ItemCatalog
+import dev.seedseeker.app.catalog.PackagedCatalog
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -18,6 +19,8 @@ import org.junit.Test
  * rejections are pinned by the Rust core's own tests.
  */
 class DeepLinkTest {
+    init { PackagedCatalog.install() }
+
     private val pinnedQuery = PresetQuery(
         requirements = listOf(
             ItemRequirement(

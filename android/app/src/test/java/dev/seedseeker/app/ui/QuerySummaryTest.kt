@@ -2,6 +2,7 @@
 package dev.seedseeker.app.ui
 
 import dev.seedseeker.app.catalog.ItemCatalog
+import dev.seedseeker.app.catalog.PackagedCatalog
 import dev.seedseeker.app.model.ItemKind
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.ScoutItemSource
@@ -12,6 +13,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class QuerySummaryTest {
+    init { PackagedCatalog.install() }
+
     @Test
     fun detailLineCondensesAnExactItemRequirement() {
         val requirement = ItemRequirement(

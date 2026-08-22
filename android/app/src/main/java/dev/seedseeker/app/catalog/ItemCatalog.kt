@@ -4,175 +4,55 @@ package dev.seedseeker.app.catalog
 import dev.seedseeker.app.model.CatalogItem
 import dev.seedseeker.app.model.ItemKind
 import dev.seedseeker.app.model.WeaponClass
+import org.json.JSONObject
+import java.io.InputStream
 
 /**
- * Searchable, naturally generated equipment in Shattered Pixel Dungeon v3.3.8.
+ * Searchable, naturally generated equipment, read from the catalog asset this
+ * app ships beside the sprite atlas it indexes.
  *
- * Sprite values are ItemSpriteSheet constants, never Generator enum ordinals. Mages Staff,
- * Pickaxe, Spirit Bow, and hero/class armor are absent because they have no generated-world pool.
+ * The asset is the same third-party extraction every other frontend loads —
+ * ids, display names, tiers, `ItemSpriteSheet` sprite constants and the four
+ * modifier lists — so a hand-maintained Kotlin copy could only drift from it.
+ * Mages Staff, Pickaxe, Spirit Bow, and hero/class armor are absent because
+ * they have no generated-world pool.
  */
 object ItemCatalog {
-    val meleeWeapons = listOf(
-        weapon("worn_shortsword", "Worn Shortsword", 1, 96),
-        weapon("cudgel", "Cudgel", 1, 97),
-        weapon("gloves", "Studded Gloves", 1, 98),
-        weapon("rapier", "Rapier", 1, 99),
-        weapon("dagger", "Dagger", 1, 100),
-        weapon("shortsword", "Shortsword", 2, 104),
-        weapon("hand_axe", "Hand Axe", 2, 105),
-        weapon("spear", "Spear", 2, 106),
-        weapon("quarterstaff", "Quarterstaff", 2, 107),
-        weapon("dirk", "Dirk", 2, 108),
-        weapon("sickle", "Sickle", 2, 109),
-        weapon("sword", "Sword", 3, 112),
-        weapon("mace", "Mace", 3, 113),
-        weapon("scimitar", "Scimitar", 3, 114),
-        weapon("round_shield", "Round Shield", 3, 115),
-        weapon("sai", "Sai", 3, 116),
-        weapon("whip", "Whip", 3, 117),
-        weapon("longsword", "Longsword", 4, 120),
-        weapon("battle_axe", "Battle Axe", 4, 121),
-        weapon("flail", "Flail", 4, 122),
-        weapon("runic_blade", "Runic Blade", 4, 123),
-        weapon("assassins_blade", "Assassin's Blade", 4, 124),
-        weapon("crossbow", "Crossbow", 4, 125),
-        weapon("katana", "Katana", 4, 126),
-        weapon("greatsword", "Greatsword", 5, 128),
-        weapon("war_hammer", "War Hammer", 5, 129),
-        weapon("glaive", "Glaive", 5, 130),
-        weapon("greataxe", "Greataxe", 5, 131),
-        weapon("greatshield", "Greatshield", 5, 132),
-        weapon("gauntlet", "Stone Gauntlet", 5, 133),
-        weapon("war_scythe", "War Scythe", 5, 134),
-    )
+    private const val ASSET_PATH = "third_party/shattered-pixel-dungeon/catalog-v3.3.8.json"
 
-    val thrownWeapons = listOf(
-        thrownWeapon("throwing_stone", "Throwing Stone", 1, 147),
-        thrownWeapon("throwing_knife", "Throwing Knife", 1, 146),
-        thrownWeapon("throwing_spike", "Throwing Spike", 1, 145),
-        thrownWeapon("fishing_spear", "Fishing Spear", 2, 148),
-        thrownWeapon("throwing_club", "Throwing Club", 2, 150),
-        thrownWeapon("shuriken", "Shuriken", 2, 149),
-        thrownWeapon("throwing_spear", "Throwing Spear", 3, 151),
-        thrownWeapon("kunai", "Kunai", 3, 153),
-        thrownWeapon("bolas", "Bolas", 3, 152),
-        thrownWeapon("javelin", "Javelin", 4, 154),
-        thrownWeapon("tomahawk", "Tomahawk", 4, 155),
-        thrownWeapon("heavy_boomerang", "Heavy Boomerang", 4, 156),
-        thrownWeapon("trident", "Trident", 5, 157),
-        thrownWeapon("throwing_hammer", "Throwing Hammer", 5, 158),
-        thrownWeapon("force_cube", "Force Cube", 5, 159),
-        thrownWeapon("rot_dart", "Rot Dart", 2, 161),
-        thrownWeapon("incendiary_dart", "Incendiary Dart", 2, 162),
-        thrownWeapon("adrenaline_dart", "Adrenaline Dart", 2, 163),
-        thrownWeapon("healing_dart", "Healing Dart", 2, 164),
-        thrownWeapon("chilling_dart", "Chilling Dart", 2, 165),
-        thrownWeapon("shocking_dart", "Shocking Dart", 2, 166),
-        thrownWeapon("poison_dart", "Poison Dart", 2, 167),
-        thrownWeapon("cleansing_dart", "Cleansing Dart", 2, 168),
-        thrownWeapon("paralytic_dart", "Paralytic Dart", 2, 169),
-        thrownWeapon("holy_dart", "Holy Dart", 2, 170),
-        thrownWeapon("displacing_dart", "Displacing Dart", 2, 171),
-        thrownWeapon("blinding_dart", "Blinding Dart", 2, 172),
-    )
+    /** Opens a packaged asset by its assets-relative path. */
+    fun interface Assets {
+        fun open(path: String): InputStream
+    }
 
-    val weapons = meleeWeapons + thrownWeapons
+    @Volatile
+    private var assets: Assets = Assets { _ ->
+        error("ItemCatalog.install was not called; SeedSeekerApplication does this at process start")
+    }
 
-    val armor = listOf(
-        armor("cloth_armor", "Cloth Armor", 1, 176),
-        armor("leather_armor", "Leather Armor", 2, 177),
-        armor("mail_armor", "Mail Armor", 3, 178),
-        armor("scale_armor", "Scale Armor", 4, 179),
-        armor("plate_armor", "Plate Armor", 5, 180),
-    )
+    /**
+     * Points the catalog at the packaged asset. [dev.seedseeker.app.SeedSeekerApplication]
+     * calls this once at process start, before any entry point can look an
+     * item up; the catalog is parsed lazily on first use after that.
+     */
+    fun install(assets: Assets) {
+        this.assets = assets
+    }
 
-    val wands = listOf(
-        wand("wand_magic_missile", "Wand of Magic Missile", 208),
-        wand("wand_fireblast", "Wand of Fireblast", 209),
-        wand("wand_frost", "Wand of Frost", 210),
-        wand("wand_lightning", "Wand of Lightning", 211),
-        wand("wand_disintegration", "Wand of Disintegration", 212),
-        wand("wand_prismatic_light", "Wand of Prismatic Light", 213),
-        wand("wand_corrosion", "Wand of Corrosion", 214),
-        wand("wand_living_earth", "Wand of Living Earth", 215),
-        wand("wand_blast_wave", "Wand of Blast Wave", 216),
-        wand("wand_corruption", "Wand of Corruption", 217),
-        wand("wand_warding", "Wand of Warding", 218),
-        wand("wand_regrowth", "Wand of Regrowth", 219),
-        wand("wand_transfusion", "Wand of Transfusion", 220),
-    )
+    private val loaded: Loaded by lazy { load() }
 
-    val rings = listOf(
-        ring("ring_accuracy", "Ring of Accuracy", 224, 0),
-        ring("ring_arcana", "Ring of Arcana", 225, 1),
-        ring("ring_elements", "Ring of Elements", 226, 2),
-        ring("ring_energy", "Ring of Energy", 227, 3),
-        ring("ring_evasion", "Ring of Evasion", 228, 4),
-        ring("ring_force", "Ring of Force", 229, 5),
-        ring("ring_furor", "Ring of Furor", 230, 6),
-        ring("ring_haste", "Ring of Haste", 231, 7),
-        ring("ring_might", "Ring of Might", 232, 8),
-        ring("ring_sharpshooting", "Ring of Sharpshooting", 233, 9),
-        ring("ring_tenacity", "Ring of Tenacity", 234, 10),
-        ring("ring_wealth", "Ring of Wealth", 235, 11),
-    )
+    val meleeWeapons: List<CatalogItem> get() = loaded.meleeWeapons
+    val thrownWeapons: List<CatalogItem> get() = loaded.thrownWeapons
+    val weapons: List<CatalogItem> get() = loaded.weapons
+    val armor: List<CatalogItem> get() = loaded.armor
+    val wands: List<CatalogItem> get() = loaded.wands
+    val rings: List<CatalogItem> get() = loaded.rings
+    val all: List<CatalogItem> get() = loaded.all
 
-    val all = weapons + armor + wands + rings
-    private val byId = all.associateBy(CatalogItem::id)
-
-    val enchantments = listOf(
-        "Blazing",
-        "Blocking",
-        "Blooming",
-        "Chilling",
-        "Corrupting",
-        "Elastic",
-        "Grim",
-        "Kinetic",
-        "Lucky",
-        "Projecting",
-        "Shocking",
-        "Unstable",
-        "Vampiric",
-    )
-
-    val weaponCurses = listOf(
-        "Annoying",
-        "Dazzling",
-        "Displacing",
-        "Explosive",
-        "Friendly",
-        "Polarized",
-        "Sacrificial",
-        "Wayward",
-    )
-
-    val glyphs = listOf(
-        "Affection",
-        "Anti-Magic",
-        "Brimstone",
-        "Camouflage",
-        "Entanglement",
-        "Flow",
-        "Obfuscation",
-        "Potential",
-        "Repulsion",
-        "Stone",
-        "Swiftness",
-        "Thorns",
-        "Viscosity",
-    )
-
-    val armorCurses = listOf(
-        "Anti-Entropy",
-        "Bulk",
-        "Corrosion",
-        "Displacement",
-        "Metabolism",
-        "Multiplicity",
-        "Overgrowth",
-        "Stench",
-    )
+    val enchantments: List<String> get() = loaded.enchantments
+    val weaponCurses: List<String> get() = loaded.weaponCurses
+    val glyphs: List<String> get() = loaded.glyphs
+    val armorCurses: List<String> get() = loaded.armorCurses
 
     fun forKind(kind: ItemKind): List<CatalogItem> = when (kind) {
         ItemKind.WEAPON -> weapons
@@ -183,7 +63,7 @@ object ItemCatalog {
         ItemKind.RING -> rings
     }
 
-    fun findById(id: String): CatalogItem? = byId[id]
+    fun findById(id: String): CatalogItem? = loaded.byId[id]
 
     fun modifiersFor(kind: ItemKind): List<String> = when (kind.family) {
         ItemKind.WEAPON -> enchantments + weaponCurses
@@ -197,18 +77,61 @@ object ItemCatalog {
         else -> emptyList()
     }
 
-    private fun weapon(id: String, name: String, tier: Int, sprite: Int) =
-        CatalogItem(id, name, ItemKind.WEAPON, sprite, tier, weaponClass = WeaponClass.MELEE)
+    private class Loaded(entries: List<CatalogItem>, modifiers: JSONObject) {
+        val meleeWeapons = entries.filter { it.weaponClass == WeaponClass.MELEE }
+        val thrownWeapons = entries.filter { it.weaponClass == WeaponClass.THROWN }
+        val weapons = meleeWeapons + thrownWeapons
+        val armor = entries.filter { it.kind == ItemKind.ARMOR }
+        val wands = entries.filter { it.kind == ItemKind.WAND }
+        val rings = entries.filter { it.kind == ItemKind.RING }
+        val all = weapons + armor + wands + rings
+        val byId = all.associateBy(CatalogItem::id)
 
-    private fun thrownWeapon(id: String, name: String, tier: Int, sprite: Int) =
-        CatalogItem(id, name, ItemKind.WEAPON, sprite, tier, weaponClass = WeaponClass.THROWN)
+        val enchantments = names(modifiers, "weaponEnchantments")
+        val weaponCurses = names(modifiers, "weaponCurses")
+        val glyphs = names(modifiers, "armorGlyphs")
+        val armorCurses = names(modifiers, "armorCurses")
 
-    private fun armor(id: String, name: String, tier: Int, sprite: Int) =
-        CatalogItem(id, name, ItemKind.ARMOR, sprite, tier)
+        private companion object {
+            fun names(modifiers: JSONObject, key: String): List<String> {
+                val list = modifiers.getJSONArray(key)
+                return List(list.length()) { list.getString(it) }
+            }
+        }
+    }
 
-    private fun wand(id: String, name: String, sprite: Int) =
-        CatalogItem(id, name, ItemKind.WAND, sprite)
+    private fun load(): Loaded {
+        val text = assets.open(ASSET_PATH).use { it.readBytes().toString(Charsets.UTF_8) }
+        val document = JSONObject(text)
+        val entries = document.getJSONArray("entries")
+        return Loaded(
+            entries = List(entries.length()) { itemFor(entries.getJSONObject(it)) },
+            modifiers = document.getJSONObject("modifiers"),
+        )
+    }
 
-    private fun ring(id: String, name: String, sprite: Int, typeIcon: Int) =
-        CatalogItem(id, name, ItemKind.RING, sprite, typeIconIndex = typeIcon)
+    private fun itemFor(entry: JSONObject): CatalogItem {
+        val id = entry.getString("id")
+        val kind = when (val type = entry.getString("type")) {
+            "weapon" -> ItemKind.WEAPON
+            "armor" -> ItemKind.ARMOR
+            "wand" -> ItemKind.WAND
+            "ring" -> ItemKind.RING
+            else -> error("Unknown catalog item type '$type' for '$id'")
+        }
+        return CatalogItem(
+            id = id,
+            name = entry.getString("name"),
+            kind = kind,
+            spriteIndex = entry.getInt("sprite"),
+            tier = if (entry.has("tier")) entry.getInt("tier") else null,
+            typeIconIndex = if (entry.has("typeIcon")) entry.getInt("typeIcon") else null,
+            weaponClass = when (val weaponClass = entry.optString("class")) {
+                "" -> null
+                "melee" -> WeaponClass.MELEE
+                "thrown" -> WeaponClass.THROWN
+                else -> error("Unknown weapon class '$weaponClass' for '$id'")
+            },
+        )
+    }
 }

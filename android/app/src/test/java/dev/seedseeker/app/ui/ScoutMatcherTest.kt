@@ -2,6 +2,7 @@
 package dev.seedseeker.app.ui
 
 import dev.seedseeker.app.catalog.ItemCatalog
+import dev.seedseeker.app.catalog.PackagedCatalog
 import dev.seedseeker.app.engine.DemoNativeSeedFinder
 import dev.seedseeker.app.engine.JniNativeSeedFinder
 import dev.seedseeker.app.model.ItemKind
@@ -22,6 +23,8 @@ import org.junit.Test
  * it first and checks what the marked items are.
  */
 class ScoutMatcherTest {
+    init { PackagedCatalog.install() }
+
     private val engine = JniNativeSeedFinder()
     private val world = engine.scoutSeed(SEED, 0)
 

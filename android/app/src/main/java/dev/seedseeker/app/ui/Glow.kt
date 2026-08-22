@@ -13,6 +13,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import dev.seedseeker.app.catalog.ItemCatalog
+import dev.seedseeker.app.model.ItemKind
 import kotlin.math.abs
 
 /**
@@ -27,7 +29,7 @@ data class Glow(val color: Color, val period: Float)
  * Shattered Pixel Dungeon's `ItemSprite.Glowing` definitions — and kept in step
  * with the web front-end's `web/src/lib/glow.ts`, which is keyed by the same
  * wire names the scout emits. Curses are absent from the table because every
- * curse glows black in the game.
+ * curse glows black in the game; the catalog names them.
  */
 object ItemGlows {
     /** Upstream's default `Glowing(color)` period when none is given (1f). */
@@ -67,25 +69,29 @@ object ItemGlows {
     /** Every curse glows black in the game, at the default period. */
     private val curse = Glow(Color(0xFF000000), DEFAULT_PERIOD)
 
+    /** The catalog's own curse names, for weapons and armor alike. */
+    private val curses: Set<String> by lazy {
+        (ItemCatalog.cursesFor(ItemKind.WEAPON) + ItemCatalog.cursesFor(ItemKind.ARMOR)).toSet()
+    }
+
     /**
      * The pulse glow for a scouted item, or null when it carries no enchantment
      * or curse. A beneficial enchantment/glyph wins even on a cursed item
      * (matching `Weapon.glowing()`, which returns the enchantment's colour when
      * one is present — a curse-infused Kinetic weapon still glows yellow);
-     * otherwise a cursed item pulses black. Effects arrive as bare strings, so a
-     * name outside the enchantment table is a curse.
+     * otherwise a cursed item pulses black.
      */
     fun forItem(effect: String?, cursed: Boolean): Glow? =
-        effect?.let { enchantments[it] } ?: if (cursed) curse else null
+        effect?.let(::forEffect) ?: if (cursed) curse else null
 
     /**
      * The pulse glow for a bare effect name (as carried by a requirement), or
-     * null when there is none. Known enchantments/glyphs pulse their colour; any
-     * other effect name is a curse and pulses black.
+     * null when there is none. Enchantments and glyphs pulse their own colour;
+     * the catalog's curses pulse black.
      */
     fun forEffect(effect: String?): Glow? {
         if (effect == null) return null
-        return enchantments[effect] ?: curse
+        return enchantments[effect] ?: curse.takeIf { effect in curses }
     }
 }
 
