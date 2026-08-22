@@ -1012,19 +1012,22 @@ public sealed partial class MainWindow : Window
         {
             var world = await Task.Run(() => engine.Scout(seed, query.Challenges));
             if (generation != scoutGeneration) return;
-            var matches = ScoutMatcher.SelectMatches(world.Items, query.Requirements,
-                query.MaximumDepth, query.ExcludeBlacksmithRewards);
+            // Snapshot the query before leaving the UI thread: the engine
+            // walks its requirements, which the editor may be mutating.
+            var marked = query.Clone();
+            var matches = await Task.Run(() => NativeEngine.ScoutMatches(seed, marked.Challenges, marked));
+            if (generation != scoutGeneration) return;
             var groups = world.Items.Select((item, index) => (Item: item, Index: index))
                 .GroupBy(x => x.Item.Depth).OrderBy(g => g.Key).Select(g =>
             {
                 var group = new ScoutGroup { Floor = $"Floor {g.Key}", Region = Region(g.Key), Quest = QuestLabel(world.Quests, g.Key) };
-                group.AddRange(g.Select(entry => ScoutRow.From(entry.Item, matches.Contains(entry.Index)))); return group;
+                group.AddRange(g.Select(entry => ScoutRow.From(entry.Item, matches.Matched.Contains(entry.Index)))); return group;
             }).ToList();
             ScoutList.ItemsSource = new CollectionViewSource { IsSourceGrouped = true, Source = groups }.View;
             QuestStrip.Children.Clear();
             foreach (var quest in world.Quests) QuestStrip.Children.Add(QuestChip(quest));
             QuestStrip.Visibility = world.Quests.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
-            ScoutStatus.Text = $"{world.Items.Count} items across {groups.Count} floors" + (query.Requirements.Count == 0 ? "" : $"  ·  {matches.Count} requirement match{(matches.Count == 1 ? "" : "es")}");
+            ScoutStatus.Text = $"{world.Items.Count} items across {groups.Count} floors" + (query.Requirements.Count == 0 ? "" : $"  ·  {matches.MatchedRequirements} requirement match{(matches.MatchedRequirements == 1 ? "" : "es")}");
             EmptyScout.Visibility = Visibility.Collapsed; ScoutList.Visibility = Visibility.Visible;
             renderedSeed = seed;
         }
