@@ -40,6 +40,21 @@ describe('query serialization', () => {
     expect(fromQueryJson('{"requirements":[{"kind":"weapon"}]}').requirements[0].kind).toBe('weapon')
   })
 
+  it('always writes a requirement category, deriving it from the item', () => {
+    // The engine's start decision compares categories for equality, so a
+    // requirement that omitted its kind used to share with everything. Both
+    // directions of the mapping fill it in from the named item.
+    const state: QueryState = { ...defaultQueryState(), requirements: [
+      { item: 'sword', tier: { mode: 'any', value: 3 }, upgrade: { mode: 'any', value: 1 }, uncursed: false },
+    ] }
+    expect(toQueryJson(state)).toBe('{"requirements":[{"kind":"weapon","item":"sword"}]}')
+    expect(fromQueryJson('{"requirements":[{"item":"sword"},{"item":"ring_haste"},{"kind":"wand"}]}')
+      .requirements.map((requirement) => requirement.kind)).toEqual(['weapon', 'ring', 'wand'])
+    // An unknown item names no category, and the document stays kind-less
+    // rather than gaining a made-up one.
+    expect(fromQueryJson('{"requirements":[{"item":"no_such_item"}]}').requirements[0].kind).toBeUndefined()
+  })
+
   it('carries the Wandmaker quest and defaults it to any', () => {
     const base = { ...defaultQueryState(), requirements: [{ kind: 'wand' as const, tier: { mode: 'any' as const, value: 3 }, upgrade: { mode: 'any' as const, value: 1 }, uncursed: false }] }
     expect(toQueryJson(base)).toBe('{"requirements":[{"kind":"wand"}]}')

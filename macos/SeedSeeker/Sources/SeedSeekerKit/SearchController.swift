@@ -31,6 +31,19 @@ public enum StartMode: Sendable {
     case continueDetached
     /// Fresh full-range scan that leaves the Target untouched.
     case detached
+
+    /// The lowercase name `seedfinder_decide_start` answers with, matching the
+    /// terminology of docs/search-semantics.md.
+    init?(engineName: String) {
+        switch engineName {
+        case "anchor": self = .anchor
+        case "target-refine": self = .targetRefine
+        case "target-filter": self = .targetFilter
+        case "continue-detached": self = .continueDetached
+        case "detached": self = .detached
+        default: return nil
+        }
+    }
 }
 
 /// The session's anchor: established by the first concluded search (or an
@@ -158,27 +171,21 @@ public final class SearchController {
         }
     }
 
-    /// The single gate for what Start Search does. The Target Set is the
-    /// anchor: a continuation of the Target Query refines it, a request
-    /// sharing an item filters it (always from the full set, so loosening a
-    /// requirement brings seeds back), and anything else scans the full range
-    /// without touching it. An empty Target Set holds nothing worth
-    /// preserving, so a non-continuing request re-anchors on this search
-    /// instead of filtering nothing.
+    /// The single gate for what Start Search does. The decision itself is the
+    /// engine's (`seedfinder_decide_start`, per docs/search-semantics.md): the
+    /// controller only supplies the session state it reads — the Target Query,
+    /// whether the Target Set is empty and whether its coverage has seeds
+    /// left, and the last concluded run's query when that run was detached.
     public func decideStart(_ request: SearchRequest) -> StartMode {
-        guard let target else { return .anchor }
         // A start while a search is running restarts from scratch (the UI
         // offers Cancel instead); only an idle controller can filter the
         // Target Set or resume a scan soundly.
-        guard !isRunning else { return .detached }
-        let continuesTarget = request.isRefinement(of: target.request)
-        if target.seeds.isEmpty {
-            return continuesTarget && target.remaining > 0 ? .targetRefine : .anchor
-        }
-        if continuesTarget { return .targetRefine }
-        if request.sharesRequirement(with: target.request) { return .targetFilter }
-        if runKind == .detached, canRefine(with: request) { return .continueDetached }
-        return .detached
+        guard !isRunning else { return target == nil ? .anchor : .detached }
+        return StartDecision.decide(
+            candidate: request, target: target?.request,
+            targetSetEmpty: target?.seeds.isEmpty ?? true,
+            targetHasUncoveredSeeds: (target?.remaining ?? 0) > 0,
+            detachedBase: runKind == .detached ? baseRun?.request : nil)
     }
 
     /// Scans the whole seed space from scratch, replacing the displayed

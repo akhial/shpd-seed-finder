@@ -17,13 +17,11 @@ import org.junit.Test
  * real `JniBindings.queryContinues` through the host build of the Rust library (Gradle's
  * `buildHostJni` task runs scripts/build-host-native.sh and puts it on `java.library.path`), so a
  * drift between `SearchQuery::continues` and what the app assumes fails here instead of shipping.
- *
- * Every case also checks the demo engine's Kotlin stand-in — the answer debug APKs' stubbed
- * search engine falls back on — so the two never disagree.
+ * Both engines answer through that one entry point — the demo engine delegates rather than
+ * re-derive the rule — so these cases are the behaviour spec for every APK.
  */
 class QueryContinuationTest {
     private val native = JniNativeSeedFinder()
-    private val demo = DemoNativeSeedFinder()
 
     private val frost = ItemRequirement(1, ItemCatalog.wands.first { it.id == "wand_frost" }, 2)
     private val fireblast =
@@ -132,11 +130,6 @@ class QueryContinuationTest {
         base: SearchRequest,
     ) {
         assertEquals(expected, native.queryContinues(candidate, base))
-        assertEquals(
-            "The demo stand-in disagrees with the engine",
-            expected,
-            demo.queryContinues(candidate, base),
-        )
     }
 
     private fun request(

@@ -1,6 +1,6 @@
 import type { QueryDocument } from '../wasm/types'
-import { queryContinues } from '../wasm'
-import type { CoordinatorState, SearchStatus } from './coordinator-state'
+import { decideStart as decideStartInEngine, queryContinues } from '../wasm'
+import type { CoordinatorState } from './coordinator-state'
 import type { SeedRange } from './traversal'
 
 /**
@@ -33,51 +33,6 @@ export function isContinuationOf(candidate: QueryDocument, base: QueryDocument):
   }
 }
 
-/** The finished-run facts the refine decision reads out of the search store. */
-export interface RefineBase {
-  state: SearchStatus
-  queryJson: string
-}
-
-/**
- * Whether starting `query` should continue the run described by `base`
- * instead of scanning from scratch. Only a completed or cancelled run knows
- * exactly how much of the seed space it covered; an imported, failed, or
- * still-running one does not, and a fresh state has no query at all.
- *
- * This is the single gate for the implicit refine: there is no separate
- * refine or resume action in the UI, so every start consults it. An unchanged
- * query continues too, which is what keeps a session alive across repeated
- * Cancel/Start cycles; only the Clear button ends it.
- */
-export function shouldRefine(base: RefineBase, query: QueryDocument): boolean {
-  if (base.state !== 'completed' && base.state !== 'cancelled') return false
-  if (!base.queryJson) return false
-  try {
-    return isContinuationOf(query, JSON.parse(base.queryJson) as QueryDocument)
-  } catch {
-    return false
-  }
-}
-
-/**
- * Whether two queries name a common item: some requirement of each has the
- * same kind, and either both name the same item or at least one names none
- * (a kind-level requirement subsumes every item of its kind). Scope and
- * challenge differences are irrelevant — a filter re-verifies seeds from
- * scratch — so this deliberately checks nothing else: it only estimates
- * whether the Target Set is enriched for the candidate query's matches.
- */
-export function sharesRequirement(candidate: QueryDocument, base: QueryDocument): boolean {
-  return candidate.requirements.some((left) =>
-    base.requirements.some(
-      (right) =>
-        (left.kind == null || right.kind == null || left.kind === right.kind) &&
-        (left.item == null || right.item == null || left.item === right.item),
-    ),
-  )
-}
-
 /** What pressing Start Search does with a query, per docs/search-semantics.md. */
 export type StartMode =
   /** Fresh full-range scan that establishes the Target on conclusion. */
@@ -92,24 +47,32 @@ export type StartMode =
   | 'detached'
 
 /**
- * The single gate for what Start Search does. The Target Set is the anchor:
- * a continuation of the Target Query refines it, a query sharing an item
- * filters it (always from the full set, so loosening a requirement brings
- * seeds back), and anything else scans the full range without touching it.
- * An empty Target Set holds nothing worth preserving, so a non-continuing
- * query re-anchors on this search instead of filtering nothing.
+ * The single gate for what Start Search does. The rule itself — including
+ * both the continuation and the shares-an-item predicate — lives in the
+ * engine and is shared with every other frontend; this only reads the store's
+ * side of it: the Target Query, whether the Target Set is empty, whether the
+ * target traversal left range uncovered, and the last run's query when that
+ * run was a concluded detached scan (only a completed or cancelled run knows
+ * how much it covered, so an imported, failed or still-running one is never
+ * a continuation base).
  */
 export function decideStart(state: CoordinatorState, query: QueryDocument): StartMode {
   const target = state.target
-  if (!target) return 'anchor'
-  const continuesTarget = isContinuationOf(query, target.query)
-  if (target.matches.length === 0) {
-    return continuesTarget && segmentsLength(target.remainder) > 0 ? 'target-refine' : 'anchor'
+  const concluded = state.state === 'completed' || state.state === 'cancelled'
+  const detachedBase = state.runKind === 'detached' && concluded && state.queryJson ? state.queryJson : undefined
+  try {
+    return decideStartInEngine(
+      JSON.stringify(query),
+      target?.queryJson,
+      !target || target.matches.length === 0,
+      target !== undefined && segmentsLength(target.remainder) > 0,
+      detachedBase,
+    ) as StartMode
+  } catch {
+    // An unreadable query cannot be judged against the Target, so the only
+    // sound answer is a scan that leaves it alone. The UI never starts one.
+    return target ? 'detached' : 'anchor'
   }
-  if (continuesTarget) return 'target-refine'
-  if (sharesRequirement(query, target.query)) return 'target-filter'
-  if (state.runKind === 'detached' && shouldRefine(state, query)) return 'continue-detached'
-  return 'detached'
 }
 
 /**

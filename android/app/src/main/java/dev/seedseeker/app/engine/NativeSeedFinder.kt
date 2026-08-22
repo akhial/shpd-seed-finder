@@ -17,9 +17,8 @@ import dev.seedseeker.app.model.ScoutQuestGiver
 import dev.seedseeker.app.model.ScoutQuestVariant
 import dev.seedseeker.app.model.ScoutWorld
 import dev.seedseeker.app.model.SeedResult
-import dev.seedseeker.app.model.TierMatch
-import dev.seedseeker.app.model.UpgradeMatch
 import dev.seedseeker.app.catalog.ItemCatalog
+import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
@@ -36,6 +35,16 @@ interface NativeSeedFinder {
     fun scoutSeed(seed: String, challenges: Int = 0): ScoutWorld
 
     /**
+     * Which items of the world [scoutSeed] returns for the same seed and challenge mask explain
+     * [request]'s requirements, as indices into that world's item list, or null when this engine's
+     * scouted world is not the engine's own (the demo engine's is fabricated, so engine marks
+     * would index a different list). Requirements claim distinct items and the marks are a largest
+     * satisfiable selection, so a partially matching query marks only the items it could explain.
+     * The selection is the engine's `scout_matches`; frontends never re-derive it.
+     */
+    fun scoutMatches(seed: String, challenges: Int, request: SearchRequest): Set<Int>?
+
+    /**
      * Whether [candidate] never widens [base]: an identical floor limit, challenge set and fast
      * mode, world conditions (blacksmith flags, Wandmaker quest) at least as strict as the base's,
      * and every base requirement covered by a distinct candidate requirement
@@ -50,6 +59,24 @@ interface NativeSeedFinder {
      * do. Only an explicit Clear starts over.
      */
     fun queryContinues(candidate: SearchRequest, base: SearchRequest): Boolean
+
+    /**
+     * What pressing Search must do with [candidate], per docs/search-semantics.md: one of
+     * `anchor`, `target-refine`, `target-filter`, `continue-detached` or `detached`. [target] is
+     * the Target Query (null when there is no Target, which always anchors), [targetSetEmpty] and
+     * [targetHasUncoveredSeeds] describe the Target Set and its coverage, and [detachedBase] is
+     * the last concluded run's query when — and only when — that run was itself detached.
+     *
+     * The whole multi-way choice is the engine's, continuation predicate included, so callers ask
+     * this instead of combining [queryContinues] with a policy of their own.
+     */
+    fun decideStart(
+        candidate: SearchRequest,
+        target: SearchRequest?,
+        targetSetEmpty: Boolean,
+        targetHasUncoveredSeeds: Boolean,
+        detachedBase: SearchRequest?,
+    ): String
 }
 
 interface NativeSearchSession : AutoCloseable {
@@ -95,84 +122,37 @@ class DemoNativeSeedFinder : NativeSeedFinder {
     override fun filterSeeds(request: SearchRequest, seeds: List<String>): List<String> =
         seeds.filterIndexed { index, _ -> index % 2 == 0 }
 
-    /**
-     * The one demo answer that is not a stand-in shape but the real rule: a demo APK ships no
-     * `.so`, and a wrong continuation verdict would send every demo search down a refine branch
-     * the shipped app would never take. It mirrors `SearchQuery::continues` — an identical floor
-     * limit, challenge set and fast mode, world conditions (the blacksmith flags and the
-     * Wandmaker filter) at least as strict as the base's,
-     * and every base requirement covered by a distinct candidate requirement at least as strict
-     * (equal or strengthened: a named item, a tightened bound), ignoring UI list keys. Coverage
-     * is a bipartite matching, found with augmenting paths just like the engine's, because a
-     * strengthened requirement can cover several base rows and greedy claiming picks wrongly.
-     */
-    override fun queryContinues(candidate: SearchRequest, base: SearchRequest): Boolean {
-        // The blacksmith flags and the quest filter are conditions on an
-        // unchanged world, so switching one on only removes seeds and
-        // strengthens the base; switching it off, or swapping the quest for
-        // another variant, widens the query and must rescan.
-        if (candidate.maximumDepth != base.maximumDepth ||
-            candidate.challenges != base.challenges ||
-            (base.requireBlacksmith && !candidate.requireBlacksmith) ||
-            (base.excludeBlacksmithRewards && !candidate.excludeBlacksmithRewards) ||
-            (base.wandmakerQuest != null && candidate.wandmakerQuest != base.wandmakerQuest) ||
-            candidate.fastMode != base.fastMode
-        ) {
-            return false
-        }
-        if (candidate.requirements.size < base.requirements.size) return false
-        val owner = arrayOfNulls<Int>(candidate.requirements.size)
-        fun cover(baseIndex: Int, visited: BooleanArray): Boolean {
-            candidate.requirements.forEachIndexed { candidateIndex, requirement ->
-                if (visited[candidateIndex] || !requirement.implies(base.requirements[baseIndex])) {
-                    return@forEachIndexed
-                }
-                visited[candidateIndex] = true
-                val displaced = owner[candidateIndex]
-                if (displaced == null || cover(displaced, visited)) {
-                    owner[candidateIndex] = baseIndex
-                    return true
-                }
-            }
-            return false
-        }
-        return base.requirements.indices.all { cover(it, BooleanArray(candidate.requirements.size)) }
-    }
+    // A wrong continuation verdict would send a demo search down a refine
+    // branch the shipped app would never take, so this is the one answer the
+    // demo never stands in for: the engine owns the rule
+    // (docs/search-semantics.md), and every APK packages its library.
+    override fun queryContinues(candidate: SearchRequest, base: SearchRequest): Boolean =
+        JniBindings.queryContinues(QueryCodec.encode(candidate), QueryCodec.encode(base))
 
-    /**
-     * Whether every item this requirement accepts is also accepted by `base`, given identical
-     * query scope — the per-requirement half of the continuation rule, mirroring
-     * `Requirement::implies`. A base identity group must be carried by label; a base per-item
-     * floor limit of null means the query's own (identical) limit, so null implies only null.
-     */
-    private fun ItemRequirement.implies(base: ItemRequirement): Boolean =
-        kind.family == base.kind.family &&
-            (base.kind.weaponClass == null || kind.weaponClass == base.kind.weaponClass) &&
-            (base.item == null || item?.id == base.item.id) &&
-            tierImplies(base) &&
-            upgradeImplies(base) &&
-            (base.modifier == null || modifier == base.modifier) &&
-            (requireUncursed || !base.requireUncursed) &&
-            (base.source == null || source == base.source) &&
-            (base.identityGroup == null || identityGroup == base.identityGroup) &&
-            (base.maximumDepth == null || (maximumDepth != null && maximumDepth <= base.maximumDepth))
+    // Same reasoning for the whole start decision the predicate is part of.
+    override fun decideStart(
+        candidate: SearchRequest,
+        target: SearchRequest?,
+        targetSetEmpty: Boolean,
+        targetHasUncoveredSeeds: Boolean,
+        detachedBase: SearchRequest?,
+    ): String = String(
+        JniBindings.decideStart(
+            QueryCodec.encode(candidate),
+            target?.let(QueryCodec::encode),
+            targetSetEmpty,
+            targetHasUncoveredSeeds,
+            detachedBase?.let(QueryCodec::encode),
+        ),
+        StandardCharsets.UTF_8,
+    )
 
-    private fun ItemRequirement.tierImplies(base: ItemRequirement): Boolean =
-        when (base.tierMatch) {
-            TierMatch.ANY -> true
-            TierMatch.EXACT -> tierMatch == TierMatch.EXACT && tier == base.tier
-            TierMatch.AT_LEAST ->
-                tierMatch in setOf(TierMatch.EXACT, TierMatch.AT_LEAST) && tier >= base.tier
-            TierMatch.AT_MOST ->
-                tierMatch in setOf(TierMatch.EXACT, TierMatch.AT_MOST) && tier <= base.tier
-        }
-
-    private fun ItemRequirement.upgradeImplies(base: ItemRequirement): Boolean =
-        when (base.upgradeMatch) {
-            UpgradeMatch.ANY -> true
-            UpgradeMatch.EXACT -> upgradeMatch == UpgradeMatch.EXACT && upgrade == base.upgrade
-            UpgradeMatch.AT_LEAST -> upgradeMatch != UpgradeMatch.ANY && upgrade >= base.upgrade
-        }
+    // The demo scout hands back a fabricated world rather than an engine SSC2
+    // packet, so the engine's marks — computed over the world this seed really
+    // generates — would point at other items entirely. Demo APKs therefore show
+    // no marks at all; a Kotlin stand-in matcher would be a second
+    // implementation of `scout_matches`, which is what this app no longer has.
+    override fun scoutMatches(seed: String, challenges: Int, request: SearchRequest): Set<Int>? = null
 
     override fun scoutSeed(seed: String, challenges: Int): ScoutWorld {
         require(SeedCode.isCanonical(seed)) { "Seed must use XXX-XXX-XXX format" }
@@ -368,6 +348,15 @@ class JniNativeSeedFinder(
         return world
     }
 
+    /** Asks the engine, which scouts the same world again and marks it. */
+    override fun scoutMatches(seed: String, challenges: Int, request: SearchRequest): Set<Int> =
+        ScoutMatchCodec.decode(
+            bindings.scoutMatches(
+                ScoutRequestCodec.encode(seed, challenges),
+                QueryCodec.encode(request),
+            ),
+        )
+
     override fun startSearch(request: SearchRequest): NativeSearchSession {
         val handle = bindings.startSearch(QueryCodec.encode(request))
         check(handle != 0L) { "Native seed finder returned an invalid handle" }
@@ -393,6 +382,24 @@ class JniNativeSeedFinder(
     /** Asks the engine, so the refine soundness rule has exactly one implementation. */
     override fun queryContinues(candidate: SearchRequest, base: SearchRequest): Boolean =
         bindings.queryContinues(QueryCodec.encode(candidate), QueryCodec.encode(base))
+
+    /** Asks the engine, so docs/search-semantics.md has exactly one implementation. */
+    override fun decideStart(
+        candidate: SearchRequest,
+        target: SearchRequest?,
+        targetSetEmpty: Boolean,
+        targetHasUncoveredSeeds: Boolean,
+        detachedBase: SearchRequest?,
+    ): String = String(
+        bindings.decideStart(
+            QueryCodec.encode(candidate),
+            target?.let(QueryCodec::encode),
+            targetSetEmpty,
+            targetHasUncoveredSeeds,
+            detachedBase?.let(QueryCodec::encode),
+        ),
+        StandardCharsets.UTF_8,
+    )
 
     private class JniSession(
         private val handle: Long,
@@ -458,8 +465,16 @@ interface NativeBindings {
     fun cancel(handle: Long)
     fun close(handle: Long)
     fun scoutSeed(request: ByteArray): ByteArray
+    fun scoutMatches(request: ByteArray, query: ByteArray): ByteArray
     fun filterSeeds(request: ByteArray, seeds: LongArray): ByteArray
     fun queryContinues(candidate: ByteArray, base: ByteArray): Boolean
+    fun decideStart(
+        candidate: ByteArray,
+        target: ByteArray?,
+        targetSetEmpty: Boolean,
+        targetHasUncoveredSeeds: Boolean,
+        detachedBase: ByteArray?,
+    ): ByteArray
 }
 
 /** Exact class and static method names are retained by ProGuard for Rust's exported JNI symbols. */
@@ -476,8 +491,18 @@ object JniBindings {
     @JvmStatic external fun cancel(handle: Long)
     @JvmStatic external fun close(handle: Long)
     @JvmStatic external fun scoutSeed(request: ByteArray): ByteArray
+    @JvmStatic external fun scoutMatches(request: ByteArray, query: ByteArray): ByteArray
     @JvmStatic external fun filterSeeds(request: ByteArray, seeds: LongArray): ByteArray
     @JvmStatic external fun queryContinues(candidate: ByteArray, base: ByteArray): Boolean
+
+    /** The start decision of docs/search-semantics.md; null packets mean "absent". */
+    @JvmStatic external fun decideStart(
+        candidate: ByteArray,
+        target: ByteArray?,
+        targetSetEmpty: Boolean,
+        targetHasUncoveredSeeds: Boolean,
+        detachedBase: ByteArray?,
+    ): ByteArray
 
     // Share-link codec (docs/share-link-format.md): UTF-8 in, UTF-8 out.
     // Unlike the search entry points above, these also run in debug APKs,
@@ -506,10 +531,21 @@ private object JniBindingsAdapter : NativeBindings {
     override fun cancel(handle: Long) = JniBindings.cancel(handle)
     override fun close(handle: Long) = JniBindings.close(handle)
     override fun scoutSeed(request: ByteArray) = JniBindings.scoutSeed(request)
+    override fun scoutMatches(request: ByteArray, query: ByteArray) =
+        JniBindings.scoutMatches(request, query)
     override fun filterSeeds(request: ByteArray, seeds: LongArray) =
         JniBindings.filterSeeds(request, seeds)
     override fun queryContinues(candidate: ByteArray, base: ByteArray) =
         JniBindings.queryContinues(candidate, base)
+    override fun decideStart(
+        candidate: ByteArray,
+        target: ByteArray?,
+        targetSetEmpty: Boolean,
+        targetHasUncoveredSeeds: Boolean,
+        detachedBase: ByteArray?,
+    ) = JniBindings.decideStart(
+        candidate, target, targetSetEmpty, targetHasUncoveredSeeds, detachedBase,
+    )
 }
 
 object SeedCode {
@@ -610,6 +646,14 @@ private object ResultCodec {
                 check(input.available() == 0) { "Trailing bytes in native result packet" }
             }
         }
+}
+
+/** Reads the scout-match envelope `scoutMatches` returns: indices into the `SSC2` item order. */
+private object ScoutMatchCodec {
+    fun decode(document: ByteArray): Set<Int> {
+        val matched = JSONObject(String(document, StandardCharsets.UTF_8)).getJSONArray("matched")
+        return buildSet { for (index in 0 until matched.length()) add(matched.getInt(index)) }
+    }
 }
 
 object ScoutResultCodec {
