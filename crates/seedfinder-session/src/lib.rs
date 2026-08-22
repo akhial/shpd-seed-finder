@@ -17,6 +17,7 @@ use shpd_seedfinder_core::model::GeneratedWorld;
 use shpd_seedfinder_core::probability::estimate_match_probability;
 use shpd_seedfinder_core::query::{ScoutMatches, SearchQuery, scout_matches};
 pub use shpd_seedfinder_core::query::{StartDecision, decide_start};
+pub use shpd_seedfinder_core::results_export::MAX_RESULTS;
 pub use shpd_seedfinder_core::search::{PRODUCTION_SEARCH_START_STRIDE, SearchError};
 use shpd_seedfinder_core::search::{
     SearchOptions, StreamingSearchHandle, StreamingSearchState, WorldGenerator,
@@ -34,7 +35,6 @@ pub const STATE_FAILED: i64 = 3;
 pub const ERROR_NONE: i64 = 0;
 pub const ERROR_SEARCH_WORKER_FAILED: i64 = 2_001;
 pub const SEARCH_CHUNK_SIZE: usize = 4;
-pub const MAX_ACCEPTED_RESULTS: usize = 1_024;
 
 static REGISTRY: OnceLock<SessionRegistry> = OnceLock::new();
 static CANONICAL_GENERATORS: OnceLock<Mutex<HashMap<u16, Arc<ConfiguredMainWorldGenerator>>>> =
@@ -357,7 +357,7 @@ impl NativeSession {
             end_seed_exclusive: TOTAL_SEEDS,
             workers: SearchOptions::available_parallelism(),
             chunk_size: NonZeroUsize::new(SEARCH_CHUNK_SIZE).unwrap_or(NonZeroUsize::MIN),
-            max_results: NonZeroUsize::new(MAX_ACCEPTED_RESULTS).unwrap_or(NonZeroUsize::MIN),
+            max_results: NonZeroUsize::new(MAX_RESULTS).unwrap_or(NonZeroUsize::MIN),
         };
         let generator = canonical_generator(query.challenges);
         spawn_rotated_streaming_search(&generator, query, options, production_search_start()).map(
@@ -400,7 +400,7 @@ impl NativeSession {
             end_seed_exclusive: TOTAL_SEEDS,
             workers: SearchOptions::available_parallelism(),
             chunk_size: NonZeroUsize::new(SEARCH_CHUNK_SIZE).unwrap_or(NonZeroUsize::MIN),
-            max_results: NonZeroUsize::new(MAX_ACCEPTED_RESULTS).unwrap_or(NonZeroUsize::MIN),
+            max_results: NonZeroUsize::new(MAX_RESULTS).unwrap_or(NonZeroUsize::MIN),
         };
         let generator = canonical_generator(query.challenges);
         spawn_partial_streaming_search(&generator, query, options, resume_from, scan_len).map(

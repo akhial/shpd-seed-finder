@@ -1038,7 +1038,6 @@ dependencies = [
  "serde",
  "serde_json",
  "shpd-seedfinder-core",
- "shpd-seedfinder-session",
  "wasm-bindgen",
 ]
 

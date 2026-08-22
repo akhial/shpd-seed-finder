@@ -154,6 +154,20 @@ pub fn format_input(input: &str) -> String {
     output
 }
 
+/// Parses seed-code text with the game's own rules into the bridge document
+/// `{"code": "XXX-XXX-XXX", "value": <number>}`: the canonical code for
+/// display and the numeric value the seed filters take. Built here so every
+/// thin bridge (C, JNI, wasm) hands its frontend the identical document.
+///
+/// # Errors
+///
+/// Returns the seed parser's error when the input is not a seed code.
+#[cfg(feature = "json-query")]
+pub fn parse_document(input: &str) -> Result<String, SeedError> {
+    let seed = DungeonSeed::from_code(input)?;
+    Ok(serde_json::json!({ "code": seed.to_code(), "value": seed.value() }).to_string())
+}
+
 impl fmt::Display for DungeonSeed {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(&self.to_code())
@@ -271,5 +285,25 @@ mod tests {
         assert_eq!(format_input("åa😀b"), "AB");
         assert_eq!(format_input("\u{131}ab"), "AB");
         assert_eq!(format_input("\u{131}"), "");
+    }
+
+    #[test]
+    fn parse_documents_carry_the_canonical_code_and_value() {
+        let parsed: serde_json::Value =
+            serde_json::from_str(&super::parse_document("AAA-AAA-AAB").unwrap()).unwrap();
+        assert_eq!(parsed["code"], "AAA-AAA-AAB");
+        assert_eq!(parsed["value"], 1);
+
+        // Non-canonical but parseable input round-trips to the canonical
+        // code, and so does every nine-letter masked prefix.
+        for input in ["aaa-aaa-aab", &format_input("aaaaaaaab")] {
+            let document: serde_json::Value =
+                serde_json::from_str(&super::parse_document(input).unwrap()).unwrap();
+            assert_eq!(document, parsed, "{input}");
+        }
+
+        // Undashed lowercase is not a code by the game's own rules.
+        assert!(super::parse_document("aaaaaaaab").is_err());
+        assert!(super::parse_document("AAA-AAA-AA0").is_err());
     }
 }

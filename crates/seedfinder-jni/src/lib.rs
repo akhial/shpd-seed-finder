@@ -5,10 +5,9 @@
 use jni::JNIEnv;
 use jni::objects::{JByteArray, JClass, JLongArray};
 use jni::sys::{JNI_FALSE, jboolean, jint, jlong};
-use shpd_seedfinder_core::seed;
-use shpd_seedfinder_core::{deep_link, engine_info, json_query};
+use shpd_seedfinder_core::{deep_link, engine_info, json_query, results_export, seed};
 use shpd_seedfinder_session::{
-    FilterPacketError, MAX_ACCEPTED_RESULTS, NativeSession, ScoutCallError, ScoutMatchError,
+    FilterPacketError, MAX_RESULTS, NativeSession, ScoutCallError, ScoutMatchError,
     ScoutPacketError, SearchError, StartSessionError, close_session, json,
     production_filter_packet, production_scout_packet, queries_continue, registry,
 };
@@ -448,11 +447,11 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_engineInfo<'lo
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
 ) -> JByteArray<'local> {
-    utf8_response(&mut env, &engine_info_document(), "engine info document")
-}
-
-fn engine_info_document() -> String {
-    engine_info::document(MAX_ACCEPTED_RESULTS).to_string()
+    utf8_response(
+        &mut env,
+        &engine_info::document().to_string(),
+        "engine info document",
+    )
 }
 
 /// Masks partial, as-you-type UTF-8 seed input into uppercase groups of three
@@ -485,7 +484,7 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_parseSeedCode<
     let Some(input) = utf8_argument(&mut env, &input, "seed code") else {
         return JByteArray::default();
     };
-    match json::seed_parse_document(&input) {
+    match seed::parse_document(&input) {
         Ok(document) => utf8_response(&mut env, &document, "seed document"),
         Err(error) => {
             throw_illegal_argument(&mut env, error.to_string());
@@ -509,7 +508,7 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_resultsEncode<
     let Some(request) = utf8_argument(&mut env, &request, "results request") else {
         return JByteArray::default();
     };
-    match json::results_encode_document(&request) {
+    match results_export::encode_document(&request) {
         Ok(contents) => utf8_response(&mut env, &contents, "results file"),
         Err(error) => {
             throw_illegal_argument(&mut env, error);
@@ -557,7 +556,7 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_resultsDecode<
     let Some(contents) = utf8_argument(&mut env, &contents, "results file") else {
         return JByteArray::default();
     };
-    match json::results_decode_document(&contents, MAX_ACCEPTED_RESULTS) {
+    match results_export::decode_document(&contents) {
         Ok(document) => utf8_response(&mut env, &document, "results document"),
         Err(error) => {
             throw_illegal_argument(&mut env, error);
@@ -591,8 +590,8 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_poll<'local>(
     handle: jlong,
     max_results: jint,
 ) -> JByteArray<'local> {
-    if !(1..=1024).contains(&max_results) {
-        throw_illegal_argument(&mut env, "maxResults must be 1..=1024");
+    if !usize::try_from(max_results).is_ok_and(|limit| (1..=MAX_RESULTS).contains(&limit)) {
+        throw_illegal_argument(&mut env, format!("maxResults must be 1..={MAX_RESULTS}"));
         return JByteArray::default();
     }
     let Some(session) = registry().get(handle) else {
@@ -663,21 +662,4 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_close<'local>(
     handle: jlong,
 ) {
     close_session(registry(), handle);
-}
-
-#[cfg(test)]
-mod tests {
-    // The bridge functions themselves need a live JVM; the JSON envelopes
-    // behind them are `shpd_seedfinder_session::json`, tested there.
-    use serde_json::Value;
-    use shpd_seedfinder_core::engine_info;
-    use shpd_seedfinder_session::MAX_ACCEPTED_RESULTS;
-
-    use super::engine_info_document;
-
-    #[test]
-    fn engine_info_serializes_the_shared_document_with_the_native_cap() {
-        let info: Value = serde_json::from_str(&engine_info_document()).unwrap();
-        assert_eq!(info, engine_info::document(MAX_ACCEPTED_RESULTS));
-    }
 }

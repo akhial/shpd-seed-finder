@@ -17,23 +17,20 @@ use crate::query::{
     BOUNDED_TIER_MAX, BOUNDED_TIER_MIN, EXACT_TIER_MAX, EXACT_TIER_MIN, MAX_IDENTITY_GROUP,
     MAX_SEARCH_DEPTH,
 };
-use crate::results_export::MAX_FILE_BYTES;
+use crate::results_export::{MAX_FILE_BYTES, MAX_RESULTS};
 use crate::search::PRODUCTION_SEARCH_START_STRIDE;
 use crate::seed::TOTAL_SEEDS;
 use crate::{SHPD_COMMIT, SHPD_VERSION};
 
-/// Builds the engine-info document. `max_results` is the caller's own
-/// result cap — the browser session and the native sessions cap alike, but
-/// each owns its constant — and is published once, as the top-level
-/// `maxResults`. Every key is camelCase: the four keys the browser already
-/// read set the convention, and the rest follow it.
+/// Builds the engine-info document. Every key is camelCase: the four keys the
+/// browser already read set the convention, and the rest follow it.
 #[must_use]
-pub fn document(max_results: usize) -> Value {
+pub fn document() -> Value {
     json!({
         "shpdVersion": SHPD_VERSION,
         "shpdCommit": SHPD_COMMIT,
         "totalSeeds": TOTAL_SEEDS,
-        "maxResults": max_results,
+        "maxResults": MAX_RESULTS,
         "limits": {
             "maxDepth": MAX_SEARCH_DEPTH,
             "exactTierMin": EXACT_TIER_MIN,
@@ -88,10 +85,11 @@ mod tests {
 
     #[test]
     fn the_document_publishes_the_engine_constants() {
-        let info = document(1_024);
+        let info = document();
         assert_eq!(info["shpdVersion"], crate::SHPD_VERSION);
         assert_eq!(info["totalSeeds"], crate::seed::TOTAL_SEEDS);
         assert_eq!(info["maxResults"], 1_024);
+        assert_eq!(info["shpdCommit"], crate::SHPD_COMMIT);
         assert_eq!(info["limits"]["maxDepth"], 24);
         assert_eq!(info["limits"]["exactTierMin"], 2);
         assert_eq!(info["limits"]["exactTierMax"], 5);
@@ -153,15 +151,19 @@ mod tests {
         for (index, challenge) in challenges.iter().enumerate() {
             assert_eq!(challenge["mask"], 1_u16 << index);
         }
-        let generating: Vec<&str> = challenges
-            .iter()
-            .filter(|challenge| challenge["changesLevelGeneration"] == true)
-            .map(|challenge| challenge["name"].as_str().unwrap())
-            .collect();
         assert_eq!(
-            generating,
-            ["barren_land", "into_darkness", "forbidden_runes"]
+            info["challenges"],
+            serde_json::json!([
+                {"name": "on_diet", "mask": 1, "changesLevelGeneration": false},
+                {"name": "faith_is_my_armor", "mask": 2, "changesLevelGeneration": false},
+                {"name": "pharmacophobia", "mask": 4, "changesLevelGeneration": false},
+                {"name": "barren_land", "mask": 8, "changesLevelGeneration": true},
+                {"name": "swarm_intelligence", "mask": 16, "changesLevelGeneration": false},
+                {"name": "into_darkness", "mask": 32, "changesLevelGeneration": true},
+                {"name": "forbidden_runes", "mask": 64, "changesLevelGeneration": true},
+                {"name": "hostile_champions", "mask": 128, "changesLevelGeneration": false},
+                {"name": "badder_bosses", "mask": 256, "changesLevelGeneration": false},
+            ])
         );
-        assert_eq!(challenges[0]["name"], "on_diet");
     }
 }

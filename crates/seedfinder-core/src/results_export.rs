@@ -36,6 +36,13 @@ pub const FILE_FORMAT: &str = "seed-seeker-results";
 /// drift from it.
 pub const MAX_FILE_BYTES: usize = 2 * 1024 * 1024;
 
+/// Most seeds a restored results list holds, and the most a search session
+/// on any platform retains. Part of the cross-platform contract: importers
+/// dedupe then cap at exactly this many (see [`dedupe_and_cap`]), so a given
+/// file restores the same list everywhere, and the engine publishes it as
+/// `maxResults` in `engine_info` so no frontend keeps a copy.
+pub const MAX_RESULTS: usize = 1_024;
+
 /// One decoded results file.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResultsFile {
@@ -145,6 +152,75 @@ pub fn dedupe_and_cap(seeds: &[DungeonSeed], limit: usize) -> (Vec<DungeonSeed>,
     (kept, dropped)
 }
 
+/// Encodes a results file from the bridge request `{"query": <canonical
+/// query document>, "seeds": ["AAA-AAA-AAA", ...], "app_version": "..."}`
+/// and returns the results-file text. This is the envelope every thin bridge
+/// (C, JNI, wasm) hands its frontend, built here so each platform writes the
+/// identical file.
+///
+/// # Errors
+///
+/// Returns a human-readable message for a malformed request, an invalid
+/// query, or a seed code that is not in the canonical `XXX-XXX-XXX` form.
+pub fn encode_document(request_json: &str) -> Result<String, String> {
+    let request: Value = serde_json::from_str(request_json)
+        .map_err(|error| format!("invalid results request JSON: {error}"))?;
+    let query_value = request
+        .get("query")
+        .filter(|value| value.is_object())
+        .ok_or("the results request is missing its \"query\" object")?;
+    let query = json_query::decode(&query_value.to_string())?;
+    let seeds = request
+        .get("seeds")
+        .and_then(Value::as_array)
+        .ok_or("the results request is missing its \"seeds\" list")?
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| request_seed(index, entry))
+        .collect::<Result<Vec<_>, _>>()?;
+    let app_version = request
+        .get("app_version")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    Ok(encode(&query, &seeds, app_version))
+}
+
+fn request_seed(index: usize, entry: &Value) -> Result<DungeonSeed, String> {
+    let code = entry
+        .as_str()
+        .ok_or_else(|| format!("seed {}: expected a seed code string", index + 1))?;
+    if !is_canonical_code(code) {
+        return Err(format!(
+            "seed {}: seed code must use the canonical XXX-XXX-XXX form",
+            index + 1
+        ));
+    }
+    DungeonSeed::from_code(code).map_err(|error| format!("seed {}: {error}", index + 1))
+}
+
+/// Decodes results-file text into the bridge document `{"query": <canonical
+/// query document>, "seeds": [...], "dropped": <number>, "app_version": ...,
+/// "shpd_version": ...}`. The seeds are already deduplicated and capped at
+/// [`MAX_RESULTS`], so every platform restores the identical list, and
+/// `dropped` counts the exported entries that step removed.
+///
+/// # Errors
+///
+/// Returns [`decode`]'s message: input above [`MAX_FILE_BYTES`], a file that
+/// is not a results file, or an invalid query or seed code.
+pub fn decode_document(contents: &str) -> Result<String, String> {
+    let file = decode(contents)?;
+    let (seeds, dropped) = dedupe_and_cap(&file.seeds, MAX_RESULTS);
+    Ok(json!({
+        "query": json_query::encode(&file.query),
+        "seeds": seeds.iter().copied().map(DungeonSeed::to_code).collect::<Vec<_>>(),
+        "dropped": dropped,
+        "app_version": file.app_version,
+        "shpd_version": file.shpd_version,
+    })
+    .to_string())
+}
+
 fn decode_result_seed(index: usize, entry: &Value) -> Result<DungeonSeed, String> {
     let code = entry
         .get("seed")
@@ -183,6 +259,8 @@ fn field_string(document: &Map<String, Value>, key: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::{Value, json};
+
     use crate::catalog::{ItemId, ItemKind};
     use crate::challenges::Challenges;
     use crate::model::ItemSource;
@@ -190,7 +268,10 @@ mod tests {
     use crate::quests::WandmakerQuestType;
     use crate::seed::DungeonSeed;
 
-    use super::{MAX_FILE_BYTES, decode, dedupe_and_cap, encode, is_canonical_code};
+    use super::{
+        MAX_FILE_BYTES, MAX_RESULTS, decode, decode_document, dedupe_and_cap, encode,
+        encode_document, is_canonical_code,
+    };
 
     fn sample_query() -> SearchQuery {
         SearchQuery {
@@ -493,5 +574,77 @@ mod tests {
         let (kept, dropped) = dedupe_and_cap(&many, 1_024);
         assert_eq!(kept.len(), 1_024);
         assert_eq!(dropped, 476);
+    }
+
+    /// The frozen cross-platform fixtures: every bridge decodes exactly the
+    /// documents every other platform decodes.
+    const BRIDGE_FIXTURES: [&str; 3] = [
+        include_str!("../tests/fixtures/results-export-v1.json"),
+        include_str!("../tests/fixtures/results-export-v1-weapon-categories.json"),
+        include_str!("../tests/fixtures/results-export-wandmaker-quest.json"),
+    ];
+
+    #[test]
+    fn bridge_documents_round_trip_through_the_frozen_fixtures() {
+        for fixture in BRIDGE_FIXTURES {
+            let decoded: Value = serde_json::from_str(&decode_document(fixture).unwrap()).unwrap();
+            assert_eq!(decoded["shpd_version"], "3.3.8");
+            assert!(!decoded["seeds"].as_array().unwrap().is_empty());
+            assert_eq!(decoded["dropped"], 0);
+
+            let request = json!({
+                "query": decoded["query"],
+                "seeds": decoded["seeds"],
+                "app_version": "test",
+            });
+            let encoded = encode_document(&request.to_string()).unwrap();
+            let round_tripped: Value =
+                serde_json::from_str(&decode_document(&encoded).unwrap()).unwrap();
+            assert_eq!(round_tripped["query"], decoded["query"]);
+            assert_eq!(round_tripped["seeds"], decoded["seeds"]);
+            assert_eq!(round_tripped["dropped"], 0);
+            assert_eq!(round_tripped["app_version"], "test");
+        }
+    }
+
+    #[test]
+    fn bridge_decoding_dedupes_caps_and_refuses_oversized_files() {
+        let file = json!({
+            "format": "seed-seeker-results",
+            "query": {"requirements": [{"item": "sword"}]},
+            "results": (0..MAX_RESULTS + 10)
+                .map(|index| json!({
+                    "seed": DungeonSeed::new(u64::try_from(index % MAX_RESULTS).unwrap())
+                        .unwrap()
+                        .to_code()
+                }))
+                .collect::<Vec<_>>(),
+        });
+        let decoded: Value =
+            serde_json::from_str(&decode_document(&file.to_string()).unwrap()).unwrap();
+        assert_eq!(decoded["seeds"].as_array().unwrap().len(), MAX_RESULTS);
+        // Ten duplicates: importers report exactly what dedupe-and-cap removed.
+        assert_eq!(decoded["dropped"], 10);
+        assert!(decoded["app_version"].is_null());
+
+        let oversized = " ".repeat(MAX_FILE_BYTES + 1);
+        let error = decode_document(&oversized).unwrap_err();
+        assert!(error.contains("too large"), "{error}");
+    }
+
+    #[test]
+    fn bridge_encoding_fails_on_invalid_queries_and_seed_codes() {
+        let invalid_query = json!({"query": {"requirements": []}, "seeds": []});
+        assert!(encode_document(&invalid_query.to_string()).is_err());
+
+        let invalid_seed = json!({
+            "query": {"requirements": [{"item": "sword"}]},
+            "seeds": ["aaa-aaa-aab"],
+        });
+        let error = encode_document(&invalid_seed.to_string()).unwrap_err();
+        assert!(error.contains("canonical"), "{error}");
+
+        assert!(encode_document("not json").is_err());
+        assert!(encode_document(r#"{"seeds":[]}"#).is_err());
     }
 }

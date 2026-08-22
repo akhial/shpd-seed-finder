@@ -135,11 +135,12 @@ importable forever:
    report the index of the first invalid entry.
 5. **Deduplicate, then cap.** After decoding, duplicate seed codes are dropped
    (keeping the first occurrence) and the restored list is capped at the
-   shared result limit (1,024 seeds), in that order; apps must tell the user
-   how many entries were dropped. The decode entry points apply this rule
-   themselves and report the count as `dropped` alongside the restored
-   `seeds`, so a given file restores the same list on every platform, UI list
-   keys stay unique, and an adversarial file's cost stays bounded.
+   shared result limit (`results_export::MAX_RESULTS`, 1,024 seeds), in that
+   order; apps must tell the user how many entries were dropped. The decode
+   entry points apply this rule themselves and report the count as `dropped`
+   alongside the restored `seeds`, so a given file restores the same list on
+   every platform, UI list keys stay unique, and an adversarial file's cost
+   stays bounded.
 6. **Bound resource use.** Files larger than 2 MiB are refused (a maximal
    legal file is far smaller). The cap is enforced by the engine —
    `results_export::MAX_FILE_BYTES`, applied by `decode` and therefore by

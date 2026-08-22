@@ -15,8 +15,8 @@ use shpd_seedfinder_core::query::SearchQuery;
 use shpd_seedfinder_core::search::SearchError;
 use shpd_seedfinder_core::seed::DungeonSeed;
 use shpd_seedfinder_session::{
-    MAX_ACCEPTED_RESULTS, NativeSession, STATE_CANCELLED, STATE_COMPLETED, STATE_FAILED,
-    STATE_RUNNING, filter_matching_seeds,
+    MAX_RESULTS, NativeSession, STATE_CANCELLED, STATE_COMPLETED, STATE_FAILED, STATE_RUNNING,
+    filter_matching_seeds,
 };
 
 use crate::format::{duration, estimate_duration, group_digits, probability_percent, seed_rate};
@@ -31,7 +31,7 @@ const DRAIN_BATCH: usize = 256;
 /// Target Set, refine filters, and export — but appending thousands of GTK
 /// rows stalls the main loop, so only the first `DISPLAY_CAP` seeds are
 /// listed. Deliberately equal to the engine's per-session accept cap.
-const DISPLAY_CAP: usize = MAX_ACCEPTED_RESULTS;
+const DISPLAY_CAP: usize = MAX_RESULTS;
 
 struct ActiveSearch {
     session: Rc<NativeSession>,
@@ -1020,10 +1020,10 @@ fn conclusion_toast(
             group_digits(DISPLAY_CAP as u64),
             group_digits(collected as u64),
         ))
-    } else if new_finds >= MAX_ACCEPTED_RESULTS as u64 {
+    } else if new_finds >= MAX_RESULTS as u64 {
         Some(format!(
             "result limit reached ({} seeds)",
-            group_digits(MAX_ACCEPTED_RESULTS as u64),
+            group_digits(MAX_RESULTS as u64),
         ))
     } else {
         None

@@ -5,10 +5,9 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 
-use shpd_seedfinder_core::seed;
-use shpd_seedfinder_core::{deep_link, engine_info, json_query};
+use shpd_seedfinder_core::{deep_link, engine_info, json_query, results_export, seed};
 use shpd_seedfinder_session::{
-    FilterPacketError, MAX_ACCEPTED_RESULTS, NativeSession, ScoutCallError, ScoutMatchError,
+    FilterPacketError, MAX_RESULTS, NativeSession, ScoutCallError, ScoutMatchError,
     ScoutPacketError, SearchError, StartSessionError, close_session, decide_start_packets, json,
     production_filter_packet, production_scout_packet, queries_continue, registry,
 };
@@ -242,7 +241,10 @@ pub extern "C" fn seedfinder_poll(
 ) -> i32 {
     clear_outputs(out_packet, out_len);
     catch_unwind(AssertUnwindSafe(|| {
-        if out_packet.is_null() || out_len.is_null() || !(1..=1024).contains(&max_results) {
+        if out_packet.is_null()
+            || out_len.is_null()
+            || !usize::try_from(max_results).is_ok_and(|limit| (1..=MAX_RESULTS).contains(&limit))
+        {
             return INVALID;
         }
         let Some(session) = registry().get(handle) else {
@@ -360,9 +362,7 @@ pub extern "C" fn seedfinder_engine_info(out_packet: *mut *mut u8, out_len: *mut
     clear_outputs(out_packet, out_len);
     catch_unwind(AssertUnwindSafe(|| {
         return_packet(
-            engine_info::document(MAX_ACCEPTED_RESULTS)
-                .to_string()
-                .into_bytes(),
+            engine_info::document().to_string().into_bytes(),
             out_packet,
             out_len,
         )
@@ -419,7 +419,7 @@ pub extern "C" fn seedfinder_seed_parse(
         let Ok(input) = std::str::from_utf8(bytes) else {
             return INVALID;
         };
-        match json::seed_parse_document(input) {
+        match seed::parse_document(input) {
             Ok(document) => return_packet(document.into_bytes(), out_packet, out_len),
             Err(_) => INVALID,
         }
@@ -449,7 +449,7 @@ pub extern "C" fn seedfinder_results_encode(
         let Ok(request) = std::str::from_utf8(bytes) else {
             return INVALID;
         };
-        match json::results_encode_document(request) {
+        match results_export::encode_document(request) {
             Ok(contents) => return_packet(contents.into_bytes(), out_packet, out_len),
             Err(_) => INVALID,
         }
@@ -480,7 +480,7 @@ pub extern "C" fn seedfinder_results_decode(
         let Ok(contents) = std::str::from_utf8(bytes) else {
             return INVALID;
         };
-        match json::results_decode_document(contents, MAX_ACCEPTED_RESULTS) {
+        match results_export::decode_document(contents) {
             Ok(document) => return_packet(document.into_bytes(), out_packet, out_len),
             Err(_) => INVALID,
         }
@@ -562,8 +562,6 @@ pub extern "C" fn seedfinder_buffer_free(pointer: *mut u8, len: usize) {
 #[cfg(test)]
 mod tests {
     use serde_json::Value;
-    use shpd_seedfinder_core::seed::DungeonSeed;
-    use shpd_seedfinder_core::{json_query, results_export};
 
     use super::*;
 
@@ -602,95 +600,40 @@ mod tests {
         seedfinder_buffer_free(ptr::null_mut(), 0);
     }
 
-    fn call_scout_matches(request: &[u8], query: &[u8]) -> Result<Value, i32> {
-        let mut pointer = ptr::null_mut();
-        let mut len = 0;
-        let code = seedfinder_scout_matches(
-            request.as_ptr(),
-            request.len(),
-            query.as_ptr(),
-            query.len(),
-            &raw mut pointer,
-            &raw mut len,
-        );
-        if code != OK {
-            return Err(code);
-        }
-        let packet = unsafe { take_packet(pointer, len) };
-        Ok(serde_json::from_str(&String::from_utf8(packet).unwrap()).unwrap())
-    }
-
-    /// Scouting is deterministic, so the marks index exactly the item list of
-    /// the `SSC2` packet a scout of the same request returns.
-    fn scouted_world(request: &[u8]) -> shpd_seedfinder_core::model::GeneratedWorld {
-        let mut pointer = ptr::null_mut();
-        let mut len = 0;
-        assert_eq!(
-            seedfinder_scout(
+    #[test]
+    fn scout_matches_bridge_returns_the_shared_envelope_and_maps_errors() {
+        let request = b"AAA-AAA-AAA";
+        let query = query_packet();
+        let call = |request: &[u8], query: &[u8]| {
+            let mut pointer = ptr::null_mut();
+            let mut len = 0;
+            let code = seedfinder_scout_matches(
                 request.as_ptr(),
                 request.len(),
+                query.as_ptr(),
+                query.len(),
                 &raw mut pointer,
-                &raw mut len
-            ),
-            OK
-        );
-        let packet = unsafe { take_packet(pointer, len) };
-        shpd_seedfinder_core::wire::decode_scout_world(&packet).unwrap()
-    }
+                &raw mut len,
+            );
+            if code != OK {
+                return Err(code);
+            }
+            Ok(String::from_utf8(unsafe { take_packet(pointer, len) }).unwrap())
+        };
 
-    #[test]
-    fn scout_matches_envelope_indexes_the_scout_packet() {
-        use shpd_seedfinder_core::catalog::item;
-
-        let request = b"AAA-AAA-AAA";
-        let world = scouted_world(request);
-        let envelope = call_scout_matches(request, &query_packet()).unwrap();
-        assert_eq!(envelope["total_requirements"], 1);
-        let matched = envelope["matched"].as_array().unwrap();
         assert_eq!(
-            u64::try_from(matched.len()).unwrap(),
-            envelope["matched_requirements"].as_u64().unwrap()
+            call(request, &query).unwrap(),
+            json::scout_matches_document(request, &query).unwrap()
         );
-        for index in matched {
-            let index = usize::try_from(index.as_u64().unwrap()).unwrap();
-            assert!(index < world.items.len());
-            // The pinned query asks for exactly one Wand of Frost.
-            assert_eq!(item(world.items[index].item).stable_id, "wand_frost");
-        }
-
-        // A requirement taken from the world itself must mark that very item.
-        let known = &world.items[0];
-        let document = serde_json::json!({
-            "requirements": [{
-                "item": item(known.item).stable_id,
-                "max_depth": known.depth,
-            }],
-        });
-        let query = shpd_seedfinder_core::wire::encode_query(
-            &json_query::decode(&document.to_string()).unwrap(),
-        )
-        .unwrap();
-        let envelope = call_scout_matches(request, &query).unwrap();
-        assert_eq!(envelope["matched_requirements"], 1);
-        assert_eq!(envelope["total_requirements"], 1);
-        let matched = envelope["matched"].as_array().unwrap();
-        assert_eq!(matched.len(), 1);
-        let index = usize::try_from(matched[0].as_u64().unwrap()).unwrap();
-        assert_eq!(world.items[index].item, known.item);
-    }
-
-    #[test]
-    fn scout_matches_rejects_invalid_input() {
-        let query = query_packet();
-        assert_eq!(call_scout_matches(b"AAA-AAA-AAA", b"bad"), Err(INVALID));
-        assert_eq!(call_scout_matches(b"AAA-AAA-AA0", &query), Err(INVALID));
+        assert_eq!(call(request, b"bad"), Err(INVALID));
+        assert_eq!(call(b"AAA-AAA-AA0", &query), Err(INVALID));
 
         let mut pointer = ptr::null_mut();
         let mut len = 0;
         assert_eq!(
             seedfinder_scout_matches(
-                b"AAA-AAA-AAA".as_ptr(),
-                11,
+                request.as_ptr(),
+                request.len(),
                 ptr::null(),
                 0,
                 &raw mut pointer,
@@ -700,8 +643,8 @@ mod tests {
         );
         assert_eq!(
             seedfinder_scout_matches(
-                b"AAA-AAA-AAA".as_ptr(),
-                11,
+                request.as_ptr(),
+                request.len(),
                 query.as_ptr(),
                 query.len(),
                 ptr::null_mut(),
@@ -710,7 +653,6 @@ mod tests {
             INVALID
         );
     }
-
     #[test]
     fn start_poll_status_cancel_close_lifecycle() {
         let request = query_packet();
@@ -810,57 +752,13 @@ mod tests {
         );
     }
 
-    fn call_decide_start(
-        candidate: &[u8],
-        target: Option<&[u8]>,
-        target_set_empty: bool,
-        target_has_uncovered_seeds: bool,
-        detached_base: Option<&[u8]>,
-    ) -> Result<String, i32> {
-        let mut pointer = ptr::null_mut();
-        let mut len = 0;
-        let (target_pointer, target_len) =
-            target.map_or((ptr::null(), 0), |packet| (packet.as_ptr(), packet.len()));
-        let (base_pointer, base_len) =
-            detached_base.map_or((ptr::null(), 0), |packet| (packet.as_ptr(), packet.len()));
-        let code = seedfinder_decide_start(
-            candidate.as_ptr(),
-            candidate.len(),
-            target_pointer,
-            target_len,
-            i32::from(target_set_empty),
-            i32::from(target_has_uncovered_seeds),
-            base_pointer,
-            base_len,
-            &raw mut pointer,
-            &raw mut len,
-        );
-        if code != OK {
-            return Err(code);
-        }
-        Ok(String::from_utf8(unsafe { take_packet(pointer, len) }).unwrap())
-    }
-
-    fn call_text_entry(
-        entry: extern "C" fn(*const u8, usize, *mut *mut u8, *mut usize) -> i32,
-        input: &str,
-    ) -> Result<String, i32> {
-        let mut pointer = ptr::null_mut();
-        let mut len = 0;
-        let code = entry(input.as_ptr(), input.len(), &raw mut pointer, &raw mut len);
-        if code != OK {
-            return Err(code);
-        }
-        Ok(String::from_utf8(unsafe { take_packet(pointer, len) }).unwrap())
-    }
-
     #[test]
-    fn engine_info_publishes_the_shared_constants() {
+    fn engine_info_returns_the_shared_document() {
         let mut pointer = ptr::null_mut();
         let mut len = 0;
         assert_eq!(seedfinder_engine_info(&raw mut pointer, &raw mut len), OK);
         let info: Value = serde_json::from_slice(&unsafe { take_packet(pointer, len) }).unwrap();
-        assert_eq!(info, engine_info::document(MAX_ACCEPTED_RESULTS));
+        assert_eq!(info, engine_info::document());
 
         assert_eq!(
             seedfinder_engine_info(ptr::null_mut(), &raw mut len),
@@ -869,30 +767,19 @@ mod tests {
     }
 
     #[test]
-    fn seed_bridge_masks_input_and_parses_codes() {
-        let format = |input| call_text_entry(seedfinder_seed_format, input);
-        let parse = |input| call_text_entry(seedfinder_seed_parse, input);
-
-        // The masker filters ASCII letters before uppercasing, so non-ASCII
-        // input contributes nothing.
-        assert_eq!(format("abcD").unwrap(), "ABC-D");
-        assert_eq!(format(" 1a!b@c#d$e%f^g&h*i extra").unwrap(), "ABC-DEF-GHI");
-        assert_eq!(format("\u{131}ab").unwrap(), "AB");
-        assert_eq!(format("").unwrap(), "");
-
-        let parsed: Value = serde_json::from_str(&parse("AAA-AAA-AAB").unwrap()).unwrap();
-        assert_eq!(parsed["code"], "AAA-AAA-AAB");
-        assert_eq!(parsed["value"], 1);
-        // Non-canonical but parseable input round-trips to the canonical code.
-        let lowercase: Value = serde_json::from_str(&parse("aaa-aaa-aab").unwrap()).unwrap();
-        assert_eq!(lowercase, parsed);
-        let masked_code = format("aaaaaaaab").unwrap();
-        let masked: Value = serde_json::from_str(&parse(&masked_code).unwrap()).unwrap();
-        assert_eq!(masked, parsed);
-
-        // Undashed lowercase is not a code by the game's own rules.
-        assert_eq!(parse("aaaaaaaab"), Err(INVALID));
-        assert_eq!(parse("AAA-AAA-AA0"), Err(INVALID));
+    fn seed_bridge_returns_the_shared_text_and_rejects_bad_input() {
+        assert_eq!(
+            call_text_entry(seedfinder_seed_format, " 1a!b@c").unwrap(),
+            seed::format_input(" 1a!b@c")
+        );
+        assert_eq!(
+            call_text_entry(seedfinder_seed_parse, "aaa-aaa-aab").unwrap(),
+            seed::parse_document("aaa-aaa-aab").unwrap()
+        );
+        assert_eq!(
+            call_text_entry(seedfinder_seed_parse, "AAA-AAA-AA0"),
+            Err(INVALID)
+        );
 
         let mut pointer = ptr::null_mut();
         let mut len = 0;
@@ -911,93 +798,50 @@ mod tests {
     }
 
     #[test]
-    fn start_decision_bridge_reports_the_documented_names() {
-        use shpd_seedfinder_core::catalog::ItemKind;
-        use shpd_seedfinder_core::challenges::Challenges;
-        use shpd_seedfinder_core::query::{
-            Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
+    fn start_decision_bridge_maps_nulls_flags_and_error_codes() {
+        let target = query_packet();
+        let call = |candidate: &[u8], target: Option<&[u8]>, base: Option<&[u8]>| {
+            let mut pointer = ptr::null_mut();
+            let mut len = 0;
+            let (target_pointer, target_len) =
+                target.map_or((ptr::null(), 0), |packet| (packet.as_ptr(), packet.len()));
+            let (base_pointer, base_len) =
+                base.map_or((ptr::null(), 0), |packet| (packet.as_ptr(), packet.len()));
+            let code = seedfinder_decide_start(
+                candidate.as_ptr(),
+                candidate.len(),
+                target_pointer,
+                target_len,
+                0,
+                1,
+                base_pointer,
+                base_len,
+                &raw mut pointer,
+                &raw mut len,
+            );
+            if code != OK {
+                return Err(code);
+            }
+            Ok(String::from_utf8(unsafe { take_packet(pointer, len) }).unwrap())
         };
-        use shpd_seedfinder_core::wire::encode_query;
 
-        let requirement = |kind| Requirement {
-            kind,
-            weapon_category: None,
-            item: None,
-            tier: TierRequirement::Any,
-            upgrade: UpgradeRequirement::Any,
-            effect: None,
-            require_uncursed: false,
-            source: None,
-            identity_group: None,
-            max_depth: None,
-        };
-        let query = |kind| SearchQuery {
-            requirements: vec![requirement(kind)],
-            max_depth: 24,
-            challenges: Challenges::NONE,
-            require_blacksmith: false,
-            exclude_blacksmith_rewards: false,
-            wandmaker_quest: None,
-            fast_mode: false,
-        };
-        let target = encode_query(&query(ItemKind::Ring)).unwrap();
-        let deeper = encode_query(&SearchQuery {
-            max_depth: 9,
-            ..query(ItemKind::Ring)
-        })
-        .unwrap();
-        let armor = encode_query(&query(ItemKind::Armor)).unwrap();
-        let mut narrowed_query = query(ItemKind::Armor);
-        narrowed_query.requirements.push(Requirement {
-            upgrade: UpgradeRequirement::AtLeast(2),
-            ..requirement(ItemKind::Armor)
-        });
-        let narrowed = encode_query(&narrowed_query).unwrap();
+        // A null Target is "no Target"; a present one reaches the decision.
+        assert_eq!(
+            call(&target, None, None).unwrap(),
+            json::decide_start_name(&target, None, false, true, None).unwrap()
+        );
+        assert_eq!(
+            call(&target, Some(&target), None).unwrap(),
+            json::decide_start_name(&target, Some(&target), false, true, None).unwrap()
+        );
+        assert_eq!(call(&target, Some(&target), None).unwrap(), "target-refine");
 
-        assert_eq!(
-            call_decide_start(&target, Some(&target), false, true, None).unwrap(),
-            "target-refine"
-        );
-        assert_eq!(
-            call_decide_start(&deeper, Some(&target), false, true, None).unwrap(),
-            "target-filter"
-        );
-        assert_eq!(
-            call_decide_start(&armor, Some(&target), false, true, None).unwrap(),
-            "detached"
-        );
-        assert_eq!(
-            call_decide_start(&narrowed, Some(&target), false, true, Some(&armor)).unwrap(),
-            "continue-detached"
-        );
-        // A null Target anchors, and so does an empty Target Set the query
-        // does not continue.
-        assert_eq!(
-            call_decide_start(&target, None, false, true, None).unwrap(),
-            "anchor"
-        );
-        assert_eq!(
-            call_decide_start(&deeper, Some(&target), true, true, None).unwrap(),
-            "anchor"
-        );
+        // Every undecodable packet is rejected, as is a null candidate.
+        assert_eq!(call(b"bad", Some(&target), None), Err(INVALID));
+        assert_eq!(call(&target, Some(b"bad"), None), Err(INVALID));
+        assert_eq!(call(&target, None, Some(b"bad")), Err(INVALID));
+        assert_eq!(call(&[], Some(&target), None), Err(INVALID));
 
-        // Every undecodable packet is rejected, as are missing output slots.
-        assert_eq!(
-            call_decide_start(b"bad", Some(&target), false, true, None),
-            Err(INVALID)
-        );
-        assert_eq!(
-            call_decide_start(&target, Some(b"bad"), false, true, None),
-            Err(INVALID)
-        );
-        assert_eq!(
-            call_decide_start(&target, Some(&target), false, true, Some(b"bad")),
-            Err(INVALID)
-        );
-        assert_eq!(
-            call_decide_start(&[], Some(&target), false, true, None),
-            Err(INVALID)
-        );
         let mut len = 0;
         assert_eq!(
             seedfinder_decide_start(
@@ -1015,7 +859,6 @@ mod tests {
             INVALID
         );
     }
-
     #[test]
     fn filter_seeds_returns_ssr1_and_rejects_invalid_input() {
         let request = query_packet();
@@ -1078,109 +921,48 @@ mod tests {
 
     /// The frozen cross-platform fixtures: the Apple bridge decodes exactly
     /// the documents every other platform decodes.
-    const RESULTS_FIXTURES: [&str; 3] = [
-        include_str!("../../seedfinder-core/tests/fixtures/results-export-v1.json"),
-        include_str!(
-            "../../seedfinder-core/tests/fixtures/results-export-v1-weapon-categories.json"
-        ),
-        include_str!("../../seedfinder-core/tests/fixtures/results-export-wandmaker-quest.json"),
-    ];
-
-    fn call_results(
-        function: extern "C" fn(*const u8, usize, *mut *mut u8, *mut usize) -> i32,
+    /// Text-in, text-out entry points only marshal bytes around one shared
+    /// function, so each is checked against that function plus its own
+    /// null and error-code handling; behaviour is tested where it lives.
+    fn call_text_entry(
+        entry: extern "C" fn(*const u8, usize, *mut *mut u8, *mut usize) -> i32,
         input: &str,
     ) -> Result<String, i32> {
         let mut pointer = ptr::null_mut();
         let mut len = 0;
-        let code = function(input.as_ptr(), input.len(), &raw mut pointer, &raw mut len);
+        let code = entry(input.as_ptr(), input.len(), &raw mut pointer, &raw mut len);
         if code != OK {
             return Err(code);
         }
-        let packet = unsafe { take_packet(pointer, len) };
-        Ok(String::from_utf8(packet).unwrap())
+        Ok(String::from_utf8(unsafe { take_packet(pointer, len) }).unwrap())
     }
 
     #[test]
-    fn results_files_round_trip_through_the_frozen_fixtures() {
-        for fixture in RESULTS_FIXTURES {
-            let decoded: Value =
-                serde_json::from_str(&call_results(seedfinder_results_decode, fixture).unwrap())
-                    .unwrap();
-            assert_eq!(decoded["shpd_version"], "3.3.8");
-            assert!(!decoded["seeds"].as_array().unwrap().is_empty());
-            assert_eq!(decoded["dropped"], 0);
+    fn results_bridge_returns_the_shared_documents_and_rejects_bad_input() {
+        let fixture = include_str!("../../seedfinder-core/tests/fixtures/results-export-v1.json");
+        let decoded = call_text_entry(seedfinder_results_decode, fixture).unwrap();
+        assert_eq!(decoded, results_export::decode_document(fixture).unwrap());
 
-            let request = serde_json::json!({
-                "query": decoded["query"],
-                "seeds": decoded["seeds"],
-                "app_version": "test",
-            })
-            .to_string();
-            let encoded = call_results(seedfinder_results_encode, &request).unwrap();
-            let round_tripped: Value =
-                serde_json::from_str(&call_results(seedfinder_results_decode, &encoded).unwrap())
-                    .unwrap();
-            assert_eq!(round_tripped["query"], decoded["query"]);
-            assert_eq!(round_tripped["seeds"], decoded["seeds"]);
-            assert_eq!(round_tripped["dropped"], 0);
-            assert_eq!(round_tripped["app_version"], "test");
-        }
-    }
-
-    #[test]
-    fn results_decoding_dedupes_caps_and_refuses_oversized_files() {
-        let results = (0..MAX_ACCEPTED_RESULTS + 10)
-            .map(|index| {
-                serde_json::json!({
-                    "seed": DungeonSeed::new(
-                        u64::try_from(index % MAX_ACCEPTED_RESULTS).unwrap(),
-                    )
-                    .unwrap()
-                    .to_code()
-                })
-            })
-            .collect::<Vec<_>>();
-        let file = serde_json::json!({
-            "format": "seed-seeker-results",
-            "query": {"requirements": [{"item": "sword"}]},
-            "results": results,
+        let decoded: Value = serde_json::from_str(&decoded).unwrap();
+        let request = serde_json::json!({
+            "query": decoded["query"],
+            "seeds": decoded["seeds"],
+            "app_version": "test",
         })
         .to_string();
-        let decoded: Value =
-            serde_json::from_str(&call_results(seedfinder_results_decode, &file).unwrap()).unwrap();
         assert_eq!(
-            decoded["seeds"].as_array().unwrap().len(),
-            MAX_ACCEPTED_RESULTS
-        );
-        // Ten duplicates: importers report exactly what dedupe-and-cap removed.
-        assert_eq!(decoded["dropped"], 10);
-        assert!(decoded["app_version"].is_null());
-
-        let oversized = " ".repeat(results_export::MAX_FILE_BYTES + 1);
-        assert_eq!(
-            call_results(seedfinder_results_decode, &oversized),
-            Err(INVALID)
-        );
-    }
-
-    #[test]
-    fn results_encoding_rejects_invalid_requests() {
-        let invalid_query = r#"{"query":{"requirements":[]},"seeds":[]}"#;
-        assert_eq!(
-            call_results(seedfinder_results_encode, invalid_query),
-            Err(INVALID)
-        );
-        let invalid_seed =
-            r#"{"query":{"requirements":[{"item":"sword"}]},"seeds":["aaa-aaa-aab"]}"#;
-        assert_eq!(
-            call_results(seedfinder_results_encode, invalid_seed),
-            Err(INVALID)
-        );
-        assert_eq!(
-            call_results(seedfinder_results_encode, "not json"),
-            Err(INVALID)
+            call_text_entry(seedfinder_results_encode, &request).unwrap(),
+            results_export::encode_document(&request).unwrap()
         );
 
+        assert_eq!(
+            call_text_entry(seedfinder_results_decode, "not json"),
+            Err(INVALID)
+        );
+        assert_eq!(
+            call_text_entry(seedfinder_results_encode, r#"{"seeds":[]}"#),
+            Err(INVALID)
+        );
         let mut len = 0;
         assert_eq!(
             seedfinder_results_encode(ptr::null(), 0, ptr::null_mut(), &raw mut len),
@@ -1191,7 +973,6 @@ mod tests {
             INVALID
         );
     }
-
     #[test]
     fn share_links_round_trip_and_reject_garbage() {
         let document = br#"{"requirements":[{"item":"wand_fireblast","upgrade":{"at_least":3}}]}"#;

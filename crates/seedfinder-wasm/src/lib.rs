@@ -17,13 +17,12 @@ use shpd_seedfinder_core::query::{SearchQuery, decide_start as decide_start_quer
 use shpd_seedfinder_core::quests::{
     BlacksmithQuestType, GhostQuestType, ImpTarget, QuestSummary, WandmakerQuestType,
 };
+use shpd_seedfinder_core::results_export;
+pub use shpd_seedfinder_core::results_export::MAX_RESULTS;
 use shpd_seedfinder_core::search::WorldGenerator;
 use shpd_seedfinder_core::seed::{self, DungeonSeed, TOTAL_SEEDS};
-use shpd_seedfinder_session::json;
 use wasm_bindgen::prelude::*;
 
-/// Maximum number of matches retained by one browser search session.
-pub const MAX_RESULTS: usize = 1_024;
 const SEARCH_BATCH_SIZE: u64 = 256;
 
 #[derive(Serialize)]
@@ -160,7 +159,7 @@ struct AdvanceOutput {
 #[wasm_bindgen]
 #[must_use]
 pub fn engine_info() -> String {
-    engine_info_document(MAX_RESULTS).to_string()
+    engine_info_document().to_string()
 }
 
 /// Formats partial interactive seed input as uppercase groups of three. The
@@ -213,7 +212,7 @@ pub fn decode_share_text(text: &str) -> Result<String, JsError> {
 /// seed code that is not in the canonical `XXX-XXX-XXX` form.
 #[wasm_bindgen]
 pub fn encode_results_file(request_json: &str) -> Result<String, JsError> {
-    json::results_encode_document(request_json).map_err(|error| JsError::new(&error))
+    results_export::encode_document(request_json).map_err(|error| JsError::new(&error))
 }
 
 /// Decodes results-file text into `{"query": <canonical query document>,
@@ -228,7 +227,7 @@ pub fn encode_results_file(request_json: &str) -> Result<String, JsError> {
 /// that are not results files, and for an invalid query or seed code.
 #[wasm_bindgen]
 pub fn decode_results_file(contents: &str) -> Result<String, JsError> {
-    json::results_decode_document(contents, MAX_RESULTS).map_err(|error| JsError::new(&error))
+    results_export::decode_document(contents).map_err(|error| JsError::new(&error))
 }
 
 /// Decodes and analyzes a query without throwing or panicking on bad input.
@@ -510,7 +509,7 @@ fn decode_share_text_impl(text: &str) -> Result<String, String> {
 }
 
 fn parse_seed_code_impl(input: &str) -> Result<String, String> {
-    json::seed_parse_document(input).map_err(|error| error.to_string())
+    seed::parse_document(input).map_err(|error| error.to_string())
 }
 
 fn scout_impl(request_json: &str) -> Result<String, String> {
@@ -792,7 +791,7 @@ mod tests {
     #[test]
     fn engine_info_serializes_the_shared_document_with_the_browser_cap() {
         let info: Value = serde_json::from_str(&engine_info()).unwrap();
-        assert_eq!(info, engine_info_document(MAX_RESULTS));
+        assert_eq!(info, engine_info_document());
     }
 
     #[test]
