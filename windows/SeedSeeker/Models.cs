@@ -355,7 +355,23 @@ public static class ItemCatalog
     public static IReadOnlyList<string> ArmorCurses => Catalog.Modifiers.ArmorCurses;
     private static Root Load() =>
         JsonSerializer.Deserialize<Root>(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Assets", "catalog-v3.3.8.json")), new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+    /// <summary>
+    /// The items offered when picking one fresh. Tier-1 items are hidden: they
+    /// are the starting gear, never worth searching for.
+    /// </summary>
     public static IEnumerable<CatalogItem> For(ItemKind kind) => All.Where(x => kind.Accepts(x) && x.Tier != 1);
+
+    /// <summary>
+    /// The items a requirement editor lists for <paramref name="kind"/>: the
+    /// fresh-pick list, plus <paramref name="current"/> when the requirement
+    /// being edited already names an item that list hides. Imports and share
+    /// links resolve items through the whole catalog, so a requirement can name
+    /// a tier-1 item the picker would otherwise be unable to show — and saving
+    /// it unchanged would silently swap it for whichever item took its slot.
+    /// The order stays the catalog's.
+    /// </summary>
+    public static IReadOnlyList<CatalogItem> EditorItems(ItemKind kind, CatalogItem? current) =>
+        [.. All.Where(x => kind.Accepts(x) && (x.Tier != 1 || x.Id == current?.Id))];
     public static CatalogItem? Find(string id) => All.FirstOrDefault(x => x.Id == id);
     public static IEnumerable<string> Modifiers(ItemKind kind) => kind.Family() switch { ItemKind.Weapon => Enchantments.Concat(WeaponCurses), ItemKind.Armor => Glyphs.Concat(ArmorCurses), _ => [] };
     public static bool IsCurse(ItemKind kind, string effect) => (kind.Family() == ItemKind.Weapon ? WeaponCurses : ArmorCurses).Contains(effect);

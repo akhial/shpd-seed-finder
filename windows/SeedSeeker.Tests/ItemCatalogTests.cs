@@ -57,6 +57,64 @@ public sealed class ItemCatalogTests
     }
 
     [Fact]
+    public void TheFreshPickListHidesTierOneItems()
+    {
+        Assert.Contains(ItemCatalog.All, item => item.Tier == 1);
+        Assert.All(ItemCatalog.For(ItemKind.Weapon), item => Assert.NotEqual(1, item.Tier));
+        Assert.All(ItemCatalog.For(ItemKind.Armor), item => Assert.NotEqual(1, item.Tier));
+    }
+
+    [Fact]
+    public void TheEditorListIsTheFreshPickListUntilTheRequirementNamesAHiddenItem()
+    {
+        Assert.Equal(ItemCatalog.For(ItemKind.Weapon), ItemCatalog.EditorItems(ItemKind.Weapon, null));
+        // An item the list already offers adds nothing.
+        var sword = ItemCatalog.Find("sword")!;
+        Assert.Equal(ItemCatalog.For(ItemKind.MeleeWeapon), ItemCatalog.EditorItems(ItemKind.MeleeWeapon, sword));
+        // Rings and wands carry no tier, so nothing is ever hidden from them.
+        Assert.Equal(ItemCatalog.For(ItemKind.Ring), ItemCatalog.EditorItems(ItemKind.Ring, null));
+    }
+
+    [Fact]
+    public void AnImportedTierOneItemIsListedSoItRoundTrips()
+    {
+        // Imports and share links resolve through the whole catalog, so the
+        // editor has to be able to show — and re-save — a tier-1 item.
+        var worn = ItemCatalog.Find("worn_shortsword")!;
+        Assert.Equal(1, worn.Tier);
+        foreach (var kind in new[] { ItemKind.Weapon, ItemKind.MeleeWeapon })
+        {
+            var listed = ItemCatalog.EditorItems(kind, worn);
+            Assert.Contains(worn, listed);
+            // Exactly one extra entry, and the catalog order is preserved.
+            Assert.Equal(ItemCatalog.For(kind).Count() + 1, listed.Count);
+            Assert.Equal([.. ItemCatalog.All.Where(listed.Contains)], listed);
+        }
+        // Only the named item is unhidden, not every tier-1 item.
+        Assert.DoesNotContain(ItemCatalog.Find("cloth_armor"), ItemCatalog.EditorItems(ItemKind.Armor, worn));
+    }
+
+    [Fact]
+    public void EveryCatalogItemCanBeRepresentedByItsOwnKind()
+    {
+        foreach (var item in ItemCatalog.All)
+        {
+            var kind = item.Kind == ItemKind.Weapon && item.Class == WeaponClass.Thrown ? ItemKind.ThrownWeapon
+                : item.Kind == ItemKind.Weapon ? ItemKind.MeleeWeapon : item.Kind;
+            Assert.Contains(item, ItemCatalog.EditorItems(kind, item));
+            Assert.Contains(item, ItemCatalog.EditorItems(item.Kind, item));
+        }
+    }
+
+    [Fact]
+    public void AnItemOfAnotherKindIsNeverListed()
+    {
+        var worn = ItemCatalog.Find("worn_shortsword")!;
+        Assert.DoesNotContain(worn, ItemCatalog.EditorItems(ItemKind.Ring, worn));
+        Assert.DoesNotContain(worn, ItemCatalog.EditorItems(ItemKind.ThrownWeapon, worn));
+    }
+
+    [Fact]
     public void TheItemsAreTheAssetsOwn()
     {
         var entries = Asset().GetProperty("entries").EnumerateArray()
