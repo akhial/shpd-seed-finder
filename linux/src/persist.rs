@@ -105,15 +105,7 @@ pub fn save_presets(presets: &[UserPreset]) {
 /// quest certain, which is a rule about the search rather than about the
 /// saved preference.
 fn save_document(state: &AppState) -> Value {
-    json_query::encode(&SearchQuery {
-        requirements: state.requirements.iter().map(|r| r.to_core()).collect(),
-        max_depth: state.max_depth,
-        challenges: state.challenges,
-        require_blacksmith: state.require_blacksmith,
-        exclude_blacksmith_rewards: state.exclude_blacksmith_rewards,
-        wandmaker_quest: state.wandmaker_quest,
-        fast_mode: state.fast_mode,
-    })
+    json_query::encode(&state.unvalidated_query())
 }
 
 /// Restores one saved query. A document the engine cannot read — one from a
@@ -158,7 +150,9 @@ mod tests {
     use shpd_seedfinder_core::challenges::Challenges;
     use shpd_seedfinder_core::json_query;
     use shpd_seedfinder_core::model::ItemSource;
-    use shpd_seedfinder_core::query::{Requirement, TierRequirement, UpgradeRequirement};
+    use shpd_seedfinder_core::query::{
+        EffectRequirement, Requirement, TierRequirement, UpgradeRequirement,
+    };
     use shpd_seedfinder_core::quests::WandmakerQuestType;
 
     use super::{SavedPreset, decode_presets, decode_state, save_document};
@@ -180,7 +174,7 @@ mod tests {
         state.requirements.push(UiRequirement {
             item: Some(ItemId::Greatsword),
             upgrade: UpgradeRequirement::AtLeast(2),
-            effect: Some(Effect::Weapon(WeaponEffect::Blazing)),
+            effect: EffectRequirement::exactly(Effect::Weapon(WeaponEffect::Blazing)),
             require_uncursed: true,
             source: Some(ItemSource::SacrificialFire),
             identity_group: Some(3),
@@ -218,6 +212,74 @@ mod tests {
         assert!(restored.fast_mode);
         assert_eq!(restored.challenges, Challenges::DARKNESS);
         // Saving the restored state again produces the identical document.
+        assert_eq!(save_document(&restored), document);
+    }
+
+    #[test]
+    fn alternatives_effect_sets_and_upgrade_sums_round_trip() {
+        use shpd_seedfinder_core::catalog::ArmorEffect;
+        use shpd_seedfinder_core::query::{EffectRequirement, EffectSet, UpgradeSum};
+
+        let mut state = AppState::default();
+        // An "any of these" slot of two weapons.
+        for (item, upgrade) in [(ItemId::Spear, 3), (ItemId::Shuriken, 2)] {
+            let key = state.claim_key();
+            state.requirements.push(UiRequirement {
+                item: Some(item),
+                upgrade: UpgradeRequirement::Exact(upgrade),
+                alternative_group: Some(1),
+                ..UiRequirement::new(key)
+            });
+        }
+        // Armor with one of two glyphs, then any enchantment.
+        let key = state.claim_key();
+        state.requirements.push(UiRequirement {
+            kind: ItemKind::Armor,
+            effect: EffectRequirement::OneOf(
+                EffectSet::from_effects([
+                    Effect::Armor(ArmorEffect::Stone),
+                    Effect::Armor(ArmorEffect::Brimstone),
+                ])
+                .unwrap(),
+            ),
+            ..UiRequirement::new(key)
+        });
+        let key = state.claim_key();
+        state.requirements.push(UiRequirement {
+            effect: EffectRequirement::OneOf(EffectSet::enchantments(ItemKind::Weapon).unwrap()),
+            require_uncursed: true,
+            ..UiRequirement::new(key)
+        });
+        // Two Rings of Might adding up to +4.
+        for _ in 0..2 {
+            let key = state.claim_key();
+            state.requirements.push(UiRequirement {
+                kind: ItemKind::Ring,
+                item: Some(ItemId::RingMight),
+                identity_group: Some(1),
+                upgrade_sum: Some(UpgradeSum {
+                    group: 1,
+                    minimum_total: 4,
+                }),
+                ..UiRequirement::new(key)
+            });
+        }
+        assert!(state.to_query().is_ok());
+
+        let document = save_document(&state);
+        let entries = document["requirements"].as_array().unwrap();
+        assert_eq!(entries.len(), 5);
+        assert_eq!(entries[0]["any_of"].as_array().unwrap().len(), 2);
+        assert_eq!(entries[1]["effect"], json!(["Brimstone", "Stone"]));
+        assert_eq!(entries[2]["effect"], json!("any_enchantment"));
+        assert_eq!(
+            entries[3]["upgrade_sum"],
+            json!({ "group": 1, "at_least": 4 })
+        );
+
+        let restored = round_trip(&state);
+        assert_eq!(predicates(&restored), predicates(&state));
+        assert_eq!(restored.slot_count(), 5);
         assert_eq!(save_document(&restored), document);
     }
 

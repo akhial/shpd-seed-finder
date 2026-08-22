@@ -14,7 +14,7 @@ use shpd_seedfinder_core::wire::WireError;
 use crate::{ScoutMatchError, StartDecision, decide_start_packets, production_scout_matches};
 
 /// Marks which items of the world named by an `SSQ2` (or legacy raw seed)
-/// scout request satisfy the `SSF8` query, as `{"matched": [<item indices>],
+/// scout request satisfy the query, as `{"matched": [<item indices>],
 /// "matchedRequirements": <n>, "totalRequirements": <n>}`. The indices
 /// address the item list of the `SSC2` packet the same request scouts to.
 /// The keys are camelCase like every other bridge-built document (the
@@ -74,7 +74,7 @@ mod tests {
     fn start_decision_names_are_the_documented_ones() {
         use shpd_seedfinder_core::catalog::ItemKind;
         use shpd_seedfinder_core::query::{
-            Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
+            EffectRequirement, Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
         };
 
         let requirement = |kind| Requirement {
@@ -83,11 +83,13 @@ mod tests {
             item: None,
             tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Any,
-            effect: None,
+            effect: EffectRequirement::Any,
             require_uncursed: false,
             source: None,
             identity_group: None,
             max_depth: None,
+            alternative_group: None,
+            upgrade_sum: None,
         };
         let query = |kind| SearchQuery {
             requirements: vec![requirement(kind)],

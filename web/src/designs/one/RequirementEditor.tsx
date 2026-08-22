@@ -15,9 +15,17 @@ import {
   EXACT_TIER_MIN,
   FLOOR_LIMIT_OPTIONS,
   IDENTITY_GROUP_MAX,
+  UPGRADE_SUM_GROUP_MAX,
+  canonicalEffect,
+  effectNamesOf,
+  groupLetter,
+  isAnyEnchantment,
   maxUpgradeFor,
+  maxUpgradeOf,
+  upgradeSumCapacity,
   validateRequirement,
 } from '../../lib/query'
+import { ANY_ENCHANTMENT } from '../../lib/wasm/types'
 import type { ItemCategory, ItemSource, RequirementKind, RequirementState } from '../../lib/wasm/types'
 import { Field, Segmented, SliderRow, Sprite } from './parts'
 import { requirementSprite, requirementTitle } from './summary'
@@ -57,10 +65,19 @@ const UPGRADE_OPTIONS = [
   { value: 'at_least', label: 'At least' },
 ] as const
 
-/** "None" then one letter per same-item group, A onwards. */
-const GROUP_OPTIONS = [
+/** "None" then one letter per group, A onwards. */
+const groupOptions = (count: number) => [
   { value: 0, label: 'None' },
-  ...Array.from({ length: IDENTITY_GROUP_MAX }, (_, index) => ({ value: index + 1, label: String.fromCharCode(65 + index) })),
+  ...Array.from({ length: count }, (_, index) => ({ value: index + 1, label: groupLetter(index + 1) })),
+]
+const GROUP_OPTIONS = groupOptions(IDENTITY_GROUP_MAX)
+const SUM_GROUP_OPTIONS = groupOptions(UPGRADE_SUM_GROUP_MAX)
+
+type EffectMode = 'any' | 'any_enchantment' | 'specific'
+const EFFECT_MODE_OPTIONS: { value: EffectMode; label: string }[] = [
+  { value: 'any', label: 'Any' },
+  { value: 'any_enchantment', label: 'Any enchantment' },
+  { value: 'specific', label: 'Specific…' },
 ]
 
 /** Every integer from `first` through `last`. */
@@ -71,11 +88,14 @@ const clamp = (value: number, min: number, max: number) => Math.min(Math.max(val
 export function RequirementEditor({
   requirement,
   isNew,
+  others,
   onSave,
   onCancel,
 }: {
   requirement: RequirementState
   isNew: boolean
+  /** Every other requirement of the query, for combined-upgrade group totals. */
+  others: RequirementState[]
   onSave: (requirement: RequirementState) => void
   onCancel: () => void
 }) {
@@ -84,6 +104,9 @@ export function RequirementEditor({
     tier: { ...requirement.tier },
     upgrade: { ...requirement.upgrade },
   }))
+  // "Specific…" with nothing ticked yet is a transient editor state, not a
+  // filter, so it lives outside the draft; saving it means "any".
+  const [choosingEffects, setChoosingEffects] = useState(false)
 
   const kind = draft.kind ?? 'weapon'
   const family = kindFamily(kind)
@@ -92,6 +115,44 @@ export function RequirementEditor({
   const enchantments = family === 'weapon' ? weaponEnchantments : armorGlyphs
   const curses = family === 'weapon' ? weaponCurses : armorCurses
   const errors = validateRequirement(draft)
+  // An alternative can never be in a combined-upgrade group, so the picker is
+  // simply absent for members of an "any of these" slot.
+  const inAlternative = draft.alternativeGroup !== undefined
+  const effectMode: EffectMode = isAnyEnchantment(draft.effect) ? 'any_enchantment'
+    : draft.effect !== undefined || choosingEffects ? 'specific' : 'any'
+  const chosenEffects = effectMode === 'specific' ? effectNamesOf(draft.effect, kind) : []
+  const sumGroup = draft.upgradeSum?.group ?? 0
+  const sumPeers = sumGroup ? others.filter((other) => other.upgradeSum?.group === sumGroup) : []
+  const sumCapacity = sumGroup ? upgradeSumCapacity([draft, ...sumPeers]) : 0
+
+  const setEffectMode = (mode: EffectMode) => {
+    setChoosingEffects(mode === 'specific')
+    setDraft((current) => ({
+      ...current,
+      effect: mode === 'any' ? undefined : mode === 'any_enchantment' ? ANY_ENCHANTMENT
+        : isAnyEnchantment(current.effect) ? undefined : current.effect,
+    }))
+  }
+
+  const toggleEffect = (name: string) => {
+    setDraft((current) => {
+      const names = effectNamesOf(isAnyEnchantment(current.effect) ? undefined : current.effect, kind)
+      const next = names.includes(name) ? names.filter((entry) => entry !== name) : [...names, name]
+      return { ...current, effect: canonicalEffect(next, kind) }
+    })
+  }
+
+  const setSumGroup = (group: number) => {
+    setDraft((current) => {
+      if (group === 0) return { ...current, upgradeSum: undefined }
+      // Joining a group adopts its total; a fresh group starts at the most the item alone can carry.
+      const peers = others.filter((other) => other.upgradeSum?.group === group)
+      const inherited = peers[0]?.upgradeSum?.atLeast
+      const capacity = upgradeSumCapacity([current, ...peers])
+      const atLeast = clamp(inherited ?? current.upgradeSum?.atLeast ?? maxUpgradeOf(current), 1, capacity)
+      return { ...current, upgradeSum: { group, atLeast } }
+    })
+  }
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -119,6 +180,7 @@ export function RequirementEditor({
         upgrade,
       }
     })
+    setChoosingEffects(false)
   }
 
   const setTierMode = (mode: (typeof TIER_OPTIONS)[number]['value']) => {
@@ -290,30 +352,44 @@ export function RequirementEditor({
           <section className="d1-modal-section">
             <h3>Details</h3>
             {(family === 'weapon' || family === 'armor') && (
-              <Field label={family === 'weapon' ? 'Enchantment' : 'Glyph'}>
-                <select
-                  className="d1-select"
-                  value={draft.effect ?? ''}
-                  onChange={(event) => {
-                    const effect = event.currentTarget.value || undefined
-                    setDraft((current) => ({ ...current, effect }))
-                  }}
-                >
-                  <option value="">None</option>
-                  <optgroup label={family === 'weapon' ? 'Enchantments' : 'Glyphs'}>
-                    {enchantments.map((name) => (
-                      <option key={name} value={name}>{name}</option>
+              <>
+                <Field label={family === 'weapon' ? 'Enchantment' : 'Glyph'} stack>
+                  <Segmented
+                    value={effectMode}
+                    options={family === 'weapon' ? EFFECT_MODE_OPTIONS : EFFECT_MODE_OPTIONS.map((option) => (
+                      option.value === 'any_enchantment' ? { ...option, label: 'Any glyph' } : option
                     ))}
-                  </optgroup>
-                  {!draft.uncursed && (
-                    <optgroup label="Curses">
-                      {curses.map((name) => (
-                        <option key={name} value={name}>{name}</option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
-              </Field>
+                    onChange={setEffectMode}
+                    ariaLabel={family === 'weapon' ? 'Enchantment filter' : 'Glyph filter'}
+                  />
+                </Field>
+                {effectMode === 'specific' && (
+                  <div className="d1-effect-grid" role="group" aria-label="Effects">
+                    <span className="d1-effect-grid-head">{family === 'weapon' ? 'Enchantments' : 'Glyphs'}</span>
+                    {enchantments.map((name) => (
+                      <label className="d1-check" key={name}>
+                        <input type="checkbox" checked={chosenEffects.includes(name)} onChange={() => toggleEffect(name)} />
+                        <span>{name}</span>
+                      </label>
+                    ))}
+                    {!draft.uncursed && (
+                      <>
+                        <span className="d1-effect-grid-head">Curses</span>
+                        {curses.map((name) => (
+                          <label className="d1-check" key={name}>
+                            <input type="checkbox" checked={chosenEffects.includes(name)} onChange={() => toggleEffect(name)} />
+                            <span>{name}</span>
+                          </label>
+                        ))}
+                      </>
+                    )}
+                    <p className="d1-caption d1-effect-grid-note">
+                      {chosenEffects.length === 0 ? 'Tick the effects the item may carry; none ticked means any.'
+                        : `Matches any one of ${chosenEffects.length} effect${chosenEffects.length === 1 ? '' : 's'}.`}
+                    </p>
+                  </div>
+                )}
+              </>
             )}
             <label className="d1-check">
               <input
@@ -321,11 +397,12 @@ export function RequirementEditor({
                 checked={draft.uncursed}
                 onChange={(event) => {
                   const uncursed = event.currentTarget.checked
-                  setDraft((current) => ({
-                    ...current,
-                    uncursed,
-                    effect: uncursed && current.effect && curses.includes(current.effect) ? undefined : current.effect,
-                  }))
+                  // Curses leave the selection as they leave the grid.
+                  setDraft((current) => {
+                    if (!uncursed || current.effect === undefined || isAnyEnchantment(current.effect)) return { ...current, uncursed }
+                    const kept = effectNamesOf(current.effect, kind).filter((name) => !curses.includes(name))
+                    return { ...current, uncursed, effect: canonicalEffect(kept, kind) }
+                  })
                 }}
               />
               <span>Require uncursed</span>
@@ -353,6 +430,31 @@ export function RequirementEditor({
                 ariaLabel="Same-item group"
               />
             </Field>
+            {!inAlternative && (
+              <>
+                <Field label="Combined upgrade group" stack>
+                  <Segmented value={sumGroup} options={SUM_GROUP_OPTIONS} onChange={setSumGroup} ariaLabel="Combined upgrade group" />
+                </Field>
+                {draft.upgradeSum && (
+                  <>
+                    <SliderRow
+                      label="Total at least"
+                      valueLabel={`+${draft.upgradeSum.atLeast} across ${sumPeers.length + 1} item${sumPeers.length === 0 ? '' : 's'}`}
+                      min={1}
+                      max={Math.max(1, sumCapacity)}
+                      value={draft.upgradeSum.atLeast}
+                      fill
+                      onChange={(atLeast) => setDraft((current) => (current.upgradeSum ? { ...current, upgradeSum: { ...current.upgradeSum, atLeast } } : current))}
+                    />
+                    <p className="d1-caption">
+                      {sumPeers.length === 0
+                        ? `Group ${groupLetter(sumGroup)} has no other items yet; add more with the same group and their upgrades add up.`
+                        : `The upgrades of group ${groupLetter(sumGroup)}'s ${sumPeers.length + 1} items must add up to the total; changing it here updates them all.`}
+                    </p>
+                  </>
+                )}
+              </>
+            )}
             <label className="d1-check">
               <input
                 type="checkbox"

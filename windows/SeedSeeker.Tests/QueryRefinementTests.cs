@@ -164,4 +164,31 @@ public sealed class QueryRefinementTests
     {
         Kind = ItemKind.Ring, Item = new CatalogItem(id, id, ItemKind.Ring, 0, 3),
     };
+
+    [Fact]
+    public void AlternativesSumsAndEffectSetsReachTheEngine()
+    {
+        // An "any of these" slot continues itself, and a narrower set (one
+        // member dropped) continues the wider one; not the reverse.
+        static ItemRequirement Alternative(ItemKind kind, int group) => new() { Kind = kind, AlternativeGroup = group };
+        var either = Query(Alternative(ItemKind.Ring, 1), Alternative(ItemKind.Wand, 1));
+        Assert.True(QueryRefinement.CanRefine(either.Clone(), either));
+        Assert.True(QueryRefinement.CanRefine(Query(Ring()), either));
+        Assert.False(QueryRefinement.CanRefine(either, Query(Ring())));
+
+        // A higher combined total strengthens the group; a lower one loosens it.
+        static QuerySettings Sum(int atLeast) => Query(
+            new ItemRequirement { Kind = ItemKind.Wand, UpgradeSum = new(1, atLeast) },
+            new ItemRequirement { Kind = ItemKind.Wand, UpgradeSum = new(1, atLeast) });
+        Assert.True(QueryRefinement.CanRefine(Sum(4), Sum(3)));
+        Assert.False(QueryRefinement.CanRefine(Sum(3), Sum(4)));
+
+        // A subset of effects is stricter than the set; "any enchantment" is
+        // wider than one enchantment.
+        static QuerySettings Effect(EffectFilter filter) => Query(new ItemRequirement { Kind = ItemKind.Weapon, Effect = filter });
+        Assert.True(QueryRefinement.CanRefine(Effect(EffectFilter.OneOf(["Blazing"])), Effect(EffectFilter.OneOf(["Blazing", "Chilling"]))));
+        Assert.False(QueryRefinement.CanRefine(Effect(EffectFilter.OneOf(["Blazing", "Chilling"])), Effect(EffectFilter.OneOf(["Blazing"]))));
+        Assert.True(QueryRefinement.CanRefine(Effect(EffectFilter.OneOf(["Blazing"])), Effect(EffectFilter.Enchantment())));
+        Assert.False(QueryRefinement.CanRefine(Effect(EffectFilter.Enchantment()), Effect(EffectFilter.OneOf(["Blazing"]))));
+    }
 }

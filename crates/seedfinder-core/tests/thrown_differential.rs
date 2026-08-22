@@ -7,7 +7,9 @@ use shpd_seedfinder_core::feasibility::QueryPlan;
 use shpd_seedfinder_core::main_world::CanonicalMainWorldGenerator;
 use shpd_seedfinder_core::main_world::generate_main_world;
 use shpd_seedfinder_core::model::ItemSource;
-use shpd_seedfinder_core::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
+use shpd_seedfinder_core::query::{
+    EffectRequirement, Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
+};
 use shpd_seedfinder_core::search::WorldGenerator;
 use shpd_seedfinder_core::seed::DungeonSeed;
 
@@ -20,11 +22,13 @@ fn requirement(category: Option<WeaponCategory>, upgrade: UpgradeRequirement) ->
         item: None,
         tier: TierRequirement::Any,
         upgrade,
-        effect: None,
+        effect: EffectRequirement::Any,
         require_uncursed: false,
         source: None,
         identity_group: None,
         max_depth: None,
+        alternative_group: None,
+        upgrade_sum: None,
     }
 }
 

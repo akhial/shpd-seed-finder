@@ -26,6 +26,7 @@ public sealed class EngineConstantsTests
         Assert.Equal(SearchLimits.BoundedTierMin, Limit("boundedTierMin"));
         Assert.Equal(SearchLimits.BoundedTierMax, Limit("boundedTierMax"));
         Assert.Equal(SearchLimits.IdentityGroupMax, Limit("identityGroupMax"));
+        Assert.Equal(SearchLimits.UpgradeSumGroupMax, Limit("upgradeSumGroupMax"));
         Assert.Equal(SearchLimits.MaxUpgradeDefault, Limit("maxUpgradeDefault"));
         Assert.Equal(SearchLimits.MaxUpgradeRing, Limit("maxUpgradeRing"));
         // The families route to the right maximum, narrowed weapon kinds included.

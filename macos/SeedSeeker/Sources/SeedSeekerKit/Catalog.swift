@@ -92,6 +92,14 @@ public enum ItemCatalog {
     public static let armorCurses = document.modifiers.armorCurses
     public static func forKind(_ kind: ItemKind) -> [CatalogItem] { switch kind { case .weapon: weapons; case .meleeWeapon: meleeWeapons; case .thrownWeapon: thrownWeapons; case .armor: armor; case .wand: wands; case .ring: rings } }
     public static func findById(_ id: String) -> CatalogItem? { all.first { $0.id == id } }
+    /// Every effect the family can carry in the shared asset's order — the
+    /// non-curse effects alphabetically, then the curses alphabetically — which
+    /// is also the order effect lists take in the canonical query document.
     public static func modifiersFor(_ kind: ItemKind) -> [String] { switch kind.family { case .weapon: enchantments + weaponCurses; case .armor: glyphs + armorCurses; default: [] } }
+    /// The family's non-curse effects in asset order.
+    public static func enchantmentsFor(_ kind: ItemKind) -> [String] {
+        let curses = cursesFor(kind)
+        return modifiersFor(kind).filter { !curses.contains($0) }
+    }
     public static func cursesFor(_ kind: ItemKind) -> [String] { switch kind.family { case .weapon: weaponCurses; case .armor: armorCurses; default: [] } }
 }

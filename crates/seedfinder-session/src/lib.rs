@@ -81,13 +81,13 @@ const fn advance_production_search_start(current: u64) -> u64 {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ScoutPacketError {
     Request(WireError),
     Response(WireError),
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ScoutCallError {
     Packet(ScoutPacketError),
     Panicked,
@@ -153,7 +153,7 @@ pub fn production_scout_world(
 }
 
 /// Failure modes of [`production_scout_matches`].
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ScoutMatchError {
     Request(WireError),
     Query(WireError),
@@ -161,7 +161,7 @@ pub enum ScoutMatchError {
 }
 
 /// Scouts the world named by an `SSQ2` (or legacy raw seed) scout request and
-/// reports which of its items satisfy the `SSF8` query in `query_packet`.
+/// reports which of its items satisfy the query in `query_packet`.
 ///
 /// The world is generated exactly like [`production_scout_packet`]'s, so the
 /// reported item indices address the item list of the `SSC2` packet that
@@ -250,7 +250,7 @@ pub fn filter_matching_seeds(
 }
 
 /// Packet form of [`filter_matching_seeds`] for wire frontends: decodes an
-/// `SSF8` query request, filters `seed_values`, and encodes the surviving
+/// query request, filters `seed_values`, and encodes the surviving
 /// seeds as an `SSR1` result packet. Generation panics are contained.
 ///
 /// # Errors
@@ -271,7 +271,7 @@ pub fn production_filter_packet(
 }
 
 /// Failure modes of [`production_filter_packet`].
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FilterPacketError {
     Request(WireError),
     Filter(SearchError),
@@ -279,7 +279,7 @@ pub enum FilterPacketError {
     Panicked,
 }
 
-/// Decodes two `SSF8` query requests and reports whether `candidate`
+/// Decodes two query requests and reports whether `candidate`
 /// continues `base`: an identical depth, challenge set and fast mode, world
 /// conditions (the blacksmith flags and the Wandmaker filter) at least as
 /// strict as the base's, and every requirement of `base` covered by a distinct
@@ -295,7 +295,7 @@ pub fn queries_continue(candidate: &[u8], base: &[u8]) -> Result<bool, WireError
     Ok(decode_query(candidate)?.continues(&decode_query(base)?))
 }
 
-/// Packet form of [`decide_start`]: the queries arrive as `SSF8` requests, an
+/// Packet form of [`decide_start`]: the queries arrive as query requests, an
 /// absent Target or detached base as `None`.
 ///
 /// # Errors
@@ -369,7 +369,7 @@ impl NativeSession {
         )
     }
 
-    /// Decodes an `SSF8` request and starts a canonical production search.
+    /// Decodes an query request and starts a canonical production search.
     ///
     /// # Errors
     ///
@@ -412,7 +412,7 @@ impl NativeSession {
         )
     }
 
-    /// Decodes an `SSF8` request and starts a resumed production search.
+    /// Decodes an query request and starts a resumed production search.
     ///
     /// # Errors
     ///
@@ -602,7 +602,7 @@ mod tests {
     use shpd_seedfinder_core::catalog::{ItemId, ItemKind};
     use shpd_seedfinder_core::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
     use shpd_seedfinder_core::query::{
-        Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
+        EffectRequirement, Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
     };
     use shpd_seedfinder_core::search::{SearchOptions, WorldGenerator};
     use shpd_seedfinder_core::seed::DungeonSeed;
@@ -697,11 +697,13 @@ mod tests {
                 item: Some(ItemId::WandFrost),
                 tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Exact(2),
-                effect: None,
+                effect: EffectRequirement::Any,
                 source: None,
                 identity_group: None,
                 max_depth: None,
                 require_uncursed: false,
+                alternative_group: None,
+                upgrade_sum: None,
             }],
             max_depth: 24,
             challenges: Challenges::NONE,
@@ -859,11 +861,13 @@ mod tests {
                 item: Some(known.item),
                 tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Any,
-                effect: None,
+                effect: EffectRequirement::Any,
                 source: None,
                 identity_group: None,
                 max_depth: None,
                 require_uncursed: false,
+                alternative_group: None,
+                upgrade_sum: None,
             }],
             max_depth: known.depth,
             challenges: Challenges::NONE,
@@ -908,7 +912,7 @@ mod tests {
         let seed = DungeonSeed::from_code("AAA-AAA-AAF").unwrap();
         let world = production_scout_world(seed, Challenges::NONE).unwrap();
         let known = world.items.first().cloned().unwrap();
-        let mut request = b"SSF8".to_vec();
+        let mut request = b"SSF9".to_vec();
         request.push(known.depth); // max_depth
         request.push(0); // flags
         request.extend_from_slice(&[0, 0]); // challenges
@@ -927,8 +931,10 @@ mod tests {
         request.extend_from_slice(id);
         request.extend_from_slice(&[0, 0]); // tier any
         request.extend_from_slice(&[0, 0]); // upgrade any
-        request.extend_from_slice(&[0, 0]); // no effect
-        request.extend_from_slice(&[0, 0, 0, 0]); // source, group, depth, flags
+        request.push(0); // any effect
+        // source, identity group, depth, alternative group, sum group, sum
+        // total, flags
+        request.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0]);
 
         let packet = production_filter_packet(&request, &[seed.value()]).unwrap();
         assert_eq!(&packet[..4], b"SSR1");
@@ -955,11 +961,13 @@ mod tests {
                 item: None,
                 tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Exact(4),
-                effect: None,
+                effect: EffectRequirement::Any,
                 require_uncursed: false,
                 source: None,
                 identity_group: None,
                 max_depth: None,
+                alternative_group: None,
+                upgrade_sum: None,
             }],
             max_depth: 16,
             challenges: Challenges::NONE,
@@ -1041,11 +1049,13 @@ mod tests {
             item: None,
             tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Any,
-            effect: None,
+            effect: EffectRequirement::Any,
             require_uncursed: false,
             source: None,
             identity_group: None,
             max_depth: None,
+            alternative_group: None,
+            upgrade_sum: None,
         }
     }
 

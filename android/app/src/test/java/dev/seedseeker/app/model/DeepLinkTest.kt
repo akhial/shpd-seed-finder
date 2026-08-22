@@ -62,7 +62,7 @@ class DeepLinkTest {
                     key = 1,
                     item = ItemCatalog.findById("war_scythe"),
                     upgrade = 2,
-                    modifier = "Grim",
+                    effect = EffectFilter.named("Grim"),
                     kind = ItemKind.MELEE_WEAPON,
                     upgradeMatch = UpgradeMatch.AT_LEAST,
                     source = ScoutItemSource.SACRIFICIAL_FIRE,
@@ -127,7 +127,7 @@ class DeepLinkTest {
         }
         for (kind in listOf(ItemKind.WEAPON, ItemKind.ARMOR)) {
             for (effect in ItemCatalog.modifiersFor(kind)) {
-                assertRoundTrips(minimal(wildcard(kind).copy(modifier = effect)))
+                assertRoundTrips(minimal(wildcard(kind).copy(effect = EffectFilter.named(effect))))
             }
         }
         for (source in ScoutItemSource.entries) {
@@ -136,6 +136,59 @@ class DeepLinkTest {
         for (challenge in Challenge.entries) {
             assertRoundTrips(minimal(wildcard(ItemKind.RING)).copy(challenges = challenge.bit))
         }
+    }
+
+    /**
+     * The new structures travel as version-2 codes; a plain query keeps
+     * writing the identical version-1 code it always did.
+     */
+    @Test
+    fun roundTripsAlternativeGroupsEffectSetsAndCombinedUpgradeGroups() {
+        val query = PresetQuery(
+            requirements = listOf(
+                ItemRequirement(
+                    key = 1,
+                    item = ItemCatalog.findById("spear"),
+                    upgrade = 3,
+                    alternativeGroup = 1,
+                ),
+                ItemRequirement(
+                    key = 2,
+                    item = ItemCatalog.findById("shuriken"),
+                    upgrade = 2,
+                    kind = ItemKind.THROWN_WEAPON,
+                    effect = EffectFilter.OneOf(listOf("Blocking", "Projecting")),
+                    alternativeGroup = 1,
+                ),
+                ItemRequirement(
+                    key = 3,
+                    item = null,
+                    kind = ItemKind.ARMOR,
+                    upgrade = 0,
+                    upgradeMatch = UpgradeMatch.ANY,
+                    effect = EffectFilter.AnyEnchantment,
+                    requireUncursed = true,
+                ),
+                ItemRequirement(
+                    key = 4,
+                    item = ItemCatalog.findById("ring_might"),
+                    upgrade = 0,
+                    upgradeMatch = UpgradeMatch.ANY,
+                    identityGroup = 1,
+                    upgradeSum = UpgradeSum(group = 2, atLeast = 4),
+                ),
+                ItemRequirement(
+                    key = 5,
+                    item = ItemCatalog.findById("ring_might"),
+                    upgrade = 0,
+                    upgradeMatch = UpgradeMatch.ANY,
+                    identityGroup = 1,
+                    upgradeSum = UpgradeSum(group = 2, atLeast = 4),
+                ),
+            ),
+        )
+        assertRoundTrips(query)
+        assertEquals(pinnedLink, DeepLink.encodeLink(pinnedQuery))
     }
 
     @Test

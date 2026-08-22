@@ -8,12 +8,23 @@
 extern "C" {
 #endif
 
-// All functions are thread-safe. Packets use the same wire formats as JNI:
-// Search requests use SSF8 and results use SSR1. SSF8 globals are:
+// All functions are thread-safe. Packets use the same wire formats as JNI.
+// Every query-taking call accepts either an SSF9 packet or, when the request
+// starts with '{', the canonical JSON query document that seedfinder_share_*
+// and seedfinder_results_* already speak — so a frontend needs only one query
+// encoder. Results use SSR1. SSF9 globals are:
 // magic[4], max_depth:u8, flags:u8, challenges:u16 little-endian,
 // wandmaker_quest:u8 (0 any, 1 corpse dust, 2 elemental embers, 3 rotberry),
-// requirement_count:u16 big-endian; tier mode 3 means at most. Each requirement
-// appends flags:u8 where bit 0 requires an uncursed item.
+// requirement_count:u16 big-endian; tier mode 3 means at most. Each
+// requirement carries, in order: kind:u8, item id:utf8_u16, tier mode+value,
+// upgrade mode+value, an effect predicate (mode:u8 0 = any; 1 = one-of,
+// followed by count:u8 and that many utf8_u16 wire names of the same family),
+// source:u8 (0 = any, else wire id + 1), identity_group:u8 (0 = none),
+// max_depth:u8 (0 = none), alternative_group:u8 (0 = none; equal non-zero
+// groups are alternatives satisfied by any one member), combined-upgrade
+// sum_group:u8 and sum_total:u8 (0/0 = none; members of one group must be
+// matched by distinct items whose upgrades total at least sum_total), and
+// flags:u8 where bit 0 requires an uncursed item.
 // Scout requests are SSQ2 magic[4], challenges:u16 little-endian, then the
 // UTF-8 seed code in all remaining bytes. Legacy raw UTF-8 seed codes use mask 0.
 // Scout responses use SSC2; each item's flags byte uses bit 0 for cursed
@@ -34,7 +45,7 @@ int32_t seedfinder_status(int64_t handle, int64_t out_status[5]);
 // stopped (any terminal state implies that); meaningless while it is
 // running — never resume from a running session's hint.
 int32_t seedfinder_resume_hint(int64_t handle, int64_t out_hint[2]);
-// Reports whether the SSF8 query in candidate continues the one in base:
+// Reports whether the query in candidate continues the one in base:
 // an identical depth, challenge set and fast mode, world conditions (the
 // blacksmith flags and the Wandmaker filter) at least as strict as base's,
 // and every
@@ -43,7 +54,7 @@ int32_t seedfinder_resume_hint(int64_t handle, int64_t out_hint[2]);
 // a stopped session's results and resume hint (filter-and-resume refining).
 // Returns 1 when it continues, 0 when it does not, negative on invalid packets.
 int32_t seedfinder_query_continues(const uint8_t *candidate, size_t candidate_len, const uint8_t *base, size_t base_len);
-// Reports what pressing Start Search must do with the SSF8 query in candidate,
+// Reports what pressing Start Search must do with the query in candidate,
 // per docs/search-semantics.md. target is the Target Query (NULL when there is
 // no Target, which always anchors), target_set_empty and
 // target_has_uncovered_seeds (non-zero for true) describe the Target Set and
@@ -57,7 +68,7 @@ int32_t seedfinder_decide_start(const uint8_t *candidate, size_t candidate_len, 
 void    seedfinder_cancel(int64_t handle);
 void    seedfinder_close(int64_t handle);
 int32_t seedfinder_scout(const uint8_t *request, size_t request_len, uint8_t **out_packet, size_t *out_len);
-// Marks which items of a scouted world satisfy the SSF8 query in query. The
+// Marks which items of a scouted world satisfy the query in query. The
 // scout request identifies the world exactly like seedfinder_scout, and the
 // returned UTF-8 JSON {"matched": [<item indices>], "matchedRequirements":
 // <n>, "totalRequirements": <n>} indexes the item list of the SSC2 packet
@@ -67,7 +78,7 @@ int32_t seedfinder_scout(const uint8_t *request, size_t request_len, uint8_t **o
 // "matchedRequirements" entries and a partial match marks only the items it
 // could explain. The return packet is freed with seedfinder_buffer_free.
 int32_t seedfinder_scout_matches(const uint8_t *request, size_t request_len, const uint8_t *query, size_t query_len, uint8_t **out_packet, size_t *out_len);
-// Re-verifies seeds_len numeric seed values against the SSF8 query in request
+// Re-verifies seeds_len numeric seed values against the query in request
 // and returns the surviving seeds as an SSR1 packet in input order.
 int32_t seedfinder_filter_seeds(const uint8_t *request, size_t request_len, const uint64_t *seeds, size_t seeds_len, uint8_t **out_packet, size_t *out_len);
 // Share links carry a query as a compact code. Encode takes the canonical

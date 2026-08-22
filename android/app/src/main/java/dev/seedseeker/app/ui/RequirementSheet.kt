@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -29,7 +30,6 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.ModalBottomSheet
@@ -49,6 +49,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
@@ -57,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.seedseeker.app.catalog.ItemCatalog
 import dev.seedseeker.app.model.CatalogItem
+import dev.seedseeker.app.model.EffectFilter
 import dev.seedseeker.app.model.FLOOR_LIMIT_OPTIONS
 import dev.seedseeker.app.model.ItemKind
 import dev.seedseeker.app.model.ItemRequirement
@@ -64,23 +67,44 @@ import dev.seedseeker.app.model.ScoutItemSource
 import dev.seedseeker.app.model.SearchLimits
 import dev.seedseeker.app.model.TierMatch
 import dev.seedseeker.app.model.UpgradeMatch
+import dev.seedseeker.app.model.UpgradeSum
 import dev.seedseeker.app.model.floorLimitIndex
+import dev.seedseeker.app.model.groupLetter
 import java.util.Locale
 import kotlin.math.roundToInt
 
 private enum class SheetStep { ITEM, DETAILS }
 
+/** The three shapes an effect filter takes in the editor. */
+private enum class EffectMode(val label: String) {
+    ANY("Any"),
+    ANY_ENCHANTMENT("Any enchantment"),
+    SPECIFIC("Specific…"),
+}
+
+/**
+ * The requirement editor. [requirements] is the whole list the row lives in:
+ * the combined-upgrade slider reads the other members of a group from it, and
+ * [onSave] receives the finished row — with [editing]'s key and alternative
+ * group, or key 0 for a new row — for the caller to place.
+ *
+ * [startWithItemPicker] opens an existing row on the item step, which is what
+ * a freshly forked alternative wants: the copy is meant to become a different
+ * item.
+ */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun RequirementSheet(
     editing: ItemRequirement?,
+    requirements: List<ItemRequirement>,
+    startWithItemPicker: Boolean = false,
     onDismiss: () -> Unit,
-    onSave: (CatalogItem?, ItemKind, TierMatch, Int, UpgradeMatch, Int, String?, ScoutItemSource?, Int?, Int?, Boolean) -> Unit,
+    onSave: (ItemRequirement) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val identity = editing?.key ?: -1L
     var step by remember(identity) {
-        mutableStateOf(if (editing == null) SheetStep.ITEM else SheetStep.DETAILS)
+        mutableStateOf(if (editing == null || startWithItemPicker) SheetStep.ITEM else SheetStep.DETAILS)
     }
     var kind by remember(identity) { mutableStateOf(editing?.kind ?: ItemKind.WEAPON) }
     var selectedItem by remember(identity) {
@@ -102,16 +126,69 @@ fun RequirementSheet(
     var tierMatch by remember(identity) { mutableStateOf(editing?.tierMatch ?: TierMatch.ANY) }
     var tier by remember(identity) { mutableStateOf(editing?.tier?.takeIf { it >= 2 } ?: 2) }
     var tierMenuExpanded by remember(identity) { mutableStateOf(false) }
-    var modifierName by remember(identity) { mutableStateOf(editing?.modifier) }
-    var modifierMenuExpanded by remember(identity) { mutableStateOf(false) }
+    var effectMode by remember(identity) {
+        mutableStateOf(
+            when (editing?.effect) {
+                null, EffectFilter.Any -> EffectMode.ANY
+                EffectFilter.AnyEnchantment -> EffectMode.ANY_ENCHANTMENT
+                is EffectFilter.OneOf -> EffectMode.SPECIFIC
+            },
+        )
+    }
+    var selectedEffects by remember(identity) {
+        mutableStateOf((editing?.effect as? EffectFilter.OneOf)?.names?.toSet() ?: emptySet())
+    }
     var source by remember(identity) { mutableStateOf(editing?.source) }
     var sourceMenuExpanded by remember(identity) { mutableStateOf(false) }
     var identityGroup by remember(identity) { mutableStateOf(editing?.identityGroup) }
     var maximumDepth by remember(identity) { mutableStateOf(editing?.maximumDepth) }
     var requireUncursed by remember(identity) { mutableStateOf(editing?.requireUncursed ?: false) }
+    var sumGroup by remember(identity) { mutableStateOf(editing?.upgradeSum?.group) }
+    var sumAtLeast by remember(identity) { mutableStateOf(editing?.upgradeSum?.atLeast ?: 1) }
+
+    // Alternatives of one slot may not carry a combined-upgrade group.
+    val inAlternativeGroup = editing?.alternativeGroup != null
+    val draftMaximumUpgrade = if (upgradeMatch == UpgradeMatch.EXACT) upgrade else kind.maximumSearchUpgrade
+    // The other members of the chosen group, whose totals this row will share.
+    val sumSiblings = sumGroup?.let { group ->
+        requirements.filter { it.key != identity && it.upgradeSum?.group == group }
+    }.orEmpty()
+    val sumMaximum = draftMaximumUpgrade + sumSiblings.sumOf { it.maximumUpgrade }
 
     fun clampUpgrade(match: UpgradeMatch, forKind: ItemKind) {
         upgrade = normalizedUpgrade(upgrade, match, forKind)
+    }
+
+    fun resetEffects() {
+        effectMode = EffectMode.ANY
+        selectedEffects = emptySet()
+    }
+
+    val draft: Result<ItemRequirement> = runCatching {
+        ItemRequirement(
+            key = editing?.key ?: 0L,
+            item = selectedItem,
+            upgrade = upgrade,
+            effect = when (effectMode) {
+                EffectMode.ANY -> EffectFilter.Any
+                EffectMode.ANY_ENCHANTMENT -> EffectFilter.AnyEnchantment
+                EffectMode.SPECIFIC -> EffectFilter.of(selectedEffects, kind)
+            },
+            kind = kind,
+            tier = if (tierMatch == TierMatch.ANY) 0 else tier,
+            tierMatch = tierMatch,
+            upgradeMatch = upgradeMatch,
+            source = source,
+            identityGroup = identityGroup,
+            maximumDepth = maximumDepth,
+            requireUncursed = requireUncursed,
+            alternativeGroup = editing?.alternativeGroup,
+            upgradeSum = if (inAlternativeGroup) {
+                null
+            } else {
+                sumGroup?.let { UpgradeSum(it, sumAtLeast.coerceIn(1, maxOf(1, sumMaximum))) }
+            },
+        )
     }
 
     ModalBottomSheet(
@@ -133,7 +210,11 @@ fun RequirementSheet(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    if (editing == null) "Add requirement" else "Edit requirement",
+                    when {
+                        editing == null -> "Add requirement"
+                        inAlternativeGroup -> "Edit alternative"
+                        else -> "Edit requirement"
+                    },
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.weight(1f),
                 )
@@ -164,7 +245,7 @@ fun RequirementSheet(
                                             selectedItem = ItemCatalog.forKind(entry).first { it.tier != 1 }
                                             tierMatch = TierMatch.ANY
                                             tier = 2
-                                            modifierName = null
+                                            resetEffects()
                                             clampUpgrade(upgradeMatch, entry)
                                         }
                                     },
@@ -449,96 +530,81 @@ fun RequirementSheet(
                         val modifierLabel = kind.modifierLabel
                         if (modifierLabel != null) {
                             Spacer(Modifier.height(18.dp))
-                            ExposedDropdownMenuBox(
-                                expanded = modifierMenuExpanded,
-                                onExpandedChange = { modifierMenuExpanded = it },
+                            Text(modifierLabel, style = MaterialTheme.typography.titleSmall)
+                            Spacer(Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(3.dp),
                             ) {
-                                OutlinedTextField(
-                                    value = modifierName ?: "Any / none required",
-                                    onValueChange = { },
-                                    readOnly = true,
-                                    singleLine = true,
-                                    shape = MaterialTheme.shapes.medium,
-                                    label = { Text(modifierLabel) },
-                                    trailingIcon = {
-                                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = modifierMenuExpanded)
+                                EffectMode.entries.forEach { mode ->
+                                    ToggleButton(
+                                        checked = effectMode == mode,
+                                        onCheckedChange = { checked -> if (checked) effectMode = mode },
+                                        modifier = Modifier.weight(1f),
+                                        colors = ToggleButtonDefaults.toggleButtonColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+                                    ) {
+                                        Text(
+                                            if (mode == EffectMode.ANY_ENCHANTMENT) "Any ${modifierLabel.lowercase()}" else mode.label,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                            }
+                            if (effectMode == EffectMode.SPECIFIC) {
+                                Spacer(Modifier.height(8.dp))
+                                EffectGrid(
+                                    heading = if (kind.family == ItemKind.WEAPON) "ENCHANTMENTS" else "GLYPHS",
+                                    names = ItemCatalog.enchantmentsFor(kind),
+                                    selected = selectedEffects,
+                                    headingColor = MaterialTheme.colorScheme.primary,
+                                    onToggle = { name, checked ->
+                                        selectedEffects = if (checked) selectedEffects + name else selectedEffects - name
                                     },
-                                    modifier = Modifier
-                                        .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true)
-                                        .fillMaxWidth(),
                                 )
-                                ExposedDropdownMenu(
-                                    expanded = modifierMenuExpanded,
-                                    onDismissRequest = { modifierMenuExpanded = false },
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text("Any / none required") },
-                                        onClick = {
-                                            modifierName = null
-                                            modifierMenuExpanded = false
+                                // Curses are hidden (and deselected) while the item must be uncursed.
+                                if (!requireUncursed) {
+                                    Spacer(Modifier.height(6.dp))
+                                    EffectGrid(
+                                        heading = "CURSES",
+                                        names = ItemCatalog.cursesFor(kind),
+                                        selected = selectedEffects,
+                                        headingColor = MaterialTheme.colorScheme.error,
+                                        onToggle = { name, checked ->
+                                            selectedEffects = if (checked) selectedEffects + name else selectedEffects - name
                                         },
                                     )
+                                }
+                                if (selectedEffects.isEmpty()) {
                                     Text(
-                                        if (kind.family == ItemKind.WEAPON) "ENCHANTMENTS" else "GLYPHS",
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        letterSpacing = 1.sp,
-                                        color = MaterialTheme.colorScheme.primary,
+                                        "Nothing picked yet — any ${modifierLabel.lowercase()} is accepted until you do.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
-                                    val regularModifiers = if (kind.family == ItemKind.WEAPON) {
-                                        ItemCatalog.enchantments
-                                    } else {
-                                        ItemCatalog.glyphs
-                                    }
-                                    regularModifiers.forEach { option ->
-                                        DropdownMenuItem(
-                                            text = { Text(option) },
-                                            onClick = {
-                                                modifierName = option
-                                                modifierMenuExpanded = false
-                                            },
-                                        )
-                                    }
-                                    if (!requireUncursed) {
-                                        HorizontalDivider(
-                                            modifier = Modifier.padding(vertical = 5.dp),
-                                            color = MaterialTheme.colorScheme.outlineVariant,
-                                        )
-                                        Text(
-                                            "CURSES",
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            letterSpacing = 1.sp,
-                                            color = MaterialTheme.colorScheme.error,
-                                        )
-                                        ItemCatalog.cursesFor(kind).forEach { option ->
-                                            DropdownMenuItem(
-                                                text = { Text(option) },
-                                                onClick = {
-                                                    modifierName = option
-                                                    modifierMenuExpanded = false
-                                                },
-                                            )
-                                        }
-                                    }
                                 }
                             }
                         }
 
                         Spacer(Modifier.height(10.dp))
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .toggleable(
+                                    value = requireUncursed,
+                                    role = Role.Checkbox,
+                                    onValueChange = { checked ->
+                                        if (checked) {
+                                            selectedEffects = selectedEffects - ItemCatalog.cursesFor(kind).toSet()
+                                        }
+                                        requireUncursed = checked
+                                    },
+                                ),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Checkbox(
-                                checked = requireUncursed,
-                                onCheckedChange = { checked ->
-                                    if (checked && modifierName in ItemCatalog.cursesFor(kind)) {
-                                        modifierName = null
-                                    }
-                                    requireUncursed = checked
-                                },
-                            )
+                            Checkbox(checked = requireUncursed, onCheckedChange = null)
                             Text("Require uncursed", style = MaterialTheme.typography.bodyMedium)
                         }
 
@@ -620,52 +686,76 @@ fun RequirementSheet(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(3.dp),
-                        ) {
-                            ToggleButton(
-                                checked = identityGroup == null,
-                                onCheckedChange = { if (it) identityGroup = null },
-                                modifier = Modifier.weight(1f),
-                                colors = ToggleButtonDefaults.toggleButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                ),
-                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
-                            ) {
-                                Text("None", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            }
-                            (1..SearchLimits.IDENTITY_GROUP_MAX).forEach { group ->
-                                ToggleButton(
-                                    checked = identityGroup == group,
-                                    onCheckedChange = { if (it) identityGroup = group },
-                                    modifier = Modifier.weight(1f),
-                                    colors = ToggleButtonDefaults.toggleButtonColors(
-                                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                    ),
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+                        GroupPicker(
+                            selected = identityGroup,
+                            groupMax = SearchLimits.IDENTITY_GROUP_MAX,
+                            onSelect = { identityGroup = it },
+                        )
+
+                        if (!inAlternativeGroup) {
+                            Spacer(Modifier.height(18.dp))
+                            Text("Combined upgrade group", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                "Distinct items sharing a letter must have upgrade levels that add up to the group's total.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            GroupPicker(
+                                selected = sumGroup,
+                                groupMax = SearchLimits.UPGRADE_SUM_GROUP_MAX,
+                                onSelect = { group ->
+                                    sumGroup = group
+                                    if (group != null) {
+                                        // Joining a group adopts its total; every member shares one.
+                                        val shared = requirements
+                                            .firstOrNull { it.key != identity && it.upgradeSum?.group == group }
+                                            ?.upgradeSum?.atLeast
+                                        if (shared != null) sumAtLeast = shared
+                                    }
+                                },
+                            )
+                            if (sumGroup != null) {
+                                val total = sumAtLeast.coerceIn(1, maxOf(1, sumMaximum))
+                                Spacer(Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
                                 ) {
-                                    Text(('A'.code + group - 1).toChar().toString())
+                                    Text("Total at least", style = MaterialTheme.typography.labelLarge)
+                                    Text(
+                                        "+$total",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        color = MaterialTheme.colorScheme.primary,
+                                    )
                                 }
+                                // A one-item group can only ask for +1; the track still needs two ends.
+                                val sliderMaximum = maxOf(2, sumMaximum)
+                                Slider(
+                                    value = total.toFloat(),
+                                    onValueChange = { sumAtLeast = it.roundToInt() },
+                                    valueRange = 1f..sliderMaximum.toFloat(),
+                                    steps = sliderMaximum - 2,
+                                    enabled = sumMaximum > 1,
+                                    modifier = Modifier.semantics { stateDescription = "Total at least +$total" },
+                                )
+                                Text(
+                                    if (sumSiblings.isEmpty()) {
+                                        "Only this item so far: add more items to group ${groupLetter(sumGroup!!)} to raise the total."
+                                    } else {
+                                        "Shared with ${sumSiblings.size} other item${if (sumSiblings.size == 1) "" else "s"} " +
+                                            "in group ${groupLetter(sumGroup!!)}; together they can carry up to +$sumMaximum."
+                                    },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
                         Spacer(Modifier.height(14.dp))
                     }
 
                     Column(Modifier.padding(horizontal = 20.dp)) {
-                        RequirementPreview(
-                            item = selectedItem,
-                            kind = kind,
-                            tierMatch = tierMatch,
-                            tier = tier,
-                            upgradeMatch = upgradeMatch,
-                            upgrade = upgrade,
-                            modifierName = modifierName,
-                            source = source,
-                            identityGroup = identityGroup,
-                            maximumDepth = maximumDepth,
-                            requireUncursed = requireUncursed,
-                        )
+                        RequirementPreview(draft = draft)
                         Spacer(Modifier.height(10.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             OutlinedButton(
@@ -676,11 +766,8 @@ fun RequirementSheet(
                                 Text("Back")
                             }
                             Button(
-                                onClick = {
-                                    onSave(selectedItem, kind, tierMatch, if (tierMatch == TierMatch.ANY) 0 else tier,
-                                        upgradeMatch, upgrade, modifierName, source, identityGroup, maximumDepth,
-                                        requireUncursed)
-                                },
+                                onClick = { draft.getOrNull()?.let(onSave) },
+                                enabled = draft.isSuccess,
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(52.dp),
@@ -703,6 +790,90 @@ private fun normalizedUpgrade(value: Int, match: UpgradeMatch, kind: ItemKind): 
     UpgradeMatch.ANY -> 0
     UpgradeMatch.EXACT -> value.coerceIn(1, kind.maximumSearchUpgrade)
     UpgradeMatch.AT_LEAST -> value.coerceIn(1, kind.maximumSearchUpgrade - 1)
+}
+
+/** None / A–D toggle row shared by the same-item and combined-upgrade pickers. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun GroupPicker(
+    selected: Int?,
+    groupMax: Int,
+    onSelect: (Int?) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        ToggleButton(
+            checked = selected == null,
+            onCheckedChange = { if (it) onSelect(null) },
+            modifier = Modifier.weight(1f),
+            colors = ToggleButtonDefaults.toggleButtonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            ),
+            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+        ) {
+            Text("None", maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        (1..groupMax).forEach { group ->
+            ToggleButton(
+                checked = selected == group,
+                onCheckedChange = { if (it) onSelect(group) },
+                modifier = Modifier.weight(1f),
+                colors = ToggleButtonDefaults.toggleButtonColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                ),
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+            ) {
+                Text(groupLetter(group).toString())
+            }
+        }
+    }
+}
+
+/** A two-column checkbox grid of effect names under a small heading. */
+@Composable
+private fun EffectGrid(
+    heading: String,
+    names: List<String>,
+    selected: Set<String>,
+    headingColor: Color,
+    onToggle: (String, Boolean) -> Unit,
+) {
+    Text(
+        heading,
+        modifier = Modifier.padding(vertical = 4.dp),
+        style = MaterialTheme.typography.labelSmall,
+        letterSpacing = 1.sp,
+        color = headingColor,
+    )
+    names.chunked(2).forEach { pair ->
+        Row(Modifier.fillMaxWidth()) {
+            pair.forEach { name ->
+                val checked = name in selected
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .toggleable(
+                            value = checked,
+                            role = Role.Checkbox,
+                            onValueChange = { onToggle(name, it) },
+                        )
+                        .padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(checked = checked, onCheckedChange = null)
+                    Text(
+                        name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            if (pair.size == 1) Spacer(Modifier.weight(1f))
+        }
+    }
 }
 
 @Composable
@@ -748,20 +919,9 @@ private fun ItemTile(item: CatalogItem, selected: Boolean, onClick: () -> Unit) 
     }
 }
 
+/** The row as it will appear in the list, or why it cannot be saved yet. */
 @Composable
-private fun RequirementPreview(
-    item: CatalogItem?,
-    kind: ItemKind,
-    tierMatch: TierMatch,
-    tier: Int,
-    upgradeMatch: UpgradeMatch,
-    upgrade: Int,
-    modifierName: String?,
-    source: ScoutItemSource?,
-    identityGroup: Int?,
-    maximumDepth: Int?,
-    requireUncursed: Boolean,
-) {
+private fun RequirementPreview(draft: Result<ItemRequirement>) {
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerHighest,
@@ -772,38 +932,24 @@ private fun RequirementPreview(
                 .padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            SpriteTile(item = item, glow = ItemGlows.forEffect(modifierName), tileSize = 44)
+            val requirement = draft.getOrNull()
+            SpriteTile(item = requirement?.item, glow = ItemGlows.forEffect(requirement?.singleEffect), tileSize = 44)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(
-                    item?.name ?: when (tierMatch) {
-                        TierMatch.ANY -> "Any ${kind.singularLabel}"
-                        TierMatch.EXACT -> "Any Tier $tier ${kind.singularLabel}"
-                        TierMatch.AT_LEAST -> "Any Tier $tier+ ${kind.singularLabel}"
-                        TierMatch.AT_MOST -> "Any Tier $tier or lower ${kind.singularLabel}"
-                    },
-                    style = MaterialTheme.typography.titleSmall,
-                )
-                Text(
-                    buildString {
-                        append(
-                            when (upgradeMatch) {
-                                UpgradeMatch.ANY -> "Any upgrade"
-                                UpgradeMatch.EXACT -> "+$upgrade exactly"
-                                UpgradeMatch.AT_LEAST -> "+$upgrade or higher"
-                            },
-                        )
-                        modifierName?.let { append(" · $it") }
-                        if (requireUncursed) append(" · uncursed")
-                        source?.let { append(" · ${it.label}") }
-                        identityGroup?.let {
-                            append(" · group ${('A'.code + it - 1).toChar()}")
-                        }
-                        maximumDepth?.let { append(" · by floor $it") }
-                    },
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                )
+                if (requirement == null) {
+                    Text(
+                        draft.exceptionOrNull()?.message ?: "This requirement cannot be saved.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                } else {
+                    Text(requirement.title, style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        requirement.description.replace(" • ", " · "),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
         }
     }

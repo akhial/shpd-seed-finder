@@ -24,7 +24,7 @@
 use serde_json::{Map, Value, json};
 
 use crate::json_query;
-use crate::query::{MAX_IDENTITY_GROUP, SearchQuery};
+use crate::query::{MAX_IDENTITY_GROUP, MAX_UPGRADE_SUM_GROUP, SearchQuery};
 use crate::seed::DungeonSeed;
 
 /// Identifies a Seed Seeker results file.
@@ -103,14 +103,25 @@ pub fn decode(contents: &str) -> Result<ResultsFile, String> {
     let query = json_query::decode(&query_value.to_string())
         .map_err(|error| format!("the query in this results file is not usable: {error}"))?;
     for (index, requirement) in query.requirements.iter().enumerate() {
-        // The results format restricts same-item groups to what every app's
-        // editor can express (A..D), even though the engine allows more.
+        // The results format restricts same-item and combined-upgrade groups
+        // to what every app's editor can express (A..D), even though the
+        // engine allows more.
         if requirement
             .identity_group
             .is_some_and(|group| group > MAX_IDENTITY_GROUP)
         {
             return Err(format!(
                 "requirement {}: same-item group must be between 1 and {MAX_IDENTITY_GROUP} (A..D)",
+                index + 1
+            ));
+        }
+        if requirement
+            .upgrade_sum
+            .is_some_and(|sum| sum.group > MAX_UPGRADE_SUM_GROUP)
+        {
+            return Err(format!(
+                "requirement {}: combined upgrade group must be between 1 and \
+                 {MAX_UPGRADE_SUM_GROUP} (A..D)",
                 index + 1
             ));
         }
@@ -264,7 +275,9 @@ mod tests {
     use crate::catalog::{ItemId, ItemKind};
     use crate::challenges::Challenges;
     use crate::model::ItemSource;
-    use crate::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
+    use crate::query::{
+        EffectRequirement, Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
+    };
     use crate::quests::WandmakerQuestType;
     use crate::seed::DungeonSeed;
 
@@ -282,11 +295,13 @@ mod tests {
                     item: Some(ItemId::RingWealth),
                     tier: TierRequirement::Any,
                     upgrade: UpgradeRequirement::Exact(4),
-                    effect: None,
+                    effect: EffectRequirement::Any,
                     require_uncursed: false,
                     source: Some(ItemSource::ImpReward),
                     identity_group: None,
                     max_depth: None,
+                    alternative_group: None,
+                    upgrade_sum: None,
                 },
                 Requirement {
                     kind: ItemKind::Wand,
@@ -294,11 +309,13 @@ mod tests {
                     item: None,
                     tier: TierRequirement::Any,
                     upgrade: UpgradeRequirement::AtLeast(2),
-                    effect: None,
+                    effect: EffectRequirement::Any,
                     require_uncursed: true,
                     source: None,
                     identity_group: Some(1),
                     max_depth: Some(9),
+                    alternative_group: None,
+                    upgrade_sum: None,
                 },
             ],
             max_depth: 21,

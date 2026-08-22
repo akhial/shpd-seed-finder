@@ -12,6 +12,7 @@ import {
   MAX_DEPTH,
   MAX_UPGRADE_DEFAULT,
   MAX_UPGRADE_RING,
+  UPGRADE_SUM_GROUP_MAX,
 } from './query'
 import { RESULT_CAP } from './search/coordinator-state'
 import { SEARCH_START_STRIDE, TOTAL_SEEDS } from './search/traversal'
@@ -41,6 +42,7 @@ describe('local constants match the engine document', () => {
     expect(BOUNDED_TIER_MIN).toBe(info.limits.boundedTierMin)
     expect(BOUNDED_TIER_MAX).toBe(info.limits.boundedTierMax)
     expect(IDENTITY_GROUP_MAX).toBe(info.limits.identityGroupMax)
+    expect(UPGRADE_SUM_GROUP_MAX).toBe(info.limits.upgradeSumGroupMax)
     expect(MAX_UPGRADE_DEFAULT).toBe(info.limits.maxUpgradeDefault)
     expect(MAX_UPGRADE_RING).toBe(info.limits.maxUpgradeRing)
   })

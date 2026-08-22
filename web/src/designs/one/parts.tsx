@@ -65,9 +65,14 @@ export function Segmented<T extends string | number>({
   )
 }
 
-export function Field({ label, children }: { label: string; children: ReactNode }) {
+export function Field({ label, stack, children }: {
+  label: string
+  /** Let a wide control drop under its label on narrow screens. */
+  stack?: boolean
+  children: ReactNode
+}) {
   return (
-    <div className="d1-field">
+    <div className={stack ? 'd1-field d1-field-stack' : 'd1-field'}>
       <span className="d1-field-label">{label}</span>
       <div className="d1-field-control">{children}</div>
     </div>

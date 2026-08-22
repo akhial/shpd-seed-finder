@@ -48,7 +48,10 @@ type KeyHandler = Box<dyn Fn(u64)>;
 
 pub struct QueryPane {
     pub page: adw::NavigationPage,
-    list: gtk::ListBox,
+    requirements_group: adw::PreferencesGroup,
+    /// One boxed list per run of plain rows, one card per "any of these"
+    /// group, in slot order.
+    rows: gtk::Box,
     depth_row: adw::SpinRow,
     blacksmith_row: adw::SwitchRow,
     exclude_row: adw::SwitchRow,
@@ -60,6 +63,7 @@ pub struct QueryPane {
     updating: Cell<bool>,
     on_edit: RefCell<Option<KeyHandler>>,
     on_remove: RefCell<Option<KeyHandler>>,
+    on_add_alternative: RefCell<Option<KeyHandler>>,
     on_changed: RefCell<Option<Box<dyn Fn()>>>,
 }
 
@@ -92,11 +96,11 @@ impl QueryPane {
             .description("Every requirement must be satisfiable in the same run.")
             .header_suffix(&add_button)
             .build();
-        let list = gtk::ListBox::builder()
-            .css_classes(["boxed-list"])
-            .selection_mode(gtk::SelectionMode::None)
+        let rows = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(12)
             .build();
-        requirements_group.add(&list);
+        requirements_group.add(&rows);
 
         let depth_row = adw::SpinRow::builder()
             .title("Floor limit")
@@ -213,7 +217,8 @@ impl QueryPane {
 
         let pane = Rc::new(Self {
             page: nav_page,
-            list,
+            requirements_group,
+            rows,
             depth_row,
             blacksmith_row,
             exclude_row,
@@ -225,6 +230,7 @@ impl QueryPane {
             updating: Cell::new(false),
             on_edit: RefCell::new(None),
             on_remove: RefCell::new(None),
+            on_add_alternative: RefCell::new(None),
             on_changed: RefCell::new(None),
         });
 
@@ -261,6 +267,17 @@ impl QueryPane {
 
     pub fn connect_remove(&self, handler: impl Fn(u64) + 'static) {
         self.on_remove.replace(Some(Box::new(handler)));
+    }
+
+    /// Runs when the user asks for an alternative to the row `key`.
+    pub fn connect_add_alternative(&self, handler: impl Fn(u64) + 'static) {
+        self.on_add_alternative.replace(Some(Box::new(handler)));
+    }
+
+    fn call(handler: &RefCell<Option<KeyHandler>>, key: u64) {
+        if let Some(handler) = handler.borrow().as_ref() {
+            handler(key);
+        }
     }
 
     /// Runs after the user changes any scope or performance control.
@@ -311,50 +328,126 @@ impl QueryPane {
     }
 
     fn rebuild_rows(self: &Rc<Self>, state: &AppState) {
-        self.list.remove_all();
+        while let Some(child) = self.rows.first_child() {
+            self.rows.remove(&child);
+        }
+        self.requirements_group
+            .set_title(&requirements_title(state.slot_count()));
         if state.requirements.is_empty() {
+            let list = boxed_list();
             let row = adw::ActionRow::builder()
                 .title("No requirements yet")
                 .subtitle("Add one to describe the item you are hunting for")
                 .build();
             row.add_css_class("dim-label");
-            self.list.append(&row);
+            list.append(&row);
+            self.rows.append(&list);
             return;
         }
-        for requirement in &state.requirements {
-            let remove_button = gtk::Button::builder()
-                .icon_name("user-trash-symbolic")
+        // Consecutive plain rows share one boxed list; every "any of these"
+        // group is a card of its own, so the sidebar reads slot by slot.
+        let mut plain: Option<gtk::ListBox> = None;
+        for slot in state.slots() {
+            if let [index] = slot[..] {
+                let list = plain.get_or_insert_with(|| {
+                    let list = boxed_list();
+                    self.rows.append(&list);
+                    list
+                });
+                list.append(&self.requirement_row(&state.requirements[index], false));
+            } else {
+                plain = None;
+                self.rows.append(&self.alternative_card(state, &slot));
+            }
+        }
+    }
+
+    /// One "any of these" slot: a header with its own add action, then the
+    /// members separated by "or".
+    fn alternative_card(self: &Rc<Self>, state: &AppState, members: &[usize]) -> gtk::ListBox {
+        let card = boxed_list();
+        let add_button = gtk::Button::builder()
+            .child(
+                &adw::ButtonContent::builder()
+                    .icon_name("list-add-symbolic")
+                    .label("Alternative")
+                    .build(),
+            )
+            .css_classes(["flat"])
+            .valign(gtk::Align::Center)
+            .tooltip_text("Add Alternative")
+            .build();
+        let header = adw::ActionRow::builder()
+            .title("Any of these")
+            .subtitle("One of these items satisfies the requirement")
+            .build();
+        header.add_css_class("property");
+        header.add_suffix(&add_button);
+        card.append(&header);
+        if let Some(first) = members.first().copied() {
+            let key = state.requirements[first].key;
+            add_button.connect_clicked({
+                let pane = Rc::clone(self);
+                move |_| Self::call(&pane.on_add_alternative, key)
+            });
+        }
+        for (position, index) in members.iter().enumerate() {
+            if position > 0 {
+                card.append(&or_separator());
+            }
+            card.append(&self.requirement_row(&state.requirements[*index], true));
+        }
+        card
+    }
+
+    /// One requirement as an activatable row with its remove action; rows
+    /// outside a group also offer to fork into an "any of these" group (a
+    /// member's card carries that action instead).
+    fn requirement_row(
+        self: &Rc<Self>,
+        requirement: &UiRequirement,
+        in_group: bool,
+    ) -> adw::ActionRow {
+        let row = adw::ActionRow::builder()
+            .title(gtk::glib::markup_escape_text(&requirement.title()))
+            .subtitle(gtk::glib::markup_escape_text(&requirement.subtitle()))
+            .activatable(true)
+            .build();
+        row.add_prefix(&requirement_prefix(requirement));
+        let key = requirement.key;
+        if !in_group {
+            let fork_button = gtk::Button::builder()
+                .icon_name("add-alternative-symbolic")
                 .css_classes(["flat"])
                 .valign(gtk::Align::Center)
-                .tooltip_text("Remove Requirement")
+                .tooltip_text("Add Alternative")
                 .build();
-            let row = adw::ActionRow::builder()
-                .title(gtk::glib::markup_escape_text(&requirement.title()))
-                .subtitle(gtk::glib::markup_escape_text(&requirement.subtitle()))
-                .activatable(true)
-                .build();
-            row.add_prefix(&requirement_prefix(requirement));
-            row.add_suffix(&remove_button);
-
-            let key = requirement.key;
-            row.connect_activated({
+            fork_button.connect_clicked({
                 let pane = Rc::clone(self);
-                move |_| {
-                    if let Some(handler) = pane.on_edit.borrow().as_ref() {
-                        handler(key);
-                    }
-                }
+                move |_| Self::call(&pane.on_add_alternative, key)
             });
-            remove_button.connect_clicked({
-                let pane = Rc::clone(self);
-                move |_| {
-                    if let Some(handler) = pane.on_remove.borrow().as_ref() {
-                        handler(key);
-                    }
-                }
-            });
-            self.list.append(&row);
+            row.add_suffix(&fork_button);
         }
+        let remove_button = gtk::Button::builder()
+            .icon_name("user-trash-symbolic")
+            .css_classes(["flat"])
+            .valign(gtk::Align::Center)
+            .tooltip_text(if in_group {
+                "Remove Alternative"
+            } else {
+                "Remove Requirement"
+            })
+            .build();
+        row.add_suffix(&remove_button);
+        row.connect_activated({
+            let pane = Rc::clone(self);
+            move |_| Self::call(&pane.on_edit, key)
+        });
+        remove_button.connect_clicked({
+            let pane = Rc::clone(self);
+            move |_| Self::call(&pane.on_remove, key)
+        });
+        row
     }
 
     /// Flips the search action between its start and stop presentation.
@@ -383,11 +476,55 @@ fn requirement_prefix(requirement: &UiRequirement) -> gtk::Widget {
     match requirement.item {
         Some(item_id) => sprites::item_image(
             shpd_seedfinder_core::catalog::item(item_id),
-            glow::effect(requirement.effect),
+            glow::effect(requirement.pinned_effect()),
         ),
         None => {
             gtk::Image::from_icon_name(kind_icon(requirement.kind, requirement.weapon_category))
                 .upcast()
         }
+    }
+}
+
+fn boxed_list() -> gtk::ListBox {
+    gtk::ListBox::builder()
+        .css_classes(["boxed-list"])
+        .selection_mode(gtk::SelectionMode::None)
+        .build()
+}
+
+/// The inert "or" row between the members of an "any of these" card.
+fn or_separator() -> gtk::ListBoxRow {
+    let label = gtk::Label::builder()
+        .label("OR")
+        .css_classes(["caption-heading", "dim-label"])
+        .margin_top(2)
+        .margin_bottom(2)
+        .build();
+    gtk::ListBoxRow::builder()
+        .activatable(false)
+        .selectable(false)
+        .focusable(false)
+        .child(&label)
+        .build()
+}
+
+/// The requirements header, counting slots: an "any of these" group is one
+/// requirement however many alternatives it lists.
+fn requirements_title(slots: usize) -> String {
+    if slots == 0 {
+        "Requirements".to_owned()
+    } else {
+        format!("Requirements ({slots})")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::requirements_title;
+
+    #[test]
+    fn requirements_header_counts_slots() {
+        assert_eq!(requirements_title(0), "Requirements");
+        assert_eq!(requirements_title(3), "Requirements (3)");
     }
 }

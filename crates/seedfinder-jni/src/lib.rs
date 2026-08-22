@@ -81,7 +81,7 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_scoutSeed<'loc
     }
 }
 
-/// Marks which items of a scouted world satisfy the `SSF8` query in `query`.
+/// Marks which items of a scouted world satisfy the query in `query`.
 /// The scout request identifies the world exactly like `scoutSeed`, and the
 /// returned UTF-8 JSON `{"matched": [<item indices>], "matchedRequirements":
 /// <n>, "totalRequirements": <n>}` indexes the item list of the `SSC2` packet
@@ -216,7 +216,7 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_resumeHint<'lo
     array
 }
 
-/// Re-verifies specific seed values against the `SSF8` query in `request` and
+/// Re-verifies specific seed values against the query in `request` and
 /// returns the surviving seeds as an `SSR1` packet in input order. This is the
 /// "filter existing results" half of refining a search.
 #[unsafe(no_mangle)]
@@ -289,7 +289,7 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_filterSeeds<'l
     }
 }
 
-/// Reports whether the `SSF8` query in `candidate` continues the one in
+/// Reports whether the query in `candidate` continues the one in
 /// `base` — the soundness precondition for the filter-and-resume refine flow.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_queryContinues<'local>(
@@ -317,7 +317,7 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_queryContinues
     }
 }
 
-/// Reports what pressing Start Search must do with the `SSF8` query in
+/// Reports what pressing Start Search must do with the query in
 /// `candidate`, per `docs/search-semantics.md`. `target` is the Target Query
 /// (`null` when there is no Target, which always anchors), `targetSetEmpty`
 /// and `targetHasUncoveredSeeds` describe the Target Set and its coverage, and

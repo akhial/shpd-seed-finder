@@ -174,7 +174,7 @@ export function ScoutPanel({
                   <>
                     {' · '}
                     <span className={result.matchedRequirements === result.totalRequirements ? 'd1-match-full' : undefined}>
-                      {result.matchedRequirements} of {result.totalRequirements} requirement match{result.matchedRequirements === 1 ? '' : 'es'}
+                      {result.matchedRequirements} of {result.totalRequirements} requirement{result.totalRequirements === 1 ? '' : 's'} met
                     </span>
                   </>
                 )}

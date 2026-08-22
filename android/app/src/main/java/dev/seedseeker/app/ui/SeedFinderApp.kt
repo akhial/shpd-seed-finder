@@ -44,6 +44,7 @@ import dev.seedseeker.app.catalog.ItemCatalog
 import dev.seedseeker.app.engine.EngineInfo
 import dev.seedseeker.app.engine.NativeSearchSession
 import dev.seedseeker.app.engine.NativeSeedFinder
+import dev.seedseeker.app.engine.ScoutMatches
 import dev.seedseeker.app.engine.SeedCode
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.Challenge
@@ -58,6 +59,9 @@ import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.SearchState
 import dev.seedseeker.app.model.SearchStatus
 import dev.seedseeker.app.model.SeedResult
+import dev.seedseeker.app.model.slotCount
+import dev.seedseeker.app.model.toPresetQuery
+import dev.seedseeker.app.model.validationProblem
 import dev.seedseeker.app.model.WandmakerQuest
 import dev.seedseeker.app.update.UpdateChecker
 import dev.seedseeker.app.update.UpdateInfo
@@ -159,6 +163,9 @@ fun SeedFinderApp(
     }
     var editingRequirement by remember { mutableStateOf<ItemRequirement?>(null) }
     var showRequirementSheet by remember { mutableStateOf(false) }
+    // A freshly forked alternative is a copy of its sibling until saved; dismissing the
+    // sheet without saving drops it again so a duplicate never lingers in the list.
+    var pendingAlternativeKey by remember { mutableStateOf<Long?>(null) }
     var results by remember { mutableStateOf(emptyList<SeedResult>()) }
     // The run's full collection size: the listed `results` stop at RESULT_CAP
     // rows, but every seed count the user reads reports this number.
@@ -249,7 +256,7 @@ fun SeedFinderApp(
                 // reported what that removed.
                 val kept = imported.seeds
                 val dropped = imported.dropped
-                val importedResults = kept.map { SeedResult(it, imported.query.requirements.size) }
+                val importedResults = kept.map { SeedResult(it, imported.query.requirements.slotCount()) }
                 results = importedResults
                 foundCount = importedResults.size
                 searchedQuery = imported.query
@@ -399,21 +406,13 @@ fun SeedFinderApp(
                     engine.filterSeeds(currentRun.request, refine.keepSeeds.map { it.seed })
                 }
                 // Every survivor stays collected; the screen lists at most RESULT_CAP of them.
-                collected = kept.map { SeedResult(it, currentRun.request.requirements.size) }
+                collected = kept.map { SeedResult(it, currentRun.request.slotCount) }
                 results = displayedResults(collected)
                 foundCount = collected.size
                 // From here on the listed results match the refined request, so
                 // that is what an export must claim. A cancelled filter phase
                 // leaves the previous results — and their snapshot — untouched.
-                searchedQuery = PresetQuery(
-                    requirements = currentRun.request.requirements,
-                    maximumDepth = currentRun.request.maximumDepth,
-                    requireBlacksmith = currentRun.request.requireBlacksmith,
-                    excludeBlacksmithRewards = currentRun.request.excludeBlacksmithRewards,
-                    wandmakerQuest = currentRun.request.wandmakerQuest,
-                    fastMode = currentRun.request.fastMode,
-                    challenges = currentRun.request.challenges,
-                )
+                searchedQuery = currentRun.request.toPresetQuery()
                 scope.launch {
                     // The denominator is the filtered base: the full Target Set, or a
                     // continued detached run's own results.
@@ -552,7 +551,10 @@ fun SeedFinderApp(
         }
     }
 
-    // Null while the query is not runnable (for example, no requirements yet).
+    // Why the query cannot run yet — no requirements, an unattainable combined
+    // upgrade total, … — shown in the header instead of silently disabling Search.
+    val validationMessage = requirements.validationProblem()
+    // Null while the query is not runnable.
     val currentRequest = runCatching {
         SearchRequest(
             requirements = requirements,
@@ -586,7 +588,7 @@ fun SeedFinderApp(
     // scouts that same world again and marks it (its `scout_matches`), so the
     // app never re-derives the selection; null means there is nothing to mark
     // — no runnable query, or an engine that did not produce this world.
-    val scoutMatchIndices by produceState<Set<Int>?>(null, scoutResult, currentRequest) {
+    val scoutMatches by produceState<ScoutMatches?>(null, scoutResult, currentRequest) {
         val world = scoutResult
         val request = currentRequest
         val scoutedChallenges = scoutRun?.challenges
@@ -677,17 +679,46 @@ fun SeedFinderApp(
                     editingRequirement = it
                     showRequirementSheet = true
                 },
+                onAddAlternative = { requirement ->
+                    // Fork the row into an "any of these" group: it and its copy share a
+                    // fresh group id (or the row's existing one), and neither may keep a
+                    // combined-upgrade group, which alternatives cannot carry.
+                    val group = requirement.alternativeGroup
+                        ?: ((requirements.maxOfOrNull { it.alternativeGroup ?: 0 } ?: 0) + 1)
+                    val copy = requirement.copy(
+                        key = nextRequirementKey++,
+                        alternativeGroup = group,
+                        upgradeSum = null,
+                    )
+                    requirements = buildList {
+                        for (existing in requirements) {
+                            if (existing.key == requirement.key) {
+                                add(existing.copy(alternativeGroup = group, upgradeSum = null))
+                                add(copy)
+                            } else {
+                                add(existing)
+                            }
+                        }
+                    }
+                    pendingAlternativeKey = copy.key
+                    editingRequirement = copy
+                    showRequirementSheet = true
+                },
                 onRemove = { requirement ->
-                    requirements = requirements.filterNot { it.key == requirement.key }
+                    requirements = requirements
+                        .filterNot { it.key == requirement.key }
+                        .collapseSingletonGroups()
                 },
                 onMaximumDepthChange = { maximumDepth = it },
                 onRequireBlacksmithChange = { requireBlacksmith = it },
                 onExcludeBlacksmithRewardsChange = { excludeBlacksmithRewards = it },
                 onWandmakerQuestChange = { wandmakerQuest = it },
                 onFastModeChange = { fastMode = it },
+                validationMessage = validationMessage,
                 onSearch = {
                     if (currentRequest != null) {
                         importNotice = null
+                        searchError = null
                         // Start dispatch per docs/search-semantics.md: a query continuing
                         // the Target refines its full set and resumes its coverage, one
                         // sharing an item filters that set, and anything else scans
@@ -695,17 +726,7 @@ fun SeedFinderApp(
                         val plan = startPlanFor(
                             currentRequest, target, lastFinishedRun, lastRunKind, engine::decideStart,
                         )
-                        if (plan.refine == null) {
-                            searchedQuery = PresetQuery(
-                                requirements = requirements,
-                                maximumDepth = maximumDepth,
-                                requireBlacksmith = requireBlacksmith,
-                                excludeBlacksmithRewards = excludeBlacksmithRewards,
-                                wandmakerQuest = wandmakerQuest,
-                                fastMode = fastMode,
-                                challenges = challenges,
-                            )
-                        }
+                        if (plan.refine == null) searchedQuery = currentRequest.toPresetQuery()
                         // A refine only claims the new query once its filter phase has
                         // actually rewritten the results, so the snapshot is set there.
                         run = SearchRun(nextRunId++, currentRequest, plan.mode, plan.refine)
@@ -793,7 +814,7 @@ fun SeedFinderApp(
                 result = scoutResult,
                 isScouting = isScouting,
                 error = scoutError,
-                matchIndices = scoutMatchIndices,
+                matches = scoutMatches,
                 resultSeeds = resultSeeds,
                 scoutedSeed = scoutedSeed,
                 onScoutSeed = ::scoutSeed,
@@ -841,45 +862,32 @@ fun SeedFinderApp(
         if (showRequirementSheet) {
             RequirementSheet(
                 editing = editingRequirement,
-                onDismiss = { showRequirementSheet = false },
-                onSave = { item, kind, tierMatch, tier, upgradeMatch, upgrade, modifier, source, identityGroup, itemMaximumDepth, requireUncursed ->
+                requirements = requirements,
+                startWithItemPicker = pendingAlternativeKey != null,
+                onDismiss = {
+                    showRequirementSheet = false
+                    pendingAlternativeKey?.let { key ->
+                        requirements = requirements.filterNot { it.key == key }.collapseSingletonGroups()
+                    }
+                    pendingAlternativeKey = null
+                },
+                onSave = { saved ->
                     val existing = editingRequirement
-                    if (existing == null) {
-                        requirements = requirements + ItemRequirement(
-                            key = nextRequirementKey++,
-                            item = item,
-                            upgrade = upgrade,
-                            modifier = modifier,
-                            kind = kind,
-                            tier = tier,
-                            tierMatch = tierMatch,
-                            upgradeMatch = upgradeMatch,
-                            source = source,
-                            identityGroup = identityGroup,
-                            maximumDepth = itemMaximumDepth,
-                            requireUncursed = requireUncursed,
-                        )
+                    val placed = if (existing == null) {
+                        requirements + saved.copy(key = nextRequirementKey++)
                     } else {
-                        requirements = requirements.map {
-                            if (it.key == existing.key) {
-                                existing.copy(
-                                    item = item,
-                                    upgrade = upgrade,
-                                    modifier = modifier,
-                                    kind = kind,
-                                    tier = tier,
-                                    tierMatch = tierMatch,
-                                    upgradeMatch = upgradeMatch,
-                                    source = source,
-                                    identityGroup = identityGroup,
-                                    maximumDepth = itemMaximumDepth,
-                                    requireUncursed = requireUncursed,
-                                )
-                            } else {
-                                it
-                            }
+                        requirements.map { if (it.key == existing.key) saved.copy(key = existing.key) else it }
+                    }
+                    // Every member of a combined-upgrade group shares one total.
+                    val sum = saved.upgradeSum
+                    requirements = if (sum == null) {
+                        placed
+                    } else {
+                        placed.map {
+                            if (it.upgradeSum?.group == sum.group) it.copy(upgradeSum = sum) else it
                         }
                     }
+                    pendingAlternativeKey = null
                     showRequirementSheet = false
                 },
             )
@@ -937,6 +945,15 @@ fun SeedFinderApp(
                 },
             )
         }
+    }
+}
+
+/** Drops the alternative group of any row left alone in it, so its card collapses back to a row. */
+private fun List<ItemRequirement>.collapseSingletonGroups(): List<ItemRequirement> {
+    val sizes = filter { it.alternativeGroup != null }.groupingBy { it.alternativeGroup!! }.eachCount()
+    return map { requirement ->
+        val group = requirement.alternativeGroup
+        if (group != null && sizes[group] == 1) requirement.copy(alternativeGroup = null) else requirement
     }
 }
 

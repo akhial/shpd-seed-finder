@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package dev.seedseeker.app.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -59,6 +60,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
@@ -77,6 +79,8 @@ import dev.seedseeker.app.model.SearchStatus
 import dev.seedseeker.app.model.SeedResult
 import dev.seedseeker.app.model.WandmakerQuest
 import dev.seedseeker.app.model.floorLimitIndex
+import dev.seedseeker.app.model.slotCount
+import dev.seedseeker.app.model.slots
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -107,12 +111,15 @@ fun FinderScreen(
     onDeletePreset: (QueryPreset) -> Unit,
     onAdd: () -> Unit,
     onEdit: (ItemRequirement) -> Unit,
+    onAddAlternative: (ItemRequirement) -> Unit,
     onRemove: (ItemRequirement) -> Unit,
     onMaximumDepthChange: (Int) -> Unit,
     onRequireBlacksmithChange: (Boolean) -> Unit,
     onExcludeBlacksmithRewardsChange: (Boolean) -> Unit,
     onWandmakerQuestChange: (WandmakerQuest?) -> Unit,
     onFastModeChange: (Boolean) -> Unit,
+    /** Why the query cannot run yet, shown in the header; null when it is runnable. */
+    validationMessage: String?,
     onSearch: () -> Unit,
     onCancel: () -> Unit,
     canExportResults: Boolean,
@@ -194,7 +201,7 @@ fun FinderScreen(
         bottomBar = {
             Column {
                 SearchActionBar(
-                    requirementCount = requirements.size,
+                    canSearch = validationMessage == null,
                     status = status,
                     seedsPerSecond = seedsPerSecond,
                     elapsedSeconds = elapsedSeconds,
@@ -232,8 +239,10 @@ fun FinderScreen(
                     isSearching = isSearching,
                     refinePhase = refinePhase,
                     error = error,
+                    validationMessage = validationMessage,
                     onAdd = onAdd,
                     onEdit = onEdit,
+                    onAddAlternative = onAddAlternative,
                     onRemove = onRemove,
                     onMaximumDepthChange = onMaximumDepthChange,
                     onRequireBlacksmithChange = onRequireBlacksmithChange,
@@ -313,8 +322,10 @@ private fun QueryHeader(
     isSearching: Boolean,
     refinePhase: RefinePhase?,
     error: String?,
+    validationMessage: String?,
     onAdd: () -> Unit,
     onEdit: (ItemRequirement) -> Unit,
+    onAddAlternative: (ItemRequirement) -> Unit,
     onRemove: (ItemRequirement) -> Unit,
     onMaximumDepthChange: (Int) -> Unit,
     onRequireBlacksmithChange: (Boolean) -> Unit,
@@ -326,7 +337,7 @@ private fun QueryHeader(
     Column(Modifier.padding(horizontal = 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                "Requirements (${requirements.size})",
+                "Requirements (${requirements.slotCount()})",
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.weight(1f),
             )
@@ -348,15 +359,35 @@ private fun QueryHeader(
                 modifier = Modifier.heightIn(max = 280.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                items(requirements, key = { it.key }) { requirement ->
-                    RequirementRow(
-                        requirement = requirement,
-                        enabled = !isSearching,
-                        onEdit = { onEdit(requirement) },
-                        onRemove = { onRemove(requirement) },
-                    )
+                // One list entry per slot: an "any of these" group is a card of its members.
+                items(requirements.slots(), key = { it.first().key }) { slot ->
+                    if (slot.size == 1) {
+                        RequirementRow(
+                            requirement = slot.single(),
+                            enabled = !isSearching,
+                            onEdit = { onEdit(slot.single()) },
+                            onAddAlternative = { onAddAlternative(slot.single()) },
+                            onRemove = { onRemove(slot.single()) },
+                        )
+                    } else {
+                        AlternativesCard(
+                            members = slot,
+                            enabled = !isSearching,
+                            onEdit = onEdit,
+                            onAddAlternative = onAddAlternative,
+                            onRemove = onRemove,
+                        )
+                    }
                 }
             }
+        }
+        if (validationMessage != null && requirements.isNotEmpty()) {
+            Text(
+                validationMessage,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 4.dp),
+            )
         }
         Spacer(Modifier.height(4.dp))
         ScopeSection(
@@ -394,11 +425,68 @@ private fun QueryHeader(
     }
 }
 
+/**
+ * One "any of these" slot: its members stacked with OR separators. Each member
+ * edits, forks and removes like a plain row; the caller collapses the card
+ * back to a row once one member is left.
+ */
+@Composable
+private fun AlternativesCard(
+    members: List<ItemRequirement>,
+    enabled: Boolean,
+    onEdit: (ItemRequirement) -> Unit,
+    onAddAlternative: (ItemRequirement) -> Unit,
+    onRemove: (ItemRequirement) -> Unit,
+) {
+    Surface(
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(4.dp)) {
+            Text(
+                "Any of these · ${alternativesSummary(members.size)}",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(start = 8.dp, top = 4.dp, bottom = 4.dp),
+            )
+            members.forEachIndexed { index, member ->
+                if (index > 0) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        HorizontalDivider(Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant)
+                        Text(
+                            "OR",
+                            modifier = Modifier.padding(horizontal = 10.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        HorizontalDivider(Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant)
+                    }
+                }
+                RequirementRow(
+                    requirement = member,
+                    enabled = enabled,
+                    onEdit = { onEdit(member) },
+                    onAddAlternative = { onAddAlternative(member) },
+                    onRemove = { onRemove(member) },
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun RequirementRow(
     requirement: ItemRequirement,
     enabled: Boolean,
     onEdit: () -> Unit,
+    onAddAlternative: () -> Unit,
     onRemove: () -> Unit,
 ) {
     Surface(
@@ -414,7 +502,7 @@ private fun RequirementRow(
         ) {
             SpriteTile(
                 item = requirement.item,
-                glow = ItemGlows.forEffect(requirement.modifier),
+                glow = ItemGlows.forEffect(requirement.singleEffect),
                 tileSize = 40,
             )
             Spacer(Modifier.width(12.dp))
@@ -435,6 +523,15 @@ private fun RequirementRow(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+            }
+            // Forks this row into (or extends) an "any of these" group.
+            TextButton(
+                onClick = onAddAlternative,
+                enabled = enabled,
+                contentPadding = PaddingValues(horizontal = 8.dp),
+                modifier = Modifier.semantics { contentDescription = "Add alternative" },
+            ) {
+                Text("OR", style = MaterialTheme.typography.labelMedium)
             }
             IconButton(onClick = onRemove, enabled = enabled) {
                 Icon(
@@ -668,7 +765,7 @@ private fun ResultRow(result: SeedResult, onScout: () -> Unit) {
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun SearchActionBar(
-    requirementCount: Int,
+    canSearch: Boolean,
     status: SearchStatus?,
     seedsPerSecond: Double,
     elapsedSeconds: Long,
@@ -705,7 +802,7 @@ private fun SearchActionBar(
             } else {
                 Button(
                     onClick = onSearch,
-                    enabled = requirementCount > 0,
+                    enabled = canSearch,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp),

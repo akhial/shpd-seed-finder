@@ -40,13 +40,13 @@ bits are written.
 
 | Field | Bits | Meaning |
 | --- | --- | --- |
-| `version` | 4 | Format version. This document describes version `1`. Decoders must reject other versions (telling the user the link may come from a newer release), and encoders must never renumber or reorder anything within a version. |
+| `version` | 4 | Format version, `1` or `2`. Version 2 extends each requirement record (see below); encoders write version 1 whenever a query needs nothing version 2 adds, so plain links keep opening in older releases. Decoders must reject other versions (telling the user the link may come from a newer release), and encoders must never renumber or reorder anything within a version. |
 | `require_blacksmith` | 1 | Query flag. |
 | `exclude_blacksmith_rewards` | 1 | Query flag. |
 | `fast_mode` | 1 | Query flag. |
 | `max_depth` | 1 (+5) | Present only when not the default 24. Value is `max_depth − 1` (floors 1–24). |
 | `challenges` | 1 (+9) | Present only when nonzero. The upstream challenge bitmask: bit 0 `on_diet` … bit 8 `badder_bosses`, in the order of `CHALLENGE_NAMES` in `json_query.rs`. |
-| `wandmaker_quest` | 1 (+2) | Present only when the search filters on a Wandmaker variant. Value is the SSF8 quest id minus one: `0` corpse dust · `1` elemental embers · `2` rotberry. `3` is invalid. |
+| `wandmaker_quest` | 1 (+2) | Present only when the search filters on a Wandmaker variant. Value is the SSF9 quest id minus one: `0` corpse dust · `1` elemental embers · `2` rotberry. `3` is invalid. |
 | requirement count | 6 | Number of requirement records that follow (at most 63). |
 
 ### Requirement record
@@ -57,11 +57,14 @@ bits are written.
 | `item` | 1 (+7) | Item code: index into the frozen item table (88 entries today). |
 | `tier` | 2 (+3) | Mode `0` any (no value bits) · `1` exact · `2` at_least · `3` at_most, then the tier value. |
 | `upgrade` | 2 (+3) | Mode `0` any (no value bits) · `1` exact · `2` at_least, then the upgrade value. Mode `3` is invalid. |
-| `effect` | 1 (+5) | Effect code: index into the weapon-effect table for weapon kinds, the armor-effect table for armor. Invalid for wands and rings. |
+| `effect` (v1) | 1 (+5) | Effect code: index into the weapon-effect table for weapon kinds, the armor-effect table for armor. Invalid for wands and rings. |
+| `effect` (v2) | 2 (+5 or +24) | Mode `0` any (no value bits) · `1` one effect, then its 5-bit code · `2` any enchantment (every non-curse effect of the family, no value bits) · `3` a set, then a 24-bit mask whose bit *n* is effect code *n*. Modes 1–3 are invalid for wands and rings; a mode-3 mask must be nonzero. |
 | `uncursed` | 1 | Requirement flag. |
 | `source` | 1 (+5) | Source code: index into the frozen source table (17 entries). |
 | `identity_group` | 1 (+8) | Same-item group. The field is eight bits wide, but like the results-file format only groups 1–4 (the editors' A–D) are accepted; 0 and 5–255 are invalid. |
 | `max_depth` | 1 (+5) | Value is `depth − 1` (floors 1–24). |
+| `alternative_group` (v2 only) | 1 (+6) | Alternative-group label minus one. Records sharing a label form one "any of" slot; labels are renumbered in first-appearance order when encoding. |
+| `upgrade_sum` (v2 only) | 1 (+10) | Combined-upgrade group: two bits of group label minus one (groups 1–4, the editors' A–D), then the eight-bit minimum total (1–255). |
 
 ### Code tables
 

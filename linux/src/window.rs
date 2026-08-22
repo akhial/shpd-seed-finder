@@ -116,20 +116,11 @@ pub fn present(app: &adw::Application) {
         let refresh_all = Rc::clone(&refresh_all);
         let window = window.clone();
         move |requirement, is_new| {
+            let context = state.borrow().clone();
             let state = Rc::clone(&state);
             let refresh_all = Rc::clone(&refresh_all);
-            requirement_editor::present(&window, &requirement, is_new, move |result| {
-                let mut state = state.borrow_mut();
-                if let Some(slot) = state
-                    .requirements
-                    .iter_mut()
-                    .find(|other| other.key == result.key)
-                {
-                    *slot = result;
-                } else {
-                    state.requirements.push(result);
-                }
-                drop(state);
+            requirement_editor::present(&window, &context, &requirement, is_new, move |result| {
+                state.borrow_mut().upsert(result);
                 refresh_all();
             });
         }
@@ -154,11 +145,26 @@ pub fn present(app: &adw::Application) {
         let state = Rc::clone(&state);
         let refresh_all = Rc::clone(&refresh_all);
         move |key| {
-            state
-                .borrow_mut()
-                .requirements
-                .retain(|requirement| requirement.key != key);
+            state.borrow_mut().remove(key);
             refresh_all();
+        }
+    });
+    // Forks a row into an "any of these" group: the editor opens on a copy
+    // of the row, and only confirming it moves both into the group.
+    query.connect_add_alternative({
+        let state = Rc::clone(&state);
+        let refresh_all = Rc::clone(&refresh_all);
+        let window = window.clone();
+        move |source| {
+            let draft = state.borrow_mut().begin_alternative(source);
+            let Some(draft) = draft else { return };
+            let context = state.borrow().clone();
+            let state = Rc::clone(&state);
+            let refresh_all = Rc::clone(&refresh_all);
+            requirement_editor::present(&window, &context, &draft, true, move |result| {
+                state.borrow_mut().add_alternative(source, result);
+                refresh_all();
+            });
         }
     });
     query.connect_changed({

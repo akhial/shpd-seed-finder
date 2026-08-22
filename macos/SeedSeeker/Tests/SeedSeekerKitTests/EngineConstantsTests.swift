@@ -24,6 +24,7 @@ final class EngineConstantsTests: XCTestCase {
         XCTAssertEqual(SearchLimits.exactTiers, limit("exactTierMin")...limit("exactTierMax"))
         XCTAssertEqual(SearchLimits.boundedTiers, limit("boundedTierMin")...limit("boundedTierMax"))
         XCTAssertEqual(SearchLimits.identityGroupMax, limit("identityGroupMax"))
+        XCTAssertEqual(SearchLimits.upgradeSumGroupMax, limit("upgradeSumGroupMax"))
         XCTAssertEqual(SearchLimits.maxUpgradeDefault, limit("maxUpgradeDefault"))
         XCTAssertEqual(SearchLimits.maxUpgradeRing, limit("maxUpgradeRing"))
         // The families route to the right maximum, narrowed weapon kinds included.

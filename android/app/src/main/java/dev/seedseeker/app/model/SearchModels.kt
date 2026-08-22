@@ -22,6 +22,9 @@ object SearchLimits {
     /** Highest same-item group number (groups run 1..this, shown as A..D). */
     const val IDENTITY_GROUP_MAX = 4
 
+    /** Highest combined-upgrade group number (groups run 1..this, shown as A..D). */
+    const val UPGRADE_SUM_GROUP_MAX = 4
+
     /** Highest upgrade a search may name, for everything but rings. */
     const val MAX_UPGRADE_DEFAULT = 3
 
@@ -78,11 +81,66 @@ data class CatalogItem(
     val weaponClass: WeaponClass? = null,
 )
 
+/**
+ * Which enchantment, glyph or curse a weapon/armor requirement accepts.
+ * Names are the catalog's own spellings, which are also the engine's wire names.
+ */
+sealed interface EffectFilter {
+    /** No constraint: enchanted, cursed and plain items all match. */
+    data object Any : EffectFilter
+
+    /** Some non-curse enchantment or glyph of the item's family. */
+    data object AnyEnchantment : EffectFilter
+
+    /** One of the named effects; a single name is the classic "exactly this" filter. */
+    data class OneOf(val names: List<String>) : EffectFilter {
+        init {
+            require(names.isNotEmpty()) { "An effect list needs at least one entry" }
+            require(names.distinct().size == names.size) { "An effect list cannot repeat a name" }
+        }
+    }
+
+    companion object {
+        /** The filter for a single optional effect name. */
+        fun named(name: String?): EffectFilter = name?.let { OneOf(listOf(it)) } ?: Any
+
+        /**
+         * The canonical filter for a set of names of [kind]'s family: names are
+         * reordered to catalog order, the full non-curse family set collapses
+         * to [AnyEnchantment], and an empty selection means [Any].
+         */
+        fun of(names: Collection<String>, kind: ItemKind): EffectFilter {
+            val order = ItemCatalog.modifiersFor(kind)
+            val ordered = order.filter { it in names } + names.filter { it !in order }
+            if (ordered.isEmpty()) return Any
+            val enchantments = ItemCatalog.enchantmentsFor(kind)
+            if (enchantments.isNotEmpty() && ordered.toSet() == enchantments.toSet()) return AnyEnchantment
+            return OneOf(ordered)
+        }
+    }
+}
+
+/** Membership in a combined-upgrade group: the members' upgrade levels must add up to at least [atLeast]. */
+data class UpgradeSum(val group: Int, val atLeast: Int) {
+    init {
+        require(group in 1..SearchLimits.UPGRADE_SUM_GROUP_MAX) {
+            "Combined upgrade group must be A..${groupLetter(SearchLimits.UPGRADE_SUM_GROUP_MAX)}"
+        }
+        require(atLeast >= 1) { "A combined upgrade total must be at least +1" }
+    }
+
+    val letter: Char
+        get() = groupLetter(group)
+}
+
+/** The letter a one-based group number is shown as (1 → A). */
+fun groupLetter(group: Int): Char = ('A'.code + group - 1).toChar()
+
 data class ItemRequirement(
     val key: Long,
     val item: CatalogItem?,
     val upgrade: Int,
-    val modifier: String? = null,
+    val effect: EffectFilter = EffectFilter.Any,
     val kind: ItemKind = item?.kind ?: error("A wildcard requirement must specify its category"),
     val tier: Int = 0,
     val tierMatch: TierMatch = TierMatch.ANY,
@@ -91,6 +149,14 @@ data class ItemRequirement(
     val identityGroup: Int? = null,
     val maximumDepth: Int? = null,
     val requireUncursed: Boolean = false,
+    /**
+     * Session-local id of the "any of these" slot this row belongs to, or
+     * null for a slot of its own. Members of one group count as a single
+     * requirement that any of them satisfies.
+     */
+    val alternativeGroup: Int? = null,
+    /** Membership in a combined-upgrade group; never together with [alternativeGroup]. */
+    val upgradeSum: UpgradeSum? = null,
 ) {
     init {
         require(item == null || kind.accepts(item)) { "Selected item must belong to its category" }
@@ -111,19 +177,46 @@ data class ItemRequirement(
         require(validUpgrade) {
             "Upgrade predicate is invalid for ${kind.label}"
         }
-        require(kind.modifierLabel != null || modifier == null) {
-            "${kind.label} cannot carry a modifier requirement"
+        require(kind.modifierLabel != null || effect == EffectFilter.Any) {
+            "${kind.label} cannot carry an effect requirement"
         }
-        require(!requireUncursed || modifier !in ItemCatalog.cursesFor(kind)) {
-            "An uncursed item cannot have a curse"
+        if (effect is EffectFilter.OneOf) {
+            val known = ItemCatalog.modifiersFor(kind)
+            require(effect.names.all { it in known }) {
+                "Effect list names an effect ${kind.singularLabel}s cannot carry"
+            }
+            val curses = ItemCatalog.cursesFor(kind)
+            require(!requireUncursed || effect.names.any { it !in curses }) {
+                "An uncursed item cannot have a curse"
+            }
         }
         require(identityGroup == null || identityGroup in 1..SearchLimits.IDENTITY_GROUP_MAX) {
-            "Same-item group must be A..${('A'.code + SearchLimits.IDENTITY_GROUP_MAX - 1).toChar()}"
+            "Same-item group must be A..${groupLetter(SearchLimits.IDENTITY_GROUP_MAX)}"
         }
         require(maximumDepth == null || maximumDepth in 1..SearchLimits.MAX_DEPTH) {
             "Item floor limit must be 1..${SearchLimits.MAX_DEPTH}"
         }
+        require(alternativeGroup == null || alternativeGroup >= 1) { "Alternative group ids start at 1" }
+        require(alternativeGroup == null || upgradeSum == null) {
+            "An alternative cannot be in a combined upgrade group"
+        }
     }
+
+    /** The one effect this requirement pins, for the sprite glow; null for any other filter. */
+    val singleEffect: String?
+        get() = (effect as? EffectFilter.OneOf)?.names?.singleOrNull()
+
+    /** The highest upgrade an item satisfying this requirement can carry (what a sum group can count on). */
+    val maximumUpgrade: Int
+        get() = if (upgradeMatch == UpgradeMatch.EXACT) upgrade else kind.maximumSearchUpgrade
+
+    /** Human-readable effect constraint, or null when any effect is accepted. */
+    val effectLabel: String?
+        get() = when (val filter = effect) {
+            EffectFilter.Any -> null
+            EffectFilter.AnyEnchantment -> "any ${kind.modifierLabel?.lowercase() ?: "enchantment"}"
+            is EffectFilter.OneOf -> filter.names.joinToString("/")
+        }
 
     val description: String
         get() = buildString {
@@ -134,7 +227,7 @@ data class ItemRequirement(
                     UpgradeMatch.AT_LEAST -> "+$upgrade or higher"
                 },
             )
-            modifier?.let {
+            effectLabel?.let {
                 append(" • ")
                 append(it)
             }
@@ -145,7 +238,13 @@ data class ItemRequirement(
             }
             identityGroup?.let {
                 append(" • same item group ")
-                append(('A'.code + it - 1).toChar())
+                append(groupLetter(it))
+            }
+            upgradeSum?.let {
+                append(" • combined upgrade group ")
+                append(it.letter)
+                append(" ≥ +")
+                append(it.atLeast)
             }
             maximumDepth?.let {
                 append(" • by floor ")
@@ -160,6 +259,75 @@ data class ItemRequirement(
             TierMatch.AT_LEAST -> "Any Tier $tier+ ${kind.singularLabel}"
             TierMatch.AT_MOST -> "Any Tier $tier or lower ${kind.singularLabel}"
         }
+}
+
+/**
+ * The slots of a requirement list: an alternative group is one slot at its
+ * first member's position holding every member in list order; every other
+ * requirement is a slot of its own. This is what the engine counts as a
+ * requirement, so headers and result counts use it.
+ */
+fun List<ItemRequirement>.slots(): List<List<ItemRequirement>> {
+    val slots = mutableListOf<MutableList<ItemRequirement>>()
+    val slotByGroup = mutableMapOf<Int, MutableList<ItemRequirement>>()
+    for (requirement in this) {
+        val group = requirement.alternativeGroup
+        if (group == null) {
+            slots += mutableListOf(requirement)
+        } else {
+            val slot = slotByGroup[group]
+            if (slot == null) {
+                val fresh = mutableListOf(requirement)
+                slotByGroup[group] = fresh
+                slots += fresh
+            } else {
+                slot += requirement
+            }
+        }
+    }
+    return slots
+}
+
+/** How many slots — engine-level requirements — the list holds. */
+fun List<ItemRequirement>.slotCount(): Int = slots().size
+
+/**
+ * The first problem that would make the engine refuse this requirement list,
+ * as a user-facing message, or null when it is runnable. [SearchRequest]
+ * enforces the same rules; this form exists so the editor can show the
+ * message instead of silently disabling Search.
+ */
+fun List<ItemRequirement>.validationProblem(): String? {
+    if (isEmpty()) return "Add at least one requirement."
+    val sumGroups = filter { it.upgradeSum != null }.groupBy { it.upgradeSum!!.group }
+    for ((group, members) in sumGroups.toSortedMap()) {
+        val totals = members.map { it.upgradeSum!!.atLeast }.distinct()
+        if (totals.size > 1) {
+            return "Combined upgrade group ${groupLetter(group)} must use one total " +
+                "(it has ${totals.sorted().joinToString(" and ") { "+$it" }})."
+        }
+        val reachable = members.sumOf { it.maximumUpgrade }
+        val needed = totals.single()
+        if (needed > reachable) {
+            return "Combined upgrade group ${groupLetter(group)} needs +$needed but its items " +
+                "can carry at most +$reachable."
+        }
+    }
+    // Same-item group members in different slots must agree on category and item.
+    val identityGroups = filter { it.identityGroup != null }.groupBy { it.identityGroup!! }
+    for ((group, members) in identityGroups.toSortedMap()) {
+        for (left in members) {
+            for (right in members) {
+                if (left.alternativeGroup != null && left.alternativeGroup == right.alternativeGroup) continue
+                val agree = left.kind == right.kind &&
+                    (left.item == null || right.item == null || left.item.id == right.item.id)
+                if (!agree) {
+                    return "Same-item group ${groupLetter(group)} mixes different items or categories."
+                }
+            }
+        }
+    }
+    return null
 }
 
 enum class TierMatch(val label: String) {
@@ -212,7 +380,7 @@ enum class WandmakerQuest(val variant: ScoutQuestVariant, val documentName: Stri
     ROTBERRY(ScoutQuestVariant.ROTBERRY, "rotberry"),
     ;
 
-    /** The game's own one-based quest value, reused as the SSF8 wire id. */
+    /** The game's own one-based quest value. */
     val wireId: Int
         get() = ordinal + 1
 
@@ -243,9 +411,14 @@ data class SearchRequest(
 ) {
     init {
         require(requirements.isNotEmpty()) { "At least one requirement is needed" }
+        requirements.validationProblem()?.let { throw IllegalArgumentException(it) }
         require(maximumDepth in 1..SearchLimits.MAX_DEPTH) { "Maximum floor must be 1..${SearchLimits.MAX_DEPTH}" }
         require(challenges in 0..Challenge.ALL_MASK) { "Challenge mask must be 0..${Challenge.ALL_MASK}" }
     }
+
+    /** How many slots the engine sees: what result rows report as matched requirements. */
+    val slotCount: Int
+        get() = requirements.slotCount()
 }
 
 enum class Challenge(

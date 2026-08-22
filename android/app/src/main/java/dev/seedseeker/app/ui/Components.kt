@@ -33,6 +33,7 @@ import dev.seedseeker.app.model.SearchState
 import dev.seedseeker.app.model.SearchStatus
 import dev.seedseeker.app.model.UpgradeMatch
 import dev.seedseeker.app.model.WandmakerQuest
+import dev.seedseeker.app.model.groupLetter
 import dev.seedseeker.app.ui.theme.RegionCaves
 import dev.seedseeker.app.ui.theme.RegionCity
 import dev.seedseeker.app.ui.theme.RegionHalls
@@ -241,12 +242,20 @@ fun requirementDetailLine(requirement: ItemRequirement): String = buildList {
         UpgradeMatch.EXACT -> add("+${requirement.upgrade}")
         UpgradeMatch.AT_LEAST -> add("≥+${requirement.upgrade}")
     }
-    requirement.modifier?.let { add(it) }
+    requirement.effectLabel?.let { add(it) }
     if (requirement.requireUncursed) add("uncursed")
     requirement.source?.let { add(it.label) }
-    requirement.identityGroup?.let { add("grp ${('A' + it - 1)}") }
+    requirement.identityGroup?.let { add("grp ${groupLetter(it)}") }
+    requirement.upgradeSum?.let { add("sum ${it.letter} ≥ +${it.atLeast}") }
     requirement.maximumDepth?.let { add("≤ floor $it") }
 }.joinToString(" · ")
+
+/** Summary of an "any of these" slot, e.g. "any of 3". */
+fun alternativesSummary(memberCount: Int): String = "any of $memberCount"
+
+/** The scout header's match pill: satisfied slots out of the query's slots. */
+fun scoutMatchText(matchedSlots: Int, totalSlots: Int): String =
+    "$matchedSlots of $totalSlots requirement${if (totalSlots == 1) "" else "s"}"
 
 /** One-line summary of the search scope, listing only active constraints. */
 fun scopeSummaryText(

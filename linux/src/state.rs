@@ -9,7 +9,10 @@ use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::feasibility::Quest;
 use shpd_seedfinder_core::main_world::EMPTY_BOSS_FLOORS;
 use shpd_seedfinder_core::model::ItemSource;
-use shpd_seedfinder_core::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
+use shpd_seedfinder_core::query::{
+    EffectRequirement, EffectSet, Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
+    UpgradeSum,
+};
 use shpd_seedfinder_core::quests::{
     BlacksmithQuestType, GhostQuestType, ImpTarget, QuestSummary, WandmakerQuestType,
 };
@@ -58,11 +61,15 @@ pub struct UiRequirement {
     pub item: Option<ItemId>,
     pub tier: TierRequirement,
     pub upgrade: UpgradeRequirement,
-    pub effect: Option<Effect>,
+    pub effect: EffectRequirement,
     pub require_uncursed: bool,
     pub source: Option<ItemSource>,
     pub identity_group: Option<u8>,
     pub max_depth: Option<u8>,
+    /// Members of one alternative group form a single "any of these" slot.
+    pub alternative_group: Option<u8>,
+    /// Membership in a combined-upgrade group; never set on an alternative.
+    pub upgrade_sum: Option<UpgradeSum>,
 }
 
 impl UiRequirement {
@@ -74,11 +81,13 @@ impl UiRequirement {
             item: None,
             tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Any,
-            effect: None,
+            effect: EffectRequirement::Any,
             require_uncursed: false,
             source: None,
             identity_group: None,
             max_depth: None,
+            alternative_group: None,
+            upgrade_sum: None,
         }
     }
 
@@ -95,6 +104,18 @@ impl UiRequirement {
             source: self.source,
             identity_group: self.identity_group,
             max_depth: self.max_depth,
+            alternative_group: self.alternative_group,
+            upgrade_sum: self.upgrade_sum,
+        }
+    }
+
+    /// The one effect this requirement pins, when its effect set holds
+    /// exactly one member; wider sets and the wildcard give `None`.
+    #[must_use]
+    pub fn pinned_effect(&self) -> Option<Effect> {
+        match self.effect {
+            EffectRequirement::OneOf(set) if set.count() == 1 => set.effects().next(),
+            _ => None,
         }
     }
 
@@ -133,8 +154,8 @@ impl UiRequirement {
             UpgradeRequirement::Exact(upgrade) => format!("+{upgrade} exactly"),
             UpgradeRequirement::AtLeast(upgrade) => format!("+{upgrade} or higher"),
         };
-        if let Some(effect) = self.effect {
-            let _ = write!(text, " · {}", effect.wire_name());
+        if let Some(effect) = effect_label(self.effect) {
+            let _ = write!(text, " · {effect}");
         }
         if self.require_uncursed {
             text.push_str(" · uncursed");
@@ -145,11 +166,34 @@ impl UiRequirement {
         if let Some(group) = self.identity_group {
             let _ = write!(text, " · same item group {}", group_letter(group));
         }
+        if let Some(sum) = self.upgrade_sum {
+            let _ = write!(
+                text,
+                " · combined +{} group {}",
+                sum.minimum_total,
+                group_letter(sum.group)
+            );
+        }
         if let Some(depth) = self.max_depth {
             let _ = write!(text, " · by floor {depth}");
         }
         text
     }
+}
+
+/// The effect predicate as label text: `None` for the wildcard, "any
+/// enchantment" for the full non-curse family set, otherwise the members
+/// joined with "or" in catalog order.
+#[must_use]
+pub fn effect_label(effect: EffectRequirement) -> Option<String> {
+    let EffectRequirement::OneOf(set) = effect else {
+        return None;
+    };
+    if EffectSet::enchantments(set.family()) == Some(set) {
+        return Some("any enchantment".to_owned());
+    }
+    let names: Vec<_> = set.effects().map(Effect::wire_name).collect();
+    Some(names.join(" or "))
 }
 
 /// The whole persisted query state shared by all panes.
@@ -216,9 +260,28 @@ impl AppState {
                 source: requirement.source,
                 identity_group: requirement.identity_group,
                 max_depth: requirement.max_depth,
+                alternative_group: requirement.alternative_group,
+                upgrade_sum: requirement.upgrade_sum,
             });
         }
+        state.normalize();
         state
+    }
+
+    /// The state as an engine query exactly as the user left it, without
+    /// checking that it is a runnable search: persistence and the seed
+    /// scout read half-finished queries too.
+    #[must_use]
+    pub fn unvalidated_query(&self) -> SearchQuery {
+        SearchQuery {
+            requirements: self.requirements.iter().map(|r| r.to_core()).collect(),
+            max_depth: self.max_depth,
+            challenges: self.challenges,
+            require_blacksmith: self.require_blacksmith,
+            exclude_blacksmith_rewards: self.exclude_blacksmith_rewards,
+            wandmaker_quest: self.wandmaker_quest,
+            fast_mode: self.fast_mode,
+        }
     }
 
     /// Builds the validated engine query for the current state.
@@ -227,20 +290,171 @@ impl AppState {
     ///
     /// Returns the human-readable validation message.
     pub fn to_query(&self) -> Result<SearchQuery, String> {
-        let query = SearchQuery {
-            requirements: self.requirements.iter().map(|r| r.to_core()).collect(),
-            max_depth: self.max_depth,
-            challenges: self.challenges,
-            // Past the last floor the Blacksmith can first appear on the
-            // quest is certain, so the filter would exclude nothing.
-            require_blacksmith: self.require_blacksmith
-                && self.max_depth < Quest::Blacksmith.window().1,
-            exclude_blacksmith_rewards: self.exclude_blacksmith_rewards,
-            wandmaker_quest: self.wandmaker_quest,
-            fast_mode: self.fast_mode,
-        };
+        let mut query = self.unvalidated_query();
+        // Past the last floor the Blacksmith can first appear on the
+        // quest is certain, so the filter would exclude nothing.
+        query.require_blacksmith =
+            self.require_blacksmith && self.max_depth < Quest::Blacksmith.window().1;
         query.validate().map_err(|error| error.to_string())?;
         Ok(query)
+    }
+
+    /// The requirement rows grouped into slots: every alternative group is
+    /// one slot, in first-appearance order; every other row is its own.
+    #[must_use]
+    pub fn slots(&self) -> Vec<Vec<usize>> {
+        self.unvalidated_query().slots()
+    }
+
+    /// How many slots the query has — what the interface counts as
+    /// requirements once alternatives collapse.
+    #[must_use]
+    pub fn slot_count(&self) -> usize {
+        self.unvalidated_query().slot_count()
+    }
+
+    #[must_use]
+    pub fn requirement(&self, key: u64) -> Option<&UiRequirement> {
+        self.requirements.iter().find(|r| r.key == key)
+    }
+
+    /// Drafts an alternative to the row `key`: a copy under a new key that
+    /// belongs to the row's alternative group, or to a fresh one if the row
+    /// has none. Nothing else changes until [`Self::add_alternative`] stores
+    /// the draft, so cancelling the editor leaves the query exactly as it was.
+    pub fn begin_alternative(&mut self, key: u64) -> Option<UiRequirement> {
+        let row = *self.requirement(key)?;
+        let group = match row.alternative_group {
+            Some(group) => group,
+            None => self
+                .requirements
+                .iter()
+                .filter_map(|r| r.alternative_group)
+                .max()
+                .unwrap_or(0)
+                .checked_add(1)?,
+        };
+        let draft_key = self.claim_key();
+        Some(UiRequirement {
+            key: draft_key,
+            alternative_group: Some(group),
+            upgrade_sum: None,
+            ..row
+        })
+    }
+
+    /// Stores a confirmed alternative drafted from the row `source`, which
+    /// joins the draft's group now; a combined-upgrade membership cannot
+    /// survive inside an alternative, so the source sheds it.
+    pub fn add_alternative(&mut self, source: u64, result: UiRequirement) {
+        if let Some(row) = self.requirements.iter_mut().find(|r| r.key == source) {
+            row.alternative_group = result.alternative_group;
+            row.upgrade_sum = None;
+        }
+        self.upsert(result);
+    }
+
+    /// Stores an edited or new row. A new alternative lands right after the
+    /// other members of its group so the document keeps them together; a
+    /// combined-upgrade total set here propagates to the whole group.
+    pub fn upsert(&mut self, mut result: UiRequirement) {
+        if result.alternative_group.is_some() {
+            result.upgrade_sum = None;
+        }
+        if let Some(slot) = self.requirements.iter_mut().find(|r| r.key == result.key) {
+            *slot = result;
+        } else {
+            let position = result
+                .alternative_group
+                .and_then(|group| {
+                    self.requirements
+                        .iter()
+                        .rposition(|r| r.alternative_group == Some(group))
+                })
+                .map_or(self.requirements.len(), |last| last + 1);
+            self.requirements.insert(position, result);
+        }
+        if let Some(sum) = result.upgrade_sum {
+            for other in &mut self.requirements {
+                if let Some(existing) = &mut other.upgrade_sum
+                    && existing.group == sum.group
+                {
+                    existing.minimum_total = sum.minimum_total;
+                }
+            }
+        }
+        self.normalize();
+    }
+
+    pub fn remove(&mut self, key: u64) {
+        self.requirements.retain(|r| r.key != key);
+        self.normalize();
+    }
+
+    /// Collapses alternative groups left with a single member back into
+    /// plain rows.
+    pub fn normalize(&mut self) {
+        let mut members = [0_usize; 256];
+        for group in self.requirements.iter().filter_map(|r| r.alternative_group) {
+            members[usize::from(group)] += 1;
+        }
+        for row in &mut self.requirements {
+            if let Some(group) = row.alternative_group
+                && members[usize::from(group)] < 2
+            {
+                row.alternative_group = None;
+            }
+        }
+    }
+
+    /// The total the other members of combined-upgrade group `group` share,
+    /// ignoring the row `key` (which may be about to change it).
+    #[must_use]
+    pub fn upgrade_sum_total(&self, group: u8, key: u64) -> Option<u8> {
+        self.requirements
+            .iter()
+            .filter(|r| r.key != key)
+            .filter_map(|r| r.upgrade_sum)
+            .find(|sum| sum.group == group)
+            .map(|sum| sum.minimum_total)
+    }
+
+    /// The highest total combined-upgrade group `group` could reach with
+    /// `draft` stored as a member (replacing the row with its key).
+    #[must_use]
+    pub fn upgrade_sum_capacity(&self, group: u8, draft: &UiRequirement) -> u8 {
+        let mut preview = self.clone();
+        preview.upsert(UiRequirement {
+            upgrade_sum: Some(UpgradeSum {
+                group,
+                minimum_total: 1,
+            }),
+            ..*draft
+        });
+        preview
+            .unvalidated_query()
+            .upgrade_sum_groups()
+            .get(&group)
+            .map_or(0, |sum| u8::try_from(sum.capacity).unwrap_or(u8::MAX))
+    }
+
+    /// Checks that `draft` would leave the whole query valid once stored
+    /// with [`Self::upsert`], for the editor to report before saving.
+    ///
+    /// # Errors
+    ///
+    /// Returns the human-readable message.
+    pub fn validate_draft(&self, draft: &UiRequirement) -> Result<(), String> {
+        draft
+            .to_core()
+            .validate()
+            .map_err(|error| error.to_string())?;
+        let mut preview = self.clone();
+        preview.upsert(*draft);
+        preview
+            .unvalidated_query()
+            .validate()
+            .map_err(|error| error.to_string())
     }
 }
 
@@ -743,5 +957,188 @@ mod tests {
         assert!(!state.to_query().unwrap().require_blacksmith);
         state.max_depth = 13;
         assert!(state.to_query().unwrap().require_blacksmith);
+    }
+
+    #[test]
+    fn labels_describe_effect_sets_and_combined_upgrades() {
+        use shpd_seedfinder_core::catalog::{ArmorEffect, Effect, WeaponEffect};
+        use shpd_seedfinder_core::query::{EffectRequirement, EffectSet, UpgradeSum};
+
+        let mut requirement = UiRequirement::new(1);
+        requirement.effect = EffectRequirement::exactly(Effect::Weapon(WeaponEffect::Blazing));
+        assert_eq!(requirement.subtitle(), "Any upgrade · Blazing");
+        assert_eq!(
+            requirement.pinned_effect(),
+            Some(Effect::Weapon(WeaponEffect::Blazing))
+        );
+
+        requirement.effect = EffectRequirement::OneOf(
+            EffectSet::from_effects([
+                Effect::Weapon(WeaponEffect::Projecting),
+                Effect::Weapon(WeaponEffect::Blocking),
+            ])
+            .unwrap(),
+        );
+        // Catalog order, not selection order.
+        assert_eq!(
+            requirement.subtitle(),
+            "Any upgrade · Blocking or Projecting"
+        );
+        assert_eq!(requirement.pinned_effect(), None);
+
+        requirement.kind = ItemKind::Armor;
+        requirement.effect =
+            EffectRequirement::OneOf(EffectSet::enchantments(ItemKind::Armor).unwrap());
+        requirement.require_uncursed = true;
+        assert_eq!(
+            requirement.subtitle(),
+            "Any upgrade · any enchantment · uncursed"
+        );
+
+        requirement.effect = EffectRequirement::exactly(Effect::Armor(ArmorEffect::Stone));
+        requirement.require_uncursed = false;
+        requirement.upgrade = UpgradeRequirement::AtLeast(1);
+        requirement.identity_group = Some(1);
+        requirement.upgrade_sum = Some(UpgradeSum {
+            group: 1,
+            minimum_total: 4,
+        });
+        requirement.max_depth = Some(4);
+        assert_eq!(
+            requirement.subtitle(),
+            "+1 or higher · Stone · same item group A · combined +4 group A · by floor 4"
+        );
+    }
+
+    #[test]
+    fn alternatives_share_one_slot_and_collapse_when_alone() {
+        let mut state = AppState::default();
+        let key = state.claim_key();
+        state.requirements.push(UiRequirement {
+            item: Some(ItemId::Spear),
+            upgrade: UpgradeRequirement::Exact(3),
+            ..UiRequirement::new(key)
+        });
+        let key = state.claim_key();
+        state.requirements.push(UiRequirement {
+            kind: ItemKind::Ring,
+            ..UiRequirement::new(key)
+        });
+        assert_eq!(state.slot_count(), 2);
+
+        // Forking the spear row opens a group on it and drafts a copy.
+        let mut draft = state.begin_alternative(1).unwrap();
+        assert_eq!(draft.alternative_group, Some(1));
+        assert_eq!(draft.item, Some(ItemId::Spear));
+        assert_ne!(draft.key, 1);
+        // Until the draft is stored nothing has changed.
+        assert_eq!(state.requirements[0].alternative_group, None);
+        assert_eq!(state.slots(), vec![vec![0], vec![1]]);
+
+        draft.item = Some(ItemId::Shuriken);
+        draft.weapon_category = None;
+        draft.upgrade = UpgradeRequirement::Exact(2);
+        state.add_alternative(1, draft);
+        assert_eq!(state.requirements[0].alternative_group, Some(1));
+        // The alternative lands next to its group, ahead of the ring.
+        assert_eq!(state.requirements[1].item, Some(ItemId::Shuriken));
+        assert_eq!(state.requirements[1].alternative_group, Some(1));
+        assert_eq!(state.slot_count(), 2);
+        assert_eq!(state.slots(), vec![vec![0, 1], vec![2]]);
+        let query = state.to_query().unwrap();
+        assert_eq!(query.slot_count(), 2);
+
+        // A second fork on a member extends the same group.
+        let third = state.begin_alternative(draft.key).unwrap();
+        assert_eq!(third.alternative_group, Some(1));
+        state.add_alternative(draft.key, third);
+        assert_eq!(state.slots(), vec![vec![0, 1, 2], vec![3]]);
+
+        // Removing down to one member collapses the card to a plain row.
+        state.remove(third.key);
+        state.remove(draft.key);
+        assert_eq!(state.requirements[0].alternative_group, None);
+        assert_eq!(state.slots(), vec![vec![0], vec![1]]);
+    }
+
+    #[test]
+    fn combined_upgrade_totals_propagate_and_are_checked_locally() {
+        use shpd_seedfinder_core::query::UpgradeSum;
+
+        let mut state = AppState::default();
+        for _ in 0..2 {
+            let key = state.claim_key();
+            state.requirements.push(UiRequirement {
+                kind: ItemKind::Ring,
+                item: Some(ItemId::RingMight),
+                upgrade_sum: Some(UpgradeSum {
+                    group: 1,
+                    minimum_total: 4,
+                }),
+                ..UiRequirement::new(key)
+            });
+        }
+        assert_eq!(state.upgrade_sum_total(1, 1), Some(4));
+        assert_eq!(state.upgrade_sum_total(1, 99), Some(4));
+        assert_eq!(state.upgrade_sum_total(2, 1), None);
+
+        // Capacity counts the other members plus the draft as edited.
+        let mut draft = state.requirements[0];
+        assert_eq!(state.upgrade_sum_capacity(1, &draft), 8);
+        draft.upgrade = UpgradeRequirement::Exact(1);
+        assert_eq!(state.upgrade_sum_capacity(1, &draft), 5);
+        assert!(state.validate_draft(&draft).is_ok());
+
+        // An unattainable total is refused with a message naming the group.
+        draft.upgrade_sum = Some(UpgradeSum {
+            group: 1,
+            minimum_total: 6,
+        });
+        assert_eq!(
+            state.validate_draft(&draft).unwrap_err(),
+            "combined upgrade group A needs +6 but its items can carry at most +5"
+        );
+        assert_eq!(state.upgrade_sum_capacity(1, &draft), 5);
+
+        // Saving a member's total updates the whole group.
+        draft.upgrade = UpgradeRequirement::Any;
+        draft.upgrade_sum = Some(UpgradeSum {
+            group: 1,
+            minimum_total: 7,
+        });
+        assert!(state.validate_draft(&draft).is_ok());
+        state.upsert(draft);
+        assert!(
+            state
+                .requirements
+                .iter()
+                .all(|r| r.upgrade_sum.map(|sum| sum.minimum_total) == Some(7))
+        );
+        assert!(state.to_query().is_ok());
+
+        // The same rule guards the search itself.
+        state.requirements[1].upgrade = UpgradeRequirement::Exact(1);
+        assert_eq!(
+            state.to_query().unwrap_err(),
+            "combined upgrade group A needs +7 but its items can carry at most +5"
+        );
+
+        // Drafting an alternative from a sum member changes nothing until
+        // it is confirmed: cancelling the editor keeps the membership.
+        let before = state.requirements.clone();
+        let mut alternative = state.begin_alternative(1).unwrap();
+        assert_eq!(alternative.upgrade_sum, None);
+        assert_eq!(state.requirements, before);
+
+        // Confirming sheds the source's sum, and a stored alternative never
+        // carries one.
+        alternative.upgrade_sum = Some(UpgradeSum {
+            group: 2,
+            minimum_total: 1,
+        });
+        state.add_alternative(1, alternative);
+        assert_eq!(state.requirements[0].upgrade_sum, None);
+        assert_eq!(state.requirements[1].upgrade_sum, None);
+        assert_eq!(state.requirements[1].alternative_group, Some(1));
     }
 }

@@ -1,4 +1,5 @@
 import { displayItemName, getItem, kindFamily, sourceLabel, wildcardSpriteForKind, wildcardSprites } from '../../lib/catalog'
+import { effectNamesOf, groupLetter, isAnyEnchantment } from '../../lib/query'
 import type { ItemCategory, RequirementKind, RequirementState } from '../../lib/wasm/types'
 
 export const categoryLabel: Record<ItemCategory, string> = {
@@ -57,10 +58,24 @@ export function requirementDetails(requirement: RequirementState): string[] {
   const parts: string[] = []
   if (requirement.upgrade.mode === 'exact') parts.push(`exactly +${requirement.upgrade.value}`)
   if (requirement.upgrade.mode === 'at_least') parts.push(`+${requirement.upgrade.value} or higher`)
-  if (requirement.effect) parts.push(requirement.effect)
+  if (requirement.upgradeSum) parts.push(`sum group ${groupLetter(requirement.upgradeSum.group)} ≥ +${requirement.upgradeSum.atLeast}`)
+  const effect = effectLabel(requirement)
+  if (effect) parts.push(effect)
   if (requirement.uncursed) parts.push('uncursed')
   if (requirement.source) parts.push(sourceLabel(requirement.source))
-  if (requirement.identityGroup) parts.push(`group ${'ABCD'[requirement.identityGroup - 1] ?? requirement.identityGroup}`)
+  if (requirement.identityGroup) parts.push(`group ${groupLetter(requirement.identityGroup)}`)
   if (requirement.maxDepth !== undefined) parts.push(`floors 1–${requirement.maxDepth}`)
   return parts
 }
+
+/** The effect filter as row text: a name, "effect: A/B/C" for a set, or "any enchantment". */
+export function effectLabel(requirement: RequirementState): string | undefined {
+  if (requirement.effect === undefined) return undefined
+  if (isAnyEnchantment(requirement.effect)) return requirementKind(requirement) === 'armor' ? 'any glyph' : 'any enchantment'
+  const names = effectNamesOf(requirement.effect, requirement.kind)
+  if (names.length === 0) return undefined
+  return names.length === 1 ? names[0] : `effect: ${names.join('/')}`
+}
+
+/** The card title for an "any of these" slot. */
+export const alternativesTitle = (count: number): string => `Any of ${count}`

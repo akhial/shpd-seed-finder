@@ -762,6 +762,12 @@ input[type='range']::-moz-range-thumb {
 
 .d1-field-control .d1-select { max-width: 240px; width: 100%; }
 
+/* Fields whose control is too wide for a phone row stack it under the label. */
+@media (max-width: 480px) {
+  .d1-field-stack { flex-wrap: wrap; row-gap: 4px; }
+  .d1-field-stack .d1-field-control { flex-basis: 100%; justify-content: flex-start; }
+}
+
 /* ---------- Presets ---------- */
 
 .d1-preset-row {
@@ -912,6 +918,81 @@ input[type='range']::-moz-range-thumb {
 }
 
 .d1-req-remove:hover { color: var(--d1-danger); background: rgba(217, 108, 95, 0.08); }
+
+.d1-req-fork {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  color: var(--d1-text-3);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.d1-req-fork:hover { color: var(--d1-amber); background: var(--d1-amber-dim); }
+
+/* A slot wraps one row, or (inside an "any of these" card) a row under its OR label. */
+.d1-req-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+/* ---------- "Any of these" cards ---------- */
+
+.d1-alt-card {
+  padding: 6px 6px 7px;
+  background: transparent;
+  border: 1px dashed var(--d1-border-strong);
+  border-radius: 10px;
+}
+
+.d1-alt-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 0 0 4px 4px;
+}
+
+.d1-alt-title {
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--d1-amber);
+  white-space: nowrap;
+}
+
+.d1-alt-hint {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--d1-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.d1-alt-head .d1-req-remove { width: 24px; height: 22px; border-radius: 6px; }
+
+.d1-alt-list { gap: 3px; }
+
+.d1-alt-or {
+  align-self: flex-start;
+  margin: 1px 0 0 9px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--d1-text-3);
+}
+
+@media (max-width: 420px) {
+  .d1-alt-hint { display: none; }
+}
 
 /* ---------- Details / challenges ---------- */
 
@@ -1676,6 +1757,44 @@ input[type='range']::-moz-range-thumb {
 }
 
 .d1-editor-errors li { margin: 1px 0; }
+
+/* ---------- Effect picker grid ---------- */
+
+.d1-effect-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 10px;
+  row-gap: 0;
+  margin: 4px 0 6px;
+  padding: 6px 10px 4px;
+  background: var(--d1-panel-2);
+  border: 1px solid var(--d1-border);
+  border-radius: 8px;
+}
+
+.d1-effect-grid .d1-check { padding: 3px 0; font-size: 13px; min-width: 0; }
+.d1-effect-grid .d1-check span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.d1-effect-grid-head {
+  grid-column: 1 / -1;
+  margin: 4px 0 2px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--d1-text-3);
+}
+
+.d1-effect-grid-head:first-child { margin-top: 0; }
+
+.d1-effect-grid-note {
+  grid-column: 1 / -1;
+  margin: 4px 0 2px;
+}
+
+@media (max-width: 360px) {
+  .d1-effect-grid { grid-template-columns: minmax(0, 1fr); }
+}
 
 .d1-modal-foot {
   flex: 0 0 auto;

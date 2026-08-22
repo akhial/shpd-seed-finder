@@ -14,17 +14,12 @@ public enum WireCodecError: Error, Equatable, LocalizedError {
     }
 }
 
+/// Builds the SSQ2 scout request; queries go to the engine as the canonical
+/// JSON document (`QueryDocument`), not as a hand-built packet.
 private struct Writer {
     var data = Data()
     mutating func bytes(_ value: some Sequence<UInt8>) { data.append(contentsOf: value) }
-    mutating func u8(_ value: Int) { data.append(UInt8(value)) }
-    mutating func u16(_ value: Int) { bytes([UInt8((value >> 8) & 0xff), UInt8(value & 0xff)]) }
     mutating func u16LittleEndian(_ value: Int) { bytes([UInt8(value & 0xff), UInt8((value >> 8) & 0xff)]) }
-    mutating func text(_ value: String) throws {
-        let encoded = Array(value.utf8)
-        guard encoded.count <= 65_535 else { throw WireCodecError.invalidValue("Wire string is too long") }
-        u16(encoded.count); bytes(encoded)
-    }
 }
 
 private struct Reader {
@@ -95,29 +90,6 @@ public enum SeedCode {
     /// Whether `seed` is already written the way the engine spells it: the
     /// canonical `XXX-XXX-XXX` form the app displays and files carry.
     public static func isCanonical(_ seed: String) -> Bool { parse(seed)?.code == seed }
-}
-
-public enum QueryCodec {
-    public static func encode(_ request: SearchRequest) throws -> Data {
-        var output = Writer(); output.bytes("SSF8".utf8); output.u8(request.maximumDepth)
-        output.u8((request.requireBlacksmith ? 1 : 0)
-            | (request.fastMode ? 2 : 0)
-            | (request.excludeBlacksmithRewards ? 4 : 0))
-        output.u16LittleEndian(request.challenges)
-        output.u8(request.wandmakerQuest?.rawValue ?? 0)
-        output.u16(request.requirements.count)
-        for requirement in request.requirements {
-            output.u8(requirement.kind.rawValue); try output.text(requirement.item?.id ?? "")
-            output.u8(requirement.tierMatch.rawValue); output.u8(requirement.tier)
-            output.u8(requirement.upgradeMatch.rawValue); output.u8(requirement.upgrade)
-            try output.text(requirement.modifier ?? "")
-            output.u8(requirement.source.map { $0.rawValue + 1 } ?? 0)
-            output.u8(requirement.identityGroup ?? 0)
-            output.u8(requirement.maximumDepth ?? 0)
-            output.u8(requirement.requireUncursed ? 1 : 0)
-        }
-        return output.data
-    }
 }
 
 public enum ResultCodec {

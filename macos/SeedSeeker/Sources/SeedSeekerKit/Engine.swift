@@ -53,7 +53,7 @@ func enginePacket(
 }
 
 /// The engine's refine soundness predicate, bridged rather than re-derived:
-/// whether the SSF8 query in `candidate` continues the one in `base` —
+/// whether the query document in `candidate` continues the one in `base` —
 /// an identical floor limit, challenge set and fast mode, world conditions (the
 /// blacksmith flags and the Wandmaker filter) at least as strict as the base's,
 /// and every base requirement covered by a distinct candidate requirement at least
@@ -65,7 +65,7 @@ func enginePacket(
 /// regardless of which engine runs the search, so a test double cannot answer
 /// it differently.
 public enum QueryContinuation {
-    /// Anything but a definite yes (a "no", or an undecodable packet the FFI
+    /// Anything but a definite yes (a "no", or an undecodable document the FFI
     /// reports negative) reads as "does not continue", which is the safe
     /// direction: the search re-anchors and rescans instead of reusing results
     /// whose coverage it cannot claim.
@@ -94,9 +94,9 @@ public enum StartDecision {
                               targetSetEmpty: Bool, targetHasUncoveredSeeds: Bool,
                               detachedBase: SearchRequest?) -> StartMode {
         guard let target else { return .anchor }
-        guard let candidatePacket = try? QueryCodec.encode(candidate),
-              let targetPacket = try? QueryCodec.encode(target) else { return .detached }
-        let basePacket = detachedBase.flatMap { try? QueryCodec.encode($0) }
+        guard let candidatePacket = try? QueryDocument.encode(candidate),
+              let targetPacket = try? QueryDocument.encode(target) else { return .detached }
+        let basePacket = detachedBase.flatMap { try? QueryDocument.encode($0) }
         guard let packet = try? enginePacket({ out, length in
                   candidatePacket.withUnsafeBytes { candidateBytes in
                       targetPacket.withUnsafeBytes { targetBytes in
@@ -135,7 +135,9 @@ public struct ScoutMatches: Sendable {
     /// Indices into the scouted world's item list, in the order
     /// `scoutSeed(_:challenges:)` returns it.
     public let matched: Set<Int>
-    /// How many requirements the marks explain, and how many there are.
+    /// How many slots the marks satisfy, and how many there are. An
+    /// alternative group is one slot however many members it has, and items
+    /// serving a short combined-upgrade group are not marked at all.
     public let matchedRequirements: Int
     public let totalRequirements: Int
 
@@ -146,8 +148,8 @@ public struct ScoutMatches: Sendable {
     }
 
     /// Marks the world identified by `request` — the very SSQ2 packet the
-    /// scout call took, so both describe the same world — against the SSF8
-    /// query in `query`.
+    /// scout call took, so both describe the same world — against the query
+    /// document in `query`.
     public static func mark(_ request: Data, query: Data) throws -> ScoutMatches {
         let packet = try enginePacket { out, length in
             request.withUnsafeBytes { requestBytes in
@@ -172,7 +174,7 @@ public struct ScoutMatches: Sendable {
     /// Marks the world `seed` generates under `challenges` against `query`.
     public static func mark(seed: String, challenges: Int, query: SearchRequest) throws -> ScoutMatches {
         try mark(ScoutCodec.encodeRequest(seed: seed, challenges: challenges),
-                 query: QueryCodec.encode(query))
+                 query: QueryDocument.encode(query))
     }
 }
 
@@ -180,16 +182,16 @@ public struct ProductionSeedFinderEngine: SeedFinderEngine {
     public init() {}
 
     public func startSearch(_ request: SearchRequest) async throws -> any SeedFinderSearchSession {
-        let encoded = try QueryCodec.encode(request)
+        let encoded = try QueryDocument.encode(request)
         let handle: Int64 = await Task.detached {
             encoded.withUnsafeBytes { bytes in seedfinder_start_search(bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count) }
         }.value
         guard handle != 0 else { throw SeedFinderEngineError.invalidArgument }
-        return NativeSearchSession(handle: handle, requirementCount: request.requirements.count)
+        return NativeSearchSession(handle: handle, requirementCount: request.requirements.slotCount)
     }
 
     public func startResumedSearch(_ request: SearchRequest, resumeFrom: Int64, scanLen: Int64) async throws -> any SeedFinderSearchSession {
-        let encoded = try QueryCodec.encode(request)
+        let encoded = try QueryDocument.encode(request)
         let handle: Int64 = await Task.detached {
             encoded.withUnsafeBytes { bytes in
                 seedfinder_start_resumed_search(bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count,
@@ -197,17 +199,17 @@ public struct ProductionSeedFinderEngine: SeedFinderEngine {
             }
         }.value
         guard handle != 0 else { throw SeedFinderEngineError.invalidArgument }
-        return NativeSearchSession(handle: handle, requirementCount: request.requirements.count)
+        return NativeSearchSession(handle: handle, requirementCount: request.requirements.slotCount)
     }
 
     public func filterSeeds(_ request: SearchRequest, seeds: [String]) async throws -> [String] {
         guard !seeds.isEmpty else { return [] }
-        let encoded = try QueryCodec.encode(request)
+        let encoded = try QueryDocument.encode(request)
         let values: [UInt64] = try seeds.map { seed in
             guard let parsed = SeedCode.parse(seed) else { throw SeedFinderEngineError.invalidArgument }
             return UInt64(parsed.value)
         }
-        let count = request.requirements.count
+        let count = request.requirements.slotCount
         let packet: Data = try await Task.detached {
             var pointer: UnsafeMutablePointer<UInt8>?
             var length = 0

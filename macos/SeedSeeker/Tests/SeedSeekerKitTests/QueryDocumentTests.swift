@@ -1,0 +1,416 @@
+import Foundation
+import XCTest
+@testable import SeedSeekerKit
+
+/// The canonical JSON query document is the one encoding the app hands the
+/// engine — search, filter, continuation, start decision and scout marks —
+/// and the one share links and results files carry. Its writer rules are the
+/// core's (`crates/seedfinder-core/src/json_query.rs`), so besides the golden
+/// shapes below every document is pushed through the engine's own encoder
+/// (`seedfinder_results_encode`) and must come back byte-for-byte the same.
+final class QueryDocumentTests: XCTestCase {
+    private func object(_ request: SearchRequest) throws -> [String: Any] {
+        try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: QueryDocument.encode(request)) as? [String: Any])
+    }
+
+    /// The query object as the engine re-encodes it, to compare with ours.
+    private func engineNormalized(_ query: SavedQuery) throws -> [String: Any] {
+        let text = ResultsExport.encode(query, seeds: ["AAA-AAA-AAA"], appVersion: "test")
+        XCTAssertFalse(text.isEmpty, "the engine refused the document")
+        let document = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+        return try XCTUnwrap(document["query"] as? [String: Any])
+    }
+
+    private func assertEngineAgrees(_ query: SavedQuery, file: StaticString = #filePath, line: UInt = #line) throws {
+        let ours = ResultsExport.encodeQuery(query) as NSDictionary
+        let engine = try engineNormalized(query) as NSDictionary
+        XCTAssertEqual(ours, engine, file: file, line: line)
+    }
+
+    func testPlainQueryWritesOnlyNonDefaults() throws {
+        let requirement = try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .armor,
+                                              tier: 4, tierMatch: .atLeast, upgradeMatch: .any)
+        let document = try object(try SearchRequest(requirements: [requirement]))
+        XCTAssertEqual(document.keys.sorted(), ["requirements"])
+        let entries = try XCTUnwrap(document["requirements"] as? [[String: Any]])
+        XCTAssertEqual(entries.count, 1)
+        XCTAssertEqual(entries[0]["kind"] as? String, "armor")
+        XCTAssertEqual(entries[0]["tier"] as? [String: Int], ["at_least": 4])
+        XCTAssertNil(entries[0]["upgrade"])
+        XCTAssertNil(entries[0]["effect"])
+        XCTAssertEqual(requirement.title, "Any Tier 4+ armor")
+    }
+
+    func testLoadedQueryGoldenDocument() throws {
+        let dagger = try XCTUnwrap(ItemCatalog.findById("dagger"))
+        let first = try ItemRequirement(key: 1, item: dagger, upgrade: 2, modifier: "Lucky",
+            kind: .weapon, upgradeMatch: .exactly, source: .chest, identityGroup: 1,
+            maximumDepth: 4)
+        let second = try ItemRequirement(key: 2, item: nil, upgrade: 0, kind: .thrownWeapon,
+            upgradeMatch: .atLeast, requireUncursed: true)
+        let request = try SearchRequest(requirements: [first, second], maximumDepth: 12,
+                                        requireBlacksmith: true, excludeBlacksmithRewards: true,
+                                        wandmakerQuest: .rotberry, fastMode: true, challenges: 104)
+        let bytes = try QueryDocument.encode(request)
+        XCTAssertEqual(bytes.first, UInt8(ascii: "{"), "the engine tells JSON from a packet by its first byte")
+        XCTAssertEqual(String(data: bytes, encoding: .utf8), """
+            {"challenges":["barren_land","into_darkness","forbidden_runes"],"exclude_blacksmith_rewards":true,\
+            "fast_mode":true,"max_depth":12,"require_blacksmith":true,"requirements":[\
+            {"effect":"Lucky","identity_group":1,"item":"dagger","kind":"weapon","max_depth":4,\
+            "source":"chest","upgrade":2},\
+            {"kind":"thrown_weapon","uncursed":true,"upgrade":{"at_least":0}}],\
+            "wandmaker_quest":"rotberry"}
+            """)
+        try assertEngineAgrees(SavedQuery(requirements: [first, second], maximumDepth: 12,
+                                          requireBlacksmith: true, excludeBlacksmithRewards: true,
+                                          wandmakerQuest: .rotberry, fastMode: true, challenges: 104))
+    }
+
+    /// Effect lists are written in the shared asset's order: non-curse
+    /// effects alphabetically, then curses alphabetically.
+    func testEffectListsTakeTheAssetOrder() throws {
+        let mixed = try ItemRequirement(key: 1, item: nil, upgrade: 0,
+                                        effect: .oneOf(["Wayward", "Chilling", "Annoying", "Blazing"]),
+                                        kind: .weapon, upgradeMatch: .any)
+        XCTAssertEqual(mixed.effect, .oneOf(["Blazing", "Chilling", "Annoying", "Wayward"]))
+        try assertEngineAgrees(SavedQuery(requirements: [mixed]))
+        let glyphs = try ItemRequirement(key: 2, item: nil, upgrade: 0,
+                                         effect: .oneOf(["Viscosity", "Bulk", "Affection", "Anti-Entropy"]),
+                                         kind: .armor, upgradeMatch: .any)
+        XCTAssertEqual(glyphs.effect, .oneOf(["Affection", "Viscosity", "Anti-Entropy", "Bulk"]))
+        try assertEngineAgrees(SavedQuery(requirements: [glyphs]))
+    }
+
+    func testEffectFiltersFollowTheWriterRules() throws {
+        let one = try ItemRequirement(key: 1, item: nil, upgrade: 0, effect: .oneOf(["Blazing"]),
+                                      kind: .weapon, upgradeMatch: .any)
+        let set = try ItemRequirement(key: 2, item: ItemCatalog.findById("greatshield"), upgrade: 2,
+                                      effect: .oneOf(["Vampiric", "Blocking", "Projecting"]), kind: .weapon)
+        let anyEnchantment = try ItemRequirement(key: 3, item: nil, upgrade: 0, effect: .anyEnchantment,
+                                                 kind: .armor, upgradeMatch: .any, requireUncursed: true)
+        // The whole non-curse family set is the shorthand, however it was spelled.
+        let wholeFamily = try ItemRequirement(key: 4, item: nil, upgrade: 0,
+                                              effect: .oneOf(ItemCatalog.glyphs.reversed()),
+                                              kind: .armor, upgradeMatch: .any)
+        XCTAssertEqual(wholeFamily.effect, .anyEnchantment)
+        XCTAssertEqual(one.modifier, "Blazing")
+        XCTAssertNil(set.modifier)
+        XCTAssertEqual(set.effect, .oneOf(["Blocking", "Projecting", "Vampiric"]), "asset order")
+        XCTAssertEqual(set.effect.glowName, "Blocking")
+
+        let entries = try XCTUnwrap(
+            try object(SearchRequest(requirements: [one, set, anyEnchantment, wholeFamily]))["requirements"]
+                as? [[String: Any]])
+        XCTAssertEqual(entries[0]["effect"] as? String, "Blazing")
+        XCTAssertEqual(entries[1]["effect"] as? [String], ["Blocking", "Projecting", "Vampiric"])
+        XCTAssertEqual(entries[2]["effect"] as? String, "any_enchantment")
+        XCTAssertEqual(entries[2]["uncursed"] as? Bool, true)
+        XCTAssertEqual(entries[3]["effect"] as? String, "any_enchantment")
+        try assertEngineAgrees(SavedQuery(requirements: [one, set, anyEnchantment, wholeFamily]))
+    }
+
+    func testAlternativeGroupsWriteOneAnyOfEntryAtTheFirstMembersPosition() throws {
+        let spear = try ItemRequirement(key: 1, item: ItemCatalog.findById("spear"), upgrade: 3,
+                                        kind: .weapon, alternativeGroup: 7)
+        let ring = try ItemRequirement(key: 2, item: nil, upgrade: 0, kind: .ring, upgradeMatch: .any)
+        let shuriken = try ItemRequirement(key: 3, item: ItemCatalog.findById("shuriken"), upgrade: 2,
+                                           kind: .weapon, alternativeGroup: 7)
+        let sword = try ItemRequirement(key: 4, item: ItemCatalog.findById("sword"), upgrade: 1,
+                                        kind: .weapon, alternativeGroup: 7)
+        let requirements = [spear, ring, shuriken, sword]
+        XCTAssertEqual(requirements.slotCount, 2)
+        XCTAssertEqual(requirements.slots.map { $0.map(\.key) }, [[1, 3, 4], [2]])
+
+        let entries = try XCTUnwrap(
+            try object(SearchRequest(requirements: requirements))["requirements"] as? [[String: Any]])
+        XCTAssertEqual(entries.count, 2)
+        let members = try XCTUnwrap(entries[0]["any_of"] as? [[String: Any]])
+        XCTAssertEqual(members.map { $0["item"] as? String }, ["spear", "shuriken", "sword"])
+        XCTAssertEqual(members.map { $0["upgrade"] as? Int }, [3, 2, 1])
+        XCTAssertEqual(entries[1]["kind"] as? String, "ring")
+        try assertEngineAgrees(SavedQuery(requirements: requirements))
+
+        // A lone member is a plain requirement, so the group id never leaks.
+        let single = try object(SearchRequest(requirements: [spear]))
+        let plain = try XCTUnwrap((single["requirements"] as? [[String: Any]])?.first)
+        XCTAssertNil(plain["any_of"])
+        XCTAssertEqual(plain["item"] as? String, "spear")
+    }
+
+    func testCombinedUpgradeGroupsWriteUpgradeSum() throws {
+        let might = try XCTUnwrap(ItemCatalog.findById("ring_might"))
+        let first = try ItemRequirement(key: 1, item: might, upgrade: 0, kind: .ring, upgradeMatch: .any,
+                                        identityGroup: 1, maximumDepth: 4,
+                                        upgradeSum: UpgradeSum(group: 1, atLeast: 4))
+        let second = try ItemRequirement(key: 2, item: might, upgrade: 0, kind: .ring, upgradeMatch: .any,
+                                         identityGroup: 1, maximumDepth: 4,
+                                         upgradeSum: UpgradeSum(group: 1, atLeast: 4))
+        let entries = try XCTUnwrap(
+            try object(SearchRequest(requirements: [first, second]))["requirements"] as? [[String: Any]])
+        XCTAssertEqual(entries[0]["upgrade_sum"] as? [String: Int], ["group": 1, "at_least": 4])
+        XCTAssertEqual(entries[1]["upgrade_sum"] as? [String: Int], ["group": 1, "at_least": 4])
+        XCTAssertEqual(first.description, "Any upgrade • same item group A • sum group A ≥ +4 • by floor 4")
+        try assertEngineAgrees(SavedQuery(requirements: [first, second]))
+    }
+
+    /// The document decodes back to the models it came from, alternative
+    /// groups renumbered from 1 in document order.
+    func testDocumentRoundTripsThroughTheEngineShareCodec() throws {
+        let requirements = [
+            try ItemRequirement(key: 1, item: ItemCatalog.findById("spear"), upgrade: 3,
+                                kind: .weapon, alternativeGroup: 9),
+            try ItemRequirement(key: 2, item: nil, upgrade: 0, effect: .oneOf(["Blocking", "Projecting"]),
+                                kind: .thrownWeapon, upgradeMatch: .any, alternativeGroup: 9),
+            try ItemRequirement(key: 3, item: nil, upgrade: 0, effect: .anyEnchantment,
+                                kind: .armor, upgradeMatch: .any, requireUncursed: true),
+            try ItemRequirement(key: 4, item: ItemCatalog.findById("ring_might"), upgrade: 0, kind: .ring,
+                                upgradeMatch: .any, identityGroup: 1, upgradeSum: UpgradeSum(group: 2, atLeast: 4)),
+            try ItemRequirement(key: 5, item: ItemCatalog.findById("ring_might"), upgrade: 0, kind: .ring,
+                                upgradeMatch: .any, identityGroup: 1, upgradeSum: UpgradeSum(group: 2, atLeast: 4)),
+        ]
+        let query = SavedQuery(requirements: requirements, maximumDepth: 20)
+        let link = try DeepLink.encodeLink(for: query)
+        let decoded = try DeepLink.decode(link)
+        XCTAssertEqual(decoded.requirements.count, 5)
+        XCTAssertEqual(decoded.requirements.map(\.alternativeGroup), [1, 1, nil, nil, nil])
+        XCTAssertEqual(decoded.requirements.map(\.effect),
+                       [.any, .oneOf(["Blocking", "Projecting"]), .anyEnchantment, .any, .any])
+        XCTAssertEqual(decoded.requirements.map(\.upgradeSum),
+                       [nil, nil, nil, UpgradeSum(group: 2, atLeast: 4), UpgradeSum(group: 2, atLeast: 4)])
+        XCTAssertEqual(decoded.requirements.slotCount, 4)
+        XCTAssertNotNil(decoded.validated())
+        XCTAssertNoThrow(try SearchRequest(requirements: decoded.requirements))
+
+        // The same document through the results-file codec.
+        let imported = try ResultsExport.decode(
+            ResultsExport.encode(query, seeds: ["AAA-AAA-BUH"], appVersion: "test"))
+        XCTAssertEqual(imported.query.requirements.map(\.alternativeGroup), [1, 1, nil, nil, nil])
+        XCTAssertEqual(imported.query.requirements[1].effect, .oneOf(["Blocking", "Projecting"]))
+    }
+
+    func testDecoderReadsEveryEffectSpellingAndNestedGroups() throws {
+        let imported = try ResultsExport.decode("""
+            {"format":"seed-seeker-results",
+             "query":{"requirements":[
+               {"any_of":[{"item":"spear","upgrade":3},{"item":"shuriken","upgrade":2}]},
+               {"kind":"weapon","effect":["blocking","PROJECTING"]},
+               {"kind":"armor","effect":"ANY_ENCHANTMENT"},
+               {"any_of":[{"kind":"ring"},{"kind":"wand"}]}
+             ]},
+             "results":[]}
+            """)
+        let requirements = imported.query.requirements
+        XCTAssertEqual(requirements.map(\.alternativeGroup), [1, 1, nil, nil, 2, 2])
+        XCTAssertEqual(requirements.map(\.key), [1, 2, 3, 4, 5, 6])
+        XCTAssertEqual(requirements[2].effect, .oneOf(["Blocking", "Projecting"]))
+        XCTAssertEqual(requirements[3].effect, .anyEnchantment)
+        XCTAssertEqual(requirements.slotCount, 4)
+    }
+
+    // MARK: Engine transport
+
+    func testEngineAcceptsTheDocumentForEveryQueryTakingEntryPoint() async throws {
+        let requirement = try ItemRequirement(key: 1, item: ItemCatalog.findById("wand_frost"),
+                                              upgrade: 2, kind: .wand)
+        let request = try SearchRequest(requirements: [requirement])
+        let engine = ProductionSeedFinderEngine()
+        let session = try await engine.startSearch(request)
+        await session.cancel(); await session.close()
+        let resumed = try await engine.startResumedSearch(request, resumeFrom: 0, scanLen: 1)
+        await resumed.cancel(); await resumed.close()
+        _ = try await engine.filterSeeds(request, seeds: ["AAA-AAA-AAA"])
+        XCTAssertTrue(request.isRefinement(of: request))
+        XCTAssertEqual(StartDecision.decide(candidate: request, target: request, targetSetEmpty: false,
+                                            targetHasUncoveredSeeds: false, detachedBase: nil), .targetRefine)
+        XCTAssertEqual(try ScoutMatches.mark(seed: "AAA-AAA-AAA", challenges: 0, query: request).totalRequirements, 1)
+    }
+
+    /// The scouted world of a pinned seed; the indices below name its items.
+    private static let pinnedSeed = "AAA-AAA-BUH"
+    private func marks(_ requirements: [ItemRequirement]) throws -> ScoutMatches {
+        try ScoutMatches.mark(seed: Self.pinnedSeed, challenges: 0,
+                              query: SearchRequest(requirements: requirements))
+    }
+
+    func testScoutCountsAnAlternativeGroupAsOneSlot() async throws {
+        let world = try await ProductionSeedFinderEngine().scoutSeed(Self.pinnedSeed, challenges: 0)
+        let sharpshooting = try XCTUnwrap(ItemCatalog.findById("ring_sharpshooting"))
+        let fireblast = try XCTUnwrap(ItemCatalog.findById("wand_fireblast"))
+        // The world's only Wand of Fireblast is cursed; the ring is there.
+        let wand = try ItemRequirement(key: 1, item: fireblast, upgrade: 0, kind: .wand,
+                                       upgradeMatch: .any, requireUncursed: true, alternativeGroup: 1)
+        let ring = try ItemRequirement(key: 2, item: sharpshooting, upgrade: 1, kind: .ring, alternativeGroup: 1)
+        let either = try marks([wand, ring])
+        XCTAssertEqual(either.totalRequirements, 1, "two alternatives are one slot")
+        XCTAssertEqual(either.matchedRequirements, 1)
+        XCTAssertEqual(either.matched.count, 1)
+        XCTAssertEqual(world.items[try XCTUnwrap(either.matched.first)].item.id, "ring_sharpshooting")
+
+        let might = try ItemRequirement(key: 2, item: ItemCatalog.findById("ring_might"), upgrade: 4,
+                                        kind: .ring, requireUncursed: true, alternativeGroup: 1)
+        let neither = try marks([wand, might])
+        XCTAssertEqual(neither.totalRequirements, 1)
+        XCTAssertEqual(neither.matchedRequirements, 0)
+        XCTAssertTrue(neither.matched.isEmpty)
+    }
+
+    func testScoutMarksACombinedUpgradeGroupAllOrNothing() async throws {
+        let world = try await ProductionSeedFinderEngine().scoutSeed(Self.pinnedSeed, challenges: 0)
+        let scale = try XCTUnwrap(ItemCatalog.findById("scale_armor"))
+        func pair(total: Int) throws -> [ItemRequirement] {
+            try [1, 2].map { key in
+                try ItemRequirement(key: Int64(key), item: scale, upgrade: 0, kind: .armor, upgradeMatch: .any,
+                                    requireUncursed: true, upgradeSum: UpgradeSum(group: 1, atLeast: total))
+            }
+        }
+        // The world's scale armors carry +1 and +2 between them.
+        let reached = try marks(try pair(total: 3))
+        XCTAssertEqual(reached.totalRequirements, 2)
+        XCTAssertEqual(reached.matchedRequirements, 2)
+        XCTAssertEqual(Set(reached.matched.map { world.items[$0].upgrade }), [1, 2])
+
+        let short = try marks(try pair(total: 4))
+        XCTAssertEqual(short.totalRequirements, 2)
+        XCTAssertEqual(short.matchedRequirements, 0)
+        XCTAssertTrue(short.matched.isEmpty, "a short sum group marks nothing")
+    }
+
+    func testScoutMatchesEffectSetsAndAnyEnchantment() async throws {
+        let world = try await ProductionSeedFinderEngine().scoutSeed(Self.pinnedSeed, challenges: 0)
+        let mace = try XCTUnwrap(ItemCatalog.findById("mace"))
+        // Two maces: one Corrupting, one cursed and Explosive.
+        let corrupting = try marks([ItemRequirement(key: 1, item: mace, upgrade: 0,
+                                                    effect: .oneOf(["Shocking", "Corrupting"]),
+                                                    kind: .weapon, upgradeMatch: .any)])
+        XCTAssertEqual(corrupting.matchedRequirements, 1)
+        XCTAssertEqual(world.items[try XCTUnwrap(corrupting.matched.first)].effect, "Corrupting")
+        let explosive = try marks([ItemRequirement(key: 1, item: mace, upgrade: 0,
+                                                   effect: .oneOf(["Explosive"]), kind: .weapon, upgradeMatch: .any)])
+        XCTAssertEqual(explosive.matchedRequirements, 1)
+        XCTAssertEqual(world.items[try XCTUnwrap(explosive.matched.first)].effect, "Explosive")
+        XCTAssertEqual(try marks([ItemRequirement(key: 1, item: mace, upgrade: 0, effect: .oneOf(["Explosive"]),
+                                                  kind: .weapon, upgradeMatch: .any, requireUncursed: false)])
+                           .matchedRequirements, 1)
+        let enchanted = try marks([ItemRequirement(key: 1, item: mace, upgrade: 0, effect: .anyEnchantment,
+                                                   kind: .weapon, upgradeMatch: .any)])
+        XCTAssertEqual(enchanted.matchedRequirements, 1)
+        XCTAssertEqual(world.items[try XCTUnwrap(enchanted.matched.first)].effect, "Corrupting",
+                       "a curse is not an enchantment")
+        let plain = try XCTUnwrap(ItemCatalog.findById("sai"))
+        XCTAssertEqual(try marks([ItemRequirement(key: 1, item: plain, upgrade: 0, effect: .anyEnchantment,
+                                                  kind: .weapon, upgradeMatch: .any)]).matchedRequirements, 0,
+                       "the world's Sai carries no enchantment")
+    }
+
+    // MARK: Local validation and summaries
+
+    func testCombinedUpgradeGroupsAreValidatedAcrossTheQuery() throws {
+        let might = try XCTUnwrap(ItemCatalog.findById("ring_might"))
+        func ring(_ key: Int64, upgrade: Int = 0, match: UpgradeMatch = .any, total: Int, group: Int = 1) throws -> ItemRequirement {
+            try ItemRequirement(key: key, item: might, upgrade: upgrade, kind: .ring, upgradeMatch: match,
+                                upgradeSum: UpgradeSum(group: group, atLeast: total))
+        }
+        XCTAssertNoThrow(try SearchRequest(requirements: [ring(1, total: 8), ring(2, total: 8)]))
+        XCTAssertThrowsError(try SearchRequest(requirements: [ring(1, total: 3), ring(2, total: 4)])) { error in
+            XCTAssertEqual(error as? ModelValidationError, .upgradeSumMismatch(group: 1))
+            XCTAssertEqual(error.localizedDescription,
+                           "Combined upgrade group A must share one total across its items")
+        }
+        // An exact upgrade counts as itself, anything else as the family cap.
+        XCTAssertThrowsError(try SearchRequest(requirements: [
+            ring(1, upgrade: 1, match: .exactly, total: 6, group: 2), ring(2, total: 6, group: 2),
+        ])) { error in
+            XCTAssertEqual(error as? ModelValidationError,
+                           .upgradeSumUnattainable(group: 2, needed: 6, maximum: 5))
+            XCTAssertEqual(error.localizedDescription,
+                           "Combined upgrade group B needs +6 but its items can carry at most +5")
+        }
+        XCTAssertNoThrow(try SearchRequest(requirements: [
+            ring(1, upgrade: 1, match: .exactly, total: 5, group: 2), ring(2, total: 5, group: 2),
+        ]))
+        let wand = try ItemRequirement(key: 3, item: nil, upgrade: 0, kind: .wand, upgradeMatch: .any,
+                                       upgradeSum: UpgradeSum(group: 3, atLeast: 4))
+        XCTAssertThrowsError(try SearchRequest(requirements: [wand])) { error in
+            XCTAssertEqual(error as? ModelValidationError,
+                           .upgradeSumUnattainable(group: 3, needed: 4, maximum: 3))
+        }
+        XCTAssertNoThrow(try SearchRequest(requirements: [ring(1, total: 4), ring(2, total: 3, group: 2)]))
+    }
+
+    func testSummaryTextDescribesTheNewState() throws {
+        let set = try ItemRequirement(key: 1, item: ItemCatalog.findById("greatshield"), upgrade: 2,
+                                      effect: .oneOf(["Projecting", "Blocking"]), kind: .weapon)
+        XCTAssertEqual(set.description, "+2 exactly • Blocking/Projecting")
+        let enchanted = try ItemRequirement(key: 2, item: nil, upgrade: 0, effect: .anyEnchantment,
+                                            kind: .weapon, upgradeMatch: .any, requireUncursed: true)
+        XCTAssertEqual(enchanted.description, "Any upgrade • any enchantment • uncursed")
+        let glyphed = try ItemRequirement(key: 3, item: nil, upgrade: 1, effect: .anyEnchantment,
+                                          kind: .armor, upgradeMatch: .atLeast)
+        XCTAssertEqual(glyphed.description, "+1 or higher • any glyph")
+        let summed = try ItemRequirement(key: 4, item: nil, upgrade: 0, kind: .ring, upgradeMatch: .any,
+                                         upgradeSum: UpgradeSum(group: 2, atLeast: 4))
+        XCTAssertEqual(summed.description, "Any upgrade • sum group B ≥ +4")
+        XCTAssertEqual(summed.maximumContributedUpgrade, 4)
+        let exact = try ItemRequirement(key: 5, item: nil, upgrade: 2, kind: .wand)
+        XCTAssertEqual(exact.maximumContributedUpgrade, 2)
+        XCTAssertEqual(groupLetter(1), "A"); XCTAssertEqual(groupLetter(4), "D")
+    }
+
+    // MARK: Persistence
+
+    func testSavedQueriesFromOlderBuildsStillLoad() throws {
+        let legacy = """
+        {"requirements":[{"key":1,"upgrade":2,"modifier":"Lucky","kind":0,"tier":0,"tierMatch":0,\
+        "upgradeMatch":1,"requireUncursed":false},\
+        {"key":2,"upgrade":0,"kind":3,"tier":0,"tierMatch":0,"upgradeMatch":0,"identityGroup":1,\
+        "requireUncursed":true}],\
+        "maximumDepth":12,"requireBlacksmith":false,"excludeBlacksmithRewards":false,"fastMode":false,"challenges":0}
+        """
+        let decoded = QueryPersistence.decode(legacy)
+        XCTAssertEqual(decoded.requirements.count, 2)
+        XCTAssertEqual(decoded.requirements[0].effect, .oneOf(["Lucky"]))
+        XCTAssertEqual(decoded.requirements[0].modifier, "Lucky")
+        XCTAssertEqual(decoded.requirements.map(\.alternativeGroup), [nil, nil])
+        XCTAssertEqual(decoded.requirements.map(\.upgradeSum), [nil, nil])
+        XCTAssertEqual(decoded.maximumDepth, 12)
+    }
+
+    func testSavedQueriesCarryTheNewFieldsAdditively() throws {
+        let query = SavedQuery(requirements: [
+            try ItemRequirement(key: 1, item: nil, upgrade: 0, effect: .oneOf(["Blazing"]),
+                                kind: .weapon, upgradeMatch: .any, alternativeGroup: 3),
+            try ItemRequirement(key: 2, item: nil, upgrade: 0, effect: .oneOf(["Blazing", "Chilling"]),
+                                kind: .weapon, upgradeMatch: .any, alternativeGroup: 3),
+            try ItemRequirement(key: 3, item: nil, upgrade: 0, effect: .anyEnchantment,
+                                kind: .armor, upgradeMatch: .any),
+            try ItemRequirement(key: 4, item: nil, upgrade: 0, kind: .ring, upgradeMatch: .any,
+                                upgradeSum: UpgradeSum(group: 1, atLeast: 5)),
+        ])
+        let text = try XCTUnwrap(QueryPersistence.encode(query))
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+        let saved = try XCTUnwrap(object["requirements"] as? [[String: Any]])
+        // A single effect keeps the classic key, so older builds still read it.
+        XCTAssertEqual(saved[0]["modifier"] as? String, "Blazing")
+        XCTAssertNil(saved[0]["effect"])
+        XCTAssertEqual(saved[1]["effect"] as? [String], ["Blazing", "Chilling"])
+        XCTAssertEqual(saved[2]["effect"] as? String, "any_enchantment")
+        XCTAssertEqual(saved[3]["upgradeSum"] as? [String: Int], ["group": 1, "atLeast": 5])
+        XCTAssertEqual(QueryPersistence.decode(text), query)
+
+        let presets = try XCTUnwrap(PresetPersistence.encode([QueryPreset(name: "Complex", query: query)]))
+        XCTAssertEqual(PresetPersistence.decode(presets).map(\.query), [query])
+        // A saved effect this build does not know drops the query, as before.
+        XCTAssertEqual(QueryPersistence.decode(text.replacingOccurrences(of: "Chilling", with: "Frosty"))
+                           .requirements, [])
+    }
+
+    func testBuiltInPresetsAreUnchangedAndStillEncode() throws {
+        for preset in BuiltInPresets.all {
+            XCTAssertEqual(preset.query.requirements.slotCount, preset.query.requirements.count, preset.name)
+            XCTAssertTrue(preset.query.requirements.allSatisfy { $0.effect == .any && $0.upgradeSum == nil }, preset.name)
+            try assertEngineAgrees(preset.query)
+        }
+    }
+}

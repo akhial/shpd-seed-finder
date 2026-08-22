@@ -69,6 +69,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.seedseeker.app.catalog.ItemCatalog
+import dev.seedseeker.app.engine.ScoutMatches
 import dev.seedseeker.app.engine.SeedCode
 import dev.seedseeker.app.model.ScoutAccessibility
 import dev.seedseeker.app.model.ScoutItem
@@ -89,7 +90,7 @@ fun ScoutScreen(
     result: ScoutWorld?,
     isScouting: Boolean,
     error: String?,
-    matchIndices: Set<Int>?,
+    matches: ScoutMatches?,
     resultSeeds: List<String>,
     scoutedSeed: String?,
     onScoutSeed: (String) -> Unit,
@@ -218,8 +219,7 @@ fun ScoutScreen(
                     item {
                         ScoutSummaryCard(
                             world = world,
-                            matchCount = matchIndices?.size ?: 0,
-                            showMatchCount = matchIndices != null,
+                            matches = matches,
                             modifier = Modifier.padding(top = 22.dp),
                         )
                     }
@@ -242,7 +242,7 @@ fun ScoutScreen(
                                 item(key = "scout-$depth-${indexedItem.index}-${scoutItem.item.id}") {
                                     ScoutItemCard(
                                         scoutItem = scoutItem,
-                                        matches = matchIndices?.contains(indexedItem.index) == true,
+                                        matches = matches?.items?.contains(indexedItem.index) == true,
                                         modifier = Modifier.padding(bottom = 8.dp),
                                     )
                                 }
@@ -394,8 +394,7 @@ internal fun formatSeedFieldValue(input: TextFieldValue): TextFieldValue {
 @Composable
 private fun ScoutSummaryCard(
     world: ScoutWorld,
-    matchCount: Int,
-    showMatchCount: Boolean,
+    matches: ScoutMatches?,
     modifier: Modifier = Modifier,
 ) {
     val clipboard = LocalClipboardManager.current
@@ -422,9 +421,10 @@ private fun ScoutSummaryCard(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatusPill("${world.items.size} items")
                 StatusPill("$floors floors")
-                if (showMatchCount) {
+                if (matches != null) {
+                    val matchCount = matches.matchedSlots
                     StatusPill(
-                        text = if (matchCount == 1) "1 match" else "$matchCount matches",
+                        text = scoutMatchText(matches.matchedSlots, matches.totalSlots),
                         container = if (matchCount > 0) {
                             MaterialTheme.colorScheme.primaryContainer
                         } else {

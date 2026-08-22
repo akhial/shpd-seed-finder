@@ -85,12 +85,18 @@ public static class ResultsExport
         return DecodeQuery(document);
     }
 
+    /// <summary>The document's name for the full non-curse effect set of a family.</summary>
+    private const string AnyEnchantment = "any_enchantment";
+
     private static JsonObject EncodeQuery(QuerySettings query)
     {
-        var output = new JsonObject
-        {
-            ["requirements"] = new JsonArray([.. query.Requirements.Select(r => (JsonNode)EncodeRequirement(r))]),
-        };
+        // An "any of these" slot is one any_of entry at its first member's
+        // position, members in requirement order; a lone member is written
+        // plain, exactly as the core's writer does it.
+        var entries = QueryRelationships.Slots(query.Requirements).Select(slot => slot.Count == 1
+            ? (JsonNode)EncodeRequirement(slot[0])
+            : new JsonObject { ["any_of"] = new JsonArray([.. slot.Select(member => (JsonNode)EncodeRequirement(member))]) });
+        var output = new JsonObject { ["requirements"] = new JsonArray([.. entries]) };
         if (query.MaximumDepth != 24) output["max_depth"] = query.MaximumDepth;
         if (query.RequireBlacksmith) output["require_blacksmith"] = true;
         if (query.ExcludeBlacksmithRewards) output["exclude_blacksmith_rewards"] = true;
@@ -121,19 +127,48 @@ public static class ResultsExport
             _ => null,
         };
         if (output["upgrade"] is null) output.Remove("upgrade");
-        if (requirement.Modifier is not null) output["effect"] = requirement.Modifier;
+        if (EncodeEffect(requirement) is JsonNode effect) output["effect"] = effect;
         if (requirement.RequireUncursed) output["uncursed"] = true;
         if (requirement.Source is ScoutItemSource source) output["source"] = SourceNames[(int)source];
         if (requirement.IdentityGroup is int group) output["identity_group"] = group;
         if (requirement.MaximumDepth is int depth) output["max_depth"] = depth;
+        if (requirement.UpgradeSum is { } sum) output["upgrade_sum"] = new JsonObject { ["group"] = sum.Group, ["at_least"] = sum.AtLeast };
         return output;
+    }
+
+    /// <summary>
+    /// The writer's effect rules: the whole non-curse family set is the
+    /// shorthand, one effect a bare name, anything else the names in catalog
+    /// order. Null when the requirement accepts any effect.
+    /// </summary>
+    private static JsonNode? EncodeEffect(ItemRequirement requirement)
+    {
+        var filter = requirement.Effect;
+        if (filter.AnyEnchantment || filter.IsEveryEnchantmentOf(requirement.Kind)) return AnyEnchantment;
+        var names = ItemCatalog.Modifiers(requirement.Kind).Where(filter.Effects.Contains).ToList();
+        return names.Count switch
+        {
+            0 => null,
+            1 => names[0],
+            _ => new JsonArray([.. names.Select(name => (JsonNode)name)]),
+        };
     }
 
     private static QuerySettings DecodeQuery(JsonObject value)
     {
-        var requirements = new ObservableCollection<ItemRequirement>();
+        var requirements = new ObservableCollection<ItemRequirement>(); var alternativeGroups = 0;
         foreach (var entry in value["requirements"] as JsonArray ?? [])
-            if (entry is JsonObject requirement) requirements.Add(DecodeRequirement(requirement));
+        {
+            if (entry is not JsonObject requirement) continue;
+            // Readers give any_of groups fresh sequential ids in document order.
+            if (requirement["any_of"] is JsonArray members)
+            {
+                alternativeGroups++;
+                foreach (var member in members)
+                    if (member is JsonObject alternative) requirements.Add(DecodeRequirement(alternative, alternativeGroups));
+            }
+            else requirements.Add(DecodeRequirement(requirement, null));
+        }
         var challenges = 0;
         foreach (var nameValue in value["challenges"] as JsonArray ?? [])
         {
@@ -161,7 +196,7 @@ public static class ResultsExport
     /// the one failure the engine cannot rule out, since the item and effect
     /// tables are the app's own copies of the shared catalog asset.
     /// </exception>
-    private static ItemRequirement DecodeRequirement(JsonObject entry)
+    private static ItemRequirement DecodeRequirement(JsonObject entry, int? alternativeGroup)
     {
         CatalogItem? item = null;
         if (TolerantString(entry, "item") is string id)
@@ -177,13 +212,7 @@ public static class ResultsExport
         {
             kind = item?.Kind ?? ItemKind.Weapon;
         }
-        string? modifier = null;
-        if (TolerantString(entry, "effect") is string effectName)
-        {
-            modifier = ItemCatalog.Modifiers(kind)
-                .FirstOrDefault(known => string.Equals(known, effectName, StringComparison.OrdinalIgnoreCase))
-                ?? throw new ResultsExportException($"This query names an unknown effect \"{effectName}\".");
-        }
+        var effect = DecodeEffect(entry["effect"], kind);
         ScoutItemSource? source = null;
         if (TolerantString(entry, "source") is string sourceName)
         {
@@ -193,11 +222,14 @@ public static class ResultsExport
         }
         var (tier, tierMatch) = DecodeTier(entry["tier"]);
         var (upgrade, upgradeMatch) = DecodeUpgrade(entry["upgrade"]);
+        UpgradeSum? upgradeSum = null;
+        if (entry["upgrade_sum"] is JsonObject sum && IntField(sum, "group") is int sumGroup && IntField(sum, "at_least") is int atLeast)
+            upgradeSum = new(sumGroup, atLeast);
         return new ItemRequirement
         {
             Item = item,
             Upgrade = upgrade,
-            Modifier = modifier,
+            Effect = effect,
             Kind = kind,
             Tier = tier,
             TierMatch = tierMatch,
@@ -206,7 +238,35 @@ public static class ResultsExport
             IdentityGroup = IntField(entry, "identity_group"),
             MaximumDepth = IntField(entry, "max_depth"),
             RequireUncursed = BoolField(entry, "uncursed"),
+            AlternativeGroup = alternativeGroup,
+            UpgradeSum = upgradeSum,
         };
+    }
+
+    /// <exception cref="ResultsExportException">When an effect name is not in this build's catalog tables.</exception>
+    private static EffectFilter DecodeEffect(JsonNode? value, ItemKind kind)
+    {
+        string Known(string name) => ItemCatalog.Modifiers(kind)
+            .FirstOrDefault(known => string.Equals(known, name, StringComparison.OrdinalIgnoreCase))
+            ?? throw new ResultsExportException($"This query names an unknown effect \"{name}\".");
+        switch (value)
+        {
+            case JsonValue single when single.TryGetValue(out string? name):
+                // The shorthand is matched case-insensitively, like the engine does.
+                return string.Equals(name, AnyEnchantment, StringComparison.OrdinalIgnoreCase)
+                    ? EffectFilter.Enchantment()
+                    : EffectFilter.OneOf([Known(name)]);
+            case JsonArray names:
+                var effects = new List<string>();
+                foreach (var entry in names)
+                    if (entry is JsonValue nameValue && nameValue.TryGetValue(out string? name)) effects.Add(Known(name));
+                // An empty list is rejected by the engine, so refuse it here too
+                // rather than silently widening the requirement to "any effect".
+                if (effects.Count == 0) throw new ResultsExportException("This query has an empty effect list.");
+                return EffectFilter.OneOf(effects.Distinct());
+            default:
+                return EffectFilter.Any();
+        }
     }
 
     private static (int, TierMatch) DecodeTier(JsonNode? value) => value switch
