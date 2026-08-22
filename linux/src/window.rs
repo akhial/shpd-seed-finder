@@ -13,7 +13,7 @@ use gtk::{gdk, gio, glib};
 use shpd_seedfinder_core::deep_link;
 use shpd_seedfinder_core::results_export;
 use shpd_seedfinder_core::seed::DungeonSeed;
-use shpd_seedfinder_session::MAX_ACCEPTED_RESULTS;
+use shpd_seedfinder_session::MAX_RESULTS;
 
 /// Import size cap; a maximal legal results file is far below this.
 const MAX_RESULTS_FILE_BYTES: usize = 2 * 1024 * 1024;
@@ -525,7 +525,7 @@ pub fn present(app: &adw::Application) {
                         Ok(imported) => {
                             let (kept, dropped) = results_export::dedupe_and_cap(
                                 &imported.seeds,
-                                MAX_ACCEPTED_RESULTS,
+                                MAX_RESULTS,
                             );
                             *state.borrow_mut() = AppState::from_query(&imported.query);
                             let codes: Vec<String> =

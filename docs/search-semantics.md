@@ -45,9 +45,21 @@ only action that discards results is the explicit **Clear** button.
 - **Shares an item**: some requirement of B and some requirement of A have
   the same kind, and either at least one of the two names no specific item or
   both name the same item. Scope and challenge differences are irrelevant
-  here — a filter re-verifies seeds from scratch under B.
+  here — a filter re-verifies seeds from scratch under B. The engine owns
+  this predicate too — `SearchQuery::shares_item` in `seedfinder-core` — and
+  frontends should call it rather than re-derive it.
 
 ## Start decision
+
+The engine owns the whole decision below and every frontend reads it from
+there: `decide_start` in `seedfinder-core` (beside the two predicates it
+consults), exposed as `seedfinder_decide_start` (C),
+`JniBindings.decideStart` (Android) and `decide_start` (wasm), each returning
+one of the lowercase names `anchor`, `target-refine`, `target-filter`,
+`continue-detached`, `detached`. Continuation is part of the answer, so a
+caller must not consult the continuation predicate separately; what the
+frontend still owns is executing the decision — which phases to run, what to
+display, and what to keep.
 
 When Start Search runs query `Q` and a Target exists with a non-empty Target
 Set:

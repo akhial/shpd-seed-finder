@@ -239,6 +239,28 @@ fn regular_depths(target: u8) -> impl Iterator<Item = u32> {
     (1..=u32::from(target)).filter(|&depth| !matches!(depth, 5 | 10 | 15))
 }
 
+/// The boss floors that generate no searchable items, so a floor limit set to
+/// one of them describes exactly the same world as the floor above it. Floor
+/// 20 is *not* one of them: its Imp shop eagerly draws stock, which the
+/// searchable model exposes as depth-20 items.
+pub const EMPTY_BOSS_FLOORS: [u8; 3] = [5, 10, 15];
+
+/// Snaps a floor limit on an empty boss floor to the equivalent floor above
+/// it (5→4, 10→9, 15→14) and leaves every other limit alone. Frontends use
+/// this to keep their floor-limit controls off floors that mean nothing;
+/// generation applies the identical mapping internally.
+#[must_use]
+pub const fn normalize_floor_limit(limit: u8) -> u8 {
+    let mut index = 0;
+    while index < EMPTY_BOSS_FLOORS.len() {
+        if EMPTY_BOSS_FLOORS[index] == limit {
+            return limit - 1;
+        }
+        index += 1;
+    }
+    limit
+}
+
 /// Maps a requested depth onto the deepest state-mutating floor at or above
 /// it: boss floors 5/10/15 are persistent-state neutral in the pinned profile.
 const fn effective_regular_depth(maximum_depth: u8) -> u8 {
@@ -729,6 +751,20 @@ mod tests {
                 generate_main_world(seed, regular).unwrap()
             );
         }
+    }
+
+    #[test]
+    fn the_published_floor_limit_mapping_matches_generation() {
+        for limit in 1..=24 {
+            assert_eq!(
+                super::normalize_floor_limit(limit),
+                super::effective_regular_depth(limit),
+                "floor limit {limit}"
+            );
+        }
+        assert_eq!(super::EMPTY_BOSS_FLOORS, [5, 10, 15]);
+        // Depth 20 carries the Imp shop's stock, so it is a real limit.
+        assert_eq!(super::normalize_floor_limit(20), 20);
     }
 
     #[test]

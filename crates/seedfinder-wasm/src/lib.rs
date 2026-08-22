@@ -1,40 +1,29 @@
 //! Thin JSON and cooperative-search adapter for browser WebAssembly.
 
-use std::collections::BTreeMap;
-
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use shpd_seedfinder_core::catalog::{Effect, ItemId, ItemKind, item};
+use shpd_seedfinder_core::catalog::{Effect, ItemKind, item};
 use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::deep_link;
+use shpd_seedfinder_core::engine_info::document as engine_info_document;
 use shpd_seedfinder_core::feasibility::QueryPlan;
 use shpd_seedfinder_core::json_query;
 use shpd_seedfinder_core::main_world::{
     CanonicalMainWorldGenerator, ConfiguredMainWorldGenerator, generate_main_world_with_challenges,
 };
-use shpd_seedfinder_core::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
+use shpd_seedfinder_core::model::{Accessibility, ItemSource, WorldItem};
 use shpd_seedfinder_core::probability::estimate_match_probability;
-use shpd_seedfinder_core::query::SearchQuery;
+use shpd_seedfinder_core::query::{SearchQuery, decide_start as decide_start_query, scout_matches};
 use shpd_seedfinder_core::quests::{
     BlacksmithQuestType, GhostQuestType, ImpTarget, QuestSummary, WandmakerQuestType,
 };
+use shpd_seedfinder_core::results_export;
+pub use shpd_seedfinder_core::results_export::MAX_RESULTS;
 use shpd_seedfinder_core::search::WorldGenerator;
-use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
-use shpd_seedfinder_core::{SHPD_COMMIT, SHPD_VERSION};
+use shpd_seedfinder_core::seed::{self, DungeonSeed, TOTAL_SEEDS};
 use wasm_bindgen::prelude::*;
 
-/// Maximum number of matches retained by one browser search session.
-pub const MAX_RESULTS: usize = 1_024;
 const SEARCH_BATCH_SIZE: u64 = 256;
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct EngineInfo {
-    shpd_version: &'static str,
-    shpd_commit: &'static str,
-    total_seeds: u64,
-    max_results: usize,
-}
 
 #[derive(Serialize)]
 struct SeedOutput {
@@ -162,35 +151,23 @@ struct AdvanceOutput {
     matches: Vec<SeedOutput>,
 }
 
-/// Returns the pinned engine version and browser-session limits as JSON.
+/// Returns the pinned engine version, the browser-session limits, and the
+/// engine constants every frontend must agree on — the query bounds, the
+/// empty boss floors, the quest windows, the challenge list and the search
+/// start stride — as JSON. The document is `engine_info::document`, shared
+/// with the C and Android bridges.
 #[wasm_bindgen]
 #[must_use]
 pub fn engine_info() -> String {
-    to_json(&EngineInfo {
-        shpd_version: SHPD_VERSION,
-        shpd_commit: SHPD_COMMIT,
-        total_seeds: TOTAL_SEEDS,
-        max_results: MAX_RESULTS,
-    })
+    engine_info_document().to_string()
 }
 
-/// Formats partial interactive seed input as uppercase groups of three.
+/// Formats partial interactive seed input as uppercase groups of three. The
+/// masker is `seed::format_input`, shared with every other frontend.
 #[wasm_bindgen]
 #[must_use]
 pub fn format_seed_code(input: &str) -> String {
-    let mut output = String::with_capacity(11);
-    for (index, byte) in input
-        .bytes()
-        .filter(u8::is_ascii_alphabetic)
-        .take(9)
-        .enumerate()
-    {
-        if index == 3 || index == 6 {
-            output.push('-');
-        }
-        output.push(char::from(byte.to_ascii_uppercase()));
-    }
-    output
+    seed::format_input(input)
 }
 
 /// Parses a seed using the core game's seed-code semantics and returns JSON.
@@ -222,6 +199,35 @@ pub fn encode_share_link(query_json: &str) -> Result<String, JsError> {
 #[wasm_bindgen]
 pub fn decode_share_text(text: &str) -> Result<String, JsError> {
     decode_share_text_impl(text).map_err(|error| JsError::new(&error))
+}
+
+/// Encodes a results file from `{"query": <canonical query document>,
+/// "seeds": ["AAA-AAA-AAA", ...], "app_version": "..."}`, returning the file's
+/// JSON text. The codec is `crates/seedfinder-core/src/results_export.rs`,
+/// specified in `docs/results-export-format.md`.
+///
+/// # Errors
+///
+/// Returns a JavaScript error for a malformed request, an invalid query, or a
+/// seed code that is not in the canonical `XXX-XXX-XXX` form.
+#[wasm_bindgen]
+pub fn encode_results_file(request_json: &str) -> Result<String, JsError> {
+    results_export::encode_document(request_json).map_err(|error| JsError::new(&error))
+}
+
+/// Decodes results-file text into `{"query": <canonical query document>,
+/// "seeds": [...], "dropped": <number>, "app_version": ..., "shpd_version":
+/// ...}`. The seeds are already deduplicated and capped at the shared result
+/// limit, so every platform restores the identical list, and `dropped` counts
+/// the exported entries that step removed.
+///
+/// # Errors
+///
+/// Returns a JavaScript error for input above the 2 MiB import cap, for files
+/// that are not results files, and for an invalid query or seed code.
+#[wasm_bindgen]
+pub fn decode_results_file(contents: &str) -> Result<String, JsError> {
+    results_export::decode_document(contents).map_err(|error| JsError::new(&error))
 }
 
 /// Decodes and analyzes a query without throwing or panicking on bad input.
@@ -299,6 +305,61 @@ pub fn query_continues(candidate_json: &str, base_json: &str) -> Result<bool, Js
 
 fn query_continues_impl(candidate_json: &str, base_json: &str) -> Result<bool, String> {
     Ok(json_query::decode(candidate_json)?.continues(&json_query::decode(base_json)?))
+}
+
+/// Reports what pressing Start Search must do with the query in
+/// `candidate_json`, per `docs/search-semantics.md`. `target_json` is the
+/// Target Query (`null`/`undefined` when there is no Target, which always
+/// anchors), `target_set_empty` and `target_has_uncovered_seeds` describe the
+/// Target Set and its coverage, and `detached_base_json` is the last concluded
+/// run's query when — and only when — that run was itself detached. The
+/// returned name is one of `anchor`, `target-refine`, `target-filter`,
+/// `continue-detached` or `detached`.
+///
+/// The continuation predicate is part of this decision: callers must not call
+/// `query_continues` separately for it.
+///
+/// # Errors
+///
+/// Returns a JavaScript error when any supplied query fails to decode.
+#[wasm_bindgen]
+#[allow(clippy::needless_pass_by_value)] // wasm-bindgen requires owned strings.
+pub fn decide_start(
+    candidate_json: &str,
+    target_json: Option<String>,
+    target_set_empty: bool,
+    target_has_uncovered_seeds: bool,
+    detached_base_json: Option<String>,
+) -> Result<String, JsError> {
+    decide_start_impl(
+        candidate_json,
+        target_json.as_deref(),
+        target_set_empty,
+        target_has_uncovered_seeds,
+        detached_base_json.as_deref(),
+    )
+    .map_err(|error| JsError::new(&error))
+}
+
+fn decide_start_impl(
+    candidate_json: &str,
+    target_json: Option<&str>,
+    target_set_empty: bool,
+    target_has_uncovered_seeds: bool,
+    detached_base_json: Option<&str>,
+) -> Result<String, String> {
+    let candidate = json_query::decode(candidate_json)?;
+    let target = target_json.map(json_query::decode).transpose()?;
+    let detached_base = detached_base_json.map(json_query::decode).transpose()?;
+    Ok(decide_start_query(
+        &candidate,
+        target.as_ref(),
+        target_set_empty,
+        target_has_uncovered_seeds,
+        detached_base.as_ref(),
+    )
+    .as_str()
+    .to_owned())
 }
 
 /// Cooperative, single-threaded browser search state.
@@ -448,8 +509,7 @@ fn decode_share_text_impl(text: &str) -> Result<String, String> {
 }
 
 fn parse_seed_code_impl(input: &str) -> Result<String, String> {
-    let seed = DungeonSeed::from_code(input).map_err(|error| error.to_string())?;
-    Ok(to_json(&SeedOutput::from(seed)))
+    seed::parse_document(input).map_err(|error| error.to_string())
 }
 
 fn scout_impl(request_json: &str) -> Result<String, String> {
@@ -467,12 +527,10 @@ fn scout_impl(request_json: &str) -> Result<String, String> {
         .transpose()?;
     let world = generate_main_world_with_challenges(seed, 24, challenges)
         .map_err(|error| format!("world generation failed: {error}"))?;
-    let matched = query.as_ref().map_or_else(
-        || vec![false; world.items.len()],
-        |query| scout_matches(&world, query),
-    );
-    let matched_requirements = matched.iter().filter(|value| **value).count();
-    let total_requirements = query.as_ref().map_or(0, |query| query.requirements.len());
+    let marks = query.as_ref().map(|query| scout_matches(&world, query));
+    let matched_requirements = marks.as_ref().map_or(0, |marks| marks.matched_requirements);
+    let total_requirements = marks.as_ref().map_or(0, |marks| marks.total_requirements);
+    let matched = marks.map_or_else(|| vec![false; world.items.len()], |marks| marks.matched);
     let items = world
         .items
         .iter()
@@ -606,119 +664,6 @@ fn accessibility_output(accessibility: Accessibility) -> AccessibilityOutput {
     }
 }
 
-type RequirementCandidates = (Option<u8>, Vec<(usize, ItemId)>);
-
-fn scout_matches(world: &GeneratedWorld, query: &SearchQuery) -> Vec<bool> {
-    let mut candidates: Vec<RequirementCandidates> = query
-        .requirements
-        .iter()
-        .map(|requirement| {
-            (
-                requirement.identity_group,
-                world
-                    .items
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, candidate)| {
-                        candidate.depth <= query.max_depth
-                            && candidate.depth <= requirement.max_depth.unwrap_or(query.max_depth)
-                            && (!query.exclude_blacksmith_rewards
-                                || candidate.source != ItemSource::BlacksmithReward)
-                            && requirement.matches(candidate)
-                    })
-                    .map(|(index, candidate)| (index, candidate.item))
-                    .collect(),
-            )
-        })
-        .collect();
-    candidates.sort_by_key(|(_, values)| values.len());
-    let mut search = BestSubset {
-        candidates: &candidates,
-        items: &world.items,
-        used: vec![false; world.items.len()],
-        selected: Vec::new(),
-        best: Vec::new(),
-        scenarios: BTreeMap::new(),
-        identities: BTreeMap::new(),
-    };
-    search.visit(0);
-    let mut matched = vec![false; world.items.len()];
-    for index in search.best {
-        matched[index] = true;
-    }
-    matched
-}
-
-struct BestSubset<'a> {
-    candidates: &'a [RequirementCandidates],
-    items: &'a [WorldItem],
-    used: Vec<bool>,
-    selected: Vec<usize>,
-    best: Vec<usize>,
-    scenarios: BTreeMap<u16, u64>,
-    identities: BTreeMap<u8, ItemId>,
-}
-
-impl BestSubset<'_> {
-    fn visit(&mut self, position: usize) {
-        if position == self.candidates.len() {
-            if self.selected.len() > self.best.len() {
-                self.best.clone_from(&self.selected);
-            }
-            return;
-        }
-        if self.selected.len() + (self.candidates.len() - position) <= self.best.len() {
-            return;
-        }
-
-        let (identity_group, candidates) = &self.candidates[position];
-        for &(index, identity) in candidates {
-            if self.used[index] {
-                continue;
-            }
-            let mut previous_identity = None;
-            if let Some(group) = identity_group {
-                if self
-                    .identities
-                    .get(group)
-                    .is_some_and(|wanted| *wanted != identity)
-                {
-                    continue;
-                }
-                previous_identity = Some((*group, self.identities.insert(*group, identity)));
-            }
-            let mut previous_scenarios = None;
-            if let Some((group, mask)) = self.items[index].accessibility.scenario_constraint() {
-                let compatible = self.scenarios.get(&group).copied().unwrap_or(u64::MAX) & mask;
-                if compatible == 0 {
-                    Self::rewind(&mut self.identities, previous_identity);
-                    continue;
-                }
-                previous_scenarios = Some((group, self.scenarios.insert(group, compatible)));
-            }
-
-            self.used[index] = true;
-            self.selected.push(index);
-            self.visit(position + 1);
-            self.selected.pop();
-            self.used[index] = false;
-            Self::rewind(&mut self.scenarios, previous_scenarios);
-            Self::rewind(&mut self.identities, previous_identity);
-        }
-        self.visit(position + 1);
-    }
-
-    fn rewind<K: Ord, V>(map: &mut BTreeMap<K, V>, previous: Option<(K, Option<V>)>) {
-        if let Some((key, previous)) = previous {
-            if let Some(previous) = previous {
-                map.insert(key, previous);
-            } else {
-                map.remove(&key);
-            }
-        }
-    }
-}
-
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
@@ -757,12 +702,12 @@ mod tests {
     use shpd_seedfinder_core::json_query;
     use shpd_seedfinder_core::main_world::{CanonicalMainWorldGenerator, generate_main_world};
     use shpd_seedfinder_core::search::{SearchOptions, SearchProgress, search_parallel};
-    use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
+    use shpd_seedfinder_core::seed::DungeonSeed;
 
     use super::{
-        MAX_RESULTS, SearchSession, analyze_query, decode_share_text_impl, encode_share_link_impl,
-        engine_info, filter_seeds_impl, format_seed_code, parse_seed_code_impl,
-        query_continues_impl, scout_impl,
+        MAX_RESULTS, SearchSession, analyze_query, decide_start_impl, decode_share_text_impl,
+        encode_share_link_impl, engine_info, engine_info_document, filter_seeds_impl,
+        format_seed_code, parse_seed_code_impl, query_continues_impl, scout_impl,
     };
 
     #[test]
@@ -792,12 +737,61 @@ mod tests {
     }
 
     #[test]
-    fn engine_info_reports_core_constants() {
+    fn start_decision_reports_the_documented_names() {
+        let target = r#"{"requirements":[{"kind":"ring"}],"max_depth":6}"#;
+        let shallower = r#"{"requirements":[{"kind":"ring"}],"max_depth":5}"#;
+        let armor = r#"{"requirements":[{"kind":"armor"}],"max_depth":6}"#;
+        let narrowed = r#"{"requirements":[{"kind":"armor"},{"kind":"armor","upgrade":{"at_least":2}}],"max_depth":6}"#;
+
+        assert_eq!(
+            decide_start_impl(target, Some(target), false, true, None).unwrap(),
+            "target-refine"
+        );
+        assert_eq!(
+            decide_start_impl(shallower, Some(target), false, true, None).unwrap(),
+            "target-filter"
+        );
+        assert_eq!(
+            decide_start_impl(armor, Some(target), false, true, None).unwrap(),
+            "detached"
+        );
+        assert_eq!(
+            decide_start_impl(narrowed, Some(target), false, true, Some(armor)).unwrap(),
+            "continue-detached"
+        );
+        // No Target anchors, and so does an empty Target Set the query does
+        // not continue.
+        assert_eq!(
+            decide_start_impl(target, None, false, true, None).unwrap(),
+            "anchor"
+        );
+        assert_eq!(
+            decide_start_impl(shallower, Some(target), true, true, None).unwrap(),
+            "anchor"
+        );
+
+        // Sharing needs equal kinds: a named ring shares with "any ring",
+        // a named wand shares with neither.
+        let tenacity = r#"{"requirements":[{"item":"ring_tenacity"}],"max_depth":5}"#;
+        let fireblast = r#"{"requirements":[{"item":"wand_fireblast"}],"max_depth":5}"#;
+        assert_eq!(
+            decide_start_impl(tenacity, Some(target), false, true, None).unwrap(),
+            "target-filter"
+        );
+        assert_eq!(
+            decide_start_impl(fireblast, Some(target), false, true, None).unwrap(),
+            "detached"
+        );
+
+        assert!(decide_start_impl("not json", None, false, true, None).is_err());
+        assert!(decide_start_impl(target, Some("not json"), false, true, None).is_err());
+        assert!(decide_start_impl(target, None, false, true, Some("not json")).is_err());
+    }
+
+    #[test]
+    fn engine_info_serializes_the_shared_document_with_the_browser_cap() {
         let info: Value = serde_json::from_str(&engine_info()).unwrap();
-        assert_eq!(info["shpdVersion"], shpd_seedfinder_core::SHPD_VERSION);
-        assert_eq!(info["shpdCommit"], shpd_seedfinder_core::SHPD_COMMIT);
-        assert_eq!(info["totalSeeds"], TOTAL_SEEDS);
-        assert_eq!(info["maxResults"], MAX_RESULTS);
+        assert_eq!(info, engine_info_document());
     }
 
     #[test]
