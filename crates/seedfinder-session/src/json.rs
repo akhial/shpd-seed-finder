@@ -15,8 +15,11 @@ use crate::{ScoutMatchError, StartDecision, decide_start_packets, production_sco
 
 /// Marks which items of the world named by an `SSQ2` (or legacy raw seed)
 /// scout request satisfy the `SSF8` query, as `{"matched": [<item indices>],
-/// "matched_requirements": <n>, "total_requirements": <n>}`. The indices
+/// "matchedRequirements": <n>, "totalRequirements": <n>}`. The indices
 /// address the item list of the `SSC2` packet the same request scouts to.
+/// The keys are camelCase like every other bridge-built document (the
+/// browser's own scout output and `engine_info`); only the persisted formats
+/// — query documents and results files — are `snake_case`.
 ///
 /// # Errors
 ///
@@ -25,8 +28,8 @@ pub fn scout_matches_document(request: &[u8], query: &[u8]) -> Result<String, Sc
     let marks = production_scout_matches(request, query)?;
     Ok(json!({
         "matched": marks.matched_indices(),
-        "matched_requirements": marks.matched_requirements,
-        "total_requirements": marks.total_requirements,
+        "matchedRequirements": marks.matched_requirements,
+        "totalRequirements": marks.total_requirements,
     })
     .to_string())
 }
@@ -158,8 +161,8 @@ mod tests {
 
         let envelope: Value =
             serde_json::from_str(&scout_matches_document(b"AAA-AAA-AAA", &query).unwrap()).unwrap();
-        assert_eq!(envelope["total_requirements"], 1);
-        assert_eq!(envelope["matched_requirements"], 1);
+        assert_eq!(envelope["totalRequirements"], 1);
+        assert_eq!(envelope["matchedRequirements"], 1);
         let matched = envelope["matched"].as_array().unwrap();
         assert_eq!(matched.len(), 1);
         let index = usize::try_from(matched[0].as_u64().unwrap()).unwrap();
@@ -179,7 +182,7 @@ mod tests {
         let envelope: Value =
             serde_json::from_str(&scout_matches_document(b"AAA-AAA-AAA", &impossible).unwrap())
                 .unwrap();
-        assert_eq!(envelope["total_requirements"], 1);
+        assert_eq!(envelope["totalRequirements"], 1);
         assert!(envelope["matched"].as_array().unwrap().len() <= 1);
 
         assert!(scout_matches_document(b"AAA-AAA-AA0", &query).is_err());

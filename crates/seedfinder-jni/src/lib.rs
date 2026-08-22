@@ -83,8 +83,8 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_scoutSeed<'loc
 
 /// Marks which items of a scouted world satisfy the `SSF8` query in `query`.
 /// The scout request identifies the world exactly like `scoutSeed`, and the
-/// returned UTF-8 JSON `{"matched": [<item indices>], "matched_requirements":
-/// <n>, "total_requirements": <n>}` indexes the item list of the `SSC2` packet
+/// returned UTF-8 JSON `{"matched": [<item indices>], "matchedRequirements":
+/// <n>, "totalRequirements": <n>}` indexes the item list of the `SSC2` packet
 /// `scoutSeed` returns for that same request: scouting is deterministic, so
 /// both calls describe the same world. Requirements claim distinct items and
 /// the marks are a largest satisfiable selection, so a partially matching

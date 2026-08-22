@@ -319,7 +319,7 @@ pub extern "C" fn seedfinder_scout(
 /// Marks which items of a scouted world satisfy the `SSF8` query in `query`.
 /// The scout request identifies the world exactly like `seedfinder_scout`, and
 /// the returned UTF-8 JSON `{"matched": [<item indices>],
-/// "matched_requirements": <n>, "total_requirements": <n>}` indexes the item
+/// "matchedRequirements": <n>, "totalRequirements": <n>}` indexes the item
 /// list of the `SSC2` packet `seedfinder_scout` returns for that same request:
 /// scouting is deterministic, so both calls describe the same world.
 #[unsafe(no_mangle)]
