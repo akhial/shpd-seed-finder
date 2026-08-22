@@ -38,6 +38,47 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertNotNil(preset.query.validated())
     }
 
+    /// The limits and game data every model reads come from
+    /// `seedfinder_engine_info`, not from constants kept beside them.
+    func testEngineInfoPublishesTheLimitsAndGameData() {
+        let info = EngineInfo.shared
+        XCTAssertEqual(info.shpdVersion, "3.3.8")
+        XCTAssertEqual(info.limits.maxDepth, 24)
+        XCTAssertEqual(info.limits.exactTierMin, 2)
+        XCTAssertEqual(info.limits.exactTierMax, 5)
+        XCTAssertEqual(info.limits.boundedTierMin, 3)
+        XCTAssertEqual(info.limits.boundedTierMax, 4)
+        XCTAssertEqual(info.limits.identityGroupMax, 4)
+        XCTAssertEqual(info.limits.maxUpgradeDefault, 3)
+        XCTAssertEqual(info.limits.maxUpgradeRing, 4)
+        XCTAssertEqual(info.limits.maxResults, 1_024)
+        XCTAssertEqual(info.limits.resultsFileMaxBytes, 2 * 1_024 * 1_024)
+        XCTAssertEqual(info.emptyBossFloors, [5, 10, 15])
+        XCTAssertEqual(info.questWindows[.ghost], 2...4)
+        XCTAssertEqual(info.questWindows[.wandmaker], 7...9)
+        XCTAssertEqual(info.questWindows[.blacksmith], 12...14)
+        XCTAssertEqual(info.questWindows[.imp], 17...19)
+        XCTAssertEqual(info.challenges.count, 9)
+        XCTAssertEqual(info.challenges.map(\.mask), Challenge.allCases.map(\.rawValue))
+        XCTAssertEqual(info.challengeMask, 511)
+        XCTAssertEqual(info.challenges.first?.name, "on_diet")
+
+        // The models read those values rather than their own copies.
+        XCTAssertEqual(ItemKind.ring.maximumSearchUpgrade, info.limits.maxUpgradeRing)
+        XCTAssertEqual(ItemKind.wand.maximumSearchUpgrade, info.limits.maxUpgradeDefault)
+        XCTAssertEqual(FloorLimits.emptyBossFloors, info.emptyBossFloors)
+        XCTAssertEqual(ScoutQuestKind.wandmaker.depthRange, info.questWindows[.wandmaker])
+        XCTAssertEqual(Challenge.allCases.filter(\.changesLevelGeneration).map(\.rawValue),
+                       info.challenges.filter(\.changesLevelGeneration).map(\.mask))
+        XCTAssertEqual(Challenge.allCases.filter(\.changesLevelGeneration),
+                       [.noHerbalism, .darkness, .noScrolls])
+    }
+
+    @MainActor
+    func testResultCapIsTheEnginesResultLimit() {
+        XCTAssertEqual(SearchController.resultCap, EngineInfo.shared.limits.maxResults)
+    }
+
     func testFloorLimitOptionsSkipEmptyBossFloors() {
         XCTAssertEqual(FloorLimits.options.count, 21)
         XCTAssertFalse(FloorLimits.options.contains(5))
@@ -367,10 +408,10 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertThrowsError(try ScoutCodec.decode(questPacket([1, 0, 3])))
         XCTAssertThrowsError(try ScoutCodec.decode(questPacket([1, 4, 3])))
         XCTAssertThrowsError(try ScoutCodec.decode(questPacket([3, 3, 13])))
-        // Depth outside the quest's floor range.
-        XCTAssertThrowsError(try ScoutCodec.decode(questPacket([1, 1, 5])))
-        XCTAssertThrowsError(try ScoutCodec.decode(questPacket([2, 1, 6])))
-        XCTAssertThrowsError(try ScoutCodec.decode(questPacket([4, 2, 16])))
+        // The floor a quest sits on is the engine's own and is taken as read:
+        // the codec no longer re-checks it against the published window.
+        XCTAssertEqual(try ScoutCodec.decode(questPacket([1, 1, 5])).quests.first?.depth, 5)
+        XCTAssertEqual(try ScoutCodec.decode(questPacket([2, 1, 6])).quests.first?.depth, 6)
         // Duplicate and descending quest ids, and an over-limit count.
         XCTAssertThrowsError(try ScoutCodec.decode(questPacket([1, 1, 2], [1, 2, 3])))
         XCTAssertThrowsError(try ScoutCodec.decode(questPacket([2, 1, 8], [1, 1, 3])))

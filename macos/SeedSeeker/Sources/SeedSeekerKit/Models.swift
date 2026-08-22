@@ -9,7 +9,11 @@ public enum ItemKind: Int, Codable, CaseIterable, Sendable {
     public var label: String { ["Weapons", "Armor", "Wands", "Rings", "Melee weapons", "Thrown weapons"][rawValue] }
     public var singularLabel: String { ["weapon", "armor", "wand", "ring", "melee weapon", "thrown weapon"][rawValue] }
     public var modifierLabel: String? { family == .weapon ? "Enchantment" : family == .armor ? "Glyph" : nil }
-    public var maximumSearchUpgrade: Int { self == .ring ? 4 : 3 }
+    /// The highest upgrade a search can ask for, as the engine reports it.
+    public var maximumSearchUpgrade: Int {
+        self == .ring ? EngineInfo.shared.limits.maxUpgradeRing
+                      : EngineInfo.shared.limits.maxUpgradeDefault
+    }
 
     /// The broad item family; catalog items always carry the family.
     public var family: ItemKind { self == .meleeWeapon || self == .thrownWeapon ? .weapon : self }
@@ -86,8 +90,10 @@ public enum Challenge: Int, CaseIterable, Sendable {
         }
     }
 
+    /// Whether the generator consults this challenge, which the engine
+    /// reports for every bit it knows.
     public var changesLevelGeneration: Bool {
-        self == .noHerbalism || self == .darkness || self == .noScrolls
+        EngineInfo.shared.challenges.first { $0.mask == rawValue }?.changesLevelGeneration ?? false
     }
 }
 
@@ -98,10 +104,12 @@ public enum Challenge: Int, CaseIterable, Sendable {
 /// Floor 20 stays selectable because the Imp shop gives the City boss floor
 /// searchable stock.
 public enum FloorLimits {
-    public static let emptyBossFloors: Set<Int> = [5, 10, 15]
+    public static let emptyBossFloors: Set<Int> = EngineInfo.shared.emptyBossFloors
 
-    /// Floors offered by floor-limit selectors: 1...24 minus the empty boss floors.
-    public static let options: [Int] = (1...24).filter { !emptyBossFloors.contains($0) }
+    /// Floors offered by floor-limit selectors: every floor the engine
+    /// searches, minus the empty boss floors.
+    public static let options: [Int] =
+        (1...EngineInfo.shared.limits.maxDepth).filter { !emptyBossFloors.contains($0) }
 
     /// Snaps an empty boss-floor limit to the equivalent floor below it (5→4, 10→9, 15→14).
     public static func normalize(_ depth: Int) -> Int {
@@ -127,10 +135,10 @@ public enum ModelValidationError: Error, Equatable, LocalizedError {
         case .modifier: "This category cannot carry a modifier requirement"
         case .uncursedCurse: "An uncursed item cannot have a curse"
         case .identityGroup: "Same-item group must be A..D"
-        case .itemMaximumDepth: "Item floor limit must be 1..24"
+        case .itemMaximumDepth: "Item floor limit must be 1..\(EngineInfo.shared.limits.maxDepth)"
         case .emptyRequirements: "At least one requirement is needed"
-        case .maximumDepth: "Maximum floor must be 1..24"
-        case .challenges: "Challenge mask must be 0..511"
+        case .maximumDepth: "Maximum floor must be 1..\(EngineInfo.shared.limits.maxDepth)"
+        case .challenges: "Challenge mask must be 0..\(EngineInfo.shared.challengeMask)"
         }
     }
 }
@@ -157,10 +165,12 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
                 maximumDepth: Int? = nil, requireUncursed: Bool = false) throws {
         guard item == nil || item.map(kind.accepts) == true else { throw ModelValidationError.itemKind }
         let tierable = item == nil && (kind.family == .weapon || kind.family == .armor)
+        let limits = EngineInfo.shared.limits
         let validTier = switch tierMatch {
         case .any: tier == 0
-        case .exactly: tierable && (2...5).contains(tier)
-        case .atLeast, .atMost: tierable && (3...4).contains(tier)
+        case .exactly: tierable && (limits.exactTierMin...limits.exactTierMax).contains(tier)
+        case .atLeast, .atMost:
+            tierable && (limits.boundedTierMin...limits.boundedTierMax).contains(tier)
         }
         guard validTier else { throw ModelValidationError.tier }
         let valid = switch upgradeMatch {
@@ -173,8 +183,12 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
         guard !requireUncursed || !ItemCatalog.cursesFor(kind).contains(modifier ?? "") else {
             throw ModelValidationError.uncursedCurse
         }
-        guard identityGroup == nil || (1...4).contains(identityGroup!) else { throw ModelValidationError.identityGroup }
-        guard maximumDepth == nil || (1...24).contains(maximumDepth!) else { throw ModelValidationError.itemMaximumDepth }
+        guard identityGroup == nil || (1...limits.identityGroupMax).contains(identityGroup!) else {
+            throw ModelValidationError.identityGroup
+        }
+        guard maximumDepth == nil || (1...limits.maxDepth).contains(maximumDepth!) else {
+            throw ModelValidationError.itemMaximumDepth
+        }
         self.key = key; self.item = item; self.upgrade = upgrade; self.modifier = modifier
         self.kind = kind; self.tier = tier; self.tierMatch = tierMatch
         self.upgradeMatch = upgradeMatch; self.source = source
@@ -286,8 +300,12 @@ public struct SearchRequest: Codable, Sendable {
                 wandmakerQuest: WandmakerQuest? = nil,
                 fastMode: Bool = false, challenges: Int = 0) throws {
         guard !requirements.isEmpty else { throw ModelValidationError.emptyRequirements }
-        guard (1...24).contains(maximumDepth) else { throw ModelValidationError.maximumDepth }
-        guard (0...511).contains(challenges) else { throw ModelValidationError.challenges }
+        guard (1...EngineInfo.shared.limits.maxDepth).contains(maximumDepth) else {
+            throw ModelValidationError.maximumDepth
+        }
+        guard (0...EngineInfo.shared.challengeMask).contains(challenges) else {
+            throw ModelValidationError.challenges
+        }
         self.requirements = requirements; self.maximumDepth = maximumDepth
         self.requireBlacksmith = requireBlacksmith
         self.excludeBlacksmithRewards = excludeBlacksmithRewards
@@ -360,14 +378,13 @@ public enum ScoutQuestKind: Int, CaseIterable, Sendable {
         case .imp: "Imp"
         }
     }
-    /// Floors on which this quest can appear.
+    /// Floors on which this quest can appear, as the engine's feasibility
+    /// model reports them.
     public var depthRange: ClosedRange<Int> {
-        switch self {
-        case .ghost: 2...4
-        case .wandmaker: 7...9
-        case .blacksmith: 12...14
-        case .imp: 17...19
+        guard let window = EngineInfo.shared.questWindows[self] else {
+            preconditionFailure("the engine published no floor window for \(giverLabel)")
         }
+        return window
     }
     /// Wire variants in SSC2 order; a quest's variant byte is a 1-based index.
     public var variants: [ScoutQuestVariant] {

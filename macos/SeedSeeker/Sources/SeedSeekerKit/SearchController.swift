@@ -103,8 +103,9 @@ public final class SearchController {
     public private(set) var exportQuery: SavedQuery?
     public var selectedSeed: String?
 
-    /// How many rows the displayed list holds at most.
-    public static let resultCap = 1_024
+    /// How many rows the displayed list holds at most: the engine's own
+    /// result limit, which is also what an import restores.
+    public static let resultCap = EngineInfo.shared.limits.maxResults
 
     private let engine: any SeedFinderEngine
     private var session: (any SeedFinderSearchSession)?

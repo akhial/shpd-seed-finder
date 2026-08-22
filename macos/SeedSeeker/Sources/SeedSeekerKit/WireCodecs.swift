@@ -162,10 +162,9 @@ public enum ScoutCodec {
             guard (1...kind.variants.count).contains(variantID) else {
                 throw WireCodecError.invalidValue("Unknown \(kind.giverLabel) quest variant \(variantID)")
             }
+            // The floor a quest sits on is the engine's own; the packet is
+            // not re-checked against the window it published.
             let depth = Int(try input.u8())
-            guard kind.depthRange.contains(depth) else {
-                throw WireCodecError.invalidValue("\(kind.giverLabel) quest depth must be \(kind.depthRange.lowerBound)..\(kind.depthRange.upperBound)")
-            }
             return ScoutQuest(variant: kind.variants[variantID - 1], depth: depth)
         }
         let items: [ScoutItem] = try (0..<input.u16()).map { _ in
