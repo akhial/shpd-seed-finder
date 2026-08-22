@@ -39,7 +39,7 @@ public struct SavedQuery: Codable, Sendable {
         challenges = try container.decodeIfPresent(Int.self, forKey: .challenges) ?? 0
     }
     public func validated() -> SavedQuery? {
-        guard (1...24).contains(maximumDepth), (0...511).contains(challenges) else { return nil }
+        guard (1...SearchLimits.maxDepth).contains(maximumDepth), (0...SearchLimits.challengeMask).contains(challenges) else { return nil }
         for requirement in requirements {
             if let item = requirement.item, ItemCatalog.findById(item.id) != item { return nil }
             if let modifier = requirement.modifier,

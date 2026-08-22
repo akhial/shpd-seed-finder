@@ -137,7 +137,7 @@ public enum ResultCodec {
 public enum ScoutCodec {
     public static func encodeRequest(seed: String, challenges: Int) throws -> Data {
         guard SeedCode.isCanonical(seed) else { throw WireCodecError.invalidValue("Seed must use XXX-XXX-XXX format") }
-        guard (0...511).contains(challenges) else { throw WireCodecError.invalidValue("Challenge mask must be 0..511") }
+        guard (0...SearchLimits.challengeMask).contains(challenges) else { throw WireCodecError.invalidValue("Challenge mask must be 0..\(SearchLimits.challengeMask)") }
         var output = Writer()
         output.bytes("SSQ2".utf8)
         output.u16LittleEndian(challenges)
@@ -172,7 +172,7 @@ public enum ScoutCodec {
             let stableID = try input.utf8(input.u16())
             guard let item = ItemCatalog.findById(stableID) else { throw WireCodecError.invalidValue("Unknown catalog item '\(stableID)' in native scout packet") }
             let depth = Int(try input.u8())
-            guard (1...24).contains(depth) else { throw WireCodecError.invalidValue("Scout item depth must be 1..24") }
+            guard (1...SearchLimits.maxDepth).contains(depth) else { throw WireCodecError.invalidValue("Scout item depth must be 1..\(SearchLimits.maxDepth)") }
             let upgrade = Int(try input.u8())
             guard (0...item.kind.maximumSearchUpgrade).contains(upgrade) else { throw WireCodecError.invalidValue("Invalid scout item upgrade") }
             let flags = try input.u8()

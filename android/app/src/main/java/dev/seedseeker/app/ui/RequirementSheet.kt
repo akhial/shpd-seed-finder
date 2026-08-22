@@ -61,6 +61,7 @@ import dev.seedseeker.app.model.FLOOR_LIMIT_OPTIONS
 import dev.seedseeker.app.model.ItemKind
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.ScoutItemSource
+import dev.seedseeker.app.model.SearchLimits
 import dev.seedseeker.app.model.TierMatch
 import dev.seedseeker.app.model.UpgradeMatch
 import dev.seedseeker.app.model.floorLimitIndex
@@ -267,7 +268,7 @@ fun RequirementSheet(
                                         onClick = {
                                             tierMatch = match
                                             if (match in setOf(TierMatch.AT_LEAST, TierMatch.AT_MOST)) {
-                                                tier = tier.coerceIn(3, 4)
+                                                tier = tier.coerceIn(SearchLimits.BOUNDED_TIERS.first, SearchLimits.BOUNDED_TIERS.last)
                                             }
                                             tierMenuExpanded = false
                                         },
@@ -291,8 +292,9 @@ fun RequirementSheet(
                                     Slider(
                                         value = tier.toFloat(),
                                         onValueChange = { tier = it.roundToInt() },
-                                        valueRange = 2f..5f,
-                                        steps = 2,
+                                        valueRange = SearchLimits.EXACT_TIERS.first.toFloat()..
+                                            SearchLimits.EXACT_TIERS.last.toFloat(),
+                                        steps = SearchLimits.EXACT_TIERS.count() - 2,
                                     )
                                 }
                             } else if (tierMatch in setOf(TierMatch.AT_LEAST, TierMatch.AT_MOST)) {
@@ -324,7 +326,7 @@ fun RequirementSheet(
                                         expanded = tierMenuExpanded,
                                         onDismissRequest = { tierMenuExpanded = false },
                                     ) {
-                                        (3..4).forEach { option ->
+                                        SearchLimits.BOUNDED_TIERS.forEach { option ->
                                             DropdownMenuItem(
                                                 text = { Text("Tier $option") },
                                                 onClick = {
@@ -633,7 +635,7 @@ fun RequirementSheet(
                             ) {
                                 Text("None", maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
-                            (1..4).forEach { group ->
+                            (1..SearchLimits.IDENTITY_GROUP_MAX).forEach { group ->
                                 ToggleButton(
                                     checked = identityGroup == group,
                                     onCheckedChange = { if (it) identityGroup = group },
