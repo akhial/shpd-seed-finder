@@ -33,8 +33,20 @@ public enum ItemCatalog {
         let modifiers: Modifiers
     }
 
+    /// The catalog file, wherever this build reaches it: the resource bundle
+    /// `scripts/build-macos-app.sh` installs in the app's `Contents/Resources`
+    /// when running inside the `.app`, and SwiftPM's own copy of that bundle
+    /// under `swift test` or `swift run`.
+    private static var catalogURL: URL? {
+        let installed = Bundle.main.resourceURL?
+            .appendingPathComponent("SeedSeeker_SeedSeekerKit.bundle")
+            .appendingPathComponent("catalog-v3.3.8.json")
+        if let installed, FileManager.default.fileExists(atPath: installed.path) { return installed }
+        return Bundle.module.url(forResource: "catalog-v3.3.8", withExtension: "json")
+    }
+
     private static let document: Document = {
-        guard let url = Bundle.module.url(forResource: "catalog-v3.3.8", withExtension: "json"),
+        guard let url = catalogURL,
               let data = try? Data(contentsOf: url),
               let document = try? JSONDecoder().decode(Document.self, from: data) else {
             preconditionFailure("the bundled item catalog is missing or unreadable")
