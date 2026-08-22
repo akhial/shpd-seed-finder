@@ -70,7 +70,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.seedseeker.app.catalog.ItemCatalog
 import dev.seedseeker.app.engine.SeedCode
-import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.ScoutAccessibility
 import dev.seedseeker.app.model.ScoutItem
 import dev.seedseeker.app.model.ScoutQuest
@@ -90,9 +89,7 @@ fun ScoutScreen(
     result: ScoutWorld?,
     isScouting: Boolean,
     error: String?,
-    requirements: List<ItemRequirement>,
-    maximumDepth: Int,
-    excludeBlacksmithRewards: Boolean,
+    matchIndices: Set<Int>?,
     resultSeeds: List<String>,
     scoutedSeed: String?,
     onScoutSeed: (String) -> Unit,
@@ -218,17 +215,11 @@ fun ScoutScreen(
                 }
 
                 result?.let { world ->
-                    val matchIndices = scoutMatchIndices(
-                        items = world.items,
-                        requirements = requirements,
-                        maximumDepth = maximumDepth,
-                        excludeBlacksmithRewards = excludeBlacksmithRewards,
-                    )
                     item {
                         ScoutSummaryCard(
                             world = world,
-                            matchCount = matchIndices.size,
-                            showMatchCount = requirements.isNotEmpty(),
+                            matchCount = matchIndices?.size ?: 0,
+                            showMatchCount = matchIndices != null,
                             modifier = Modifier.padding(top = 22.dp),
                         )
                     }
@@ -251,7 +242,7 @@ fun ScoutScreen(
                                 item(key = "scout-$depth-${indexedItem.index}-${scoutItem.item.id}") {
                                     ScoutItemCard(
                                         scoutItem = scoutItem,
-                                        matches = indexedItem.index in matchIndices,
+                                        matches = matchIndices?.contains(indexedItem.index) == true,
                                         modifier = Modifier.padding(bottom = 8.dp),
                                     )
                                 }

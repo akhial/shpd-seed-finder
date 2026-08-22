@@ -18,6 +18,7 @@ import dev.seedseeker.app.model.ScoutQuestVariant
 import dev.seedseeker.app.model.ScoutWorld
 import dev.seedseeker.app.model.SeedResult
 import dev.seedseeker.app.catalog.ItemCatalog
+import org.json.JSONObject
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
@@ -32,6 +33,16 @@ interface NativeSeedFinder {
     fun startResumedSearch(request: SearchRequest, resumeFrom: Long, scanLen: Long): NativeSearchSession
     fun filterSeeds(request: SearchRequest, seeds: List<String>): List<String>
     fun scoutSeed(seed: String, challenges: Int = 0): ScoutWorld
+
+    /**
+     * Which items of the world [scoutSeed] returns for the same seed and challenge mask explain
+     * [request]'s requirements, as indices into that world's item list, or null when this engine's
+     * scouted world is not the engine's own (the demo engine's is fabricated, so engine marks
+     * would index a different list). Requirements claim distinct items and the marks are a largest
+     * satisfiable selection, so a partially matching query marks only the items it could explain.
+     * The selection is the engine's `scout_matches`; frontends never re-derive it.
+     */
+    fun scoutMatches(seed: String, challenges: Int, request: SearchRequest): Set<Int>?
 
     /**
      * Whether [candidate] never widens [base]: an identical floor limit, challenge set and fast
@@ -99,6 +110,13 @@ class DemoNativeSeedFinder : NativeSeedFinder {
     // (docs/search-semantics.md), and every APK packages its library.
     override fun queryContinues(candidate: SearchRequest, base: SearchRequest): Boolean =
         JniBindings.queryContinues(QueryCodec.encode(candidate), QueryCodec.encode(base))
+
+    // The demo scout hands back a fabricated world rather than an engine SSC2
+    // packet, so the engine's marks — computed over the world this seed really
+    // generates — would point at other items entirely. Demo APKs therefore show
+    // no marks at all; a Kotlin stand-in matcher would be a second
+    // implementation of `scout_matches`, which is what this app no longer has.
+    override fun scoutMatches(seed: String, challenges: Int, request: SearchRequest): Set<Int>? = null
 
     override fun scoutSeed(seed: String, challenges: Int): ScoutWorld {
         require(SeedCode.isCanonical(seed)) { "Seed must use XXX-XXX-XXX format" }
@@ -294,6 +312,15 @@ class JniNativeSeedFinder(
         return world
     }
 
+    /** Asks the engine, which scouts the same world again and marks it. */
+    override fun scoutMatches(seed: String, challenges: Int, request: SearchRequest): Set<Int> =
+        ScoutMatchCodec.decode(
+            bindings.scoutMatches(
+                ScoutRequestCodec.encode(seed, challenges),
+                QueryCodec.encode(request),
+            ),
+        )
+
     override fun startSearch(request: SearchRequest): NativeSearchSession {
         val handle = bindings.startSearch(QueryCodec.encode(request))
         check(handle != 0L) { "Native seed finder returned an invalid handle" }
@@ -384,6 +411,7 @@ interface NativeBindings {
     fun cancel(handle: Long)
     fun close(handle: Long)
     fun scoutSeed(request: ByteArray): ByteArray
+    fun scoutMatches(request: ByteArray, query: ByteArray): ByteArray
     fun filterSeeds(request: ByteArray, seeds: LongArray): ByteArray
     fun queryContinues(candidate: ByteArray, base: ByteArray): Boolean
 }
@@ -402,6 +430,7 @@ object JniBindings {
     @JvmStatic external fun cancel(handle: Long)
     @JvmStatic external fun close(handle: Long)
     @JvmStatic external fun scoutSeed(request: ByteArray): ByteArray
+    @JvmStatic external fun scoutMatches(request: ByteArray, query: ByteArray): ByteArray
     @JvmStatic external fun filterSeeds(request: ByteArray, seeds: LongArray): ByteArray
     @JvmStatic external fun queryContinues(candidate: ByteArray, base: ByteArray): Boolean
 
@@ -432,6 +461,8 @@ private object JniBindingsAdapter : NativeBindings {
     override fun cancel(handle: Long) = JniBindings.cancel(handle)
     override fun close(handle: Long) = JniBindings.close(handle)
     override fun scoutSeed(request: ByteArray) = JniBindings.scoutSeed(request)
+    override fun scoutMatches(request: ByteArray, query: ByteArray) =
+        JniBindings.scoutMatches(request, query)
     override fun filterSeeds(request: ByteArray, seeds: LongArray) =
         JniBindings.filterSeeds(request, seeds)
     override fun queryContinues(candidate: ByteArray, base: ByteArray) =
@@ -536,6 +567,14 @@ private object ResultCodec {
                 check(input.available() == 0) { "Trailing bytes in native result packet" }
             }
         }
+}
+
+/** Reads the scout-match envelope `scoutMatches` returns: indices into the `SSC2` item order. */
+private object ScoutMatchCodec {
+    fun decode(document: ByteArray): Set<Int> {
+        val matched = JSONObject(String(document, StandardCharsets.UTF_8)).getJSONArray("matched")
+        return buildSet { for (index in 0 until matched.length()) add(matched.getInt(index)) }
+    }
 }
 
 object ScoutResultCodec {
