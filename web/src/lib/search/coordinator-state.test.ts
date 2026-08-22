@@ -45,13 +45,15 @@ describe('coordinator aggregation', () => {
     expect(imported.importedDropped).toBe(0)
     expect(imported.query).toEqual({ requirements: [{ kind: 'wand' }] })
   })
-  it('deduplicates then caps imported results at 1024, reporting drops', () => {
-    const deduped = importedResultsState(initialCoordinatorState(100), [match(3), match(1), match(3)], { requirements: [] })
+  it('reports the engine\'s dropped count and the cap without re-deriving either', () => {
+    // The decoder already deduplicated and capped; this only reports what it
+    // removed, so the drop count is never recomputed from the kept list.
+    const deduped = importedResultsState(initialCoordinatorState(100), [match(3), match(1)], { requirements: [] }, 1)
     expect(deduped.matches.map((item) => item.value)).toEqual([3, 1])
     expect(deduped.importedDropped).toBe(1)
     expect(deduped.capped).toBe(false)
 
-    const imported = importedResultsState(initialCoordinatorState(100), Array.from({ length: 1_030 }, (_, value) => match(value)), { requirements: [] })
+    const imported = importedResultsState(initialCoordinatorState(100), Array.from({ length: 1_024 }, (_, value) => match(value)), { requirements: [] }, 6)
     expect(imported.matches).toHaveLength(1_024)
     expect(imported.capped).toBe(true)
     expect(imported.importedDropped).toBe(6)

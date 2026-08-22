@@ -394,10 +394,6 @@ private struct ContentView: View {
                     let accessing = url.startAccessingSecurityScopedResource()
                     defer { if accessing { url.stopAccessingSecurityScopedResource() } }
                     let data = try Data(contentsOf: url)
-                    guard data.count <= ResultsExport.maxFileBytes else {
-                        throw ResultsExportError(
-                            "This file is too large to be a Seed Seeker results file (2 MiB limit).")
-                    }
                     guard let text = String(data: data, encoding: .utf8) else {
                         throw ResultsExportError("This is not a Seed Seeker results file (not UTF-8 text).")
                     }
@@ -414,11 +410,13 @@ private struct ContentView: View {
                     return
                 }
                 apply(imported.query)
-                controller.loadImported(seeds: imported.seeds, query: imported.query)
-                if let fileVersion = imported.shpdVersion, fileVersion != ResultsExport.shpdVersion {
+                controller.loadImported(seeds: imported.seeds, dropped: imported.dropped,
+                                       query: imported.query)
+                let engineVersion = EngineInfo.shared.shpdVersion
+                if let fileVersion = imported.shpdVersion, fileVersion != engineVersion {
                     transferError = "Imported \(controller.results.count) seeds. Note: this file was " +
                         "made for Shattered Pixel Dungeon v\(fileVersion); this app targets " +
-                        "v\(ResultsExport.shpdVersion), so the seeds may generate differently."
+                        "v\(engineVersion), so the seeds may generate differently."
                 }
             case .failure(let error):
                 transferError = (error as? LocalizedError)?.errorDescription

@@ -3,7 +3,6 @@ import { useStore } from '@tanstack/react-store'
 import { compactNumber, formatDuration, probabilityLabel } from '../../lib/format'
 import { CheckIcon, CopyIcon, DownloadIcon, TrashIcon, UploadIcon } from '../../lib/icons'
 import {
-  MAX_RESULTS_FILE_BYTES,
   RESULTS_FILE_NAME,
   decodeResultsFile,
   encodeResultsFile,
@@ -12,7 +11,6 @@ import {
 import { clearResults, loadImportedResults, searchStore } from '../../lib/search/coordinator'
 import { canClearResults, RESULT_CAP } from '../../lib/search/coordinator-state'
 import { queryStore } from '../../lib/store'
-import { analyzeQuery } from '../../lib/wasm'
 import type { AnalysisResult } from '../../lib/wasm/types'
 
 /** Re-renders 10 times a second while active so stats stay live between worker updates. */
@@ -121,7 +119,7 @@ export function ResultsPanel({
       return
     }
     triggerJsonDownload(
-      encodeResultsFile(query, search.matches.map((match) => match.code), shpdVersion ?? 'unknown'),
+      encodeResultsFile(query, search.matches.map((match) => match.code)),
       RESULTS_FILE_NAME,
     )
     setFileError(undefined)
@@ -129,20 +127,15 @@ export function ResultsPanel({
 
   const importResults = async (file: File) => {
     try {
-      if (file.size > MAX_RESULTS_FILE_BYTES) {
-        throw new Error('This file is too large to be a Seed Seeker results file (2 MiB limit).')
-      }
+      // The engine's codec owns the size limit, the envelope rules, the query
+      // validation and dedupe-and-cap, and reports its own message on failure.
       const decoded = decodeResultsFile(await file.text())
-      // The engine re-validates the query strictly: unknown items, effects,
-      // challenges, or query fields fail here instead of being dropped.
-      const verdict = await analyzeQuery(JSON.stringify(decoded.queryDocument))
-      if (!verdict.valid) throw new Error(`The query in this results file is not usable: ${verdict.error}`)
-      // A search may have started while the picker or the awaits were pending.
+      // A search may have started while the picker or the read were pending.
       if (searchStore.state.state === 'running') {
         throw new Error('A search is running — stop it before importing results.')
       }
       queryStore.setState(() => decoded.query)
-      loadImportedResults(decoded.seeds.map(parsedSeedFromCode), decoded.queryDocument)
+      loadImportedResults(decoded.seeds.map(parsedSeedFromCode), decoded.queryDocument, decoded.dropped)
       setFileError(undefined)
       setFileInfo(
         decoded.shpdVersion !== undefined && shpdVersion !== undefined && decoded.shpdVersion !== shpdVersion
