@@ -14,6 +14,21 @@
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
     <string>0.7.0</string>
+    <!-- seedseeker:// query links. Only the built app bundle registers the
+         scheme; `swift run` executes outside a bundle and cannot. -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>CFBundleURLName</key>
+            <string>dev.seedseeker.mac</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>seedseeker</string>
+            </array>
+        </dict>
+    </array>
     <!-- Sparkle decides whether an update applies by comparing
          CFBundleVersion, so every release must bump it along with the
          marketing version. -->

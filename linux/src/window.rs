@@ -10,6 +10,7 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::{gdk, gio, glib};
 
+use shpd_seedfinder_core::deep_link;
 use shpd_seedfinder_core::results_export;
 use shpd_seedfinder_core::seed::DungeonSeed;
 use shpd_seedfinder_session::MAX_ACCEPTED_RESULTS;
@@ -369,6 +370,57 @@ pub fn present(app: &adw::Application) {
     });
     window.add_action(&presets_action);
 
+    let copy_link_action = gio::SimpleAction::new("copy-link", None);
+    copy_link_action.connect_activate({
+        let state = Rc::clone(&state);
+        let toasts = toasts.clone();
+        let window = window.clone();
+        move |_, _| {
+            let link = state
+                .borrow()
+                .to_query()
+                .and_then(|query| deep_link::encode_link(&query));
+            match link {
+                Ok(link) => {
+                    window.clipboard().set_text(&link);
+                    toasts.add_toast(adw::Toast::new("Link copied"));
+                }
+                Err(message) => toasts.add_toast(adw::Toast::new(&message)),
+            }
+        }
+    });
+    window.add_action(&copy_link_action);
+
+    // Receives seedseeker:// URIs from the application's `open` handler and
+    // loads the carried query into the editor.
+    let open_link_action = gio::SimpleAction::new("open-share-link", Some(glib::VariantTy::STRING));
+    open_link_action.connect_activate({
+        let state = Rc::clone(&state);
+        let results = Rc::clone(&results);
+        let refresh_all = Rc::clone(&refresh_all);
+        let toasts = toasts.clone();
+        move |_, parameter| {
+            let Some(text) = parameter.and_then(glib::Variant::str) else {
+                return;
+            };
+            if results.is_running() {
+                toasts.add_toast(adw::Toast::new("Stop the search before opening a link"));
+                return;
+            }
+            match deep_link::decode_text(text) {
+                Ok(query) => {
+                    *state.borrow_mut() = AppState::from_query(&query);
+                    refresh_all();
+                    toasts.add_toast(adw::Toast::new("Search loaded from link"));
+                }
+                Err(message) => {
+                    toasts.add_toast(adw::Toast::new(&format!("Cannot open link: {message}")));
+                }
+            }
+        }
+    });
+    window.add_action(&open_link_action);
+
     let export_action = gio::SimpleAction::new("export-results", None);
     export_action.connect_activate({
         let results = Rc::clone(&results);
@@ -550,6 +602,7 @@ fn build_menu() -> gio::Menu {
     let query_section = gio::Menu::new();
     query_section.append(Some("_Presets…"), Some("win.presets"));
     query_section.append(Some("_Challenges…"), Some("win.challenges"));
+    query_section.append(Some("Copy _Link"), Some("win.copy-link"));
     menu.append_section(None, &query_section);
     let results_section = gio::Menu::new();
     results_section.append(Some("_Import Results…"), Some("win.import-results"));

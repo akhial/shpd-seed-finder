@@ -2,7 +2,7 @@
 
 Seed Seeker is an independent, unofficial seed-search interface for Shattered Pixel Dungeon. It uses an original Jetpack Compose UI and does not include or reuse the game's UI components.
 
-The debug build deliberately uses `DemoNativeSeedFinder` for UI previews. Release builds select `JniNativeSeedFinder`, whose compact wire contract is documented in `NativeSeedFinder.kt`. Gradle builds and packages `libshpd_seedfinder.so` for `arm64-v8a` and `x86_64` through `scripts/build-android-native.sh`; the library exports the five entry points exposed by `dev.seedseeker.app.engine.JniBindings`.
+The debug build deliberately uses `DemoNativeSeedFinder` as its search engine, so UI states can be exercised with deterministic sample seeds. Release builds select `JniNativeSeedFinder`, whose compact wire contract is documented in `NativeSeedFinder.kt`. Both build types package `libshpd_seedfinder.so` for `arm64-v8a` and `x86_64` (built through `scripts/build-android-native.sh`): wire codecs such as the share-link format always run the canonical Rust implementation through `dev.seedseeker.app.engine.JniBindings`, even in debug APKs.
 
 Build with:
 

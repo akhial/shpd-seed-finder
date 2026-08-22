@@ -18,8 +18,8 @@ import org.junit.Test
  * `buildHostJni` task runs scripts/build-host-native.sh and puts it on `java.library.path`), so a
  * drift between `SearchQuery::continues` and what the app assumes fails here instead of shipping.
  *
- * Every case also checks the demo engine's Kotlin stand-in — the answer demo APKs, which carry no
- * `.so`, have to fall back on — so the two never disagree.
+ * Every case also checks the demo engine's Kotlin stand-in — the answer debug APKs' stubbed
+ * search engine falls back on — so the two never disagree.
  */
 class QueryContinuationTest {
     private val native = JniNativeSeedFinder()

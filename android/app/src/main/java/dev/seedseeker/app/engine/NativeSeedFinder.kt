@@ -69,8 +69,10 @@ object NativeSeedFinderFactory {
 }
 
 /**
- * Non-Rust implementation for previews and debug APKs. It follows the same session lifecycle as
- * JNI and emits deterministic sample seeds so every UI state can be exercised without an `.so`.
+ * Non-Rust search engine for previews and debug APKs. It follows the same session lifecycle as
+ * JNI and emits deterministic sample seeds so every UI state can be exercised. Only searching is
+ * stubbed: wire codecs such as the share-link format always go through [JniBindings], whose
+ * library every APK packages.
  */
 class DemoNativeSeedFinder : NativeSeedFinder {
     override fun startSearch(request: SearchRequest): NativeSearchSession = DemoSession(request)
@@ -476,6 +478,13 @@ object JniBindings {
     @JvmStatic external fun scoutSeed(request: ByteArray): ByteArray
     @JvmStatic external fun filterSeeds(request: ByteArray, seeds: LongArray): ByteArray
     @JvmStatic external fun queryContinues(candidate: ByteArray, base: ByteArray): Boolean
+
+    // Share-link codec (docs/share-link-format.md): UTF-8 in, UTF-8 out.
+    // Unlike the search entry points above, these also run in debug APKs,
+    // which package the library solely for them.
+    @JvmStatic external fun shareEncode(queryDocument: ByteArray): ByteArray
+    @JvmStatic external fun shareDecode(text: ByteArray): ByteArray
+    @JvmStatic external fun shareExtract(text: ByteArray): ByteArray?
 }
 
 private object JniBindingsAdapter : NativeBindings {

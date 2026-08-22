@@ -1,5 +1,7 @@
 import init, {
   analyze_query,
+  decode_share_text,
+  encode_share_link,
   engine_info,
   format_seed_code,
   parse_seed_code,
@@ -47,4 +49,16 @@ export async function analyzeQuery(queryJson: string): Promise<AnalysisResult> {
  */
 export function queryContinues(candidateJson: string, baseJson: string): boolean {
   return query_continues(candidateJson, baseJson)
+}
+
+/** Encodes a canonical query document as a full shareable web link. */
+export async function encodeShareLink(queryJson: string): Promise<string> {
+  await initEngine()
+  return encode_share_link(queryJson)
+}
+
+/** Decodes share-link text (full link or bare code) into the canonical query document. */
+export async function decodeShareText(text: string): Promise<string> {
+  await initEngine()
+  return decode_share_text(text)
 }

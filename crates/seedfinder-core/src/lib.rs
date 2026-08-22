@@ -15,6 +15,7 @@ pub mod city_boss_shop;
 pub mod city_floor;
 pub mod city_mobs;
 pub mod city_rooms;
+pub mod deep_link;
 pub mod equipment;
 pub mod feasibility;
 pub mod generator;

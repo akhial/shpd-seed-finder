@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "dev.seedseeker.unofficial",
+      "sha256_cert_fingerprints": [
+        "51:B2:C8:6D:29:D6:5D:70:18:0C:18:FB:0B:B0:17:98:68:92:2F:9C:46:37:CF:0A:A6:D1:F0:7B:C8:89:D4:1B"
+      ]
+    }
+  }
+]

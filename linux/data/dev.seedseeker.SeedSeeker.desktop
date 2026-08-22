@@ -2,8 +2,9 @@
 [Desktop Entry]
 Name=Seed Seeker
 Comment=Find and inspect Shattered Pixel Dungeon seeds
-Exec=seed-seeker-gtk
+Exec=seed-seeker-gtk %u
 Icon=dev.seedseeker.SeedSeeker
+MimeType=x-scheme-handler/seedseeker;
 Terminal=false
 Type=Application
 Categories=Utility;

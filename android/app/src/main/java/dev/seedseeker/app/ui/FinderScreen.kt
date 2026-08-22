@@ -120,6 +120,7 @@ fun FinderScreen(
     onExportResults: () -> Unit,
     onImportResults: () -> Unit,
     onClearResults: () -> Unit,
+    onShareQuery: () -> Unit,
     onScoutSeed: (String) -> Unit,
     bottomBar: @Composable () -> Unit,
 ) {
@@ -149,6 +150,14 @@ fun FinderScreen(
                             expanded = showOverflowMenu,
                             onDismissRequest = { showOverflowMenu = false },
                         ) {
+                            DropdownMenuItem(
+                                text = { Text("Share search…") },
+                                enabled = requirements.isNotEmpty(),
+                                onClick = {
+                                    showOverflowMenu = false
+                                    onShareQuery()
+                                },
+                            )
                             DropdownMenuItem(
                                 text = { Text("Import results…") },
                                 enabled = !isSearching,

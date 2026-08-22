@@ -67,6 +67,13 @@ public sealed partial class MainWindow : Window
     /// start (or import) so an export never reflects later editor changes.
     /// </summary>
     private QuerySettings? searchedQuery;
+    /// <summary>
+    /// A shared link that arrived before the root element loaded: applying it
+    /// may need a ContentDialog, which needs a live XamlRoot.
+    /// </summary>
+    private string? pendingLink;
+    /// <summary>Only the latest copy may reset the checkmark back to the link glyph.</summary>
+    private int copyLinkFeedback;
     private const int ResultCap = 1024;
     private static readonly string SettingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Seed Seeker", "query.json");
     private static readonly string PresetsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Seed Seeker", "presets.json");
@@ -106,7 +113,11 @@ public sealed partial class MainWindow : Window
         Closed += (_, _) => { search?.Cancel(); search?.Dispose(); };
         // ContentDialog needs a live XamlRoot, which only exists once the root
         // element has loaded; Activated can fire before that.
-        ((FrameworkElement)Content).Loaded += (_, _) => { if (!updateCheckStarted) { updateCheckStarted = true; _ = CheckForUpdatesAsync(); } };
+        ((FrameworkElement)Content).Loaded += (_, _) =>
+        {
+            if (!updateCheckStarted) { updateCheckStarted = true; _ = CheckForUpdatesAsync(); }
+            if (pendingLink is string link) { pendingLink = null; _ = ApplySharedLinkAsync(link); }
+        };
     }
 
     private sealed class UpdateState { public string? SkippedVersion { get; set; } public DateTimeOffset LastChecked { get; set; } }
@@ -223,7 +234,7 @@ public sealed partial class MainWindow : Window
     private void RefreshQuery()
     {
         RequirementList.ItemsSource = query.Requirements; NoRequirements.Visibility = query.Requirements.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        FloorLabel.Text = $"first {query.MaximumDepth} floor{(query.MaximumDepth == 1 ? "" : "s")}"; RequireBlacksmith.IsEnabled = query.MaximumDepth < 14; StartButton.IsEnabled = search is not null || (!busy && query.Requirements.Count != 0);
+        FloorLabel.Text = $"first {query.MaximumDepth} floor{(query.MaximumDepth == 1 ? "" : "s")}"; RequireBlacksmith.IsEnabled = query.MaximumDepth < 14; StartButton.IsEnabled = search is not null || (!busy && query.Requirements.Count != 0); CopyLinkButton.IsEnabled = !searchRunning && query.Requirements.Count != 0;
         var count = BitOperations.PopCount((uint)query.Challenges); ChallengeSummary.Text = count == 0 ? "None" : $"{count} enabled";
     }
     private void FloorSlider_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e) { if (restoring || FloorLabel is null) return; query.MaximumDepth = FloorLimits.Options[Math.Clamp((int)e.NewValue, 0, FloorLimits.Options.Length - 1)]; RefreshQuery(); SaveSettings(); }
@@ -744,6 +755,7 @@ public sealed partial class MainWindow : Window
         StartLabel.Text = running ? "Cancel Search" : "Start Search";
         PresetPicker.IsEnabled = !running;
         SavePresetButton.IsEnabled = !running;
+        CopyLinkButton.IsEnabled = !running && query.Requirements.Count != 0;
         DeletePresetButton.IsEnabled = !running
             && PresetPicker.SelectedItem is QueryPreset { IsBuiltIn: false };
         searchRunning = running;
@@ -869,9 +881,53 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    /// <summary>Applies the query carried by a seedseeker:// activation, cold start or warm redirect.</summary>
+    internal void OpenSharedLink(string link)
+    {
+        if (Content is FrameworkElement { IsLoaded: false }) { pendingLink = link; return; }
+        _ = ApplySharedLinkAsync(link);
+    }
+
+    private async Task ApplySharedLinkAsync(string link)
+    {
+        try
+        {
+            // Decode the untrusted link text off the UI thread.
+            var json = await Task.Run(() => NativeEngine.TryDecodeShareText(link))
+                ?? throw new ResultsExportException("This link does not contain a valid Seed Seeker query.");
+            var decoded = ResultsExport.DecodeQueryDocument(json);
+            if (search is not null)
+            {
+                await ShowTransferMessage("Stop the search before opening a query link.");
+                return;
+            }
+            ApplyQuery(decoded);
+            SearchStatus.Text = "Search loaded from link.";
+        }
+        catch (ResultsExportException ex)
+        {
+            await ShowTransferMessage(ex.Message);
+        }
+    }
+
+    private async void CopyLink_Click(object sender, RoutedEventArgs e)
+    {
+        if (NativeEngine.TryEncodeShareLink(ResultsExport.EncodeQueryDocument(query)) is not string link)
+        {
+            await ShowTransferMessage("This query could not be encoded into a link.");
+            return;
+        }
+        Copy(link);
+        // Brief checkmark feedback, matching the other platforms' link buttons.
+        var generation = ++copyLinkFeedback;
+        CopyLinkIcon.Glyph = "";
+        await Task.Delay(1200);
+        if (generation == copyLinkFeedback) CopyLinkIcon.Glyph = "";
+    }
+
     private async Task ShowTransferMessage(string message)
     {
-        var dialog = new ContentDialog { XamlRoot = Content.XamlRoot, Title = "Results file", Content = message, CloseButtonText = "OK" };
+        var dialog = new ContentDialog { XamlRoot = Content.XamlRoot, Title = "Seed Seeker", Content = message, CloseButtonText = "OK" };
         await dialog.ShowAsync();
     }
 
