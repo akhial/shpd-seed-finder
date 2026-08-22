@@ -38,6 +38,20 @@ private func copiedPacket(_ pointer: UnsafeMutablePointer<UInt8>?, _ length: Int
     return Data(bytes: pointer, count: length)
 }
 
+/// Runs one out-buffer FFI call and copies its packet out, mapping the return
+/// code to a `SeedFinderEngineError`. The entry points that use this — the
+/// results, share, seed-code, decision and engine-info codecs — only transform
+/// bytes, so like `QueryContinuation` they stay synchronous.
+func enginePacket(
+    _ call: (UnsafeMutablePointer<UnsafeMutablePointer<UInt8>?>?, UnsafeMutablePointer<Int>?) -> Int32
+) throws -> Data {
+    var pointer: UnsafeMutablePointer<UInt8>?
+    var length = 0
+    let code = call(&pointer, &length)
+    guard code == 0 else { throw ffiError(code) }
+    return try copiedPacket(pointer, length)
+}
+
 /// The engine's refine soundness predicate, bridged rather than re-derived:
 /// whether the SSF8 query in `candidate` continues the one in `base` —
 /// an identical floor limit, challenge set and fast mode, world conditions (the

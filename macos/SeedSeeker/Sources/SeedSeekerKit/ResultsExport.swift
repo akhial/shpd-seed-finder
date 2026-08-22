@@ -1,3 +1,4 @@
+import CSeedFinder
 import Foundation
 
 /// User-facing failure while reading a results file.
@@ -10,28 +11,26 @@ public struct ResultsExportError: Error, LocalizedError, Equatable {
 /// The cross-platform results-export document: search results plus the query
 /// that found them.
 ///
-/// The canonical implementation and compatibility rules live in the Rust core
-/// (`crates/seedfinder-core/src/results_export.rs`); the schema is documented
-/// in `docs/results-export-format.md`. Keep this codec schema-compatible with
-/// it: unknown envelope and per-result fields are ignored — including the
-/// `format_version` number releases up to 0.7.0 wrote, so every file an older
-/// release exported keeps importing — and unknown or wrong-typed query content
-/// fails the import instead of silently changing the query's meaning.
+/// The format is the Rust core's (`crates/seedfinder-core/src/results_export.rs`,
+/// documented in `docs/results-export-format.md`) and so is every rule about
+/// it: the envelope, the compatibility contract, the strict query validation,
+/// the canonical seed codes, the import size cap and the dedupe-and-cap step
+/// all live behind `seedfinder_results_encode`/`_decode`. What remains here is
+/// the mapping between that canonical query document and the Swift models,
+/// which the engine has already validated by the time it is read.
 public enum ResultsExport {
-    public static let fileFormat = "seed-seeker-results"
     public static let suggestedFileName = "seed-seeker-results"
-    /// Mirrors the Rust core's `SHPD_VERSION`, the source of truth.
-    public static let shpdVersion = "3.3.8"
-    /// Import size cap; a maximal legal results file is far below this.
-    public static let maxFileBytes = 2 * 1024 * 1024
 
     public struct Imported: Sendable {
         public let query: SavedQuery
         public let seeds: [String]
+        /// Exported entries the engine's dedupe-and-cap step removed.
+        public let dropped: Int
         /// The upstream game version the file declares, if any.
         public let shpdVersion: String?
-        public init(query: SavedQuery, seeds: [String], shpdVersion: String?) {
-            self.query = query; self.seeds = seeds; self.shpdVersion = shpdVersion
+        public init(query: SavedQuery, seeds: [String], dropped: Int, shpdVersion: String?) {
+            self.query = query; self.seeds = seeds
+            self.dropped = dropped; self.shpdVersion = shpdVersion
         }
     }
 
@@ -50,108 +49,62 @@ public enum ResultsExport {
         ("forbidden_runes", .noScrolls), ("hostile_champions", .championEnemies),
         ("badder_bosses", .strongerBosses),
     ]
-    private static let queryKeys: Set<String> = [
-        "requirements", "max_depth", "require_blacksmith",
-        "exclude_blacksmith_rewards", "wandmaker_quest", "fast_mode", "challenges",
-    ]
 
-    private static let requirementKeys: Set<String> = [
-        "kind", "item", "tier", "upgrade", "effect", "uncursed", "source",
-        "identity_group", "max_depth",
-    ]
-
+    /// Encodes the query and its seeds as results-file text, or "" when the
+    /// engine refuses them (an unusable query, a non-canonical seed code).
     public static func encode(_ query: SavedQuery, seeds: [String], appVersion: String) -> String {
-        let document: [String: Any] = [
-            "format": fileFormat,
-            "app_version": appVersion,
-            "shpd_version": shpdVersion,
+        let request: [String: Any] = [
             "query": encodeQuery(query),
-            "results": seeds.map { ["seed": $0] },
+            "seeds": seeds,
+            "app_version": appVersion,
         ]
-        guard let data = try? JSONSerialization.data(
-            withJSONObject: document, options: [.prettyPrinted, .sortedKeys]) else { return "" }
-        return String(data: data, encoding: .utf8) ?? ""
-    }
-
-    public static func decode(_ text: String) throws -> Imported {
-        guard let data = text.data(using: .utf8),
-              let parsed = try? JSONSerialization.jsonObject(with: data),
-              let document = parsed as? [String: Any],
-              document["format"] as? String == fileFormat else {
-            throw ResultsExportError("This is not a Seed Seeker results file.")
-        }
-        guard let queryValue = document["query"] as? [String: Any] else {
-            throw ResultsExportError("This results file is missing its query.")
-        }
-        let query = try decodeQuery(queryValue)
-        guard let resultsValue = document["results"] as? [Any] else {
-            throw ResultsExportError("This results file is missing its results list.")
-        }
-        let seeds = try resultsValue.enumerated().map { index, entry -> String in
-            guard let entry = entry as? [String: Any],
-                  let seed = entry["seed"] as? String, isSeedCode(seed) else {
-                throw ResultsExportError(
-                    "Result \(index + 1) does not have a valid seed code (canonical XXX-XXX-XXX form).")
-            }
-            return seed
-        }
-        return Imported(query: query, seeds: seeds,
-                        shpdVersion: document["shpd_version"] as? String)
-    }
-
-    // MARK: Strict typed readers
-
-    /// A present-but-wrong-type value is an error, never coerced or treated
-    /// as absent. JSON booleans and integers both bridge to `NSNumber`, so
-    /// the two are told apart via `CFBoolean`, and fractions are rejected.
-    private static func strictInt(_ value: Any) -> Int? {
-        guard let number = value as? NSNumber,
-              CFGetTypeID(number) != CFBooleanGetTypeID(),
-              let exact = Int(exactly: number) else { return nil }
-        return exact
-    }
-
-    private static func strictBool(_ value: Any) -> Bool? {
-        guard let number = value as? NSNumber,
-              CFGetTypeID(number) == CFBooleanGetTypeID() else { return nil }
-        return number.boolValue
-    }
-
-    private static func intField(_ entry: [String: Any], _ key: String) throws -> Int? {
-        guard let value = entry[key], !(value is NSNull) else { return nil }
-        guard let number = strictInt(value) else {
-            throw ResultsExportError("\"\(key)\" must be a whole number")
-        }
-        return number
-    }
-
-    private static func stringField(_ entry: [String: Any], _ key: String) throws -> String? {
-        guard let value = entry[key], !(value is NSNull) else { return nil }
-        guard let text = value as? String, !(value is NSNumber) else {
-            throw ResultsExportError("\"\(key)\" must be a string")
-        }
+        guard let document = try? JSONSerialization.data(withJSONObject: request),
+              let packet = try? enginePacket({ out, length in
+                  document.withUnsafeBytes { bytes in
+                      seedfinder_results_encode(
+                          bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count, out, length)
+                  }
+              }),
+              let text = String(data: packet, encoding: .utf8) else { return "" }
         return text
     }
 
-    private static func boolField(_ entry: [String: Any], _ key: String) throws -> Bool {
-        guard let value = entry[key] else { return false }
-        guard let flag = strictBool(value) else {
-            throw ResultsExportError("\"\(key)\" must be true or false")
+    public static func decode(_ text: String) throws -> Imported {
+        let packet: Data
+        do {
+            packet = try enginePacket { out, length in
+                Data(text.utf8).withUnsafeBytes { bytes in
+                    seedfinder_results_decode(
+                        bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count, out, length)
+                }
+            }
+        } catch SeedFinderEngineError.invalidArgument {
+            throw ResultsExportError("This is not a Seed Seeker results file this version can import.")
+        } catch {
+            throw ResultsExportError("The native engine failed while reading the results file.")
         }
-        return flag
+        guard let document = (try? JSONSerialization.jsonObject(with: packet)) as? [String: Any],
+              let queryValue = document["query"] as? [String: Any],
+              let seeds = document["seeds"] as? [String] else {
+            throw ResultsExportError("The native engine returned an invalid results document.")
+        }
+        return Imported(query: try decodeQuery(queryValue), seeds: seeds,
+                        dropped: intField(document, "dropped") ?? 0,
+                        shpdVersion: document["shpd_version"] as? String)
     }
 
-    private static func isSeedCode(_ text: String) -> Bool {
-        let characters = Array(text)
-        guard characters.count == 11 else { return false }
-        for (index, character) in characters.enumerated() {
-            if index == 3 || index == 7 {
-                guard character == "-" else { return false }
-            } else {
-                guard character.isASCII, character.isUppercase, character.isLetter else { return false }
-            }
-        }
-        return true
+    // MARK: Document mapping
+
+    // The document the engine hands back has already been validated by it, so
+    // these readers only translate: a value of an unexpected shape simply is
+    // not there.
+    private static func intField(_ entry: [String: Any], _ key: String) -> Int? {
+        guard let number = entry[key] as? NSNumber else { return nil }
+        return Int(exactly: number)
+    }
+
+    private static func boolField(_ entry: [String: Any], _ key: String) -> Bool {
+        (entry[key] as? NSNumber)?.boolValue ?? false
     }
 
     // Internal, not private: the share-link codec (`DeepLink`) exchanges the
@@ -192,58 +145,41 @@ public enum ResultsExport {
         return output
     }
 
+    /// Maps a canonical query document onto the Swift models. Only a name this
+    /// build has no model for fails — the document itself is the engine's, so
+    /// its shape and bounds are already guaranteed.
     static func decodeQuery(_ value: [String: Any]) throws -> SavedQuery {
-        for key in value.keys where !queryKeys.contains(key) {
-            throw ResultsExportError(
-                "The query in this results file uses an unknown field \"\(key)\". " +
-                "Update Seed Seeker to import it.")
-        }
-        guard let requirementsValue = value["requirements"] as? [Any], !requirementsValue.isEmpty else {
-            throw ResultsExportError("The query in this results file has no requirements.")
-        }
-        let requirements = try requirementsValue.enumerated().map { index, entry -> ItemRequirement in
-            guard let entry = entry as? [String: Any] else {
-                throw ResultsExportError("Requirement \(index + 1) is not a JSON object.")
-            }
-            do {
-                return try decodeRequirement(entry, key: Int64(index + 1))
-            } catch let failure as ResultsExportError {
-                throw ResultsExportError("Requirement \(index + 1): \(failure.message)")
-            } catch {
-                let reason = (error as? LocalizedError)?.errorDescription ?? "\(error)"
-                throw ResultsExportError("Requirement \(index + 1): \(reason)")
-            }
-        }
-        let maximumDepth = try intField(value, "max_depth") ?? 24
-        guard (1...24).contains(maximumDepth) else {
-            throw ResultsExportError("Maximum floor must be 1..24.")
-        }
-        var challenges = 0
-        if let challengesValue = value["challenges"], !(challengesValue is NSNull) {
-            guard let names = challengesValue as? [Any] else {
-                throw ResultsExportError("\"challenges\" must be a list of challenge names")
-            }
-            for nameValue in names {
-                // Challenge names match the core decoder exactly.
-                guard let name = nameValue as? String,
-                      let match = challengeNames.first(where: { $0.name == name }) else {
-                    throw ResultsExportError(
-                        "The query in this results file uses an unknown challenge \"\(nameValue)\".")
+        let requirements = try (value["requirements"] as? [Any] ?? []).enumerated()
+            .map { index, entry -> ItemRequirement in
+                guard let entry = entry as? [String: Any] else {
+                    throw ResultsExportError("Requirement \(index + 1) is not a JSON object.")
                 }
-                challenges |= match.challenge.rawValue
+                do {
+                    return try decodeRequirement(entry, key: Int64(index + 1))
+                } catch let failure as ResultsExportError {
+                    throw ResultsExportError("Requirement \(index + 1): \(failure.message)")
+                } catch {
+                    let reason = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+                    throw ResultsExportError("Requirement \(index + 1): \(reason)")
+                }
             }
+        var challenges = 0
+        for name in value["challenges"] as? [String] ?? [] {
+            guard let match = challengeNames.first(where: { $0.name == name }) else {
+                throw ResultsExportError("Unknown challenge \"\(name)\".")
+            }
+            challenges |= match.challenge.rawValue
         }
         var wandmakerQuest: WandmakerQuest?
-        if let name = try stringField(value, "wandmaker_quest") {
+        if let name = value["wandmaker_quest"] as? String {
             guard let quest = WandmakerQuest.named(name) else {
-                throw ResultsExportError(
-                    "The query in this results file uses an unknown Wandmaker quest \"\(name)\".")
+                throw ResultsExportError("Unknown Wandmaker quest \"\(name)\".")
             }
             wandmakerQuest = quest
         }
-        return try SavedQuery(
+        return SavedQuery(
             requirements: requirements,
-            maximumDepth: maximumDepth,
+            maximumDepth: intField(value, "max_depth") ?? 24,
             requireBlacksmith: boolField(value, "require_blacksmith"),
             excludeBlacksmithRewards: boolField(value, "exclude_blacksmith_rewards"),
             wandmakerQuest: wandmakerQuest,
@@ -252,20 +188,15 @@ public enum ResultsExport {
     }
 
     private static func decodeRequirement(_ entry: [String: Any], key: Int64) throws -> ItemRequirement {
-        for field in entry.keys where !requirementKeys.contains(field) {
-            throw ResultsExportError("unknown field \"\(field)\" — update Seed Seeker to import it")
-        }
         var item: CatalogItem?
-        if let id = try stringField(entry, "item") {
+        if let id = entry["item"] as? String {
             guard let found = ItemCatalog.findById(id) else {
                 throw ResultsExportError("unknown item \"\(id)\"")
             }
             item = found
         }
-        // Enum names match the core decoder exactly (lowercase snake_case);
-        // only effect names and the "any" keyword match case-insensitively.
         let kind: ItemKind
-        if let name = try stringField(entry, "kind") {
+        if let name = entry["kind"] as? String {
             guard let index = kindNames.firstIndex(of: name),
                   let value = ItemKind(rawValue: index) else {
                 throw ResultsExportError("unknown category \"\(name)\"")
@@ -278,40 +209,24 @@ public enum ResultsExport {
         }
         var tier = 0
         var tierMatch = TierMatch.any
-        if let tierValue = entry["tier"] {
-            if let name = tierValue as? String, !(tierValue is NSNumber) {
-                guard name.lowercased() == "any" else {
-                    throw ResultsExportError("unknown tier mode \"\(name)\"")
-                }
-            } else if let object = tierValue as? [String: Any], object.count == 1 {
-                if object["exact"] != nil { tier = try intField(object, "exact") ?? 0; tierMatch = .exactly }
-                else if object["at_least"] != nil { tier = try intField(object, "at_least") ?? 0; tierMatch = .atLeast }
-                else if object["at_most"] != nil { tier = try intField(object, "at_most") ?? 0; tierMatch = .atMost }
-                else { throw ResultsExportError("unrecognized tier filter") }
-            } else {
-                throw ResultsExportError("unrecognized tier filter")
-            }
+        if let object = entry["tier"] as? [String: Any] {
+            if let exact = intField(object, "exact") { tier = exact; tierMatch = .exactly }
+            else if let atLeast = intField(object, "at_least") { tier = atLeast; tierMatch = .atLeast }
+            else if let atMost = intField(object, "at_most") { tier = atMost; tierMatch = .atMost }
         }
         var upgrade = 0
         var upgradeMatch = UpgradeMatch.any
-        if let upgradeValue = entry["upgrade"] {
-            if let name = upgradeValue as? String, !(upgradeValue is NSNumber) {
-                guard name.lowercased() == "any" else {
-                    throw ResultsExportError("unknown upgrade mode \"\(name)\"")
-                }
-            } else if let object = upgradeValue as? [String: Any], object.count == 1 {
-                if object["exact"] != nil { upgrade = try intField(object, "exact") ?? 0; upgradeMatch = .exactly }
-                else if object["at_least"] != nil { upgrade = try intField(object, "at_least") ?? 0; upgradeMatch = .atLeast }
-                else { throw ResultsExportError("unrecognized upgrade filter") }
-            } else if let number = strictInt(upgradeValue) {
-                upgrade = number
-                upgradeMatch = .exactly
-            } else {
-                throw ResultsExportError("unrecognized upgrade filter")
-            }
+        if let object = entry["upgrade"] as? [String: Any] {
+            if let exact = intField(object, "exact") { upgrade = exact; upgradeMatch = .exactly }
+            else if let atLeast = intField(object, "at_least") { upgrade = atLeast; upgradeMatch = .atLeast }
+        } else if let exact = intField(entry, "upgrade") {
+            upgrade = exact
+            upgradeMatch = .exactly
         }
         var modifier: String?
-        if let name = try stringField(entry, "effect") {
+        if let name = entry["effect"] as? String {
+            // Effect names match case-insensitively and canonicalize to the
+            // catalog's own spelling.
             guard let match = ItemCatalog.modifiersFor(kind)
                 .first(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) else {
                 throw ResultsExportError("unknown effect \"\(name)\"")
@@ -319,7 +234,7 @@ public enum ResultsExport {
             modifier = match
         }
         var source: ScoutItemSource?
-        if let name = try stringField(entry, "source") {
+        if let name = entry["source"] as? String {
             guard let index = sourceNames.firstIndex(of: name),
                   let value = ScoutItemSource(rawValue: index) else {
                 throw ResultsExportError("unknown source \"\(name)\"")
@@ -336,8 +251,8 @@ public enum ResultsExport {
             tierMatch: tierMatch,
             upgradeMatch: upgradeMatch,
             source: source,
-            identityGroup: try intField(entry, "identity_group"),
-            maximumDepth: try intField(entry, "max_depth"),
-            requireUncursed: try boolField(entry, "uncursed"))
+            identityGroup: intField(entry, "identity_group"),
+            maximumDepth: intField(entry, "max_depth"),
+            requireUncursed: boolField(entry, "uncursed"))
     }
 }
