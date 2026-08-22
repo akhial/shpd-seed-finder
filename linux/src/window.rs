@@ -513,10 +513,8 @@ pub fn present(app: &adw::Application) {
                     }
                     match results_export::decode(&String::from_utf8_lossy(&contents)) {
                         Ok(imported) => {
-                            let (kept, dropped) = results_export::dedupe_and_cap(
-                                &imported.seeds,
-                                MAX_RESULTS,
-                            );
+                            let (kept, dropped) =
+                                results_export::dedupe_and_cap(&imported.seeds, MAX_RESULTS);
                             *state.borrow_mut() = AppState::from_query(&imported.query);
                             let codes: Vec<String> =
                                 kept.iter().map(|seed| seed.to_code()).collect();
