@@ -24,7 +24,6 @@ import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.nio.charset.StandardCharsets
-import java.util.Locale
 import kotlin.math.min
 
 /** A deliberately small boundary shared by the Compose UI, demo engine, and Rust JNI adapter. */
@@ -441,6 +440,11 @@ object JniBindings {
     @JvmStatic external fun shareDecode(text: ByteArray): ByteArray
     @JvmStatic external fun shareExtract(text: ByteArray): ByteArray?
 
+    // Seed-code text handling: the as-you-type masker and the parser, which
+    // answers `{"code", "value"}` (UTF-8 in, UTF-8 out).
+    @JvmStatic external fun formatSeedCode(input: ByteArray): ByteArray
+    @JvmStatic external fun parseSeedCode(input: ByteArray): ByteArray
+
     // Results-file codec (docs/results-export-format.md): UTF-8 in, UTF-8 out.
     // `resultsDecode` applies the shared dedupe-and-cap and the 2 MiB import
     // cap itself, and reports what it dropped.
@@ -469,27 +473,34 @@ private object JniBindingsAdapter : NativeBindings {
         JniBindings.queryContinues(candidate, base)
 }
 
+/**
+ * Seed-code text handling, all of it the engine's: the as-you-type masker is
+ * `seed::format_input` and the parser is `DungeonSeed::from_code`, reached
+ * through [JniBindings]. Nothing here re-derives the game's own rules — not the
+ * canonical grouping, not the base-26 value, and not the ASCII-filter-then-
+ * uppercase order a Kotlin `uppercase(Locale)` used to get wrong for alphabets
+ * such as Turkish.
+ */
 object SeedCode {
-    private val PATTERN = Regex("[A-Z]{3}-[A-Z]{3}-[A-Z]{3}")
-
     /** Makes typing and pasting forgiving while always producing canonical grouping. */
-    fun formatInput(input: String): String {
-        val letters = input
-            .uppercase(Locale.US)
-            .filter { it in 'A'..'Z' }
-            .take(9)
-        return letters.chunked(3).joinToString("-")
-    }
+    fun formatInput(input: String): String =
+        String(JniBindings.formatSeedCode(input.toByteArray()), StandardCharsets.UTF_8)
 
-    fun isCanonical(seed: String): Boolean = PATTERN.matches(seed)
+    fun isCanonical(seed: String): Boolean = parse(seed)?.code == seed
 
-    /** Numeric value of a canonical seed: nine base-26 letters, A = 0, dashes ignored. */
+    /** Numeric value of a canonical seed, as the game reads it. */
     fun value(seed: String): Long {
-        require(isCanonical(seed)) { "Seed must use XXX-XXX-XXX format" }
-        return seed.asSequence()
-            .filter { it != '-' }
-            .fold(0L) { total, letter -> total * 26 + (letter - 'A') }
+        val parsed = parse(seed)
+        require(parsed != null && parsed.code == seed) { "Seed must use XXX-XXX-XXX format" }
+        return parsed.value
     }
+
+    private data class Parsed(val code: String, val value: Long)
+
+    /** The engine's reading of [text], or null when it is not a seed code at all. */
+    private fun parse(text: String): Parsed? = runCatching {
+        JSONObject(String(JniBindings.parseSeedCode(text.toByteArray()), StandardCharsets.UTF_8))
+    }.getOrNull()?.let { Parsed(it.getString("code"), it.getLong("value")) }
 }
 
 object QueryCodec {
@@ -550,7 +561,6 @@ object ScoutRequestCodec {
 
 private object ResultCodec {
     private val MAGIC = byteArrayOf('S'.code.toByte(), 'S'.code.toByte(), 'R'.code.toByte(), '1'.code.toByte())
-    private val SEED_PATTERN = Regex("[A-Z]{3}-[A-Z]{3}-[A-Z]{3}")
 
     fun decode(packet: ByteArray, requirementCount: Int): List<SeedResult> =
         DataInputStream(ByteArrayInputStream(packet)).use { input ->
@@ -561,7 +571,7 @@ private object ResultCodec {
                 val length = input.readUnsignedByte()
                 val bytes = ByteArray(length).also(input::readFully)
                 val seed = bytes.toString(StandardCharsets.US_ASCII)
-                check(SEED_PATTERN.matches(seed)) { "Malformed seed from native engine" }
+                check(SeedCode.isCanonical(seed)) { "Malformed seed from native engine" }
                 SeedResult(seed, requirementCount)
             }.also {
                 check(input.available() == 0) { "Trailing bytes in native result packet" }
@@ -579,7 +589,6 @@ private object ScoutMatchCodec {
 
 object ScoutResultCodec {
     private val MAGIC = byteArrayOf('S'.code.toByte(), 'S'.code.toByte(), 'C'.code.toByte(), '2'.code.toByte())
-    private val SEED_PATTERN = Regex("[A-Z]{3}-[A-Z]{3}-[A-Z]{3}")
 
     fun decode(packet: ByteArray): ScoutWorld =
         DataInputStream(ByteArrayInputStream(packet)).use { input ->
@@ -587,7 +596,7 @@ object ScoutResultCodec {
             check(magic.contentEquals(MAGIC)) { "Unexpected native scout packet" }
 
             val seed = readAscii(input, input.readUnsignedByte())
-            check(SEED_PATTERN.matches(seed)) { "Malformed seed from native scout" }
+            check(SeedCode.isCanonical(seed)) { "Malformed seed from native scout" }
             val questCount = input.readUnsignedByte()
             check(questCount <= ScoutQuestGiver.entries.size) { "Scout quest count must be 0..4" }
             var previousQuestId = 0
