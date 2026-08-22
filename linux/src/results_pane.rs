@@ -10,6 +10,7 @@ use std::time::{Duration, Instant};
 
 use adw::prelude::*;
 use gtk::glib;
+use shpd_seedfinder_core::feasibility::{QueryPlan, Quest};
 use shpd_seedfinder_core::model::GeneratedWorld;
 use shpd_seedfinder_core::query::{SearchQuery, StartDecision, decide_start};
 use shpd_seedfinder_core::search::SearchError;
@@ -825,6 +826,10 @@ impl ResultsPane {
         // A failed run leaves neither a base nor a Target behind — its
         // coverage is unknown.
         let mode = active.mode;
+        // The engine proves some queries unsatisfiable before generating a
+        // single world; the conclusion says so instead of reporting an
+        // ordinary empty result.
+        let unsatisfiable = QueryPlan::analyze(&active.query).is_unsatisfiable();
         let base =
             (search_state == STATE_COMPLETED || search_state == STATE_CANCELLED).then(|| {
                 let [resume_from, remaining] = active.session.resume_hint();
@@ -845,7 +850,14 @@ impl ResultsPane {
         *active_slot = None;
         drop(active_slot);
 
-        self.conclude(search_state, tested, matches, refined, &diagnostic);
+        self.conclude(
+            search_state,
+            tested,
+            matches,
+            refined,
+            unsatisfiable,
+            &diagnostic,
+        );
         glib::ControlFlow::Break
     }
 
@@ -855,6 +867,7 @@ impl ResultsPane {
         tested: u64,
         matches: u64,
         refined: Option<(u64, u64)>,
+        unsatisfiable: bool,
         diagnostic: &str,
     ) {
         self.title.set_subtitle(&match matches {
@@ -872,15 +885,17 @@ impl ResultsPane {
                 self.toasts
                     .add_toast(adw::Toast::new("The search failed unexpectedly"));
             }
-            STATE_COMPLETED if tested == 0 && matches == 0 => {
-                // The engine proves some queries unsatisfiable before testing
-                // a single seed; surface that instead of a zero-result search.
+            STATE_COMPLETED if matches == 0 && unsatisfiable => {
                 self.show_message(
                     "action-unavailable-symbolic",
                     "Impossible Query",
-                    "No seed can satisfy these requirements within the current floor \
-                     limit. Quest-reward-only items need their quest floors in range: \
-                     +3 wands floor 9, +3/+4 rings floor 19.",
+                    &format!(
+                        "No seed can satisfy these requirements within the current floor \
+                         limit. Quest-reward-only items need their quest floors in range: \
+                         +3 wands floor {}, +3/+4 rings floor {}.",
+                        Quest::Wandmaker.window().1,
+                        Quest::Imp.window().1,
+                    ),
                 );
             }
             STATE_COMPLETED if matches == 0 => {

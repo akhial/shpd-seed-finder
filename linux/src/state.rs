@@ -6,56 +6,21 @@ use std::fmt::Write as _;
 
 use shpd_seedfinder_core::catalog::{Effect, ItemId, ItemKind, WeaponCategory, item};
 use shpd_seedfinder_core::challenges::Challenges;
+use shpd_seedfinder_core::feasibility::Quest;
+use shpd_seedfinder_core::main_world::EMPTY_BOSS_FLOORS;
 use shpd_seedfinder_core::model::ItemSource;
 use shpd_seedfinder_core::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
 use shpd_seedfinder_core::quests::{
     BlacksmithQuestType, GhostQuestType, ImpTarget, QuestSummary, WandmakerQuestType,
 };
 
-/// Every user-facing item source, in the wire order shared with the other
-/// frontends.
-pub const ALL_SOURCES: &[ItemSource] = &[
-    ItemSource::Heap,
-    ItemSource::Chest,
-    ItemSource::LockedChest,
-    ItemSource::CrystalChest,
-    ItemSource::Tomb,
-    ItemSource::Skeleton,
-    ItemSource::SacrificialFire,
-    ItemSource::Mimic,
-    ItemSource::GoldenMimic,
-    ItemSource::CrystalMimic,
-    ItemSource::Statue,
-    ItemSource::ArmoredStatue,
-    ItemSource::Shop,
-    ItemSource::GhostReward,
-    ItemSource::WandmakerReward,
-    ItemSource::BlacksmithReward,
-    ItemSource::ImpReward,
-];
-
-/// Boss floors that generate no searchable items. The core treats a floor
-/// limit of 5/10/15 exactly like 4/9/14, so floor-limit selectors skip them.
-/// Floor 20 stays selectable: the Imp shop gives the City boss floor stock.
-pub const EMPTY_BOSS_FLOORS: [u8; 3] = [5, 10, 15];
-
-/// Snaps an empty boss-floor limit to the equivalent floor below it
-/// (5→4, 10→9, 15→14).
-#[must_use]
-pub fn normalize_floor_limit(depth: u8) -> u8 {
-    if EMPTY_BOSS_FLOORS.contains(&depth) {
-        depth - 1
-    } else {
-        depth
-    }
-}
-
 /// Where a floor-limit control lands when the user moves it onto an empty
 /// boss floor. A single upward step (spin button, arrow key, scroll)
 /// continues to the next real floor; every other move — single steps down
 /// and typed jumps in either direction — snaps to the equivalent floor
-/// below, matching [`normalize_floor_limit`]. Typing "10" therefore means
-/// "first 10 floors" (≡ 9), never 11.
+/// below, matching
+/// [`shpd_seedfinder_core::main_world::normalize_floor_limit`]. Typing "10"
+/// therefore means "first 10 floors" (≡ 9), never 11.
 #[must_use]
 pub fn floor_limit_skip_target(previous: u8, requested: u8) -> u8 {
     if !EMPTY_BOSS_FLOORS.contains(&requested) {
@@ -266,7 +231,10 @@ impl AppState {
             requirements: self.requirements.iter().map(|r| r.to_core()).collect(),
             max_depth: self.max_depth,
             challenges: self.challenges,
-            require_blacksmith: self.require_blacksmith && self.max_depth < 14,
+            // Past the last floor the Blacksmith can first appear on the
+            // quest is certain, so the filter would exclude nothing.
+            require_blacksmith: self.require_blacksmith
+                && self.max_depth < Quest::Blacksmith.window().1,
             exclude_blacksmith_rewards: self.exclude_blacksmith_rewards,
             wandmaker_quest: self.wandmaker_quest,
             fast_mode: self.fast_mode,
@@ -430,7 +398,6 @@ pub fn quest_rows(quests: QuestSummary) -> Vec<QuestRow> {
 pub struct ChallengeInfo {
     pub challenge: Challenges,
     pub label: &'static str,
-    pub changes_generation: bool,
 }
 
 /// The nine upstream challenges, in mask order.
@@ -438,47 +405,38 @@ pub const ALL_CHALLENGES: &[ChallengeInfo] = &[
     ChallengeInfo {
         challenge: Challenges::NO_FOOD,
         label: "On diet",
-        changes_generation: false,
     },
     ChallengeInfo {
         challenge: Challenges::NO_ARMOR,
         label: "Faith is my armor",
-        changes_generation: false,
     },
     ChallengeInfo {
         challenge: Challenges::NO_HEALING,
         label: "Pharmacophobia",
-        changes_generation: false,
     },
     ChallengeInfo {
         challenge: Challenges::NO_HERBALISM,
         label: "Barren land",
-        changes_generation: true,
     },
     ChallengeInfo {
         challenge: Challenges::SWARM_INTELLIGENCE,
         label: "Swarm intelligence",
-        changes_generation: false,
     },
     ChallengeInfo {
         challenge: Challenges::DARKNESS,
         label: "Into darkness",
-        changes_generation: true,
     },
     ChallengeInfo {
         challenge: Challenges::NO_SCROLLS,
         label: "Forbidden runes",
-        changes_generation: true,
     },
     ChallengeInfo {
         challenge: Challenges::CHAMPION_ENEMIES,
         label: "Hostile champions",
-        changes_generation: false,
     },
     ChallengeInfo {
         challenge: Challenges::STRONGER_BOSSES,
         label: "Badder bosses",
-        changes_generation: false,
     },
 ];
 
@@ -493,8 +451,7 @@ mod tests {
 
     use super::{
         AppState, QuestRow, UiRequirement, blacksmith_quest_label, floor_limit_skip_target,
-        ghost_quest_label, imp_target_label, normalize_floor_limit, quest_rows,
-        wandmaker_quest_label,
+        ghost_quest_label, imp_target_label, quest_rows, wandmaker_quest_label,
     };
 
     #[test]
@@ -549,21 +506,6 @@ mod tests {
         doubled_extended.requirements.push(extended.requirements[1]);
         assert!(doubled_extended.continues(&doubled_base));
         assert!(!extended.continues(&doubled_base));
-    }
-
-    #[test]
-    fn empty_boss_floor_limits_normalize_to_the_floor_below() {
-        for (limit, expected) in [
-            (4, 4),
-            (5, 4),
-            (9, 9),
-            (10, 9),
-            (14, 14),
-            (15, 14),
-            (24, 24),
-        ] {
-            assert_eq!(normalize_floor_limit(limit), expected);
-        }
     }
 
     #[test]
