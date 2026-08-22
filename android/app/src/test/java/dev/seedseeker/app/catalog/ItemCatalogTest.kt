@@ -15,13 +15,16 @@ import org.junit.Test
  * third-party extraction every other frontend reads — so a stale or reordered
  * asset fails here instead of showing the wrong sprite for an item id the
  * engine sends. Gradle runs unit tests with the module directory as the
- * working directory, which is also where [ItemCatalog]'s own default source
- * finds the packaged assets.
+ * working directory, which is where [PackagedCatalog] finds the asset for
+ * [ItemCatalog] too.
  */
 class ItemCatalogTest {
+    init { PackagedCatalog.install() }
+
     private val asset: JSONObject by lazy {
         val file = java.io.File(
-            "src/main/assets/third_party/shattered-pixel-dungeon/catalog-v3.3.8.json",
+            PackagedCatalog.directory,
+            "third_party/shattered-pixel-dungeon/catalog-v3.3.8.json",
         )
         check(file.exists()) { "catalog asset not found at ${file.absolutePath}" }
         JSONObject(file.readText())

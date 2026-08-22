@@ -2,6 +2,7 @@
 package dev.seedseeker.app.ui
 
 import dev.seedseeker.app.catalog.ItemCatalog
+import dev.seedseeker.app.catalog.PackagedCatalog
 import dev.seedseeker.app.engine.JniNativeSeedFinder
 import dev.seedseeker.app.model.Challenge
 import dev.seedseeker.app.model.ItemKind
@@ -26,6 +27,8 @@ import org.junit.Test
  * load) rather than a stub that would let the two drift apart unnoticed.
  */
 class RefinePlanTest {
+    init { PackagedCatalog.install() }
+
     private val engine = JniNativeSeedFinder()
 
     private val frost = ItemRequirement(1, ItemCatalog.wands.first { it.id == "wand_frost" }, 2)

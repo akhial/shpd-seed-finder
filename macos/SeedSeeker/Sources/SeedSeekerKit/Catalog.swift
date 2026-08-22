@@ -5,9 +5,10 @@ import Foundation
 ///
 /// The asset is the one every front-end reads
 /// (`android/app/src/main/assets/third_party/shattered-pixel-dungeon/
-/// catalog-v3.3.8.json`), reached here through the `Resources` symlink so no
-/// platform keeps a second copy of the item list, its tiers and sprites, or
-/// the enchantment, glyph and curse names.
+/// catalog-v3.3.8.json`), installed into the app bundle by
+/// `scripts/build-macos-app.sh` beside the atlases it indexes, so no platform
+/// keeps a second copy of the item list, its tiers and sprites, or the
+/// enchantment, glyph and curse names.
 public enum ItemCatalog {
     private struct Document: Decodable {
         struct Entry: Decodable {
@@ -33,21 +34,25 @@ public enum ItemCatalog {
         let modifiers: Modifiers
     }
 
-    /// The catalog file, wherever this build reaches it: the resource bundle
-    /// `scripts/build-macos-app.sh` installs in the app's `Contents/Resources`
-    /// when running inside the `.app`, and SwiftPM's own copy of that bundle
-    /// under `swift test` or `swift run`.
-    private static var catalogURL: URL? {
-        let installed = Bundle.main.resourceURL?
-            .appendingPathComponent("SeedSeeker_SeedSeekerKit.bundle")
-            .appendingPathComponent("catalog-v3.3.8.json")
+    /// The catalog file, wherever this build reaches it: `Contents/Resources`
+    /// of the `.app`, where `scripts/build-macos-app.sh` installs it beside the
+    /// atlases, or the repository checkout itself under `swift test` and
+    /// `swift run`, located relative to this source file.
+    private static var catalogURL: URL {
+        let installed = Bundle.main.resourceURL?.appendingPathComponent("catalog-v3.3.8.json")
         if let installed, FileManager.default.fileExists(atPath: installed.path) { return installed }
-        return Bundle.module.url(forResource: "catalog-v3.3.8", withExtension: "json")
+        return URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent() // Catalog.swift
+            .deletingLastPathComponent() // SeedSeekerKit
+            .deletingLastPathComponent() // Sources
+            .deletingLastPathComponent() // SeedSeeker
+            .deletingLastPathComponent() // macos
+            .appendingPathComponent(
+                "android/app/src/main/assets/third_party/shattered-pixel-dungeon/catalog-v3.3.8.json")
     }
 
     private static let document: Document = {
-        guard let url = catalogURL,
-              let data = try? Data(contentsOf: url),
+        guard let data = try? Data(contentsOf: catalogURL),
               let document = try? JSONDecoder().decode(Document.self, from: data) else {
             preconditionFailure("the bundled item catalog is missing or unreadable")
         }

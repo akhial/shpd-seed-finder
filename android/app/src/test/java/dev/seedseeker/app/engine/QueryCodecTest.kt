@@ -2,6 +2,7 @@
 package dev.seedseeker.app.engine
 
 import dev.seedseeker.app.catalog.ItemCatalog
+import dev.seedseeker.app.catalog.PackagedCatalog
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.ItemKind
 import dev.seedseeker.app.model.SearchRequest
@@ -15,6 +16,8 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class QueryCodecTest {
+    init { PackagedCatalog.install() }
+
     @Test
     fun tierPredicateUsesSsf8AndEncodesExactTierWithZeroChallengeMask() {
         val requirement = ItemRequirement(

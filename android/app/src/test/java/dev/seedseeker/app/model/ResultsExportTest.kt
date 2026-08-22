@@ -2,6 +2,7 @@
 package dev.seedseeker.app.model
 
 import dev.seedseeker.app.catalog.ItemCatalog
+import dev.seedseeker.app.catalog.PackagedCatalog
 import dev.seedseeker.app.engine.EngineInfo
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -18,6 +19,8 @@ import org.junit.Test
  * document and its own models.
  */
 class ResultsExportTest {
+    init { PackagedCatalog.install() }
+
     private val loadedQuery = PresetQuery(
         requirements = listOf(
             ItemRequirement(

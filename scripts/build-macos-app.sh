@@ -30,26 +30,15 @@ install -m 644 "$PACKAGE/PkgInfo" "$APP/Contents/PkgInfo"
 install -d "$APP/Contents/Resources"
 install -m 644 "$PACKAGE/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
-# Shattered Pixel Dungeon's item atlases, loaded from Bundle.main at runtime.
-# They are GPL-3.0-or-later artwork, so the attribution and the full license
-# text ship beside them and are surfaced in the app's Artwork & Licenses sheet.
-# SeedSeekerKit degrades to SF Symbols when they are missing, which keeps a bare
-# `swift run` outside the bundle working.
-for asset in items.png item_icons.png LICENSE.txt ATTRIBUTION.md; do
+# Shattered Pixel Dungeon's item atlases and the item catalog that indexes
+# them, loaded from Bundle.main at runtime. They are GPL-3.0-or-later
+# artwork, so the attribution and the full license text ship beside them and
+# are surfaced in the app's Artwork & Licenses sheet. SeedSeekerKit degrades
+# to SF Symbols when the atlases are missing, which keeps a bare `swift run`
+# outside the bundle working; the catalog it then reads from the checkout.
+for asset in catalog-v3.3.8.json items.png item_icons.png LICENSE.txt ATTRIBUTION.md; do
     install -m 644 "$ASSETS/$asset" "$APP/Contents/Resources/$asset"
 done
-
-# SwiftPM's resource bundle for SeedSeekerKit carries the shared item catalog
-# that `ItemCatalog` parses at startup, so the app cannot launch without it.
-# It goes in Contents/Resources, where the signature seals it: anything at the
-# bundle root instead makes codesign refuse the app ("unsealed contents present
-# in the bundle root"), so this must also happen before the signing step below.
-KIT_BUNDLE="$PACKAGE/.build/release/SeedSeeker_SeedSeekerKit.bundle"
-if [ ! -d "$KIT_BUNDLE" ] || [ -z "$(find "$KIT_BUNDLE" -name 'catalog-*.json' -print -quit)" ]; then
-    echo "error: $KIT_BUNDLE is missing or carries no item catalog" >&2
-    exit 1
-fi
-ditto "$KIT_BUNDLE" "$APP/Contents/Resources/SeedSeeker_SeedSeekerKit.bundle"
 
 # Embed Sparkle. SwiftPM links the framework from the resolved binary
 # artifact but does not assemble bundles, so it is copied in by hand; the

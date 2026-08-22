@@ -5,7 +5,6 @@ import dev.seedseeker.app.model.CatalogItem
 import dev.seedseeker.app.model.ItemKind
 import dev.seedseeker.app.model.WeaponClass
 import org.json.JSONObject
-import java.io.File
 import java.io.InputStream
 
 /**
@@ -26,18 +25,16 @@ object ItemCatalog {
         fun open(path: String): InputStream
     }
 
-    /**
-     * Reads the asset straight from the module's `src/main/assets`, which is
-     * where JVM unit tests find it: Gradle runs them with the module directory
-     * as the working directory. The app installs its own AssetManager instead
-     * (see [install]), and the catalog is parsed lazily so that happens first.
-     */
-    private val packagedFiles = Assets { path -> File("src/main/assets/$path").inputStream() }
-
     @Volatile
-    private var assets: Assets = packagedFiles
+    private var assets: Assets = Assets { _ ->
+        error("ItemCatalog.install was not called; SeedSeekerApplication does this at process start")
+    }
 
-    /** Points the catalog at the APK's assets; MainActivity calls this before any screen loads. */
+    /**
+     * Points the catalog at the packaged asset. [dev.seedseeker.app.SeedSeekerApplication]
+     * calls this once at process start, before any entry point can look an
+     * item up; the catalog is parsed lazily on first use after that.
+     */
     fun install(assets: Assets) {
         this.assets = assets
     }
