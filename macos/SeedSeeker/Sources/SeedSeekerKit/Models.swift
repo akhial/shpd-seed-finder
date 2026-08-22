@@ -1,5 +1,26 @@
 import Foundation
 
+/// Local copies of the engine's query bounds
+/// (`crates/seedfinder-core/src/engine_info.rs`). They stay constants so the
+/// models need nothing from the engine to validate; `EngineConstantsTests`
+/// asserts each of them against the engine's `seedfinder_engine_info` document.
+public enum SearchLimits {
+    /// Deepest floor a search may cover.
+    public static let maxDepth = 24
+    /// Tiers an "exactly tier N" requirement may name (tier 1 is starting gear).
+    public static let exactTiers = 2...5
+    /// Tiers an "at least / at most tier N" requirement may name.
+    public static let boundedTiers = 3...4
+    /// Highest same-item group number (groups run 1...this, shown as A..D).
+    public static let identityGroupMax = 4
+    /// Highest upgrade a search may name, for everything but rings.
+    public static let maxUpgradeDefault = 3
+    /// Highest upgrade a ring requirement may name.
+    public static let maxUpgradeRing = 4
+    /// Every challenge bit together: the largest legal challenge mask.
+    public static let challengeMask = 511
+}
+
 public enum ItemKind: Int, Codable, CaseIterable, Sendable {
     // The raw value doubles as the SSF8 wire kind ID: 0...3 are the original
     // families and 4/5 narrow a weapon requirement to one weapon class, so
@@ -9,7 +30,8 @@ public enum ItemKind: Int, Codable, CaseIterable, Sendable {
     public var label: String { ["Weapons", "Armor", "Wands", "Rings", "Melee weapons", "Thrown weapons"][rawValue] }
     public var singularLabel: String { ["weapon", "armor", "wand", "ring", "melee weapon", "thrown weapon"][rawValue] }
     public var modifierLabel: String? { family == .weapon ? "Enchantment" : family == .armor ? "Glyph" : nil }
-    public var maximumSearchUpgrade: Int { self == .ring ? 4 : 3 }
+    /// The highest upgrade a search may name for this family.
+    public var maximumSearchUpgrade: Int { family == .ring ? SearchLimits.maxUpgradeRing : SearchLimits.maxUpgradeDefault }
 
     /// The broad item family; catalog items always carry the family.
     public var family: ItemKind { self == .meleeWeapon || self == .thrownWeapon ? .weapon : self }
@@ -100,8 +122,8 @@ public enum Challenge: Int, CaseIterable, Sendable {
 public enum FloorLimits {
     public static let emptyBossFloors: Set<Int> = [5, 10, 15]
 
-    /// Floors offered by floor-limit selectors: 1...24 minus the empty boss floors.
-    public static let options: [Int] = (1...24).filter { !emptyBossFloors.contains($0) }
+    /// Floors offered by floor-limit selectors: 1...maxDepth minus the empty boss floors.
+    public static let options: [Int] = (1...SearchLimits.maxDepth).filter { !emptyBossFloors.contains($0) }
 
     /// Snaps an empty boss-floor limit to the equivalent floor below it (5→4, 10→9, 15→14).
     public static func normalize(_ depth: Int) -> Int {
@@ -127,10 +149,10 @@ public enum ModelValidationError: Error, Equatable, LocalizedError {
         case .modifier: "This category cannot carry a modifier requirement"
         case .uncursedCurse: "An uncursed item cannot have a curse"
         case .identityGroup: "Same-item group must be A..D"
-        case .itemMaximumDepth: "Item floor limit must be 1..24"
+        case .itemMaximumDepth: "Item floor limit must be 1..\(SearchLimits.maxDepth)"
         case .emptyRequirements: "At least one requirement is needed"
-        case .maximumDepth: "Maximum floor must be 1..24"
-        case .challenges: "Challenge mask must be 0..511"
+        case .maximumDepth: "Maximum floor must be 1..\(SearchLimits.maxDepth)"
+        case .challenges: "Challenge mask must be 0..\(SearchLimits.challengeMask)"
         }
     }
 }
@@ -159,8 +181,8 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
         let tierable = item == nil && (kind.family == .weapon || kind.family == .armor)
         let validTier = switch tierMatch {
         case .any: tier == 0
-        case .exactly: tierable && (2...5).contains(tier)
-        case .atLeast, .atMost: tierable && (3...4).contains(tier)
+        case .exactly: tierable && SearchLimits.exactTiers.contains(tier)
+        case .atLeast, .atMost: tierable && SearchLimits.boundedTiers.contains(tier)
         }
         guard validTier else { throw ModelValidationError.tier }
         let valid = switch upgradeMatch {
@@ -173,8 +195,8 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
         guard !requireUncursed || !ItemCatalog.cursesFor(kind).contains(modifier ?? "") else {
             throw ModelValidationError.uncursedCurse
         }
-        guard identityGroup == nil || (1...4).contains(identityGroup!) else { throw ModelValidationError.identityGroup }
-        guard maximumDepth == nil || (1...24).contains(maximumDepth!) else { throw ModelValidationError.itemMaximumDepth }
+        guard identityGroup == nil || (1...SearchLimits.identityGroupMax).contains(identityGroup!) else { throw ModelValidationError.identityGroup }
+        guard maximumDepth == nil || (1...SearchLimits.maxDepth).contains(maximumDepth!) else { throw ModelValidationError.itemMaximumDepth }
         self.key = key; self.item = item; self.upgrade = upgrade; self.modifier = modifier
         self.kind = kind; self.tier = tier; self.tierMatch = tierMatch
         self.upgradeMatch = upgradeMatch; self.source = source
@@ -281,13 +303,13 @@ public struct SearchRequest: Codable, Sendable {
     public var fastMode: Bool
     public var challenges: Int
 
-    public init(requirements: [ItemRequirement], maximumDepth: Int = 24,
+    public init(requirements: [ItemRequirement], maximumDepth: Int = SearchLimits.maxDepth,
                 requireBlacksmith: Bool = false, excludeBlacksmithRewards: Bool = false,
                 wandmakerQuest: WandmakerQuest? = nil,
                 fastMode: Bool = false, challenges: Int = 0) throws {
         guard !requirements.isEmpty else { throw ModelValidationError.emptyRequirements }
-        guard (1...24).contains(maximumDepth) else { throw ModelValidationError.maximumDepth }
-        guard (0...511).contains(challenges) else { throw ModelValidationError.challenges }
+        guard (1...SearchLimits.maxDepth).contains(maximumDepth) else { throw ModelValidationError.maximumDepth }
+        guard (0...SearchLimits.challengeMask).contains(challenges) else { throw ModelValidationError.challenges }
         self.requirements = requirements; self.maximumDepth = maximumDepth
         self.requireBlacksmith = requireBlacksmith
         self.excludeBlacksmithRewards = excludeBlacksmithRewards
