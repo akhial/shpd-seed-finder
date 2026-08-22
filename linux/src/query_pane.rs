@@ -8,11 +8,13 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::gio;
 
+use shpd_seedfinder_core::feasibility::Quest;
+use shpd_seedfinder_core::main_world::normalize_floor_limit;
+use shpd_seedfinder_core::query::MAX_SEARCH_DEPTH;
 use shpd_seedfinder_core::quests::WandmakerQuestType;
 
 use crate::state::{
-    AppState, UiRequirement, floor_limit_skip_target, kind_icon, normalize_floor_limit,
-    wandmaker_quest_label,
+    AppState, UiRequirement, floor_limit_skip_target, kind_icon, wandmaker_quest_label,
 };
 use crate::{glow, sprites};
 
@@ -25,9 +27,12 @@ pub fn skip_empty_boss_floors(row: &adw::SpinRow) {
     row.connect_value_notify(move |row| {
         let value = row.value();
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        let requested = value.round().clamp(0.0, 24.0) as u8;
+        let requested = value.round().clamp(0.0, f64::from(MAX_SEARCH_DEPTH)) as u8;
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        let anchor = previous.get().round().clamp(0.0, 24.0) as u8;
+        let anchor = previous
+            .get()
+            .round()
+            .clamp(0.0, f64::from(MAX_SEARCH_DEPTH)) as u8;
         let target = floor_limit_skip_target(anchor, requested);
         if target != requested {
             // The corrected value re-enters this handler and, being a real
@@ -96,7 +101,14 @@ impl QueryPane {
         let depth_row = adw::SpinRow::builder()
             .title("Floor limit")
             .subtitle("Search only the first floors")
-            .adjustment(&gtk::Adjustment::new(24.0, 1.0, 24.0, 1.0, 5.0, 0.0))
+            .adjustment(&gtk::Adjustment::new(
+                f64::from(MAX_SEARCH_DEPTH),
+                1.0,
+                f64::from(MAX_SEARCH_DEPTH),
+                1.0,
+                5.0,
+                0.0,
+            ))
             .build();
         let blacksmith_row = adw::SwitchRow::builder()
             .title("Require accessible blacksmith")
@@ -260,7 +272,7 @@ impl QueryPane {
     pub fn read_scope(&self, state: &mut AppState) {
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let depth = self.depth_row.value().round() as u8;
-        state.max_depth = normalize_floor_limit(depth.clamp(1, 24));
+        state.max_depth = normalize_floor_limit(depth.clamp(1, MAX_SEARCH_DEPTH));
         state.require_blacksmith = self.blacksmith_row.is_active();
         state.exclude_blacksmith_rewards = self.exclude_row.is_active();
         state.wandmaker_quest = usize::try_from(self.wandmaker_row.selected())
@@ -276,7 +288,10 @@ impl QueryPane {
         self.depth_row
             .set_value(f64::from(normalize_floor_limit(state.max_depth)));
         self.blacksmith_row.set_active(state.require_blacksmith);
-        self.blacksmith_row.set_sensitive(state.max_depth < 14);
+        // Past the Blacksmith's last possible floor every seed has the
+        // quest, so the filter has nothing left to exclude.
+        self.blacksmith_row
+            .set_sensitive(state.max_depth < Quest::Blacksmith.window().1);
         self.exclude_row
             .set_active(state.exclude_blacksmith_rewards);
         self.wandmaker_row.set_selected(
