@@ -38,6 +38,56 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertNotNil(preset.query.validated())
     }
 
+    /// The catalog is parsed from the shared upstream asset, so it must agree
+    /// with that file entry for entry rather than with a table kept here.
+    func testCatalogIsLoadedFromTheSharedAsset() throws {
+        let asset = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent() // SeedSeekerKitTests
+            .deletingLastPathComponent() // Tests
+            .deletingLastPathComponent() // SeedSeeker
+            .deletingLastPathComponent() // macos
+            .deletingLastPathComponent() // repository root
+            .appendingPathComponent(
+                "android/app/src/main/assets/third_party/shattered-pixel-dungeon/catalog-v3.3.8.json")
+        let document = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(contentsOf: asset)) as? [String: Any])
+        let entries = try XCTUnwrap(document["entries"] as? [[String: Any]])
+
+        XCTAssertEqual(entries.count, 88)
+        XCTAssertEqual(ItemCatalog.all.count, entries.count)
+        XCTAssertEqual(ItemCatalog.meleeWeapons.count, 31)
+        XCTAssertEqual(ItemCatalog.thrownWeapons.count, 27)
+        XCTAssertEqual(ItemCatalog.armor.count, 5)
+        XCTAssertEqual(ItemCatalog.wands.count, 13)
+        XCTAssertEqual(ItemCatalog.rings.count, 12)
+
+        let kinds: [String: ItemKind] = ["weapon": .weapon, "armor": .armor,
+                                         "wand": .wand, "ring": .ring]
+        for entry in entries {
+            let id = try XCTUnwrap(entry["id"] as? String)
+            let item = try XCTUnwrap(ItemCatalog.findById(id), id)
+            XCTAssertEqual(item.name, entry["name"] as? String, id)
+            XCTAssertEqual(item.spriteIndex, entry["sprite"] as? Int, id)
+            XCTAssertEqual(item.tier, entry["tier"] as? Int, id)
+            XCTAssertEqual(item.kind, kinds[try XCTUnwrap(entry["type"] as? String)], id)
+            switch entry["class"] as? String {
+            case "melee": XCTAssertEqual(ItemCatalog.weaponClass(of: id), .melee, id)
+            case "thrown": XCTAssertEqual(ItemCatalog.weaponClass(of: id), .thrown, id)
+            default: XCTAssertNil(ItemCatalog.weaponClass(of: id), id)
+            }
+        }
+
+        let modifiers = try XCTUnwrap(document["modifiers"] as? [String: [String]])
+        XCTAssertEqual(ItemCatalog.enchantments, modifiers["weaponEnchantments"])
+        XCTAssertEqual(ItemCatalog.weaponCurses, modifiers["weaponCurses"])
+        XCTAssertEqual(ItemCatalog.glyphs, modifiers["armorGlyphs"])
+        XCTAssertEqual(ItemCatalog.armorCurses, modifiers["armorCurses"])
+        XCTAssertEqual(ItemCatalog.modifiersFor(.armor),
+                       ItemCatalog.glyphs + ItemCatalog.armorCurses)
+        XCTAssertEqual(ItemCatalog.cursesFor(.thrownWeapon), ItemCatalog.weaponCurses)
+        XCTAssertTrue(ItemCatalog.modifiersFor(.wand).isEmpty)
+    }
+
     /// The limits and game data every model reads come from
     /// `seedfinder_engine_info`, not from constants kept beside them.
     func testEngineInfoPublishesTheLimitsAndGameData() {

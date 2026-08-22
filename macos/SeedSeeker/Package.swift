@@ -26,7 +26,18 @@ let package = Package(
             // and the app then cannot launch off the build machine.
             linkerSettings: [.unsafeFlags([rustLibrary + "/libshpd_seedfinder_ffi.a"])]
         ),
-        .target(name: "SeedSeekerKit", dependencies: ["CSeedFinder"]),
+        .target(
+            name: "SeedSeekerKit",
+            dependencies: ["CSeedFinder"],
+            // The upstream item catalog every front-end reads. It is not
+            // copied here: `Resources/shattered-pixel-dungeon` is a symlink to
+            // the canonical third-party asset directory the atlases also come
+            // from, so there is still one copy in the repository.
+            // SwiftPM emits it as `SeedSeeker_SeedSeekerKit.bundle` beside the
+            // built executable, which the app bundle must carry for
+            // `Bundle.module` to find it.
+            resources: [.copy("Resources/shattered-pixel-dungeon/catalog-v3.3.8.json")]
+        ),
         .executableTarget(
             name: "SeedSeeker",
             dependencies: [
