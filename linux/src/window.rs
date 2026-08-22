@@ -15,9 +15,6 @@ use shpd_seedfinder_core::results_export;
 use shpd_seedfinder_core::seed::DungeonSeed;
 use shpd_seedfinder_session::MAX_RESULTS;
 
-/// Import size cap; a maximal legal results file is far below this.
-const MAX_RESULTS_FILE_BYTES: usize = 2 * 1024 * 1024;
-
 use crate::config::APP_NAME;
 use crate::state::{AppState, UiRequirement};
 use crate::{
@@ -510,23 +507,14 @@ pub fn present(app: &adw::Application) {
                     };
                     // A search may have started while the dialog was open.
                     if results.is_running() {
-                        toasts.add_toast(adw::Toast::new(
-                            "Stop the search before importing results",
-                        ));
-                        return;
-                    }
-                    if contents.len() > MAX_RESULTS_FILE_BYTES {
-                        toasts.add_toast(adw::Toast::new(
-                            "Import failed: this file is too large to be a results file (2 MiB limit)",
-                        ));
+                        toasts
+                            .add_toast(adw::Toast::new("Stop the search before importing results"));
                         return;
                     }
                     match results_export::decode(&String::from_utf8_lossy(&contents)) {
                         Ok(imported) => {
-                            let (kept, dropped) = results_export::dedupe_and_cap(
-                                &imported.seeds,
-                                MAX_RESULTS,
-                            );
+                            let (kept, dropped) =
+                                results_export::dedupe_and_cap(&imported.seeds, MAX_RESULTS);
                             *state.borrow_mut() = AppState::from_query(&imported.query);
                             let codes: Vec<String> =
                                 kept.iter().map(|seed| seed.to_code()).collect();
@@ -561,9 +549,7 @@ pub fn present(app: &adw::Application) {
                             }
                         }
                         Err(message) => {
-                            toasts.add_toast(adw::Toast::new(&format!(
-                                "Import failed: {message}"
-                            )));
+                            toasts.add_toast(adw::Toast::new(&format!("Import failed: {message}")));
                         }
                     }
                 });

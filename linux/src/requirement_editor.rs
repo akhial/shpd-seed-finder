@@ -9,12 +9,17 @@ use adw::prelude::*;
 use shpd_seedfinder_core::catalog::{
     ALL_ARMOR_EFFECTS, ALL_WEAPON_EFFECTS, Effect, ITEMS, ItemDefinition, ItemId, ItemKind,
 };
-use shpd_seedfinder_core::query::{TierRequirement, UpgradeRequirement};
+use shpd_seedfinder_core::main_world::normalize_floor_limit;
+use shpd_seedfinder_core::model::ItemSource;
+use shpd_seedfinder_core::query::{
+    BOUNDED_TIER_MAX, BOUNDED_TIER_MIN, EXACT_TIER_MAX, EXACT_TIER_MIN, MAX_IDENTITY_GROUP,
+    MAX_SEARCH_DEPTH, RESERVED_IDENTITY_GROUP, TierRequirement, UpgradeRequirement,
+};
 
 use crate::query_pane::skip_empty_boss_floors;
 use crate::state::{
-    ALL_KIND_CHOICES, ALL_SOURCES, KindChoice, UiRequirement, kind_choice_label,
-    kind_choice_singular, normalize_floor_limit, source_label,
+    ALL_KIND_CHOICES, KindChoice, UiRequirement, group_letter, kind_choice_label,
+    kind_choice_singular, source_label,
 };
 
 struct Editor {
@@ -113,8 +118,13 @@ fn build(requirement: &UiRequirement) -> Editor {
         item_row: searchable_combo_row("Item"),
         items: RefCell::new(vec![None]),
         tier_row: combo_row("Tier", &["Any tier", "Exactly", "At least", "At most"]),
-        exact_tier: spin_row("Exact tier", 2.0, 2.0, 5.0),
-        bounded_tier: combo_row("Minimum tier", &["Tier 3", "Tier 4"]),
+        exact_tier: spin_row(
+            "Exact tier",
+            f64::from(EXACT_TIER_MIN),
+            f64::from(EXACT_TIER_MIN),
+            f64::from(EXACT_TIER_MAX),
+        ),
+        bounded_tier: combo_row("Minimum tier", &borrowed(&bounded_tier_labels())),
         upgrade_row: combo_row("Upgrade", &["Any", "Exactly", "At least"]),
         exact_upgrade: spin_row("Exactly", 1.0, 1.0, 4.0),
         minimum_upgrade: combo_row("Minimum upgrade", &["+1 or higher", "+2 or higher"]),
@@ -125,15 +135,20 @@ fn build(requirement: &UiRequirement) -> Editor {
         source_row: combo_row(
             "Source",
             &std::iter::once("Any")
-                .chain(ALL_SOURCES.iter().map(|source| source_label(*source)))
+                .chain(ItemSource::ALL.iter().map(|source| source_label(*source)))
                 .collect::<Vec<_>>(),
         ),
-        group_row: combo_row("Same-item group", &["None", "A", "B", "C", "D"]),
+        group_row: combo_row("Same-item group", &borrowed(&group_labels())),
         floor_switch: adw::SwitchRow::builder()
             .title("Limit to a floor")
             .subtitle("Require this item within the first floors only")
             .build(),
-        floor_value: spin_row("Within first … floors", 4.0, 1.0, 24.0),
+        floor_value: spin_row(
+            "Within first … floors",
+            4.0,
+            1.0,
+            f64::from(MAX_SEARCH_DEPTH),
+        ),
         updating: Cell::new(false),
         key: requirement.key,
     }
@@ -287,7 +302,7 @@ fn restore(editor: &Rc<Editor>, requirement: &UiRequirement) {
     }
     let source_index = requirement
         .source
-        .and_then(|source| ALL_SOURCES.iter().position(|other| *other == source))
+        .and_then(|source| ItemSource::ALL.iter().position(|other| *other == source))
         .map_or(0, |index| index + 1);
     editor
         .source_row
@@ -295,9 +310,12 @@ fn restore(editor: &Rc<Editor>, requirement: &UiRequirement) {
     // The combo offers None plus groups A..D; clamp instead of passing an
     // out-of-range position, which GTK would treat as "no selection" and the
     // next collect() would then silently drop the group constraint.
-    editor
-        .group_row
-        .set_selected(u32::from(requirement.identity_group.unwrap_or(0).min(4)));
+    editor.group_row.set_selected(u32::from(
+        requirement
+            .identity_group
+            .unwrap_or(RESERVED_IDENTITY_GROUP)
+            .min(MAX_IDENTITY_GROUP),
+    ));
     if let Some(depth) = requirement.max_depth {
         editor.floor_switch.set_active(true);
         editor
@@ -314,7 +332,10 @@ fn collect(editor: &Rc<Editor>) -> UiRequirement {
     let tier_eligible = item.is_none() && matches!(kind, ItemKind::Weapon | ItemKind::Armor);
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let exact_tier = editor.exact_tier.value().round() as u8;
-    let bounded_tier = u8::try_from(editor.bounded_tier.selected() + 3).unwrap_or(3);
+    let bounded_tier = u8::try_from(editor.bounded_tier.selected())
+        .map_or(BOUNDED_TIER_MIN, |offset| {
+            BOUNDED_TIER_MIN.saturating_add(offset)
+        });
     let tier = match editor.tier_row.selected() {
         1 if tier_eligible => TierRequirement::Exact(exact_tier),
         2 if tier_eligible => TierRequirement::AtLeast(bounded_tier),
@@ -351,7 +372,7 @@ fn collect(editor: &Rc<Editor>) -> UiRequirement {
     };
     let source = match editor.source_row.selected() {
         0 => None,
-        index => ALL_SOURCES.get(index as usize - 1).copied(),
+        index => ItemSource::ALL.get(index as usize - 1).copied(),
     };
     let identity_group = match editor.group_row.selected() {
         0 => None,
@@ -584,6 +605,29 @@ fn refresh_visibility(editor: &Rc<Editor>) {
     editor
         .floor_value
         .set_visible(editor.floor_switch.is_active());
+}
+
+/// The tier labels of the at-least/at-most picker, one per tier the engine
+/// accepts as a bound.
+fn bounded_tier_labels() -> Vec<String> {
+    (BOUNDED_TIER_MIN..=BOUNDED_TIER_MAX)
+        .map(|tier| format!("Tier {tier}"))
+        .collect()
+}
+
+/// The identity-group picker's labels: "no group" followed by every group
+/// label the portable formats can express.
+fn group_labels() -> Vec<String> {
+    std::iter::once("None".to_owned())
+        .chain(
+            (RESERVED_IDENTITY_GROUP + 1..=MAX_IDENTITY_GROUP)
+                .map(|group| group_letter(group).to_string()),
+        )
+        .collect()
+}
+
+fn borrowed(labels: &[String]) -> Vec<&str> {
+    labels.iter().map(String::as_str).collect()
 }
 
 fn combo_row(title: &str, options: &[&str]) -> adw::ComboRow {

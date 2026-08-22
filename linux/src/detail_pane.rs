@@ -11,7 +11,7 @@ use adw::prelude::*;
 use shpd_seedfinder_core::catalog::{Effect, item};
 use shpd_seedfinder_core::model::{Accessibility, GeneratedWorld, WorldItem};
 use shpd_seedfinder_core::query::{SearchQuery, scout_matches};
-use shpd_seedfinder_core::seed::DungeonSeed;
+use shpd_seedfinder_core::seed::{DungeonSeed, format_input};
 use shpd_seedfinder_session::production_scout_world;
 
 use crate::state::{AppState, QuestRow, quest_rows, region, source_label};
@@ -176,7 +176,7 @@ impl DetailPane {
                     return;
                 }
                 pane.updating.set(true);
-                let formatted = format_seed_input(&entry.text());
+                let formatted = format_input(&entry.text());
                 if formatted != entry.text() {
                     entry.set_text(&formatted);
                     entry.set_position(-1);
@@ -248,7 +248,7 @@ impl DetailPane {
     pub fn scout(&self, code: Option<&str>, state: &AppState) {
         if let Some(code) = code {
             self.updating.set(true);
-            self.entry.set_text(&format_seed_input(code));
+            self.entry.set_text(&format_input(code));
             self.scout_button.set_sensitive(true);
             self.updating.set(false);
         }
@@ -435,28 +435,9 @@ fn tag(label: &str, color: &str) -> gtk::Label {
         .build()
 }
 
-/// Canonicalizes seed input as the user types: uppercase base-26 letters in
-/// dash-separated groups of three.
-fn format_seed_input(input: &str) -> String {
-    let letters: Vec<char> = input
-        .chars()
-        .filter(char::is_ascii_alphabetic)
-        .map(|character| character.to_ascii_uppercase())
-        .take(9)
-        .collect();
-    let mut output = String::with_capacity(11);
-    for (index, letter) in letters.iter().enumerate() {
-        if index == 3 || index == 6 {
-            output.push('-');
-        }
-        output.push(*letter);
-    }
-    output
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{QuestRow, format_seed_input, quest_summary_line};
+    use super::{QuestRow, quest_summary_line};
 
     #[test]
     fn quest_summary_names_every_giver_on_one_line() {
@@ -476,15 +457,5 @@ mod tests {
             ]),
             "Sad ghost: Great crab · Blacksmith: Crystal spire"
         );
-    }
-
-    #[test]
-    fn seed_input_is_canonicalized_while_typing() {
-        assert_eq!(format_seed_input(""), "");
-        assert_eq!(format_seed_input("swl"), "SWL");
-        assert_eq!(format_seed_input("swlk"), "SWL-K");
-        assert_eq!(format_seed_input("swl-kgn-qfd"), "SWL-KGN-QFD");
-        assert_eq!(format_seed_input("s1w!l kg"), "SWL-KG");
-        assert_eq!(format_seed_input("abcdefghijkl"), "ABC-DEF-GHI");
     }
 }
