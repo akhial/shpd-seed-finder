@@ -1027,6 +1027,7 @@ dependencies = [
 name = "shpd-seedfinder-session"
 version = "0.7.0"
 dependencies = [
+ "serde_json",
  "shpd-seedfinder-core",
 ]
 
@@ -1037,6 +1038,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shpd-seedfinder-core",
+ "shpd-seedfinder-session",
  "wasm-bindgen",
 ]
 

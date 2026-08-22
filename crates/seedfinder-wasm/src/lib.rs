@@ -17,9 +17,9 @@ use shpd_seedfinder_core::query::{SearchQuery, decide_start as decide_start_quer
 use shpd_seedfinder_core::quests::{
     BlacksmithQuestType, GhostQuestType, ImpTarget, QuestSummary, WandmakerQuestType,
 };
-use shpd_seedfinder_core::results_export;
 use shpd_seedfinder_core::search::WorldGenerator;
 use shpd_seedfinder_core::seed::{self, DungeonSeed, TOTAL_SEEDS};
+use shpd_seedfinder_session::json;
 use wasm_bindgen::prelude::*;
 
 /// Maximum number of matches retained by one browser search session.
@@ -213,7 +213,7 @@ pub fn decode_share_text(text: &str) -> Result<String, JsError> {
 /// seed code that is not in the canonical `XXX-XXX-XXX` form.
 #[wasm_bindgen]
 pub fn encode_results_file(request_json: &str) -> Result<String, JsError> {
-    encode_results_file_impl(request_json).map_err(|error| JsError::new(&error))
+    json::results_encode_document(request_json).map_err(|error| JsError::new(&error))
 }
 
 /// Decodes results-file text into `{"query": <canonical query document>,
@@ -228,7 +228,7 @@ pub fn encode_results_file(request_json: &str) -> Result<String, JsError> {
 /// that are not results files, and for an invalid query or seed code.
 #[wasm_bindgen]
 pub fn decode_results_file(contents: &str) -> Result<String, JsError> {
-    decode_results_file_impl(contents).map_err(|error| JsError::new(&error))
+    json::results_decode_document(contents, MAX_RESULTS).map_err(|error| JsError::new(&error))
 }
 
 /// Decodes and analyzes a query without throwing or panicking on bad input.
@@ -509,58 +509,8 @@ fn decode_share_text_impl(text: &str) -> Result<String, String> {
     Ok(json_query::encode(&query).to_string())
 }
 
-fn encode_results_file_impl(request_json: &str) -> Result<String, String> {
-    let request: Value = serde_json::from_str(request_json)
-        .map_err(|error| format!("invalid results request JSON: {error}"))?;
-    let query_value = request
-        .get("query")
-        .filter(|value| value.is_object())
-        .ok_or("the results request is missing its \"query\" object")?;
-    let query = json_query::decode(&query_value.to_string())?;
-    let seeds = request
-        .get("seeds")
-        .and_then(Value::as_array)
-        .ok_or("the results request is missing its \"seeds\" list")?
-        .iter()
-        .enumerate()
-        .map(|(index, entry)| results_request_seed(index, entry))
-        .collect::<Result<Vec<_>, _>>()?;
-    let app_version = request
-        .get("app_version")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    Ok(results_export::encode(&query, &seeds, app_version))
-}
-
-fn results_request_seed(index: usize, entry: &Value) -> Result<DungeonSeed, String> {
-    let code = entry
-        .as_str()
-        .ok_or_else(|| format!("seed {}: expected a seed code string", index + 1))?;
-    if !results_export::is_canonical_code(code) {
-        return Err(format!(
-            "seed {}: seed code must use the canonical XXX-XXX-XXX form",
-            index + 1
-        ));
-    }
-    DungeonSeed::from_code(code).map_err(|error| format!("seed {}: {error}", index + 1))
-}
-
-fn decode_results_file_impl(contents: &str) -> Result<String, String> {
-    let file = results_export::decode(contents)?;
-    let (seeds, dropped) = results_export::dedupe_and_cap(&file.seeds, MAX_RESULTS);
-    Ok(serde_json::json!({
-        "query": json_query::encode(&file.query),
-        "seeds": seeds.iter().copied().map(DungeonSeed::to_code).collect::<Vec<_>>(),
-        "dropped": dropped,
-        "app_version": file.app_version,
-        "shpd_version": file.shpd_version,
-    })
-    .to_string())
-}
-
 fn parse_seed_code_impl(input: &str) -> Result<String, String> {
-    let seed = DungeonSeed::from_code(input).map_err(|error| error.to_string())?;
-    Ok(to_json(&SeedOutput::from(seed)))
+    json::seed_parse_document(input).map_err(|error| error.to_string())
 }
 
 fn scout_impl(request_json: &str) -> Result<String, String> {
@@ -753,90 +703,13 @@ mod tests {
     use shpd_seedfinder_core::json_query;
     use shpd_seedfinder_core::main_world::{CanonicalMainWorldGenerator, generate_main_world};
     use shpd_seedfinder_core::search::{SearchOptions, SearchProgress, search_parallel};
-    use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
+    use shpd_seedfinder_core::seed::DungeonSeed;
 
     use super::{
-        MAX_RESULTS, SearchSession, analyze_query, decide_start_impl, decode_results_file_impl,
-        decode_share_text_impl, encode_results_file_impl, encode_share_link_impl, engine_info,
-        filter_seeds_impl, format_seed_code, parse_seed_code_impl, query_continues_impl,
-        scout_impl,
+        MAX_RESULTS, SearchSession, analyze_query, decide_start_impl, decode_share_text_impl,
+        encode_share_link_impl, engine_info, engine_info_document, filter_seeds_impl,
+        format_seed_code, parse_seed_code_impl, query_continues_impl, scout_impl,
     };
-
-    /// The frozen cross-platform fixtures: the browser codec decodes exactly
-    /// the documents every other platform decodes.
-    const RESULTS_FIXTURES: [&str; 3] = [
-        include_str!("../../seedfinder-core/tests/fixtures/results-export-v1.json"),
-        include_str!(
-            "../../seedfinder-core/tests/fixtures/results-export-v1-weapon-categories.json"
-        ),
-        include_str!("../../seedfinder-core/tests/fixtures/results-export-wandmaker-quest.json"),
-    ];
-
-    #[test]
-    fn results_files_round_trip_through_the_frozen_fixtures() {
-        for fixture in RESULTS_FIXTURES {
-            let decoded: Value = serde_json::from_str(&decode_results_file_impl(fixture).unwrap())
-                .unwrap_or_else(|error| panic!("{error}"));
-            assert_eq!(decoded["shpd_version"], "3.3.8");
-            assert!(!decoded["seeds"].as_array().unwrap().is_empty());
-            assert_eq!(decoded["dropped"], 0);
-
-            let request = json!({
-                "query": decoded["query"],
-                "seeds": decoded["seeds"],
-                "app_version": "test",
-            });
-            let encoded = encode_results_file_impl(&request.to_string()).unwrap();
-            let round_tripped: Value =
-                serde_json::from_str(&decode_results_file_impl(&encoded).unwrap()).unwrap();
-            assert_eq!(round_tripped["query"], decoded["query"]);
-            assert_eq!(round_tripped["seeds"], decoded["seeds"]);
-            assert_eq!(round_tripped["dropped"], 0);
-            assert_eq!(round_tripped["app_version"], "test");
-        }
-    }
-
-    #[test]
-    fn results_decoding_dedupes_caps_and_refuses_oversized_files() {
-        let duplicated = json!({
-            "format": "seed-seeker-results",
-            "query": {"requirements": [{"item": "sword"}]},
-            "results": (0..MAX_RESULTS + 10)
-                .map(|index| json!({
-                    "seed": DungeonSeed::new(u64::try_from(index % MAX_RESULTS).unwrap())
-                        .unwrap()
-                        .to_code()
-                }))
-                .collect::<Vec<_>>(),
-        });
-        let decoded: Value =
-            serde_json::from_str(&decode_results_file_impl(&duplicated.to_string()).unwrap())
-                .unwrap();
-        assert_eq!(decoded["seeds"].as_array().unwrap().len(), MAX_RESULTS);
-        // Ten duplicates: importers report exactly what dedupe-and-cap removed.
-        assert_eq!(decoded["dropped"], 10);
-        assert!(decoded["app_version"].is_null());
-
-        let oversized = " ".repeat(super::results_export::MAX_FILE_BYTES + 1);
-        let error = decode_results_file_impl(&oversized).unwrap_err();
-        assert!(error.contains("too large"), "{error}");
-    }
-
-    #[test]
-    fn results_encoding_fails_on_invalid_queries_and_seed_codes() {
-        let invalid_query = json!({"query": {"requirements": []}, "seeds": []});
-        assert!(encode_results_file_impl(&invalid_query.to_string()).is_err());
-
-        let invalid_seed = json!({
-            "query": {"requirements": [{"item": "sword"}]},
-            "seeds": ["aaa-aaa-aab"],
-        });
-        let error = encode_results_file_impl(&invalid_seed.to_string()).unwrap_err();
-        assert!(error.contains("canonical"), "{error}");
-
-        assert!(encode_results_file_impl("not json").is_err());
-        assert!(encode_results_file_impl(r#"{"seeds":[]}"#).is_err());
-    }
 
     #[test]
     fn query_continuation_matches_scope_and_requirement_multiset() {
@@ -917,53 +790,9 @@ mod tests {
     }
 
     #[test]
-    fn engine_info_reports_core_constants() {
+    fn engine_info_serializes_the_shared_document_with_the_browser_cap() {
         let info: Value = serde_json::from_str(&engine_info()).unwrap();
-        assert_eq!(info["shpdVersion"], shpd_seedfinder_core::SHPD_VERSION);
-        assert_eq!(info["shpdCommit"], shpd_seedfinder_core::SHPD_COMMIT);
-        assert_eq!(info["totalSeeds"], TOTAL_SEEDS);
-        assert_eq!(info["maxResults"], MAX_RESULTS);
-
-        assert_eq!(
-            info["limits"],
-            json!({
-                "max_depth": 24,
-                "exact_tier_min": 2,
-                "exact_tier_max": 5,
-                "bounded_tier_min": 3,
-                "bounded_tier_max": 4,
-                "identity_group_max": 4,
-                "max_upgrade_default": 3,
-                "max_upgrade_ring": 4,
-                "max_results": MAX_RESULTS,
-                "results_file_max_bytes": super::results_export::MAX_FILE_BYTES,
-            })
-        );
-        assert_eq!(info["empty_boss_floors"], json!([5, 10, 15]));
-        assert_eq!(
-            info["quest_windows"],
-            json!({
-                "ghost": [2, 4],
-                "wandmaker": [7, 9],
-                "blacksmith": [12, 14],
-                "imp": [17, 19],
-            })
-        );
-        assert_eq!(
-            info["challenges"],
-            json!([
-                {"name": "on_diet", "mask": 1, "changes_level_generation": false},
-                {"name": "faith_is_my_armor", "mask": 2, "changes_level_generation": false},
-                {"name": "pharmacophobia", "mask": 4, "changes_level_generation": false},
-                {"name": "barren_land", "mask": 8, "changes_level_generation": true},
-                {"name": "swarm_intelligence", "mask": 16, "changes_level_generation": false},
-                {"name": "into_darkness", "mask": 32, "changes_level_generation": true},
-                {"name": "forbidden_runes", "mask": 64, "changes_level_generation": true},
-                {"name": "hostile_champions", "mask": 128, "changes_level_generation": false},
-                {"name": "badder_bosses", "mask": 256, "changes_level_generation": false},
-            ])
-        );
-        assert_eq!(info["search_start_stride"], 3_355_211_884_971_u64);
+        assert_eq!(info, engine_info_document(MAX_RESULTS));
     }
 
     #[test]

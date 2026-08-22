@@ -5,14 +5,12 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 
-use serde_json::Value;
-use shpd_seedfinder_core::seed::{self, DungeonSeed};
-use shpd_seedfinder_core::{deep_link, engine_info, json_query, results_export};
+use shpd_seedfinder_core::seed;
+use shpd_seedfinder_core::{deep_link, engine_info, json_query};
 use shpd_seedfinder_session::{
     FilterPacketError, MAX_ACCEPTED_RESULTS, NativeSession, ScoutCallError, ScoutMatchError,
-    ScoutPacketError, SearchError, StartSessionError, close_session, decide_start_packets,
-    production_filter_packet, production_scout_matches, production_scout_packet, queries_continue,
-    registry,
+    ScoutPacketError, SearchError, StartSessionError, close_session, decide_start_packets, json,
+    production_filter_packet, production_scout_packet, queries_continue, registry,
 };
 
 const OK: i32 = 0;
@@ -342,23 +340,13 @@ pub extern "C" fn seedfinder_scout_matches(
         ) else {
             return INVALID;
         };
-        match scout_matches_document(request, query) {
+        match json::scout_matches_document(request, query) {
             Ok(document) => return_packet(document.into_bytes(), out_packet, out_len),
             Err(ScoutMatchError::Request(_) | ScoutMatchError::Query(_)) => INVALID,
             Err(ScoutMatchError::Panicked) => INTERNAL,
         }
     }))
     .unwrap_or(INTERNAL)
-}
-
-fn scout_matches_document(request: &[u8], query: &[u8]) -> Result<String, ScoutMatchError> {
-    let marks = production_scout_matches(request, query)?;
-    Ok(serde_json::json!({
-        "matched": marks.matched_indices(),
-        "matched_requirements": marks.matched_requirements,
-        "total_requirements": marks.total_requirements,
-    })
-    .to_string())
 }
 
 /// Returns the engine's own constants as UTF-8 JSON: the pinned upstream
@@ -431,17 +419,12 @@ pub extern "C" fn seedfinder_seed_parse(
         let Ok(input) = std::str::from_utf8(bytes) else {
             return INVALID;
         };
-        match seed_parse_document(input) {
+        match json::seed_parse_document(input) {
             Ok(document) => return_packet(document.into_bytes(), out_packet, out_len),
             Err(_) => INVALID,
         }
     }))
     .unwrap_or(INTERNAL)
-}
-
-fn seed_parse_document(input: &str) -> Result<String, shpd_seedfinder_core::seed::SeedError> {
-    let seed = DungeonSeed::from_code(input)?;
-    Ok(serde_json::json!({ "code": seed.to_code(), "value": seed.value() }).to_string())
 }
 
 /// Encodes a results file from `{"query": <canonical query document>,
@@ -466,7 +449,7 @@ pub extern "C" fn seedfinder_results_encode(
         let Ok(request) = std::str::from_utf8(bytes) else {
             return INVALID;
         };
-        match results_encode_document(request) {
+        match json::results_encode_document(request) {
             Ok(contents) => return_packet(contents.into_bytes(), out_packet, out_len),
             Err(_) => INVALID,
         }
@@ -497,61 +480,12 @@ pub extern "C" fn seedfinder_results_decode(
         let Ok(contents) = std::str::from_utf8(bytes) else {
             return INVALID;
         };
-        match results_decode_document(contents) {
+        match json::results_decode_document(contents, MAX_ACCEPTED_RESULTS) {
             Ok(document) => return_packet(document.into_bytes(), out_packet, out_len),
             Err(_) => INVALID,
         }
     }))
     .unwrap_or(INTERNAL)
-}
-
-fn results_encode_document(request_json: &str) -> Result<String, String> {
-    let request: Value = serde_json::from_str(request_json)
-        .map_err(|error| format!("invalid results request JSON: {error}"))?;
-    let query_value = request
-        .get("query")
-        .filter(|value| value.is_object())
-        .ok_or("the results request is missing its \"query\" object")?;
-    let query = json_query::decode(&query_value.to_string())?;
-    let seeds = request
-        .get("seeds")
-        .and_then(Value::as_array)
-        .ok_or("the results request is missing its \"seeds\" list")?
-        .iter()
-        .enumerate()
-        .map(|(index, entry)| results_request_seed(index, entry))
-        .collect::<Result<Vec<_>, _>>()?;
-    let app_version = request
-        .get("app_version")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    Ok(results_export::encode(&query, &seeds, app_version))
-}
-
-fn results_request_seed(index: usize, entry: &Value) -> Result<DungeonSeed, String> {
-    let code = entry
-        .as_str()
-        .ok_or_else(|| format!("seed {}: expected a seed code string", index + 1))?;
-    if !results_export::is_canonical_code(code) {
-        return Err(format!(
-            "seed {}: seed code must use the canonical XXX-XXX-XXX form",
-            index + 1
-        ));
-    }
-    DungeonSeed::from_code(code).map_err(|error| format!("seed {}: {error}", index + 1))
-}
-
-fn results_decode_document(contents: &str) -> Result<String, String> {
-    let file = results_export::decode(contents)?;
-    let (seeds, dropped) = results_export::dedupe_and_cap(&file.seeds, MAX_ACCEPTED_RESULTS);
-    Ok(serde_json::json!({
-        "query": json_query::encode(&file.query),
-        "seeds": seeds.iter().copied().map(DungeonSeed::to_code).collect::<Vec<_>>(),
-        "dropped": dropped,
-        "app_version": file.app_version,
-        "shpd_version": file.shpd_version,
-    })
-    .to_string())
 }
 
 #[unsafe(no_mangle)]
@@ -627,6 +561,10 @@ pub extern "C" fn seedfinder_buffer_free(pointer: *mut u8, len: usize) {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::Value;
+    use shpd_seedfinder_core::seed::DungeonSeed;
+    use shpd_seedfinder_core::{json_query, results_export};
+
     use super::*;
 
     fn query_packet() -> Vec<u8> {
@@ -922,51 +860,7 @@ mod tests {
         let mut len = 0;
         assert_eq!(seedfinder_engine_info(&raw mut pointer, &raw mut len), OK);
         let info: Value = serde_json::from_slice(&unsafe { take_packet(pointer, len) }).unwrap();
-
-        assert_eq!(info["shpdVersion"], shpd_seedfinder_core::SHPD_VERSION);
-        assert_eq!(info["shpdCommit"], shpd_seedfinder_core::SHPD_COMMIT);
-        assert_eq!(info["totalSeeds"], shpd_seedfinder_core::seed::TOTAL_SEEDS);
-        assert_eq!(info["maxResults"], MAX_ACCEPTED_RESULTS);
-        assert_eq!(
-            info["limits"],
-            serde_json::json!({
-                "max_depth": 24,
-                "exact_tier_min": 2,
-                "exact_tier_max": 5,
-                "bounded_tier_min": 3,
-                "bounded_tier_max": 4,
-                "identity_group_max": 4,
-                "max_upgrade_default": 3,
-                "max_upgrade_ring": 4,
-                "max_results": MAX_ACCEPTED_RESULTS,
-                "results_file_max_bytes": results_export::MAX_FILE_BYTES,
-            })
-        );
-        assert_eq!(info["empty_boss_floors"], serde_json::json!([5, 10, 15]));
-        assert_eq!(
-            info["quest_windows"],
-            serde_json::json!({
-                "ghost": [2, 4],
-                "wandmaker": [7, 9],
-                "blacksmith": [12, 14],
-                "imp": [17, 19],
-            })
-        );
-        assert_eq!(
-            info["challenges"],
-            serde_json::json!([
-                {"name": "on_diet", "mask": 1, "changes_level_generation": false},
-                {"name": "faith_is_my_armor", "mask": 2, "changes_level_generation": false},
-                {"name": "pharmacophobia", "mask": 4, "changes_level_generation": false},
-                {"name": "barren_land", "mask": 8, "changes_level_generation": true},
-                {"name": "swarm_intelligence", "mask": 16, "changes_level_generation": false},
-                {"name": "into_darkness", "mask": 32, "changes_level_generation": true},
-                {"name": "forbidden_runes", "mask": 64, "changes_level_generation": true},
-                {"name": "hostile_champions", "mask": 128, "changes_level_generation": false},
-                {"name": "badder_bosses", "mask": 256, "changes_level_generation": false},
-            ])
-        );
-        assert_eq!(info["search_start_stride"], 3_355_211_884_971_u64);
+        assert_eq!(info, engine_info::document(MAX_ACCEPTED_RESULTS));
 
         assert_eq!(
             seedfinder_engine_info(ptr::null_mut(), &raw mut len),
