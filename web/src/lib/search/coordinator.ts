@@ -23,8 +23,8 @@ const MIN_FILTER_CHUNK = 16
  * must ensure no search is running; stale worker messages are ignored
  * because progress only applies to a running session.
  */
-export function loadImportedResults(matches: ParsedSeed[], query: QueryDocument): void {
-  searchStore.setState((state) => importedResultsState(state, matches, query))
+export function loadImportedResults(matches: ParsedSeed[], query: QueryDocument, dropped = 0): void {
+  searchStore.setState((state) => importedResultsState(state, matches, query, dropped))
 }
 
 /**

@@ -1,17 +1,24 @@
-import { describe, expect, it } from 'vitest'
+import { readFile } from 'node:fs/promises'
+import { beforeAll, describe, expect, it } from 'vitest'
 // The canonical frozen fixture, imported verbatim from the Rust core's test
 // data so this codec can never silently drift from it.
 import VERSION_1_FIXTURE from '../../../crates/seedfinder-core/tests/fixtures/results-export-v1.json?raw'
 import WANDMAKER_QUEST_FIXTURE from '../../../crates/seedfinder-core/tests/fixtures/results-export-wandmaker-quest.json?raw'
 import WEAPON_CATEGORIES_FIXTURE from '../../../crates/seedfinder-core/tests/fixtures/results-export-v1-weapon-categories.json?raw'
 import { defaultQueryState, toQueryDocument } from './query'
-import {
-  decodeResultsFile,
-  encodeResultsFile,
-  parsedSeedFromCode,
-  seedCodeValue,
-} from './results-file'
+import { decodeResultsFile, encodeResultsFile, parsedSeedFromCode } from './results-file'
+import init from './wasm/pkg/seedfinder.js'
 import type { QueryState } from './wasm/types'
+
+/**
+ * The results-file codec lives in the engine, so these are conformance tests
+ * against the real wasm module rather than against a TypeScript restatement
+ * of it. Node has no `fetch` for `file:` URLs, so the module is instantiated
+ * from bytes instead of the browser's URL form.
+ */
+beforeAll(async () => {
+  await init({ module_or_path: await readFile(new URL('./wasm/pkg/seedfinder_bg.wasm', import.meta.url)) })
+})
 
 const loadedQuery: QueryState = {
   requirements: [
@@ -43,38 +50,19 @@ const file = (query: unknown, results: unknown[] = []) =>
   JSON.stringify({ format: 'seed-seeker-results', query, results })
 
 describe('results file', () => {
-  it('computes seed values in the engine base-26 form', () => {
-    expect(seedCodeValue('AAA-AAA-AAA')).toBe(0)
-    expect(seedCodeValue('AAA-AAA-AAB')).toBe(1)
-    expect(seedCodeValue('ZZZ-ZZZ-ZZZ')).toBe(26 ** 9 - 1)
+  it('values a seed code through the engine seed parser', () => {
+    expect(parsedSeedFromCode('AAA-AAA-AAA')).toEqual({ code: 'AAA-AAA-AAA', value: 0 })
     expect(parsedSeedFromCode('AAA-AAA-AAB')).toEqual({ code: 'AAA-AAA-AAB', value: 1 })
   })
 
   it('round-trips the query and seeds through encode and decode', () => {
-    const text = encodeResultsFile(toQueryDocument(loadedQuery), ['AAA-AAA-BUH', 'ABC-DEF-GHI'], '3.3.8')
+    const text = encodeResultsFile(toQueryDocument(loadedQuery), ['AAA-AAA-BUH', 'ABC-DEF-GHI'])
     const decoded = decodeResultsFile(text)
     expect(decoded.appVersion).toBeDefined()
     expect(decoded.shpdVersion).toBe('3.3.8')
     expect(decoded.query).toEqual(loadedQuery)
     expect(decoded.seeds).toEqual(['AAA-AAA-BUH', 'ABC-DEF-GHI'])
-  })
-
-  it('emits the documented envelope fields', () => {
-    const parsed = JSON.parse(encodeResultsFile(toQueryDocument(loadedQuery), ['AAA-AAA-AAB'], '3.3.8')) as Record<string, unknown>
-    expect(parsed.format).toBe('seed-seeker-results')
-    expect(parsed.format_version).toBeUndefined()
-    expect(typeof parsed.app_version).toBe('string')
-    expect(parsed.shpd_version).toBe('3.3.8')
-    expect(parsed.results).toEqual([{ seed: 'AAA-AAA-AAB' }])
-    expect(parsed.query).toEqual({
-      requirements: [
-        { kind: 'ring', item: 'ring_tenacity', upgrade: 4, source: 'imp_reward' },
-        { kind: 'wand', upgrade: { at_least: 2 }, uncursed: true, identity_group: 1, max_depth: 9 },
-      ],
-      max_depth: 12,
-      require_blacksmith: true,
-      challenges: ['barren_land'],
-    })
+    expect(decoded.dropped).toBe(0)
   })
 
   it('always decodes the canonical frozen version-1 fixture', () => {
@@ -93,8 +81,21 @@ describe('results file', () => {
       .toEqual(['thrown_weapon', 'melee_weapon', 'weapon'])
     expect(decoded.query.requirements[1].item).toBe('sword')
     expect(decoded.seeds).toEqual(['AAA-AAA-ACO'])
-    const reEncoded = decodeResultsFile(encodeResultsFile(decoded.queryDocument, decoded.seeds, '3.3.8'))
+    const reEncoded = decodeResultsFile(encodeResultsFile(decoded.queryDocument, decoded.seeds))
     expect(reEncoded.query).toEqual(decoded.query)
+  })
+
+  it('decodes the canonical frozen Wandmaker-quest fixture', () => {
+    const decoded = decodeResultsFile(WANDMAKER_QUEST_FIXTURE)
+    expect(decoded.query.wandmakerQuest).toBe('rotberry')
+    expect(decoded.query.maxDepth).toBe(9)
+    expect(decoded.seeds).toEqual(['AAA-AAA-BUH', 'ABC-DEF-GHI'])
+  })
+
+  it('round-trips a query that carries a Wandmaker quest', () => {
+    const quested: QueryState = { ...loadedQuery, wandmakerQuest: 'corpse_dust' }
+    const text = encodeResultsFile(toQueryDocument(quested), ['AAA-AAA-BUH'])
+    expect(decodeResultsFile(text).query).toEqual(quested)
   })
 
   it('ignores unknown envelope and per-result fields from future releases', () => {
@@ -110,105 +111,32 @@ describe('results file', () => {
     expect(decoded.query.maxDepth).toBe(24)
   })
 
-  it('ignores whatever format version an older file declares', () => {
-    // The number carried no meaning for a reader newer than the file, so it
-    // is now just another unknown envelope field.
-    for (const version of [1, 2, 99, 0, 1.5, true, '1', -1, null]) {
-      const text = JSON.stringify({
-        format: 'seed-seeker-results',
-        format_version: version,
-        query: { requirements: [{ item: 'sword' }] },
-        results: [{ seed: 'AAA-AAA-AAB' }],
-      })
-      expect(decodeResultsFile(text).seeds, JSON.stringify(version)).toEqual(['AAA-AAA-AAB'])
-    }
+  it('reports the engine dedupe-and-cap drop count', () => {
+    const decoded = decodeResultsFile(file(
+      { requirements: [{ item: 'sword' }] },
+      [{ seed: 'AAA-AAA-AAC' }, { seed: 'AAA-AAA-AAB' }, { seed: 'AAA-AAA-AAC' }],
+    ))
+    expect(decoded.seeds).toEqual(['AAA-AAA-AAC', 'AAA-AAA-AAB'])
+    expect(decoded.dropped).toBe(1)
   })
 
-  it('round-trips a query that carries a Wandmaker quest', () => {
-    const quested: QueryState = { ...loadedQuery, wandmakerQuest: 'corpse_dust' }
-    const text = encodeResultsFile(toQueryDocument(quested), ['AAA-AAA-BUH'], '3.3.8')
-    expect(decodeResultsFile(text).query).toEqual(quested)
-  })
-
-  it('decodes the canonical frozen Wandmaker-quest fixture', () => {
-    const decoded = decodeResultsFile(WANDMAKER_QUEST_FIXTURE)
-    expect(decoded.query.wandmakerQuest).toBe('rotberry')
-    expect(decoded.query.maxDepth).toBe(9)
-    expect(decoded.seeds).toEqual(['AAA-AAA-BUH', 'ABC-DEF-GHI'])
-  })
-
-  it('rejects an unknown Wandmaker quest instead of widening the filter', () => {
-    const text = file({ requirements: [{ item: 'sword' }], wandmaker_quest: 'seed_of_rotberry' })
-    expect(() => decodeResultsFile(text)).toThrowError(/Wandmaker quest/)
-  })
-
-  it('rejects foreign and malformed files clearly', () => {
+  it('surfaces the engine message for a malformed file', () => {
     for (const text of ['not json', '[]', '{}', '{"format":"other"}']) {
-      expect(() => decodeResultsFile(text)).toThrowError(/not a Seed Seeker results file/)
+      expect(() => decodeResultsFile(text), text).toThrowError(/not a Seed Seeker results file/i)
     }
-  })
-
-  it('accepts all core tier and upgrade forms', () => {
-    const decoded = decodeResultsFile(file({
-      requirements: [
-        { kind: 'weapon', tier: 'any', upgrade: 'any' },
-        { kind: 'weapon', tier: { exact: 2 }, upgrade: { exact: 3 } },
-        { kind: 'armor', tier: { at_least: 3 }, upgrade: { at_least: 1 } },
-        { kind: 'armor', tier: { at_most: 4 }, effect: 'anti-magic' },
-      ],
-    }))
-    const requirements = decoded.query.requirements
-    expect(requirements[0].tier.mode).toBe('any')
-    expect(requirements[0].upgrade.mode).toBe('any')
-    expect(requirements[1].tier).toEqual({ mode: 'exact', value: 2 })
-    expect(requirements[1].upgrade).toEqual({ mode: 'exact', value: 3 })
-    expect(requirements[2].tier).toEqual({ mode: 'at_least', value: 3 })
-    expect(requirements[2].upgrade).toEqual({ mode: 'at_least', value: 1 })
-    expect(requirements[3].tier).toEqual({ mode: 'at_most', value: 4 })
-  })
-
-  it('rejects unknown query content instead of changing its meaning', () => {
+    // Unusable query content and non-canonical seed codes are the engine's
+    // verdict too, reported with its own wording.
     expect(() => decodeResultsFile(file({ requirements: [{ item: 'item_from_the_future' }] })))
       .toThrowError(/item_from_the_future/)
     expect(() => decodeResultsFile(file({ requirements: [{ item: 'sword' }], wished_luck: 7 })))
       .toThrowError(/wished_luck/)
-    expect(() => decodeResultsFile(file({ requirements: [{ item: 'sword', teleports: true }] })))
-      .toThrowError(/teleports/)
-    expect(() => decodeResultsFile(file({ requirements: [{ kind: 'RING' }] })))
-      .toThrowError(/unknown category/)
-    expect(() => decodeResultsFile(file({ requirements: [{ kind: 'weapon', effect: 'Sparkling' }] })))
-      .toThrowError(/Sparkling/)
-    expect(() => decodeResultsFile(file({ requirements: [{ kind: 'wand', identity_group: 5 }] })))
-      .toThrowError(/same-item group/)
-    expect(() => decodeResultsFile(file({ requirements: [{ kind: 'weapon', upgrade: {} }] })))
-      .toThrowError(/upgrade/)
-  })
-
-  it('rejects wrong-typed query fields instead of coercing or dropping them', () => {
-    expect(() => decodeResultsFile(file({ requirements: [{ item: 'sword' }], max_depth: '12' })))
-      .toThrowError(/max_depth/)
-    expect(() => decodeResultsFile(file({ requirements: [{ item: 42 }] })))
-      .toThrowError(/item/)
-    expect(() => decodeResultsFile(file({ requirements: [{ item: 'sword' }], challenges: 'barren_land' })))
-      .toThrowError(/challenges/)
-    expect(() => decodeResultsFile(file({ requirements: [{ item: 'sword', upgrade: true }] })))
-      .toThrowError(/upgrade/)
-    expect(() => decodeResultsFile(file({ requirements: [{ item: 'sword', uncursed: 'yes' }] })))
-      .toThrowError(/uncursed/)
-  })
-
-  it('rejects non-canonical seed codes so files behave the same on every platform', () => {
-    for (const seed of ['aaa-aaa-aab', 'AAAAAAAAB', 'AAA AAA AAB', ' AAA-AAA-AAB']) {
-      expect(() => decodeResultsFile(file({ requirements: [{ item: 'sword' }] }, [{ seed }])), seed)
-        .toThrowError(/Result 1/)
-    }
-    expect(() => decodeResultsFile(file({ requirements: [{ item: 'sword' }] }, [{ seed: 'AAA-AAA-AAB' }, { seed: 'AAA-AAA-AA0' }])))
-      .toThrowError(/Result 2/)
+    expect(() => decodeResultsFile(file({ requirements: [{ item: 'sword' }] }, [{ seed: 'aaa-aaa-aab' }])))
+      .toThrowError(/result 1/i)
   })
 
   it('round-trips a minimal query with no results', () => {
     const query: QueryState = { ...defaultQueryState(), requirements: [{ kind: 'wand', tier: { mode: 'any', value: 3 }, upgrade: { mode: 'any', value: 1 }, uncursed: false }] }
-    const decoded = decodeResultsFile(encodeResultsFile(toQueryDocument(query), [], '3.3.8'))
+    const decoded = decodeResultsFile(encodeResultsFile(toQueryDocument(query), []))
     expect(decoded.query).toEqual(query)
     expect(decoded.seeds).toEqual([])
   })
