@@ -2,6 +2,7 @@
 package dev.seedseeker.app.model
 
 import dev.seedseeker.app.catalog.ItemCatalog
+import dev.seedseeker.app.engine.JniBindings
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -9,32 +10,29 @@ import org.json.JSONObject
  * The cross-platform results-export document: search results plus the query
  * that found them.
  *
- * The canonical implementation and compatibility rules live in the Rust core
- * (`crates/seedfinder-core/src/results_export.rs`); the schema is documented
- * in `docs/results-export-format.md`. Keep this codec schema-compatible with
- * it: unknown envelope and per-result fields are ignored — including the
- * `format_version` number releases up to 0.7.0 wrote, so every file an older
- * release exported keeps importing — and unknown or wrong-typed query content
- * fails the import instead of silently changing the query's meaning.
+ * The codec — the envelope, the compatibility rules, the strict query
+ * validation, the 2 MiB import cap and the dedupe-and-cap every importer
+ * applies — lives only in the Rust core
+ * (`crates/seedfinder-core/src/results_export.rs`, documented in
+ * `docs/results-export-format.md`) and is reached through [JniBindings]. What
+ * remains here is the mapping between the canonical JSON query document and
+ * the app's own models, the same boundary convention [DeepLink] uses: the
+ * engine has already validated the document, so this side reads it leniently
+ * and never re-derives its schema.
  */
 object ResultsExport {
-    const val FILE_FORMAT = "seed-seeker-results"
-
     const val SUGGESTED_FILE_NAME = "seed-seeker-results.json"
 
-    /** Mirrors the Rust core's `SHPD_VERSION`, the source of truth. */
-    const val SHPD_VERSION = "3.3.8"
-
-    /** Import size cap; a maximal legal results file is far below this. */
-    const val MAX_FILE_BYTES = 2 * 1024 * 1024
-
+    /**
+     * One imported file. [seeds] is already deduplicated and capped by the
+     * engine and [dropped] counts the exported entries that step removed.
+     */
     data class Imported(
         val query: PresetQuery,
         val seeds: List<String>,
+        val dropped: Int,
         val shpdVersion: String?,
     )
-
-    private val SEED_CODE = Regex("^[A-Z]{3}-[A-Z]{3}-[A-Z]{3}$")
 
     /** Stable document names for the nine challenges, in mask order. */
     private val CHALLENGE_NAMES = linkedMapOf(
@@ -49,70 +47,28 @@ object ResultsExport {
         "badder_bosses" to Challenge.STRONGER_BOSSES,
     )
 
-    private val QUERY_KEYS = setOf(
-        "requirements",
-        "max_depth",
-        "require_blacksmith",
-        "exclude_blacksmith_rewards",
-        "wandmaker_quest",
-        "fast_mode",
-        "challenges",
-    )
-    private val REQUIREMENT_KEYS = setOf(
-        "kind",
-        "item",
-        "tier",
-        "upgrade",
-        "effect",
-        "uncursed",
-        "source",
-        "identity_group",
-        "max_depth",
-    )
-
-    fun encode(query: PresetQuery, seeds: List<String>, appVersion: String): String =
-        JSONObject().apply {
-            put("format", FILE_FORMAT)
-            put("app_version", appVersion)
-            put("shpd_version", SHPD_VERSION)
+    /** @throws IllegalArgumentException with the codec's message. */
+    fun encode(query: PresetQuery, seeds: List<String>, appVersion: String): String {
+        val request = JSONObject().apply {
             put("query", encodeQuery(query))
-            put("results", JSONArray().apply { seeds.forEach { put(JSONObject().put("seed", it)) } })
-        }.toString(2)
-
-    /** @throws IllegalArgumentException with a user-facing message. */
-    fun decode(text: String): Imported = try {
-        decodeDocument(text)
-    } catch (failure: IllegalArgumentException) {
-        throw failure
-    } catch (_: Exception) {
-        // Anything the strict readers below did not anticipate (for example
-        // an org.json parse quirk) must not leak a raw exception message.
-        throw IllegalArgumentException("This results file is malformed.")
+            put("seeds", JSONArray(seeds))
+            put("app_version", appVersion)
+        }
+        return String(JniBindings.resultsEncode(request.toString().toByteArray()), Charsets.UTF_8)
     }
 
-    private fun decodeDocument(text: String): Imported {
-        val document = runCatching { JSONObject(text) }.getOrElse {
-            throw IllegalArgumentException("This is not a Seed Seeker results file (not valid JSON).")
-        }
-        require(document.opt("format") == FILE_FORMAT) {
-            "This is not a Seed Seeker results file."
-        }
-        val queryValue = document.optJSONObject("query")
-        requireNotNull(queryValue) { "This results file is missing its query." }
-        val query = decodeQuery(queryValue)
-        val resultsValue = document.optJSONArray("results")
-        requireNotNull(resultsValue) { "This results file is missing its results list." }
-        val seeds = buildList {
-            for (index in 0 until resultsValue.length()) {
-                val seed = resultsValue.optJSONObject(index)?.opt("seed") as? String
-                require(seed != null && SEED_CODE.matches(seed)) {
-                    "Result ${index + 1} does not have a valid seed code " +
-                        "(canonical XXX-XXX-XXX form)."
-                }
-                add(seed)
-            }
-        }
-        return Imported(query, seeds, document.opt("shpd_version") as? String)
+    /** @throws IllegalArgumentException with the codec's message. */
+    fun decode(text: String): Imported {
+        val document = JSONObject(
+            String(JniBindings.resultsDecode(text.toByteArray()), Charsets.UTF_8),
+        )
+        val seeds = document.getJSONArray("seeds")
+        return Imported(
+            query = decodeQuery(document.getJSONObject("query")),
+            seeds = List(seeds.length()) { seeds.getString(it) },
+            dropped = document.getInt("dropped"),
+            shpdVersion = document.opt("shpd_version") as? String,
+        )
     }
 
     /** The query half of the document; [DeepLink] shares it with the Rust codec. */
@@ -153,137 +109,82 @@ object ResultsExport {
         requirement.maximumDepth?.let { put("max_depth", it) }
     }
 
+    /**
+     * Reads a canonical query document the engine has already decoded and
+     * validated, so every field is trusted here: unknown names cannot occur
+     * and are simply ignored rather than re-checked.
+     */
     internal fun decodeQuery(value: JSONObject): PresetQuery {
-        for (key in value.keys()) {
-            require(key in QUERY_KEYS) {
-                "The query in this results file uses an unknown field \"$key\". " +
-                    "Update Seed Seeker to import it."
-            }
+        val requirementsValue = value.optJSONArray("requirements") ?: JSONArray()
+        val requirements = List(requirementsValue.length()) { index ->
+            decodeRequirement(requirementsValue.getJSONObject(index), index)
         }
-        val requirementsValue = value.optJSONArray("requirements")
-        requireNotNull(requirementsValue) { "The query in this results file has no requirements list." }
-        val requirements = buildList {
-            for (index in 0 until requirementsValue.length()) {
-                val entry = requirementsValue.optJSONObject(index)
-                requireNotNull(entry) { "Requirement ${index + 1} is not a JSON object." }
-                add(
-                    runCatching { decodeRequirement(entry, index) }.getOrElse { failure ->
-                        throw IllegalArgumentException("Requirement ${index + 1}: ${failure.message}")
-                    },
-                )
-            }
-        }
-        require(requirements.isNotEmpty()) { "The query in this results file has no requirements." }
-        val challengesValue = value.opt("challenges")
+        val challengesValue = value.optJSONArray("challenges") ?: JSONArray()
         var challenges = 0
-        if (challengesValue != null && challengesValue != JSONObject.NULL) {
-            require(challengesValue is JSONArray) {
-                "\"challenges\" must be a list of challenge names"
-            }
-            for (index in 0 until challengesValue.length()) {
-                val name = challengesValue.opt(index)
-                val challenge = (name as? String)?.let(CHALLENGE_NAMES::get)
-                requireNotNull(challenge) {
-                    "The query in this results file uses an unknown challenge \"$name\"."
-                }
-                challenges = challenges or challenge.bit
-            }
-        }
-        val maximumDepth = value.strictIntOrNull("max_depth") ?: 24
-        require(maximumDepth in 1..24) { "Maximum floor must be 1..24." }
-        val wandmakerQuest = value.strictStringOrNull("wandmaker_quest")?.let { name ->
-            requireNotNull(WandmakerQuest.named(name)) {
-                "The query in this results file uses an unknown Wandmaker quest \"$name\"."
-            }
+        for (index in 0 until challengesValue.length()) {
+            CHALLENGE_NAMES[challengesValue.optString(index)]?.let { challenges = challenges or it.bit }
         }
         return PresetQuery(
             requirements = requirements,
-            maximumDepth = maximumDepth,
-            requireBlacksmith = value.strictBool("require_blacksmith"),
-            excludeBlacksmithRewards = value.strictBool("exclude_blacksmith_rewards"),
-            wandmakerQuest = wandmakerQuest,
-            fastMode = value.strictBool("fast_mode"),
+            maximumDepth = value.optInt("max_depth", 24),
+            requireBlacksmith = value.optBoolean("require_blacksmith"),
+            excludeBlacksmithRewards = value.optBoolean("exclude_blacksmith_rewards"),
+            wandmakerQuest = (value.opt("wandmaker_quest") as? String)?.let(WandmakerQuest::named),
+            fastMode = value.optBoolean("fast_mode"),
             challenges = challenges,
         )
     }
 
     private fun decodeRequirement(entry: JSONObject, index: Int): ItemRequirement {
-        for (key in entry.keys()) {
-            require(key in REQUIREMENT_KEYS) { "unknown field \"$key\" — update Seed Seeker to import it" }
-        }
-        val item = entry.strictStringOrNull("item")?.let { id ->
-            requireNotNull(ItemCatalog.findById(id)) { "unknown item \"$id\"" }
-        }
-        // Enum names match the core decoder exactly (lowercase snake_case);
-        // only effect names and the "any" keyword are matched case-insensitively.
-        val kind = entry.strictStringOrNull("kind")?.let { name ->
-            requireNotNull(ItemKind.entries.firstOrNull { it.name.lowercase() == name }) {
-                "unknown category \"$name\""
-            }
-        } ?: item?.kind ?: throw IllegalArgumentException("a category is required when no item is set")
+        val item = (entry.opt("item") as? String)?.let(ItemCatalog::findById)
+        val kind = (entry.opt("kind") as? String)
+            ?.let { name -> ItemKind.entries.firstOrNull { it.name.lowercase() == name } }
+            ?: item?.kind
+            ?: throw IllegalArgumentException("Requirement ${index + 1} has no category.")
         var tier = 0
         var tierMatch = TierMatch.ANY
-        when (val tierValue = entry.opt("tier")) {
-            null, JSONObject.NULL -> {}
-            is String -> require(tierValue.equals("any", ignoreCase = true)) {
-                "unknown tier mode \"$tierValue\""
-            }
-            is JSONObject -> {
-                require(tierValue.length() == 1) { "unrecognized tier filter" }
-                when {
-                    tierValue.has("exact") -> {
-                        tier = tierValue.strictInt("exact")
-                        tierMatch = TierMatch.EXACT
-                    }
-                    tierValue.has("at_least") -> {
-                        tier = tierValue.strictInt("at_least")
-                        tierMatch = TierMatch.AT_LEAST
-                    }
-                    tierValue.has("at_most") -> {
-                        tier = tierValue.strictInt("at_most")
-                        tierMatch = TierMatch.AT_MOST
-                    }
-                    else -> throw IllegalArgumentException("unrecognized tier filter")
+        (entry.opt("tier") as? JSONObject)?.let { tierValue ->
+            when {
+                tierValue.has("exact") -> {
+                    tier = tierValue.getInt("exact")
+                    tierMatch = TierMatch.EXACT
+                }
+                tierValue.has("at_least") -> {
+                    tier = tierValue.getInt("at_least")
+                    tierMatch = TierMatch.AT_LEAST
+                }
+                tierValue.has("at_most") -> {
+                    tier = tierValue.getInt("at_most")
+                    tierMatch = TierMatch.AT_MOST
                 }
             }
-            else -> throw IllegalArgumentException("unrecognized tier filter")
         }
         var upgrade = 0
         var upgradeMatch = UpgradeMatch.ANY
         when (val upgradeValue = entry.opt("upgrade")) {
-            null, JSONObject.NULL -> {}
-            is Int, is Long -> {
-                upgrade = (upgradeValue as Number).toInt()
+            is Number -> {
+                upgrade = upgradeValue.toInt()
                 upgradeMatch = UpgradeMatch.EXACT
             }
-            is String -> require(upgradeValue.equals("any", ignoreCase = true)) {
-                "unknown upgrade mode \"$upgradeValue\""
-            }
-            is JSONObject -> {
-                require(upgradeValue.length() == 1) { "unrecognized upgrade filter" }
-                when {
-                    upgradeValue.has("exact") -> {
-                        upgrade = upgradeValue.strictInt("exact")
-                        upgradeMatch = UpgradeMatch.EXACT
-                    }
-                    upgradeValue.has("at_least") -> {
-                        upgrade = upgradeValue.strictInt("at_least")
-                        upgradeMatch = UpgradeMatch.AT_LEAST
-                    }
-                    else -> throw IllegalArgumentException("unrecognized upgrade filter")
+            is JSONObject -> when {
+                upgradeValue.has("exact") -> {
+                    upgrade = upgradeValue.getInt("exact")
+                    upgradeMatch = UpgradeMatch.EXACT
+                }
+                upgradeValue.has("at_least") -> {
+                    upgrade = upgradeValue.getInt("at_least")
+                    upgradeMatch = UpgradeMatch.AT_LEAST
                 }
             }
-            else -> throw IllegalArgumentException("unrecognized upgrade filter")
+            else -> {}
         }
-        val modifier = entry.strictStringOrNull("effect")?.let { name ->
-            requireNotNull(
-                ItemCatalog.modifiersFor(kind).firstOrNull { it.equals(name, ignoreCase = true) },
-            ) { "unknown effect \"$name\"" }
+        // Effect names travel as the engine's wire names, which are the
+        // catalog's own spellings; matching case-insensitively only canonicalizes.
+        val modifier = (entry.opt("effect") as? String)?.let { name ->
+            ItemCatalog.modifiersFor(kind).firstOrNull { it.equals(name, ignoreCase = true) } ?: name
         }
-        val source = entry.strictStringOrNull("source")?.let { name ->
-            requireNotNull(ScoutItemSource.entries.firstOrNull { it.name.lowercase() == name }) {
-                "unknown source \"$name\""
-            }
+        val source = (entry.opt("source") as? String)?.let { name ->
+            ScoutItemSource.entries.firstOrNull { it.name.lowercase() == name }
         }
         return ItemRequirement(
             key = index + 1L,
@@ -295,35 +196,9 @@ object ResultsExport {
             tierMatch = tierMatch,
             upgradeMatch = upgradeMatch,
             source = source,
-            identityGroup = entry.strictIntOrNull("identity_group"),
-            maximumDepth = entry.strictIntOrNull("max_depth"),
-            requireUncursed = entry.strictBool("uncursed"),
+            identityGroup = if (entry.has("identity_group")) entry.getInt("identity_group") else null,
+            maximumDepth = if (entry.has("max_depth")) entry.getInt("max_depth") else null,
+            requireUncursed = entry.optBoolean("uncursed"),
         )
-    }
-
-    // Strict typed readers: a present-but-wrong-type value is an error, never
-    // silently coerced or treated as absent. JSON null counts as absent for
-    // the optional string/int fields, matching the core decoder.
-    private fun JSONObject.strictStringOrNull(key: String): String? {
-        val value = opt(key)
-        if (value == null || value == JSONObject.NULL) return null
-        require(value is String) { "\"$key\" must be a string" }
-        return value
-    }
-
-    private fun JSONObject.strictIntOrNull(key: String): Int? {
-        val value = opt(key)
-        if (value == null || value == JSONObject.NULL) return null
-        require(value is Int || value is Long) { "\"$key\" must be a whole number" }
-        return (value as Number).toInt()
-    }
-
-    private fun JSONObject.strictInt(key: String): Int =
-        requireNotNull(strictIntOrNull(key)) { "\"$key\" must be a whole number" }
-
-    private fun JSONObject.strictBool(key: String): Boolean {
-        val value = opt(key) ?: return false
-        require(value is Boolean) { "\"$key\" must be true or false" }
-        return value
     }
 }
