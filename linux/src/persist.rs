@@ -6,8 +6,7 @@
 //! canonical query document — the format share links, results files and the
 //! CLI already speak — and read back with
 //! [`json_query::decode_unvalidated`], which accepts the half-finished
-//! queries an editor holds. Files written before that format are still read,
-//! once, by [`legacy`].
+//! queries an editor holds.
 
 use std::fs;
 use std::path::PathBuf;
@@ -117,14 +116,12 @@ fn save_document(state: &AppState) -> Value {
     })
 }
 
-/// Restores one saved query: the canonical document first, then the legacy
-/// format. A document the engine cannot read — one from a newer build, say —
-/// is refused whole rather than in part, and the caller falls back to
-/// defaults.
+/// Restores one saved query. A document the engine cannot read — one from a
+/// newer build, say — is refused whole rather than in part, and the caller
+/// falls back to defaults.
 fn decode_state(contents: &str) -> Option<AppState> {
     json_query::decode_unvalidated(contents)
         .ok()
-        .or_else(|| legacy::decode(contents))
         .map(|query| restore(&query))
 }
 
@@ -154,141 +151,6 @@ fn write_json(path: PathBuf, value: &impl Serialize) {
     let _ = fs::write(path, contents);
 }
 
-/// The saved-state format this app wrote before it wrote query documents.
-///
-/// Read-only: nothing produces it any more and it is consulted only when the
-/// canonical decoder refuses a file. It rewrites the old shape into a query
-/// document and lets the engine decode that, so the kind, item, effect and
-/// source name tables the old format shared with the document format do not
-/// survive here — only the field shapes it spelled differently.
-mod legacy {
-    use serde::Deserialize;
-    use serde_json::{Map, Value, json};
-    use shpd_seedfinder_core::challenges::Challenges;
-    use shpd_seedfinder_core::json_query::{self, CHALLENGE_NAMES};
-    use shpd_seedfinder_core::query::SearchQuery;
-
-    #[derive(Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct SavedState {
-        requirements: Vec<SavedRequirement>,
-        max_depth: Option<u8>,
-        #[serde(default)]
-        require_blacksmith: bool,
-        #[serde(default)]
-        exclude_blacksmith_rewards: bool,
-        #[serde(default)]
-        wandmaker_quest: Option<String>,
-        #[serde(default)]
-        fast_mode: bool,
-        #[serde(default)]
-        challenges: u16,
-    }
-
-    #[derive(Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct SavedRequirement {
-        kind: String,
-        item: Option<String>,
-        tier: Option<SavedPredicate>,
-        upgrade: Option<SavedPredicate>,
-        effect: Option<String>,
-        #[serde(default)]
-        require_uncursed: bool,
-        source: Option<String>,
-        identity_group: Option<u8>,
-        max_depth: Option<u8>,
-    }
-
-    #[derive(Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct SavedPredicate {
-        mode: String,
-        value: u8,
-    }
-
-    /// Decodes a pre-document saved query, or `None` when the file is not one.
-    pub fn decode(contents: &str) -> Option<SearchQuery> {
-        let saved: SavedState = serde_json::from_str(contents).ok()?;
-        json_query::decode_unvalidated(&document(saved).to_string()).ok()
-    }
-
-    /// Rewrites the old shape into a query document: `{"mode","value"}`
-    /// predicates become the document's single-key filters and the challenge
-    /// mask becomes its names. Every name is passed through untouched, so a
-    /// name the engine does not know stays unknown and its decoder says so.
-    fn document(saved: SavedState) -> Value {
-        let mut document = Map::new();
-        document.insert(
-            "requirements".to_owned(),
-            Value::Array(saved.requirements.into_iter().map(requirement).collect()),
-        );
-        if let Some(max_depth) = saved.max_depth {
-            document.insert("max_depth".to_owned(), json!(max_depth));
-        }
-        if saved.require_blacksmith {
-            document.insert("require_blacksmith".to_owned(), json!(true));
-        }
-        if saved.exclude_blacksmith_rewards {
-            document.insert("exclude_blacksmith_rewards".to_owned(), json!(true));
-        }
-        if let Some(quest) = saved.wandmaker_quest {
-            document.insert("wandmaker_quest".to_owned(), json!(quest));
-        }
-        if saved.fast_mode {
-            document.insert("fast_mode".to_owned(), json!(true));
-        }
-        // An out-of-range mask named no challenge the app could set, so it
-        // restores as none at all, exactly as it used to.
-        let mask = Challenges::new(saved.challenges).unwrap_or(Challenges::NONE);
-        let challenges: Vec<Value> = CHALLENGE_NAMES
-            .iter()
-            .filter(|(_, challenge)| mask.contains(*challenge))
-            .map(|(name, _)| json!(name))
-            .collect();
-        if !challenges.is_empty() {
-            document.insert("challenges".to_owned(), Value::Array(challenges));
-        }
-        Value::Object(document)
-    }
-
-    fn requirement(saved: SavedRequirement) -> Value {
-        let mut output = Map::new();
-        output.insert("kind".to_owned(), json!(saved.kind));
-        if let Some(item) = saved.item {
-            output.insert("item".to_owned(), json!(item));
-        }
-        if let Some(tier) = saved.tier {
-            output.insert("tier".to_owned(), predicate(tier));
-        }
-        if let Some(upgrade) = saved.upgrade {
-            output.insert("upgrade".to_owned(), predicate(upgrade));
-        }
-        if let Some(effect) = saved.effect {
-            output.insert("effect".to_owned(), json!(effect));
-        }
-        if saved.require_uncursed {
-            output.insert("uncursed".to_owned(), json!(true));
-        }
-        if let Some(source) = saved.source {
-            output.insert("source".to_owned(), json!(source));
-        }
-        if let Some(group) = saved.identity_group {
-            output.insert("identity_group".to_owned(), json!(group));
-        }
-        if let Some(max_depth) = saved.max_depth {
-            output.insert("max_depth".to_owned(), json!(max_depth));
-        }
-        Value::Object(output)
-    }
-
-    fn predicate(saved: SavedPredicate) -> Value {
-        let mut filter = Map::new();
-        filter.insert(saved.mode, json!(saved.value));
-        Value::Object(filter)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -299,7 +161,7 @@ mod tests {
     use shpd_seedfinder_core::query::{Requirement, TierRequirement, UpgradeRequirement};
     use shpd_seedfinder_core::quests::WandmakerQuestType;
 
-    use super::{SavedPreset, decode_presets, decode_state, legacy, save_document};
+    use super::{SavedPreset, decode_presets, decode_state, save_document};
     use crate::state::{AppState, UiRequirement};
 
     /// One saved state written to disk and read back.
@@ -311,40 +173,6 @@ mod tests {
     fn predicates(state: &AppState) -> Vec<Requirement> {
         state.requirements.iter().map(|r| r.to_core()).collect()
     }
-
-    /// A saved file in the format the app wrote before query documents.
-    const LEGACY_STATE: &str = r#"{
-      "requirements": [
-        {
-          "kind": "melee_weapon",
-          "item": null,
-          "tier": { "mode": "at_least", "value": 4 },
-          "upgrade": { "mode": "exact", "value": 2 },
-          "effect": null,
-          "require_uncursed": true,
-          "source": "sacrificial_fire",
-          "identity_group": 2,
-          "max_depth": 10
-        },
-        {
-          "kind": "ring",
-          "item": "ring_tenacity",
-          "tier": null,
-          "upgrade": { "mode": "at_least", "value": 2 },
-          "effect": null,
-          "require_uncursed": false,
-          "source": null,
-          "identity_group": null,
-          "max_depth": null
-        }
-      ],
-      "max_depth": 15,
-      "require_blacksmith": true,
-      "exclude_blacksmith_rewards": true,
-      "wandmaker_quest": "elemental_embers",
-      "fast_mode": true,
-      "challenges": 72
-    }"#;
 
     fn populated_state() -> AppState {
         let mut state = AppState::default();
@@ -434,63 +262,6 @@ mod tests {
     }
 
     #[test]
-    fn legacy_saved_states_load_and_are_rewritten_as_documents() {
-        let restored = decode_state(LEGACY_STATE).expect("legacy state must still load");
-        assert_eq!(restored.max_depth, 14);
-        assert!(restored.require_blacksmith);
-        assert!(restored.exclude_blacksmith_rewards);
-        assert_eq!(
-            restored.wandmaker_quest,
-            Some(WandmakerQuestType::ElementalEmbers)
-        );
-        assert!(restored.fast_mode);
-        assert_eq!(
-            restored.challenges,
-            Challenges::NO_HERBALISM | Challenges::NO_SCROLLS
-        );
-        assert_eq!(
-            predicates(&restored),
-            vec![
-                Requirement {
-                    kind: ItemKind::Weapon,
-                    weapon_category: Some(WeaponCategory::Melee),
-                    item: None,
-                    tier: TierRequirement::AtLeast(4),
-                    upgrade: UpgradeRequirement::Exact(2),
-                    effect: None,
-                    require_uncursed: true,
-                    source: Some(ItemSource::SacrificialFire),
-                    identity_group: Some(2),
-                    max_depth: Some(9),
-                },
-                Requirement {
-                    kind: ItemKind::Ring,
-                    weapon_category: None,
-                    item: Some(ItemId::RingTenacity),
-                    tier: TierRequirement::Any,
-                    upgrade: UpgradeRequirement::AtLeast(2),
-                    effect: None,
-                    require_uncursed: false,
-                    source: None,
-                    identity_group: None,
-                    max_depth: None,
-                },
-            ]
-        );
-
-        // Re-saving migrates the file: what goes back to disk is a canonical
-        // document, the legacy reader no longer recognizes it, and loading it
-        // again restores the identical state.
-        let migrated = save_document(&restored).to_string();
-        assert!(json_query::decode_unvalidated(&migrated).is_ok());
-        assert!(legacy::decode(&migrated).is_none());
-        let reloaded = decode_state(&migrated).unwrap();
-        assert_eq!(predicates(&reloaded), predicates(&restored));
-        assert_eq!(reloaded.max_depth, restored.max_depth);
-        assert_eq!(reloaded.challenges, restored.challenges);
-    }
-
-    #[test]
     fn empty_boss_floor_limits_snap_to_the_floor_below() {
         let mut state = AppState::default();
         state.max_depth = 15;
@@ -516,8 +287,8 @@ mod tests {
 
     #[test]
     fn documents_the_engine_cannot_read_fall_back_to_defaults() {
-        // An unknown name is refused whole rather than in part: neither
-        // decoder accepts it, and the caller starts from defaults.
+        // An unknown name is refused whole rather than in part, and the
+        // caller starts from defaults.
         assert!(decode_state(r#"{"requirements":[{"kind":"trinket"}]}"#).is_none());
         assert!(decode_state(r#"{"requirements":[],"wandmaker_quest":"newt"}"#).is_none());
         assert!(decode_state("not json at all").is_none());
@@ -540,19 +311,14 @@ mod tests {
                 query: save_document(&state),
             })
             .unwrap(),
-            json!({ "name": "Legacy preset", "query": serde_json::from_str::<serde_json::Value>(LEGACY_STATE).unwrap() }),
             json!({ "bad": true }),
             json!({ "name": "  ", "query": { "requirements": [] } }),
         ]);
 
         let presets = decode_presets(&saved.to_string());
-        assert_eq!(presets.len(), 2);
+        assert_eq!(presets.len(), 1);
         assert_eq!(presets[0].name, "My preset");
         assert_eq!(predicates(&presets[0].state), predicates(&state));
         assert!(presets[0].state.fast_mode);
-        // Presets saved in the old format keep loading too.
-        assert_eq!(presets[1].name, "Legacy preset");
-        assert_eq!(presets[1].state.max_depth, 14);
-        assert_eq!(presets[1].state.requirements.len(), 2);
     }
 }
