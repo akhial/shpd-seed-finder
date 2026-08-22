@@ -33,6 +33,63 @@ public static class ItemKindExtensions
     /// <summary>Whether a catalog item can satisfy a requirement of this kind.</summary>
     public static bool Accepts(this ItemKind kind, CatalogItem item) =>
         item.Kind == kind.Family() && (kind.WeaponClass() is not { } weaponClass || item.Class == weaponClass);
+
+    /// <summary>The highest upgrade a search may name for this family.</summary>
+    public static int MaximumSearchUpgrade(this ItemKind kind) =>
+        kind.Family() == ItemKind.Ring ? SearchLimits.MaxUpgradeRing : SearchLimits.MaxUpgradeDefault;
+}
+
+/// <summary>
+/// Local copies of the engine's query bounds and session limits
+/// (<c>crates/seedfinder-core/src/engine_info.rs</c>). They stay constants so
+/// the editor needs nothing from the engine to open; EngineConstantsTests
+/// asserts each of them against the engine's <c>engine_info</c> document.
+/// </summary>
+public static class SearchLimits
+{
+    /// <summary>Deepest floor a search may cover.</summary>
+    public const int MaxDepth = 24;
+    /// <summary>Tiers an "exactly tier N" requirement may name (tier 1 is starting gear).</summary>
+    public const int ExactTierMin = 2;
+    public const int ExactTierMax = 5;
+    /// <summary>Tiers an "at least / at most tier N" requirement may name.</summary>
+    public const int BoundedTierMin = 3;
+    public const int BoundedTierMax = 4;
+    /// <summary>Highest same-item group number (groups run 1..this, shown as A..D).</summary>
+    public const int IdentityGroupMax = 4;
+    /// <summary>Highest upgrade a search may name, for everything but rings.</summary>
+    public const int MaxUpgradeDefault = 3;
+    /// <summary>Highest upgrade a ring requirement may name.</summary>
+    public const int MaxUpgradeRing = 4;
+    /// <summary>How many results one run lists, and one import restores.</summary>
+    public const int ResultCap = 1024;
+}
+
+/// <summary>
+/// The nine challenges in engine mask order, with the stable document name the
+/// results codec writes and whether the level generator consults the
+/// challenge (so enabling it changes which seeds match). A local copy of the
+/// engine's list, checked against <c>engine_info</c> by EngineConstantsTests.
+/// </summary>
+public static class Challenges
+{
+    public sealed record Entry(string Name, int Mask, string Label, bool ChangesLevelGeneration);
+
+    public static readonly Entry[] All =
+    [
+        new("on_diet", 1, "On diet", false),
+        new("faith_is_my_armor", 2, "Faith is my armor", false),
+        new("pharmacophobia", 4, "Pharmacophobia", false),
+        new("barren_land", 8, "Barren land", true),
+        new("swarm_intelligence", 16, "Swarm intelligence", false),
+        new("into_darkness", 32, "Into darkness", true),
+        new("forbidden_runes", 64, "Forbidden runes", true),
+        new("hostile_champions", 128, "Hostile champions", false),
+        new("badder_bosses", 256, "Badder bosses", false),
+    ];
+
+    /// <summary>Every challenge bit together: the largest legal challenge mask.</summary>
+    public static int AllMask { get; } = All.Aggregate(0, (mask, entry) => mask | entry.Mask);
 }
 public enum UpgradeMatch { Any, Exactly, AtLeast }
 public enum TierMatch { Any, Exactly, AtLeast, AtMost }
@@ -112,8 +169,8 @@ public static class FloorLimits
 {
     public static readonly int[] EmptyBossFloors = [5, 10, 15];
 
-    /// <summary>Floors offered by floor-limit selectors: 1..24 minus the empty boss floors.</summary>
-    public static readonly int[] Options = Enumerable.Range(1, 24).Where(f => !EmptyBossFloors.Contains(f)).ToArray();
+    /// <summary>Floors offered by floor-limit selectors: 1..MaxDepth minus the empty boss floors.</summary>
+    public static readonly int[] Options = Enumerable.Range(1, SearchLimits.MaxDepth).Where(f => !EmptyBossFloors.Contains(f)).ToArray();
 
     /// <summary>Snaps an empty boss-floor limit to the equivalent floor below it (5→4, 10→9, 15→14).</summary>
     public static int Normalize(int depth) => EmptyBossFloors.Contains(depth) ? depth - 1 : depth;
@@ -192,7 +249,7 @@ public static class WandmakerQuests
 public sealed class QuerySettings
 {
     public ObservableCollection<ItemRequirement> Requirements { get; set; } = [];
-    public int MaximumDepth { get; set; } = 24;
+    public int MaximumDepth { get; set; } = SearchLimits.MaxDepth;
     public bool RequireBlacksmith { get; set; }
     public bool ExcludeBlacksmithRewards { get; set; }
     public WandmakerQuest WandmakerQuest { get; set; } = WandmakerQuest.Any;

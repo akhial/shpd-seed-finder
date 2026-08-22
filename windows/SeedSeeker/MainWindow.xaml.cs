@@ -74,7 +74,7 @@ public sealed partial class MainWindow : Window
     private string? pendingLink;
     /// <summary>Only the latest copy may reset the checkmark back to the link glyph.</summary>
     private int copyLinkFeedback;
-    private const int ResultCap = 1024;
+    private const int ResultCap = SearchLimits.ResultCap;
     private static readonly string SettingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Seed Seeker", "query.json");
     private static readonly string PresetsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Seed Seeker", "presets.json");
     private static readonly string UpdateStatePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Seed Seeker", "update.json");
@@ -234,7 +234,7 @@ public sealed partial class MainWindow : Window
     private void RefreshQuery()
     {
         RequirementList.ItemsSource = query.Requirements; NoRequirements.Visibility = query.Requirements.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        FloorLabel.Text = $"first {query.MaximumDepth} floor{(query.MaximumDepth == 1 ? "" : "s")}"; RequireBlacksmith.IsEnabled = query.MaximumDepth < 14; StartButton.IsEnabled = search is not null || (!busy && query.Requirements.Count != 0); CopyLinkButton.IsEnabled = !searchRunning && query.Requirements.Count != 0;
+        FloorLabel.Text = $"first {query.MaximumDepth} floor{(query.MaximumDepth == 1 ? "" : "s")}"; RequireBlacksmith.IsEnabled = query.MaximumDepth < ScoutQuests.Window(QuestGiver.Blacksmith).Last; StartButton.IsEnabled = search is not null || (!busy && query.Requirements.Count != 0); CopyLinkButton.IsEnabled = !searchRunning && query.Requirements.Count != 0;
         var count = BitOperations.PopCount((uint)query.Challenges); ChallengeSummary.Text = count == 0 ? "None" : $"{count} enabled";
     }
     private void FloorSlider_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e) { if (restoring || FloorLabel is null) return; query.MaximumDepth = FloorLimits.Options[Math.Clamp((int)e.NewValue, 0, FloorLimits.Options.Length - 1)]; RefreshQuery(); SaveSettings(); }
@@ -263,14 +263,14 @@ public sealed partial class MainWindow : Window
         // entries it offered — including an imported tier-1 item the fresh-pick
         // list hides.
         var itemChoices = new List<CatalogItem>();
-        var tierMatch = Combo(["Any tier", "Exactly", "At least", "At most"], (int)r.TierMatch); tierMatch.Header = "Tier predicate"; var selectedTier = r.Tier is >= 2 and <= 5 ? r.Tier : 2; var tier = Number("Tier", selectedTier, 2, 5); var tierBound = Combo(["Tier 3", "Tier 4"], Math.Clamp(selectedTier, 3, 4) - 3);
-        var maximumUpgrade = r.Kind == ItemKind.Ring ? 4 : 3; var selectedMinimumUpgrade = Math.Clamp(r.Upgrade, 1, maximumUpgrade - 1);
+        var tierMatch = Combo(["Any tier", "Exactly", "At least", "At most"], (int)r.TierMatch); tierMatch.Header = "Tier predicate"; var selectedTier = r.Tier is >= SearchLimits.ExactTierMin and <= SearchLimits.ExactTierMax ? r.Tier : SearchLimits.ExactTierMin; var tier = Number("Tier", selectedTier, SearchLimits.ExactTierMin, SearchLimits.ExactTierMax); var tierBound = Combo(Enumerable.Range(SearchLimits.BoundedTierMin, SearchLimits.BoundedTierMax - SearchLimits.BoundedTierMin + 1).Select(value => $"Tier {value}"), Math.Clamp(selectedTier, SearchLimits.BoundedTierMin, SearchLimits.BoundedTierMax) - SearchLimits.BoundedTierMin);
+        var maximumUpgrade = r.Kind.MaximumSearchUpgrade(); var selectedMinimumUpgrade = Math.Clamp(r.Upgrade, 1, maximumUpgrade - 1);
         var upgradeMatch = Combo(["Any", "Exactly", "At least"], (int)r.UpgradeMatch); upgradeMatch.Header = "Upgrade predicate"; var upgrade = Number("Upgrade level", Math.Clamp(r.Upgrade, 1, maximumUpgrade), 1, maximumUpgrade); var upgradeBound = Combo(Enumerable.Range(1, maximumUpgrade - 1).Select(value => $"+{value} or higher"), selectedMinimumUpgrade - 1); upgradeBound.Header = "Minimum upgrade";
         var modifier = new ComboBox { Header = "Enchantment or glyph", HorizontalAlignment = HorizontalAlignment.Stretch };
         var uncursed = new CheckBox { Content = "Require uncursed", IsChecked = r.RequireUncursed };
         var source = Combo(new[] { "Any source" }.Concat(Enum.GetValues<ScoutItemSource>().Select(Labels.Source)), r.Source is null ? 0 : (int)r.Source + 1); source.Header = "Source";
-        var group = Combo(["None", "A", "B", "C", "D"], r.IdentityGroup ?? 0); group.Header = "Same-item group";
-        var depthToggle = ToggleRow("Limit this item to a floor", r.MaximumDepth is not null, out var depthRow); var depth = Number("Within first floors", FloorLimits.Normalize(r.MaximumDepth ?? 4), 1, 24);
+        var group = Combo(new[] { "None" }.Concat(Enumerable.Range(0, SearchLimits.IdentityGroupMax).Select(index => ((char)('A' + index)).ToString())), r.IdentityGroup ?? 0); group.Header = "Same-item group";
+        var depthToggle = ToggleRow("Limit this item to a floor", r.MaximumDepth is not null, out var depthRow); var depth = Number("Within first floors", FloorLimits.Normalize(r.MaximumDepth ?? 4), 1, SearchLimits.MaxDepth);
         // Empty boss floors (5, 10, 15) are useless limits: a single upward spin skips to the
         // next real floor, while typed values snap down (10 means the first 10 floors, ≡ 9).
         depth.ValueChanged += (box, args) =>
@@ -285,8 +285,8 @@ public sealed partial class MainWindow : Window
         void NormalizeTier()
         {
             var predicate = (TierMatch)Math.Max(0, tierMatch.SelectedIndex);
-            selectedTier = predicate is TierMatch.AtLeast or TierMatch.AtMost ? Math.Clamp(selectedTier, 3, 4) : Math.Clamp(selectedTier, 2, 5);
-            tier.Value = selectedTier; tierBound.SelectedIndex = Math.Clamp(selectedTier, 3, 4) - 3;
+            selectedTier = predicate is TierMatch.AtLeast or TierMatch.AtMost ? Math.Clamp(selectedTier, SearchLimits.BoundedTierMin, SearchLimits.BoundedTierMax) : Math.Clamp(selectedTier, SearchLimits.ExactTierMin, SearchLimits.ExactTierMax);
+            tier.Value = selectedTier; tierBound.SelectedIndex = Math.Clamp(selectedTier, SearchLimits.BoundedTierMin, SearchLimits.BoundedTierMax) - SearchLimits.BoundedTierMin;
         }
         void SyncVisibility()
         {
@@ -303,7 +303,7 @@ public sealed partial class MainWindow : Window
         }
         void NormalizeUpgrade()
         {
-            var k = (ItemKind)Math.Max(0, kind.SelectedIndex); maximumUpgrade = k == ItemKind.Ring ? 4 : 3;
+            var k = (ItemKind)Math.Max(0, kind.SelectedIndex); maximumUpgrade = k.MaximumSearchUpgrade();
             var atLeast = upgradeMatch.SelectedIndex == (int)UpgradeMatch.AtLeast;
             upgrade.Maximum = atLeast ? maximumUpgrade - 1 : maximumUpgrade;
             upgrade.Value = Math.Clamp(double.IsNaN(upgrade.Value) ? 1 : upgrade.Value, 1, upgrade.Maximum);
@@ -322,16 +322,16 @@ public sealed partial class MainWindow : Window
         {
             var k = (ItemKind)Math.Max(0, kind.SelectedIndex); var oldId = r.Item?.Id; itemChoices.Clear(); itemChoices.AddRange(ItemCatalog.EditorItems(k, r.Item)); item.Items.Clear(); item.Items.Add($"Any {Labels.Singular(k)}"); foreach (var value in itemChoices) item.Items.Add(value.Name); item.SelectedIndex = Math.Max(0, itemChoices.FindIndex(x => x.Id == oldId) + 1);
             PopulateModifiers(r.Modifier);
-            maximumUpgrade = k == ItemKind.Ring ? 4 : 3; NormalizeUpgrade();
+            maximumUpgrade = k.MaximumSearchUpgrade(); NormalizeUpgrade();
             selectedMinimumUpgrade = Math.Clamp(selectedMinimumUpgrade, 1, maximumUpgrade - 1); upgradeBound.Items.Clear(); foreach (var value in Enumerable.Range(1, maximumUpgrade - 1)) upgradeBound.Items.Add($"+{value} or higher"); upgradeBound.SelectedIndex = selectedMinimumUpgrade - 1; SyncVisibility();
         }
-        kind.SelectionChanged += (_, _) => { r.Item = null; r.Modifier = null; Populate(); }; item.SelectionChanged += (_, _) => SyncVisibility(); tier.ValueChanged += (_, _) => { if (!double.IsNaN(tier.Value)) selectedTier = (int)tier.Value; }; tierBound.SelectionChanged += (_, _) => { if (tierBound.SelectedIndex >= 0) selectedTier = tierBound.SelectedIndex + 3; }; tierMatch.SelectionChanged += (_, _) => { NormalizeTier(); SyncVisibility(); }; upgradeMatch.SelectionChanged += (_, _) => { NormalizeUpgrade(); SyncVisibility(); }; upgradeBound.SelectionChanged += (_, _) => { if (upgradeBound.SelectedIndex >= 0) selectedMinimumUpgrade = upgradeBound.SelectedIndex + 1; }; uncursed.Checked += (_, _) => PopulateModifiers(modifier.SelectedItem is string effect && !ItemCatalog.IsCurse((ItemKind)Math.Max(0, kind.SelectedIndex), effect) ? effect : null); uncursed.Unchecked += (_, _) => PopulateModifiers(modifier.SelectedItem?.ToString()); depthToggle.Toggled += (_, _) => depth.Visibility = depthToggle.IsOn ? Visibility.Visible : Visibility.Collapsed;
+        kind.SelectionChanged += (_, _) => { r.Item = null; r.Modifier = null; Populate(); }; item.SelectionChanged += (_, _) => SyncVisibility(); tier.ValueChanged += (_, _) => { if (!double.IsNaN(tier.Value)) selectedTier = (int)tier.Value; }; tierBound.SelectionChanged += (_, _) => { if (tierBound.SelectedIndex >= 0) selectedTier = tierBound.SelectedIndex + SearchLimits.BoundedTierMin; }; tierMatch.SelectionChanged += (_, _) => { NormalizeTier(); SyncVisibility(); }; upgradeMatch.SelectionChanged += (_, _) => { NormalizeUpgrade(); SyncVisibility(); }; upgradeBound.SelectionChanged += (_, _) => { if (upgradeBound.SelectedIndex >= 0) selectedMinimumUpgrade = upgradeBound.SelectedIndex + 1; }; uncursed.Checked += (_, _) => PopulateModifiers(modifier.SelectedItem is string effect && !ItemCatalog.IsCurse((ItemKind)Math.Max(0, kind.SelectedIndex), effect) ? effect : null); uncursed.Unchecked += (_, _) => PopulateModifiers(modifier.SelectedItem?.ToString()); depthToggle.Toggled += (_, _) => depth.Visibility = depthToggle.IsOn ? Visibility.Visible : Visibility.Collapsed;
         Populate(); NormalizeTier(); SyncVisibility(); depth.Visibility = depthToggle.IsOn ? Visibility.Visible : Visibility.Collapsed;
         var dialog = new ContentDialog { XamlRoot = Content.XamlRoot, Title = isNew ? "New Requirement" : "Edit Requirement", PrimaryButtonText = isNew ? "Add" : "Save", CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Primary, Content = VerticalScrollView(content, 510, 430) };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return false;
         r.Kind = (ItemKind)kind.SelectedIndex; r.Item = item.SelectedIndex > 0 ? itemChoices[item.SelectedIndex - 1] : null; r.TierMatch = r.Item is null && r.Kind.Family() is ItemKind.Weapon or ItemKind.Armor ? (TierMatch)tierMatch.SelectedIndex : TierMatch.Any; r.Tier = r.TierMatch == TierMatch.Any ? 0 : selectedTier;
         r.UpgradeMatch = (UpgradeMatch)upgradeMatch.SelectedIndex; r.Upgrade = r.UpgradeMatch switch { UpgradeMatch.Any => 0, UpgradeMatch.Exactly => (int)upgrade.Value, UpgradeMatch.AtLeast when r.Kind == ItemKind.Ring => (int)upgrade.Value, UpgradeMatch.AtLeast => selectedMinimumUpgrade, _ => 0 }; r.Modifier = modifier.Visibility == Visibility.Visible && modifier.SelectedIndex > 0 ? modifier.SelectedItem?.ToString() : null;
-        r.RequireUncursed = uncursed.IsChecked == true; r.Source = source.SelectedIndex == 0 ? null : (ScoutItemSource)(source.SelectedIndex - 1); r.IdentityGroup = group.SelectedIndex == 0 ? null : group.SelectedIndex; r.MaximumDepth = depthToggle.IsOn ? FloorLimits.Normalize(Math.Clamp((int)depth.Value, 1, 24)) : null; return true;
+        r.RequireUncursed = uncursed.IsChecked == true; r.Source = source.SelectedIndex == 0 ? null : (ScoutItemSource)(source.SelectedIndex - 1); r.IdentityGroup = group.SelectedIndex == 0 ? null : group.SelectedIndex; r.MaximumDepth = depthToggle.IsOn ? FloorLimits.Normalize(Math.Clamp((int)depth.Value, 1, SearchLimits.MaxDepth)) : null; return true;
     }
     private static ComboBox Combo(IEnumerable<string> values, int selected) { var c = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch }; foreach (var v in values) c.Items.Add(v); c.SelectedIndex = selected; return c; }
     private static NumberBox Number(string header, double value, double min, double max) => new() { Header = header, Value = value, Minimum = min, Maximum = max, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact };
@@ -345,17 +345,16 @@ public sealed partial class MainWindow : Window
 
     private async void Challenges_Click(object sender, RoutedEventArgs e)
     {
-        var entries = new (int Mask, string Name, bool Changes)[] { (1,"On diet",false),(2,"Faith is my armor",false),(4,"Pharmacophobia",false),(8,"Barren land",true),(16,"Swarm intelligence",false),(32,"Into darkness",true),(64,"Forbidden runes",true),(128,"Hostile champions",false),(256,"Badder bosses",false) };
         var secondary = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"];
         var panel = new StackPanel { Width = 400 }; var toggles = new List<(int, ToggleSwitch)>();
         panel.Children.Add(new TextBlock { Text = "Searches simulate runs with the selected challenges enabled.", TextWrapping = TextWrapping.Wrap, Foreground = secondary, Margin = new Thickness(0, 0, 0, 6) });
-        foreach (var entry in entries)
+        foreach (var entry in Challenges.All)
         {
             var row = new Grid { ColumnSpacing = 12, Padding = new Thickness(0, 8, 0, 8) };
             row.ColumnDefinitions.Add(new ColumnDefinition()); row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var text = new StackPanel { Spacing = 1 };
-            text.Children.Add(new TextBlock { Text = entry.Name });
-            text.Children.Add(new TextBlock { Text = entry.Changes ? "changes level generation" : "no effect on seed content", FontSize = 12, Foreground = secondary });
+            text.Children.Add(new TextBlock { Text = entry.Label });
+            text.Children.Add(new TextBlock { Text = entry.ChangesLevelGeneration ? "changes level generation" : "no effect on seed content", FontSize = 12, Foreground = secondary });
             var toggle = new ToggleSwitch { IsOn = (query.Challenges & entry.Mask) != 0, MinWidth = 0, Width = 44, OnContent = "", OffContent = "", Margin = new Thickness(0, -6, 0, -6), VerticalAlignment = VerticalAlignment.Center };
             Grid.SetColumn(toggle, 1); row.Children.Add(text); row.Children.Add(toggle); panel.Children.Add(row); toggles.Add((entry.Mask, toggle));
         }

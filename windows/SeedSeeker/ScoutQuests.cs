@@ -73,16 +73,23 @@ public static class ScoutQuests
             _ => ImpVariants,
         };
         if (variant < 1 || variant > variants.Length) throw new InvalidDataException("Unknown quest variant in scout packet");
-        var (minimum, maximum) = giver switch
-        {
-            QuestGiver.Ghost => (2, 4),
-            QuestGiver.Wandmaker => (7, 9),
-            QuestGiver.Blacksmith => (12, 14),
-            _ => (17, 19),
-        };
-        if (depth < minimum || depth > maximum) throw new InvalidDataException("Quest depth out of range in scout packet");
+        var (first, last) = Window(giver);
+        if (depth < first || depth > last) throw new InvalidDataException("Quest depth out of range in scout packet");
         return new(giver, variants[variant - 1], depth);
     }
+
+    /// <summary>
+    /// The inclusive floor window a giver's quest can sit on. A local copy of
+    /// the engine's feasibility model, checked against <c>engine_info</c> by
+    /// EngineConstantsTests.
+    /// </summary>
+    public static (int First, int Last) Window(QuestGiver giver) => giver switch
+    {
+        QuestGiver.Ghost => (2, 4),
+        QuestGiver.Wandmaker => (7, 9),
+        QuestGiver.Blacksmith => (12, 14),
+        _ => (17, 19),
+    };
 
     public static string GiverLabel(QuestGiver value) => value switch
     {
