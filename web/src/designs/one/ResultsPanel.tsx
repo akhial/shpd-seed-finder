@@ -9,7 +9,7 @@ import {
   parsedSeedFromCode,
 } from '../../lib/results-file'
 import { clearResults, loadImportedResults, searchStore } from '../../lib/search/coordinator'
-import { canClearResults, RESULT_CAP } from '../../lib/search/coordinator-state'
+import { canClearResults, resultCap } from '../../lib/search/coordinator-state'
 import { queryStore } from '../../lib/store'
 import type { AnalysisResult } from '../../lib/wasm/types'
 
@@ -98,7 +98,7 @@ export function ResultsPanel({
   // The store keeps every delivered match for refine soundness; the panel
   // lists at most the advertised cap, while the counts report the full
   // collection — an accumulated set is the user's real result.
-  const shownMatches = search.matches.slice(0, RESULT_CAP)
+  const shownMatches = search.matches.slice(0, resultCap())
   const foundCount = search.matches.length
 
   // Returns the panel to its idle empty state, banners included. Dropping the
@@ -257,7 +257,7 @@ export function ResultsPanel({
             <span className="d1-caption">
               {search.state === 'imported'
                 ? `${foundCount.toLocaleString()} seed${foundCount === 1 ? '' : 's'} loaded from file${
-                    search.importedDropped ? ` · ${search.importedDropped.toLocaleString()} entr${search.importedDropped === 1 ? 'y' : 'ies'} dropped (duplicates or beyond the 1,024-seed limit)` : ''
+                    search.importedDropped ? ` · ${search.importedDropped.toLocaleString()} entr${search.importedDropped === 1 ? 'y' : 'ies'} dropped (duplicates or beyond the ${resultCap().toLocaleString()}-seed limit)` : ''
                   }`
                 : `${foundCount.toLocaleString()} seed${foundCount === 1 ? '' : 's'} · tested ${compactNumber(search.tested)} in ${formatDuration(search.elapsed)}`}
             </span>

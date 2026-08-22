@@ -1,11 +1,22 @@
-import { describe, expect, it } from 'vitest'
+import { readFile } from 'node:fs/promises'
+import { beforeAll, describe, expect, it } from 'vitest'
 import type { CoordinatorState } from './coordinator-state'
 import { initialCoordinatorState } from './coordinator-state'
 import { searchStatusNotes } from './status'
+import init from '../wasm/pkg/seedfinder.js'
 
 const state = (overrides: Partial<CoordinatorState>): CoordinatorState => ({
   ...initialCoordinatorState(1_000),
   ...overrides,
+})
+
+/**
+ * The result cap and the traversal stride are engine constants read through
+ * `engineInfo()`, so these tests run against the real wasm module. Node has no
+ * `fetch` for `file:` URLs, so it is instantiated from bytes.
+ */
+beforeAll(async () => {
+  await init({ module_or_path: await readFile(new URL('../wasm/pkg/seedfinder_bg.wasm', import.meta.url)) })
 })
 
 describe('searchStatusNotes', () => {

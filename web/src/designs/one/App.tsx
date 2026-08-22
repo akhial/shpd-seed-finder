@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '@tanstack/react-store'
-import { formatSeedInput } from '../../lib/format'
 import { fromQueryJson, toQueryDocument, toQueryJson, validateQuery } from '../../lib/query'
 import { resultPosition, stepResult } from '../../lib/scout-nav'
 import { SearchCoordinator, scoutSeed, searchStore } from '../../lib/search/coordinator'
 import { hasShareCode, withoutFragment } from '../../lib/share-link'
 import { queryStore, workerCountStore } from '../../lib/store'
-import { analyzeQuery, decodeShareText, getEngineInfo, parseSeedCode } from '../../lib/wasm'
+import { analyzeQuery, decodeShareText, formatSeedCode, getEngineInfo, parseSeedCode } from '../../lib/wasm'
 import type { AnalysisResult, EngineInfo, ScoutResult } from '../../lib/wasm/types'
 import { DownloadMenu } from './DownloadMenu'
 import { QueryPanel } from './QueryPanel'
@@ -163,7 +162,7 @@ export default function App() {
   // this to pace itself to the scout worker instead of queueing on it.
   const scoutBusy = useRef(false)
   const runScout = useCallback((seed: string) => {
-    const input = formatSeedInput(seed)
+    const input = formatSeedCode(seed)
     setScoutInput(input)
     setActiveTab('scout')
     if (input.length !== 11) {

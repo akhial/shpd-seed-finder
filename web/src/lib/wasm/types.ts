@@ -92,11 +92,45 @@ export interface QueryDocument {
   challenges?: ChallengeName[]
 }
 
+/** The query bounds `SearchQuery::validate` itself applies, plus the session
+ * and file limits every frontend must agree on. */
+export interface EngineLimits {
+  max_depth: number
+  exact_tier_min: number
+  exact_tier_max: number
+  bounded_tier_min: number
+  bounded_tier_max: number
+  identity_group_max: number
+  max_upgrade_default: number
+  max_upgrade_ring: number
+  max_results: number
+  results_file_max_bytes: number
+}
+
+/** One challenge as the engine lists it, in mask order. */
+export interface EngineChallenge {
+  name: ChallengeName
+  mask: number
+  /** True for the three challenges the level generator itself consults. */
+  changes_level_generation: boolean
+}
+
+/**
+ * The engine constants every frontend reads instead of hardcoding: the
+ * validation bounds, the boss floors that generate no items, the depth window
+ * of each quest, the challenge list, and the search start stride.
+ */
 export interface EngineInfo {
   shpdVersion: string
   shpdCommit: string
   totalSeeds: number
   maxResults: number
+  limits: EngineLimits
+  empty_boss_floors: number[]
+  /** Inclusive `[first, last]` depth window per quest. */
+  quest_windows: Record<QuestName, [number, number]>
+  challenges: EngineChallenge[]
+  search_start_stride: number
 }
 
 export interface ParsedSeed { code: string; value: number }

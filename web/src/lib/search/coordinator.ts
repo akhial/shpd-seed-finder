@@ -1,6 +1,6 @@
 import { Store } from '@tanstack/store'
 import type { ParsedSeed, QueryDocument, ScoutRequest, ScoutResult } from '../wasm/types'
-import { applyProgress, canClearResults, importedResultsState, initialCoordinatorState, markWorkerDone, RESULT_CAP, runSaturated, settleRun, type CoordinatorState, type RunKind, type SearchStatus } from './coordinator-state'
+import { applyProgress, canClearResults, importedResultsState, initialCoordinatorState, markWorkerDone, resultCap, runSaturated, settleRun, type CoordinatorState, type RunKind, type SearchStatus } from './coordinator-state'
 import type { SearchWorkerRequest, SearchWorkerResponse } from './protocol'
 import { decideStart, distributeSegments, isContinuationOf, remainingSegments, segmentsLength } from './refine'
 import { advanceTraversalStart, partitionRotated, randomTraversalStart, type SeedRange } from './traversal'
@@ -262,7 +262,7 @@ export class SearchCoordinator {
         state: 'completed',
         filtering: false,
         matches: kept,
-        capped: kept.length >= RESULT_CAP,
+        capped: kept.length >= resultCap(),
         queryJson,
         // From here on the listed matches belong to the refined query, so
         // that is what an export must claim. A cancelled or failed filter
@@ -289,7 +289,7 @@ export class SearchCoordinator {
       state: 'running',
       filtering: false,
       matches: kept,
-      capped: kept.length >= RESULT_CAP,
+      capped: kept.length >= resultCap(),
       sessionBaseline: kept.length,
       queryJson,
       query,

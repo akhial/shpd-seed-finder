@@ -19,13 +19,38 @@ export function initEngine(): Promise<void> {
   return enginePromise
 }
 
+let cachedEngineInfo: EngineInfo | undefined
+
 export async function getEngineInfo(): Promise<EngineInfo> {
   await initEngine()
-  return JSON.parse(engine_info()) as EngineInfo
+  return engineInfo()
 }
 
-export async function formatSeedCode(input: string): Promise<string> {
-  await initEngine()
+/**
+ * The single holder of the engine's constants — the pinned game version, the
+ * seed count, the validation bounds, the empty boss floors, the quest
+ * windows, the challenge list and the search start stride — so no browser
+ * module restates one. The document never changes for a build, so it is read
+ * from the engine once and kept.
+ *
+ * Synchronous, like `queryContinues`: it feeds validation, formatting and the
+ * search setup, all of which are synchronous. Callers must have awaited
+ * `initEngine()`; the app awaits `getEngineInfo()` before it renders anything
+ * that reads this.
+ */
+export function engineInfo(): EngineInfo {
+  cachedEngineInfo ??= JSON.parse(engine_info()) as EngineInfo
+  return cachedEngineInfo
+}
+
+/**
+ * Masks partial interactive seed input into uppercase groups of three, using
+ * the engine's own masker so every frontend accepts the same keystrokes.
+ *
+ * Synchronous, like `queryContinues`: it runs on every keystroke of a
+ * controlled input. Callers must have awaited `initEngine()`.
+ */
+export function formatSeedCode(input: string): string {
   return format_seed_code(input)
 }
 

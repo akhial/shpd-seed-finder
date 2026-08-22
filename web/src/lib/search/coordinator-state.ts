@@ -1,3 +1,4 @@
+import { engineInfo } from '../wasm'
 import type { ParsedSeed, QueryDocument } from '../wasm/types'
 // Type-only in the other direction, so this runtime import is not a cycle.
 import { remainingSegments } from './refine'
@@ -51,7 +52,7 @@ export interface CoordinatorState {
   refined?: RefineSummary
   /** How many unique matches existed when the current scan started (the
    * refine survivors; zero for a fresh scan). The scan stops once it has
-   * added `RESULT_CAP` matches beyond this — the per-session accept cap the
+   * added a cap's worth of matches beyond this — the per-session accept cap the
    * native engines enforce — so repeating a query keeps growing the
    * collection while each run stays bounded. */
   sessionBaseline: number
@@ -68,7 +69,9 @@ export interface CoordinatorState {
   runKind: RunKind
 }
 
-export const RESULT_CAP = 1_024
+/** The engine's per-session accept cap, which is also the display cap. */
+export const resultCap = (): number => engineInfo().limits.max_results
+
 export const initialCoordinatorState = (total = 0): CoordinatorState => ({
   sessionId: 0,
   state: 'idle',
@@ -93,7 +96,7 @@ export const initialCoordinatorState = (total = 0): CoordinatorState => ({
 /** Whether the current run has delivered its per-session quota of new
  * matches; the coordinator stops the workers once it has. */
 export function runSaturated(state: CoordinatorState): boolean {
-  return state.matches.length - state.sessionBaseline >= RESULT_CAP
+  return state.matches.length - state.sessionBaseline >= resultCap()
 }
 
 /**
@@ -107,12 +110,12 @@ export function canClearResults(state: CoordinatorState): boolean {
   return state.state !== 'idle' || state.matches.length > 0 || state.target !== undefined
 }
 
-export function mergeMatches(existing: ParsedSeed[], incoming: ParsedSeed[], cap = RESULT_CAP): { matches: ParsedSeed[]; capped: boolean } {
+export function mergeMatches(existing: ParsedSeed[], incoming: ParsedSeed[], cap = resultCap()): { matches: ParsedSeed[]; capped: boolean } {
   // Deduplicate by seed value: a refined search may re-test a small overlap
   // around the previous stop position and rediscover a filtered survivor.
   // Nothing is evicted at the cap — the workers of a capped session are told
   // to stop, and every match they delivered belongs to the scanned region a
-  // refine relies on. Only the display is limited to `RESULT_CAP`.
+  // refine relies on. Only the display is limited to the result cap.
   const byValue = new Map<number, ParsedSeed>()
   for (const match of [...existing, ...incoming]) {
     if (!byValue.has(match.value)) byValue.set(match.value, match)
@@ -143,7 +146,7 @@ export function importedResultsState(state: CoordinatorState, matches: ParsedSee
     sessionId: state.sessionId,
     state: 'imported',
     matches,
-    capped: matches.length >= RESULT_CAP,
+    capped: matches.length >= resultCap(),
     query,
     importedDropped: dropped,
     // The imported query and seeds become the session's Target, with no
@@ -191,7 +194,7 @@ export function applyProgress(state: CoordinatorState, update: ProgressUpdate): 
   // `capped` reports display truncation; the run itself ends on its own
   // accept quota, so a refine whose survivors already fill the display still
   // scans for more.
-  const saturated = merged.matches.length - state.sessionBaseline >= RESULT_CAP
+  const saturated = merged.matches.length - state.sessionBaseline >= resultCap()
   return settleRun({
     ...state,
     workerScanned,

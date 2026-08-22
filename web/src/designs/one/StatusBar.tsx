@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from '@tanstack/react-store'
 import { searchStore } from '../../lib/search/coordinator'
+import { resultCap } from '../../lib/search/coordinator-state'
 import { searchStatusNotes } from '../../lib/search/status'
 
 /** Persistent status region on the right of the desktop footer. Hidden by CSS
@@ -60,7 +61,7 @@ export function StatusSnackbar() {
     // The cap event waits for the run to conclude: a full display during an
     // accumulating scan is the expected state, not news.
     const capVisible = search.capped && !running && !search.filtering
-    if (capVisible && !seen.current.capped) events.push('Result limit reached (1,024 seeds).')
+    if (capVisible && !seen.current.capped) events.push(`Result limit reached (${resultCap().toLocaleString()} seeds).`)
     seen.current.filterDone = filterDone
     seen.current.capped = capVisible
     if (events.length > 0) setNote({ text: events.join(' '), at: performance.now() })

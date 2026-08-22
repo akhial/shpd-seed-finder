@@ -1,7 +1,19 @@
-import { describe, expect, it } from 'vitest'
-import { advanceTraversalStart, goldenStride, partitionRotated, randomTraversalStart } from './traversal'
+import { readFile } from 'node:fs/promises'
+import { beforeAll, describe, expect, it } from 'vitest'
+import { advanceTraversalStart, partitionRotated, randomTraversalStart } from './traversal'
+import { engineInfo } from '../wasm'
+import init from '../wasm/pkg/seedfinder.js'
 
 const TOTAL_SEEDS = 5_429_503_678_976
+
+/**
+ * The result cap and the traversal stride are engine constants read through
+ * `engineInfo()`, so these tests run against the real wasm module. Node has no
+ * `fetch` for `file:` URLs, so it is instantiated from bytes.
+ */
+beforeAll(async () => {
+  await init({ module_or_path: await readFile(new URL('../wasm/pkg/seedfinder_bg.wasm', import.meta.url)) })
+})
 
 const coveredSeeds = (segments: ReturnType<typeof partitionRotated>) =>
   segments.flat().reduce((sum, range) => sum + (range.endSeedExclusive - range.startSeed), 0)
@@ -47,18 +59,20 @@ describe('rotated traversal partitioning', () => {
 })
 
 describe('traversal start rotation', () => {
-  it('advances by a stride coprime with the seed count, visiting every start', () => {
-    const stride = goldenStride(TOTAL_SEEDS)
+  it('advances by the engine stride, which is coprime with the seed count', () => {
+    // The browser used to re-derive the stride from the golden ratio and
+    // landed ~406M seeds away from the engine's; it now reads the engine's.
+    const stride = engineInfo().search_start_stride
+    expect(advanceTraversalStart(0, TOTAL_SEEDS)).toBe(stride)
     expect(stride % 2).toBe(1)
     expect(stride % 13).not.toBe(0)
-    const small = 26
     const starts = new Set<number>()
-    let current = 3
-    for (let step = 0; step < small; step += 1) {
+    let current = 0
+    for (let step = 0; step < 64; step += 1) {
       starts.add(current)
-      current = advanceTraversalStart(current, small)
+      current = advanceTraversalStart(current, TOTAL_SEEDS)
     }
-    expect(starts.size).toBe(small)
+    expect(starts.size).toBe(64)
   })
 
   it('spaces consecutive full-range starts by roughly a golden-ratio turn', () => {

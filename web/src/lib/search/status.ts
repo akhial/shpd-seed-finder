@@ -1,4 +1,4 @@
-import type { CoordinatorState } from './coordinator-state'
+import { resultCap, type CoordinatorState } from './coordinator-state'
 
 /** One relocated status note: refine progress, the detached-scan notice, or
  * the result-cap notice. `kind` lets the footer tint the cap warning without
@@ -48,6 +48,6 @@ export function searchStatusNotes(state: CoordinatorState): StatusNote[] {
   // accumulating scan runs, a full display is the expected state ("searching
   // for more" says what is happening), and during the filter phase `capped`
   // still describes the previous run.
-  if (state.capped && !running) notes.push({ kind: 'cap', text: 'Result limit reached (1,024 seeds).' })
+  if (state.capped && !running) notes.push({ kind: 'cap', text: `Result limit reached (${resultCap().toLocaleString()} seeds).` })
   return notes
 }
