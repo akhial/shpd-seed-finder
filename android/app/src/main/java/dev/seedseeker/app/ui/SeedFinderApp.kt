@@ -31,6 +31,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
@@ -581,6 +582,25 @@ fun SeedFinderApp(
     // seed field does not move the anchor until a scout actually runs.
     val scoutedSeed = if (isScouting) scoutRun?.seed else scoutResult?.seed
 
+    // Which items of the scouted world explain the live query. The engine
+    // scouts that same world again and marks it (its `scout_matches`), so the
+    // app never re-derives the selection; null means there is nothing to mark
+    // — no runnable query, or an engine that did not produce this world.
+    val scoutMatchIndices by produceState<Set<Int>?>(null, scoutResult, currentRequest) {
+        val world = scoutResult
+        val request = currentRequest
+        val scoutedChallenges = scoutRun?.challenges
+        value = if (world == null || request == null || scoutedChallenges == null) {
+            null
+        } else {
+            withContext(Dispatchers.Default) {
+                runCatching {
+                    engine.scoutMatches(world.seed, scoutedChallenges, request)
+                }.getOrNull()
+            }
+        }
+    }
+
     CompositionLocalProvider(
         LocalItemAtlas provides atlas,
         LocalItemIconAtlas provides itemIcons,
@@ -773,9 +793,7 @@ fun SeedFinderApp(
                 result = scoutResult,
                 isScouting = isScouting,
                 error = scoutError,
-                requirements = requirements,
-                maximumDepth = maximumDepth,
-                excludeBlacksmithRewards = excludeBlacksmithRewards,
+                matchIndices = scoutMatchIndices,
                 resultSeeds = resultSeeds,
                 scoutedSeed = scoutedSeed,
                 onScoutSeed = ::scoutSeed,

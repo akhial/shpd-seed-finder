@@ -123,6 +123,21 @@ class JniNativeSeedFinderTest {
     }
 
     @Test
+    fun scoutMatchesSendsTheScoutRequestWithTheQueryAndReadsBackTheMarks() {
+        // The selection itself is the engine's (ScoutMatcherTest asserts it against the real
+        // library); this only pins the two packets the adapter sends and the envelope it reads.
+        val bindings = RecordingBindings()
+        val finder = JniNativeSeedFinder(bindings)
+        val request = SearchRequest(listOf(ItemRequirement(1, ItemCatalog.wands.first(), 1, null)))
+
+        assertEquals(setOf(1, 3), finder.scoutMatches("AAA-AAA-AAB", 6, request))
+        assertTrue(
+            bindings.scoutMatchRequest.contentEquals(ScoutRequestCodec.encode("AAA-AAA-AAB", 6)),
+        )
+        assertTrue(bindings.scoutMatchQuery.contentEquals(QueryCodec.encode(request)))
+    }
+
+    @Test
     fun queryContinuesHandsBothQueriesToTheEngineAsRequestPackets() {
         // The verdict itself is the engine's (QueryContinuationTest asserts it against the real
         // library); this only pins the two packets the adapter sends and which side is which.
@@ -147,6 +162,8 @@ class JniNativeSeedFinderTest {
         var resumedScanLen = -1L
         var filterRequest = byteArrayOf()
         var filterValues = longArrayOf()
+        var scoutMatchRequest = byteArrayOf()
+        var scoutMatchQuery = byteArrayOf()
         var continuesCandidate = byteArrayOf()
         var continuesBase = byteArrayOf()
         var cancelCalls = 0
@@ -205,6 +222,13 @@ class JniNativeSeedFinderTest {
             '2'.code.toByte(),
             11,
         ) + "AAA-AAA-AAA".encodeToByteArray() + byteArrayOf(0, 0, 0)
+
+        override fun scoutMatches(request: ByteArray, query: ByteArray): ByteArray {
+            scoutMatchRequest = request.copyOf()
+            scoutMatchQuery = query.copyOf()
+            return """{"matched":[1,3],"matched_requirements":2,"total_requirements":2}"""
+                .encodeToByteArray()
+        }
 
         override fun queryContinues(candidate: ByteArray, base: ByteArray): Boolean {
             continuesCandidate = candidate.copyOf()
