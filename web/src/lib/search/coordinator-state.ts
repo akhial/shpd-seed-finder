@@ -130,34 +130,25 @@ export function calculateRate(samples: RateSample[]): number {
 }
 
 /**
- * Replaces the whole search state with results restored from a file.
- * Matching every other platform, imported seeds are deduplicated (keeping the
- * first occurrence) and capped at the result limit, with the dropped count
- * reported for the UI. The import becomes the session's Target with empty
- * coverage — related queries filter it, but nothing ever resumes a scan
+ * Replaces the whole search state with results restored from a file. The
+ * engine's decoder already deduplicated and capped the seeds — identically on
+ * every platform — and counted the entries that removed, so `dropped` is
+ * reported straight to the UI. The import becomes the session's Target with
+ * empty coverage — related queries filter it, but nothing ever resumes a scan
  * from it.
  */
-export function importedResultsState(state: CoordinatorState, matches: ParsedSeed[], query: QueryDocument): CoordinatorState {
-  const seen = new Set<string>()
-  const kept: ParsedSeed[] = []
-  for (const match of matches) {
-    if (kept.length === RESULT_CAP) break
-    if (!seen.has(match.code)) {
-      seen.add(match.code)
-      kept.push(match)
-    }
-  }
+export function importedResultsState(state: CoordinatorState, matches: ParsedSeed[], query: QueryDocument, dropped = 0): CoordinatorState {
   return {
     ...initialCoordinatorState(state.total),
     sessionId: state.sessionId,
     state: 'imported',
-    matches: kept,
-    capped: kept.length === RESULT_CAP && matches.length > RESULT_CAP,
+    matches,
+    capped: matches.length >= RESULT_CAP,
     query,
-    importedDropped: matches.length - kept.length,
+    importedDropped: dropped,
     // The imported query and seeds become the session's Target, with no
     // coverage: refines of an import are filter-only.
-    target: { queryJson: JSON.stringify(query), query, matches: kept, remainder: [] },
+    target: { queryJson: JSON.stringify(query), query, matches, remainder: [] },
   }
 }
 

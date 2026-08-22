@@ -18,10 +18,16 @@
     <Compile Include="..\SeedSeeker\ResultNavigation.cs" Link="ResultNavigation.cs" />
     <Compile Include="..\SeedSeeker\Models.cs" Link="Models.cs" />
     <Compile Include="..\SeedSeeker\ScoutQuests.cs" Link="ScoutQuests.cs" />
+    <Compile Include="..\SeedSeeker\ResultsExport.cs" Link="ResultsExport.cs" />
     <!-- Refine eligibility is the engine's own predicate, reached through the
          P/Invokes here, so the tests exercise the shipping path rather than a
          second implementation of it. -->
     <Compile Include="..\SeedSeeker\NativeEngine.cs" Link="NativeEngine.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- ItemCatalog reads this beside the test binary exactly as the app reads
+         it beside its own; the file itself is the Android app's, shared. -->
+    <Content Include="..\..\android\app\src\main\assets\third_party\shattered-pixel-dungeon\catalog-v3.3.8.json" Link="Assets\catalog-v3.3.8.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <!-- The engine library for the host, which NativeEngineLibrary.cs then finds.
        The WinUI csproj cross-builds the Windows DLL for the app itself; this is

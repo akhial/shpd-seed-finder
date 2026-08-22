@@ -90,9 +90,6 @@ public final class SearchController {
     public private(set) var exportQuery: SavedQuery?
     public var selectedSeed: String?
 
-    /// Shared import rule on every platform: results are deduplicated
-    /// (keeping first occurrences) and capped at the result limit.
-    public static let importCap = 1_024
     /// How many rows the displayed list holds at most.
     public static let resultCap = 1_024
 
@@ -118,18 +115,15 @@ public final class SearchController {
     }
 
     /// Replaces the results with seeds restored from an imported results
-    /// file, deduplicating and capping per the shared import rule and
-    /// remembering the query that produced them for later export. Callers
-    /// must ensure no search is running.
-    public func loadImported(seeds: [String], query: SavedQuery) {
-        var unique: [String] = []
-        var seen = Set<String>()
-        for seed in seeds where unique.count < Self.importCap && seen.insert(seed).inserted {
-            unique.append(seed)
-        }
-        results = unique.map { SeedResult(seed: $0, matchedRequirements: query.requirements.count) }
-        collected = unique
-        importedDropped = seeds.count - unique.count
+    /// file and remembers the query that produced them for later export. The
+    /// shared import rule — deduplicate, then cap at the result limit — is the
+    /// engine's, applied while decoding the file, so `seeds` is taken as given
+    /// and `dropped` is what that step removed. Callers must ensure no search
+    /// is running.
+    public func loadImported(seeds: [String], dropped: Int = 0, query: SavedQuery) {
+        results = seeds.map { SeedResult(seed: $0, matchedRequirements: query.requirements.count) }
+        collected = seeds
+        importedDropped = dropped
         exportQuery = query
         scannedSeeds = 0; totalSeeds = 0; matchProbability = nil; seedsPerSecond = 0; elapsed = 0
         errorCode = 0; message = nil; state = nil; isImported = true; selectedSeed = nil
@@ -144,7 +138,7 @@ public final class SearchController {
             excludeBlacksmithRewards: query.excludeBlacksmithRewards,
             wandmakerQuest: query.wandmakerQuest,
             fastMode: query.fastMode, challenges: query.challenges)
-        target = request.map { TargetState(request: $0, seeds: unique, resumeFrom: 0, remaining: 0) }
+        target = request.map { TargetState(request: $0, seeds: seeds, resumeFrom: 0, remaining: 0) }
     }
 
     /// Starts `request`, dispatching on its relationship to the session's

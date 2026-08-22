@@ -2,13 +2,21 @@
 package dev.seedseeker.app.model
 
 import dev.seedseeker.app.catalog.ItemCatalog
+import dev.seedseeker.app.engine.EngineInfo
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * The results-file format, asserted against the engine that owns it. The codec
+ * is `crates/seedfinder-core/src/results_export.rs`, reached through
+ * `JniBindings.resultsEncode`/`resultsDecode` (the host build of the Rust
+ * library JVM tests load — see QueryContinuationTest), so what these cases pin
+ * is the real file format plus this app's mapping between the canonical query
+ * document and its own models.
+ */
 class ResultsExportTest {
     private val loadedQuery = PresetQuery(
         requirements = listOf(
@@ -38,7 +46,7 @@ class ResultsExportTest {
 
     /**
      * The canonical frozen fixture, read straight from the Rust core's test
-     * data so this codec can never silently drift from it. It still carries
+     * data so this app can never silently drift from it. It still carries
      * the `"format_version": 1` older releases wrote: files exported by an
      * older release must always stay readable; never edit the fixture.
      * Gradle runs unit tests with the module directory as the working
@@ -57,6 +65,7 @@ class ResultsExportTest {
         val text = ResultsExport.encode(loadedQuery, listOf("AAA-AAA-BUH", "ABC-DEF-GHI"), "0.6.1")
         val imported = ResultsExport.decode(text)
         assertEquals(listOf("AAA-AAA-BUH", "ABC-DEF-GHI"), imported.seeds)
+        assertEquals(0, imported.dropped)
         assertEquals(loadedQuery.maximumDepth, imported.query.maximumDepth)
         assertEquals(loadedQuery.challenges, imported.query.challenges)
         assertEquals(loadedQuery.requireBlacksmith, imported.query.requireBlacksmith)
@@ -71,9 +80,8 @@ class ResultsExportTest {
     fun encodeEmitsTheDocumentedEnvelopeAndMinimalQuery() {
         val document = JSONObject(ResultsExport.encode(loadedQuery, listOf("AAA-AAA-BUH"), "0.6.1"))
         assertEquals("seed-seeker-results", document.getString("format"))
-        assertFalse(document.has("format_version"))
         assertEquals("0.6.1", document.getString("app_version"))
-        assertEquals("3.3.8", document.getString("shpd_version"))
+        assertEquals(EngineInfo.shpdVersion, document.getString("shpd_version"))
         assertEquals(1, document.getJSONArray("results").length())
         assertEquals(
             "AAA-AAA-BUH",
@@ -99,7 +107,7 @@ class ResultsExportTest {
     fun version1FixtureAlwaysDecodes() {
         val imported = ResultsExport.decode(version1Fixture)
         assertEquals(listOf("AAA-AAA-BUH", "ABC-DEF-GHI"), imported.seeds)
-        assertEquals("3.3.8", imported.shpdVersion)
+        assertEquals(EngineInfo.shpdVersion, imported.shpdVersion)
         assertEquals(12, imported.query.maximumDepth)
         assertEquals(Challenge.NO_HERBALISM.bit, imported.query.challenges)
         assertEquals("ring_tenacity", imported.query.requirements[0].item?.id)
@@ -159,63 +167,28 @@ class ResultsExportTest {
     }
 
     @Test
-    fun unknownWandmakerQuestIsRejected() {
-        val failure = assertThrows(IllegalArgumentException::class.java) {
-            ResultsExport.decode(
-                """
-                {"format":"seed-seeker-results",
-                 "query":{"requirements":[{"item":"sword"}],"wandmaker_quest":"moon_cheese"},
-                 "results":[]}
-                """.trimIndent(),
-            )
-        }
-        assertTrue(failure.message!!.contains("moon_cheese"))
-    }
-
-    @Test
-    fun unknownEnvelopeAndResultFieldsAreIgnored() {
+    fun decodeReportsWhatDedupeAndCapRemoved() {
+        // Dedupe-and-cap is the engine's, and it reports the entries it
+        // dropped so the importer can still tell the user.
         val imported = ResultsExport.decode(
             """
-            {
-              "format": "seed-seeker-results",
-              "format_version": 1,
-              "exported_at": "2031-01-01T00:00:00Z",
-              "future_minor_field": {"nested": true},
-              "query": {"requirements": [{"item": "sword"}]},
-              "results": [{"seed": "AAA-AAA-AAB", "future_note": "still fine"}]
-            }
+            {"format":"seed-seeker-results",
+             "query":{"requirements":[{"item":"sword"}]},
+             "results":[{"seed":"AAA-AAA-AAB"},{"seed":"AAA-AAA-AAC"},{"seed":"AAA-AAA-AAB"}]}
             """.trimIndent(),
         )
-        assertEquals(listOf("AAA-AAA-AAB"), imported.seeds)
-        assertEquals(24, imported.query.maximumDepth)
+        assertEquals(listOf("AAA-AAA-AAB", "AAA-AAA-AAC"), imported.seeds)
+        assertEquals(1, imported.dropped)
     }
 
     @Test
-    fun anyDeclaredFormatVersionIsIgnored() {
-        // The number carried no meaning for a reader newer than the file, so
-        // it is now just another unknown envelope field.
-        for (version in listOf("1", "2", "99", "0", "1.5", "true", "\"1\"", "-1")) {
-            val imported = ResultsExport.decode(
-                """{"format":"seed-seeker-results","format_version":$version,
-                   "query":{"requirements":[{"item":"sword"}]},
-                   "results":[{"seed":"AAA-AAA-AAB"}]}""",
-            )
-            assertEquals(version, listOf("AAA-AAA-AAB"), imported.seeds)
+    fun aMalformedFileSurfacesTheEngineMessage() {
+        // Validation belongs to the codec; the app only shows what it says.
+        val foreign = assertThrows(IllegalArgumentException::class.java) {
+            ResultsExport.decode("""{"format":"other"}""")
         }
-    }
+        assertTrue(foreign.message, foreign.message!!.contains("not a Seed Seeker results file"))
 
-    @Test
-    fun foreignAndMalformedFilesAreRejectedClearly() {
-        for (text in listOf("not json", "[]", "{}", """{"format":"other"}""")) {
-            val failure = assertThrows(IllegalArgumentException::class.java) {
-                ResultsExport.decode(text)
-            }
-            assertTrue(failure.message!!.contains("not a Seed Seeker results file"))
-        }
-    }
-
-    @Test
-    fun unknownQueryContentFailsInsteadOfChangingMeaning() {
         val unknownItem = assertThrows(IllegalArgumentException::class.java) {
             ResultsExport.decode(
                 """
@@ -224,22 +197,9 @@ class ResultsExportTest {
                 """.trimIndent(),
             )
         }
-        assertTrue(unknownItem.message!!.contains("item_from_the_future"))
+        assertTrue(unknownItem.message, unknownItem.message!!.contains("item_from_the_future"))
 
-        val unknownField = assertThrows(IllegalArgumentException::class.java) {
-            ResultsExport.decode(
-                """
-                {"format":"seed-seeker-results",
-                 "query":{"requirements":[{"item":"sword"}],"wished_luck":7},"results":[]}
-                """.trimIndent(),
-            )
-        }
-        assertTrue(unknownField.message!!.contains("wished_luck"))
-    }
-
-    @Test
-    fun invalidSeedCodesNameTheOffendingResult() {
-        val failure = assertThrows(IllegalArgumentException::class.java) {
+        val badSeed = assertThrows(IllegalArgumentException::class.java) {
             ResultsExport.decode(
                 """
                 {"format":"seed-seeker-results",
@@ -248,43 +208,7 @@ class ResultsExportTest {
                 """.trimIndent(),
             )
         }
-        assertTrue(failure.message!!.contains("Result 2"))
-    }
-
-    @Test
-    fun wrongTypedQueryFieldsAreRejectedNotCoerced() {
-        val payloads = listOf(
-            """{"requirements":[{"item":"sword"}],"max_depth":"12"}""",
-            """{"requirements":[{"item":"sword"}],"max_depth":99}""",
-            """{"requirements":[{"item":42}]}""",
-            """{"requirements":[{"item":""}]}""",
-            """{"requirements":[{"item":"sword"}],"challenges":"barren_land"}""",
-            """{"requirements":[{"item":"sword","upgrade":true}]}""",
-            """{"requirements":[{"item":"sword","uncursed":"yes"}]}""",
-            """{"requirements":[{"kind":"RING"}]}""",
-        )
-        for (query in payloads) {
-            assertThrows(query, IllegalArgumentException::class.java) {
-                ResultsExport.decode(
-                    """{"format":"seed-seeker-results",
-                       "query":$query,"results":[]}""",
-                )
-            }
-        }
-    }
-
-    @Test
-    fun onlyCanonicalSeedCodesAreAccepted() {
-        for (seed in listOf("aaa-aaa-aab", "AAAAAAAAB", "AAA AAA AAB", " AAA-AAA-AAB")) {
-            val failure = assertThrows(IllegalArgumentException::class.java) {
-                ResultsExport.decode(
-                    """{"format":"seed-seeker-results",
-                       "query":{"requirements":[{"item":"sword"}]},
-                       "results":[{"seed":"$seed"}]}""",
-                )
-            }
-            assertTrue("$seed: ${failure.message}", failure.message!!.contains("Result 1"))
-        }
+        assertTrue(badSeed.message, badSeed.message!!.contains("result 2"))
     }
 
     @Test

@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
 namespace SeedSeeker;
@@ -19,6 +20,9 @@ internal static partial class Native
     [LibraryImport(Library)] internal static partial int seedfinder_query_continues(byte[] candidate, nuint candidateLength, byte[] baseline, nuint baselineLength);
     [LibraryImport(Library)] internal static partial int seedfinder_share_encode(byte[] queryJson, nuint length, out nint packet, out nuint outputLength);
     [LibraryImport(Library)] internal static partial int seedfinder_share_decode(byte[] text, nuint length, out nint packet, out nuint outputLength);
+    [LibraryImport(Library)] internal static partial int seedfinder_results_encode(byte[] request, nuint length, out nint packet, out nuint outputLength);
+    [LibraryImport(Library)] internal static partial int seedfinder_results_decode(byte[] contents, nuint length, out nint packet, out nuint outputLength);
+    [LibraryImport(Library)] internal static partial int seedfinder_engine_info(out nint packet, out nuint outputLength);
     [LibraryImport(Library)] internal static partial void seedfinder_buffer_free(nint packet, nuint length);
 }
 
@@ -168,6 +172,40 @@ public sealed class NativeEngine
             ? Encoding.UTF8.GetString(CopyAndFree(ptr, len)) : null;
     }
 
+    /// <summary>
+    /// The results-file text for the UTF-8 JSON request
+    /// <c>{"query", "seeds", "app_version"}</c>, or null when the engine
+    /// rejects it. The file schema and every validation rule are the core
+    /// codec's (crates/seedfinder-core/src/results_export.rs).
+    /// </summary>
+    public static string? TryEncodeResultsFile(string requestJson)
+    {
+        var bytes = Encoding.UTF8.GetBytes(requestJson);
+        return Native.seedfinder_results_encode(bytes, (nuint)bytes.Length, out var ptr, out var len) == 0
+            ? Encoding.UTF8.GetString(CopyAndFree(ptr, len)) : null;
+    }
+
+    /// <summary>
+    /// The UTF-8 JSON <c>{"query", "seeds", "dropped", "app_version",
+    /// "shpd_version"}</c> a results file carries — seeds already deduplicated
+    /// and capped by the engine — or null when the text is not an importable
+    /// results file.
+    /// </summary>
+    public static string? TryDecodeResultsFile(string contents)
+    {
+        var bytes = Encoding.UTF8.GetBytes(contents);
+        return Native.seedfinder_results_decode(bytes, (nuint)bytes.Length, out var ptr, out var len) == 0
+            ? Encoding.UTF8.GetString(CopyAndFree(ptr, len)) : null;
+    }
+
+    /// <summary>The engine's own constants document, as UTF-8 JSON.</summary>
+    public static string EngineInfoJson()
+    {
+        var code = Native.seedfinder_engine_info(out var ptr, out var len);
+        if (code != 0) throw new InvalidOperationException($"Native engine info failed ({code}).");
+        return Encoding.UTF8.GetString(CopyAndFree(ptr, len));
+    }
+
     internal static byte[] CopyAndFree(nint ptr, nuint len)
     {
         try { var bytes = new byte[(int)len]; Marshal.Copy(ptr, bytes, 0, bytes.Length); return bytes; }
@@ -180,6 +218,33 @@ public sealed class NativeEngine
         var result = new List<string>(); var count = r.U16(); for (var i = 0; i < count; i++) result.Add(r.Text(r.U8()));
         return result;
     }
+}
+
+/// <summary>
+/// The engine's own constants, read once from <c>seedfinder_engine_info</c>
+/// instead of mirrored in C#: the pinned upstream version and commit, and the
+/// limits the shared codecs enforce.
+/// </summary>
+public static class EngineInfo
+{
+    private static readonly JsonObject Document =
+        JsonNode.Parse(NativeEngine.EngineInfoJson()) as JsonObject
+        ?? throw new InvalidOperationException("The engine returned an unreadable info document.");
+
+    /// <summary>The upstream Shattered Pixel Dungeon version this engine reproduces.</summary>
+    public static string ShpdVersion { get; } = Text("shpdVersion");
+
+    /// <summary>The upstream commit the reproduction was ported from.</summary>
+    public static string ShpdCommit { get; } = Text("shpdCommit");
+
+    /// <summary>The import cap the results codec enforces on file text.</summary>
+    public static int ResultsFileMaxBytes { get; } = Limit("resultsFileMaxBytes");
+
+    private static string Text(string key) => (string?)Document[key]
+        ?? throw new InvalidOperationException($"The engine info document has no \"{key}\".");
+
+    private static int Limit(string key) => (int?)(Document["limits"] as JsonObject)?[key]
+        ?? throw new InvalidOperationException($"The engine info document has no limit \"{key}\".");
 }
 
 public sealed class NativeSearch : IDisposable

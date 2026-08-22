@@ -485,6 +485,15 @@ object JniBindings {
     @JvmStatic external fun shareEncode(queryDocument: ByteArray): ByteArray
     @JvmStatic external fun shareDecode(text: ByteArray): ByteArray
     @JvmStatic external fun shareExtract(text: ByteArray): ByteArray?
+
+    // Results-file codec (docs/results-export-format.md): UTF-8 in, UTF-8 out.
+    // `resultsDecode` applies the shared dedupe-and-cap and the 2 MiB import
+    // cap itself, and reports what it dropped.
+    @JvmStatic external fun resultsEncode(request: ByteArray): ByteArray
+    @JvmStatic external fun resultsDecode(contents: ByteArray): ByteArray
+
+    /** The engine's own constants as UTF-8 JSON; see [EngineInfo]. */
+    @JvmStatic external fun engineInfo(): ByteArray
 }
 
 private object JniBindingsAdapter : NativeBindings {
