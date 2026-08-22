@@ -1,7 +1,5 @@
 using System.Collections.ObjectModel;
-using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 
 namespace SeedSeeker;
 
@@ -12,24 +10,22 @@ public sealed class ResultsExportException(string message) : Exception(message);
 /// The cross-platform results-export document: search results plus the query
 /// that found them.
 ///
-/// The canonical implementation and compatibility rules live in the Rust core
-/// (crates/seedfinder-core/src/results_export.rs); the schema is documented in
-/// docs/results-export-format.md. Keep this codec schema-compatible with it:
-/// unknown envelope and per-result fields are ignored — including the
-/// format_version number releases up to 0.7.0 wrote, so every file an older
-/// release exported keeps importing — and unknown or wrong-typed query content
-/// fails the import instead of silently changing its meaning.
+/// The codec itself is the engine's — <c>seedfinder_results_encode</c> and
+/// <c>seedfinder_results_decode</c> over the Rust core
+/// (crates/seedfinder-core/src/results_export.rs; the schema is documented in
+/// docs/results-export-format.md). It owns the envelope, the compatibility
+/// rules, the 2 MiB import cap, the dedupe-and-cap step and every query
+/// validation, so this file is only the mapping between the canonical query
+/// document and <see cref="QuerySettings"/>. A document that arrives from the
+/// engine has already been validated; the mapping is therefore lenient and
+/// fails only on content it genuinely cannot represent.
 /// </summary>
-public static partial class ResultsExport
+public static class ResultsExport
 {
-    public const string FileFormat = "seed-seeker-results";
     public const string SuggestedFileName = "seed-seeker-results";
-    /// <summary>Mirrors the Rust core's SHPD_VERSION, the source of truth.</summary>
-    public const string ShpdVersion = "3.3.8";
-    /// <summary>Import size cap; a maximal legal results file is far below this.</summary>
-    public const int MaxFileBytes = 2 * 1024 * 1024;
 
-    public sealed record Imported(QuerySettings Query, IReadOnlyList<string> Seeds, string? FileShpdVersion);
+    /// <param name="Dropped">Exported entries the engine's dedupe-and-cap step removed.</param>
+    public sealed record Imported(QuerySettings Query, IReadOnlyList<string> Seeds, int Dropped, string? FileShpdVersion);
 
     /// <summary>Stable document names, indexed by the matching enum value.</summary>
     private static readonly string[] KindNames = ["weapon", "armor", "wand", "ring", "melee_weapon", "thrown_weapon"];
@@ -44,64 +40,33 @@ public static partial class ResultsExport
         ("barren_land", 8), ("swarm_intelligence", 16), ("into_darkness", 32),
         ("forbidden_runes", 64), ("hostile_champions", 128), ("badder_bosses", 256),
     ];
-    private static readonly HashSet<string> QueryKeys = [
-        "requirements", "max_depth", "require_blacksmith",
-        "exclude_blacksmith_rewards", "wandmaker_quest", "fast_mode", "challenges",
-    ];
-    private static readonly HashSet<string> RequirementKeys = [
-        "kind", "item", "tier", "upgrade", "effect", "uncursed", "source",
-        "identity_group", "max_depth",
-    ];
 
-    [GeneratedRegex("^[A-Z]{3}-[A-Z]{3}-[A-Z]{3}$")]
-    private static partial Regex SeedCodePattern();
-
+    /// <exception cref="ResultsExportException">With a user-facing message.</exception>
     public static string Encode(QuerySettings query, IEnumerable<string> seeds, string appVersion)
     {
-        var document = new JsonObject
+        var request = new JsonObject
         {
-            ["format"] = FileFormat,
-            ["app_version"] = appVersion,
-            ["shpd_version"] = ShpdVersion,
             ["query"] = EncodeQuery(query),
-            ["results"] = new JsonArray([.. seeds.Select(seed => (JsonNode)new JsonObject { ["seed"] = seed })]),
+            ["seeds"] = new JsonArray([.. seeds.Select(seed => (JsonNode)seed)]),
+            ["app_version"] = appVersion,
         };
-        return document.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+        return NativeEngine.TryEncodeResultsFile(request.ToJsonString())
+            ?? throw new ResultsExportException("These results could not be written to a results file.");
     }
 
     /// <exception cref="ResultsExportException">With a user-facing message.</exception>
     public static Imported Decode(string text)
     {
-        JsonObject document;
-        try
-        {
-            document = JsonNode.Parse(text) as JsonObject
-                ?? throw new ResultsExportException("This is not a Seed Seeker results file.");
-        }
-        catch (JsonException)
-        {
-            throw new ResultsExportException("This is not a Seed Seeker results file (not valid JSON).");
-        }
-        // TryGetValue-based reads throughout: GetValue<string>() would throw a
-        // raw .NET exception on number or boolean nodes.
-        if (TolerantString(document, "format") != FileFormat)
-            throw new ResultsExportException("This is not a Seed Seeker results file.");
-        if (document["query"] is not JsonObject queryValue)
-            throw new ResultsExportException("This results file is missing its query.");
-        var query = DecodeQuery(queryValue);
-        if (document["results"] is not JsonArray resultsValue)
-            throw new ResultsExportException("This results file is missing its results list.");
+        var decoded = NativeEngine.TryDecodeResultsFile(text)
+            ?? throw new ResultsExportException(
+                "This is not a Seed Seeker results file, or its query is not one this version can run.");
+        if (JsonNode.Parse(decoded) is not JsonObject document || document["query"] is not JsonObject queryValue)
+            throw new ResultsExportException("This results file could not be read.");
         var seeds = new List<string>();
-        foreach (var (entry, index) in resultsValue.Select((entry, index) => (entry, index)))
-        {
-            string? seed = null;
-            if ((entry as JsonObject)?["seed"] is JsonValue seedValue) seedValue.TryGetValue(out seed);
-            if (seed is null || !SeedCodePattern().IsMatch(seed))
-                throw new ResultsExportException(
-                    $"Result {index + 1} does not have a valid seed code (canonical XXX-XXX-XXX form).");
-            seeds.Add(seed);
-        }
-        return new Imported(query, seeds, TolerantString(document, "shpd_version"));
+        foreach (var entry in document["seeds"] as JsonArray ?? [])
+            if (entry is JsonValue seedValue && seedValue.TryGetValue(out string? seed)) seeds.Add(seed);
+        return new Imported(DecodeQuery(queryValue), seeds, IntField(document, "dropped") ?? 0,
+            TolerantString(document, "shpd_version"));
     }
 
     /// <summary>Reads informational envelope strings; wrong types are ignored, not errors.</summary>
@@ -111,20 +76,15 @@ public static partial class ResultsExport
     /// <summary>The bare canonical JSON query document, the share-link codec's input.</summary>
     public static string EncodeQueryDocument(QuerySettings query) => EncodeQuery(query).ToJsonString();
 
-    /// <summary>Decodes a bare canonical JSON query document, the share-link codec's output.</summary>
+    /// <summary>
+    /// Decodes a bare canonical JSON query document, the share-link codec's
+    /// output — which the engine has already validated.
+    /// </summary>
     /// <exception cref="ResultsExportException">With a user-facing message.</exception>
     public static QuerySettings DecodeQueryDocument(string text)
     {
-        JsonObject document;
-        try
-        {
-            document = JsonNode.Parse(text) as JsonObject
-                ?? throw new ResultsExportException("The shared query could not be read.");
-        }
-        catch (JsonException)
-        {
+        if (JsonNode.Parse(text) is not JsonObject document)
             throw new ResultsExportException("The shared query could not be read.");
-        }
         return DecodeQuery(document);
     }
 
@@ -174,121 +134,68 @@ public static partial class ResultsExport
 
     private static QuerySettings DecodeQuery(JsonObject value)
     {
-        foreach (var pair in value)
-        {
-            if (!QueryKeys.Contains(pair.Key))
-                throw new ResultsExportException(
-                    $"The query in this results file uses an unknown field \"{pair.Key}\". " +
-                    "Update Seed Seeker to import it.");
-        }
-        if (value["requirements"] is not JsonArray requirementsValue || requirementsValue.Count == 0)
-            throw new ResultsExportException("The query in this results file has no requirements.");
         var requirements = new ObservableCollection<ItemRequirement>();
-        foreach (var (entry, index) in requirementsValue.Select((entry, index) => (entry, index)))
-        {
-            if (entry is not JsonObject requirement)
-                throw new ResultsExportException($"Requirement {index + 1} is not a JSON object.");
-            try
-            {
-                requirements.Add(DecodeRequirement(requirement));
-            }
-            catch (ResultsExportException failure)
-            {
-                throw new ResultsExportException($"Requirement {index + 1}: {failure.Message}");
-            }
-        }
-        var maximumDepth = IntField(value, "max_depth") ?? 24;
-        if (maximumDepth is < 1 or > 24)
-            throw new ResultsExportException("Maximum floor must be 1..24.");
+        foreach (var entry in value["requirements"] as JsonArray ?? [])
+            if (entry is JsonObject requirement) requirements.Add(DecodeRequirement(requirement));
         var challenges = 0;
-        var challengesNode = value["challenges"];
-        if (challengesNode is not null)
+        foreach (var nameValue in value["challenges"] as JsonArray ?? [])
         {
-            if (challengesNode is not JsonArray names)
-                throw new ResultsExportException("\"challenges\" must be a list of challenge names");
-            foreach (var nameValue in names)
-            {
-                string? name = null;
-                if (nameValue is JsonValue nameJson) nameJson.TryGetValue(out name);
-                // Challenge names match the core decoder exactly.
-                var match = ChallengeNames.FirstOrDefault(c => c.Name == name);
-                if (name is null || match.Name is null)
-                    throw new ResultsExportException(
-                        $"The query in this results file uses an unknown challenge \"{nameValue}\".");
-                challenges |= match.Bit;
-            }
-        }
-        var wandmakerQuest = WandmakerQuest.Any;
-        if (StringField(value, "wandmaker_quest") is string questName)
-        {
-            wandmakerQuest = WandmakerQuests.Named(questName)
-                ?? throw new ResultsExportException(
-                    $"The query in this results file uses an unknown Wandmaker quest \"{questName}\".");
+            string? name = null;
+            if (nameValue is JsonValue nameJson) nameJson.TryGetValue(out name);
+            var match = ChallengeNames.FirstOrDefault(c => c.Name == name);
+            if (match.Name is not null) challenges |= match.Bit;
         }
         return new QuerySettings
         {
             Requirements = requirements,
-            MaximumDepth = maximumDepth,
+            MaximumDepth = IntField(value, "max_depth") ?? 24,
             RequireBlacksmith = BoolField(value, "require_blacksmith"),
             ExcludeBlacksmithRewards = BoolField(value, "exclude_blacksmith_rewards"),
-            WandmakerQuest = wandmakerQuest,
+            WandmakerQuest = TolerantString(value, "wandmaker_quest") is string questName
+                ? WandmakerQuests.Named(questName) ?? WandmakerQuest.Any
+                : WandmakerQuest.Any,
             FastMode = BoolField(value, "fast_mode"),
             Challenges = challenges,
         };
     }
 
+    /// <exception cref="ResultsExportException">
+    /// When the requirement names catalog content this build does not know —
+    /// the one failure the engine cannot rule out, since the item and effect
+    /// tables are the app's own copies of the shared catalog asset.
+    /// </exception>
     private static ItemRequirement DecodeRequirement(JsonObject entry)
     {
-        foreach (var pair in entry)
-        {
-            if (!RequirementKeys.Contains(pair.Key))
-                throw new ResultsExportException(
-                    $"unknown field \"{pair.Key}\" — update Seed Seeker to import it");
-        }
         CatalogItem? item = null;
-        if (StringField(entry, "item") is string id)
-            item = ItemCatalog.Find(id) ?? throw new ResultsExportException($"unknown item \"{id}\"");
-        // Enum names match the core decoder exactly (lowercase snake_case);
-        // only effect names and the "any" keyword match case-insensitively.
+        if (TolerantString(entry, "item") is string id)
+            item = ItemCatalog.Find(id) ?? throw new ResultsExportException($"This query names an unknown item \"{id}\".");
         ItemKind kind;
-        if (StringField(entry, "kind") is string kindName)
+        if (TolerantString(entry, "kind") is string kindName)
         {
             var index = Array.IndexOf(KindNames, kindName);
-            if (index < 0) throw new ResultsExportException($"unknown category \"{kindName}\"");
+            if (index < 0) throw new ResultsExportException($"This query names an unknown category \"{kindName}\".");
             kind = (ItemKind)index;
-        }
-        else if (item is not null)
-        {
-            kind = item.Kind;
         }
         else
         {
-            throw new ResultsExportException("a category is required when no item is set");
+            kind = item?.Kind ?? ItemKind.Weapon;
         }
-        if (item is not null && !kind.Accepts(item))
-            throw new ResultsExportException("the item does not belong to this category");
-        var (tier, tierMatch) = DecodeTier(entry["tier"]);
-        var (upgrade, upgradeMatch) = DecodeUpgrade(entry["upgrade"]);
         string? modifier = null;
-        if (StringField(entry, "effect") is string effectName)
+        if (TolerantString(entry, "effect") is string effectName)
         {
             modifier = ItemCatalog.Modifiers(kind)
                 .FirstOrDefault(known => string.Equals(known, effectName, StringComparison.OrdinalIgnoreCase))
-                ?? throw new ResultsExportException($"unknown effect \"{effectName}\"");
+                ?? throw new ResultsExportException($"This query names an unknown effect \"{effectName}\".");
         }
         ScoutItemSource? source = null;
-        if (StringField(entry, "source") is string sourceName)
+        if (TolerantString(entry, "source") is string sourceName)
         {
             var index = Array.IndexOf(SourceNames, sourceName);
-            if (index < 0) throw new ResultsExportException($"unknown source \"{sourceName}\"");
+            if (index < 0) throw new ResultsExportException($"This query names an unknown source \"{sourceName}\".");
             source = (ScoutItemSource)index;
         }
-        var identityGroup = IntField(entry, "identity_group");
-        if (identityGroup is < 1 or > 4)
-            throw new ResultsExportException("same-item group must be A..D");
-        var maximumDepth = IntField(entry, "max_depth");
-        if (maximumDepth is < 1 or > 24)
-            throw new ResultsExportException("item floor limit must be 1..24");
+        var (tier, tierMatch) = DecodeTier(entry["tier"]);
+        var (upgrade, upgradeMatch) = DecodeUpgrade(entry["upgrade"]);
         return new ItemRequirement
         {
             Item = item,
@@ -299,62 +206,33 @@ public static partial class ResultsExport
             TierMatch = tierMatch,
             UpgradeMatch = upgradeMatch,
             Source = source,
-            IdentityGroup = identityGroup,
-            MaximumDepth = maximumDepth,
+            IdentityGroup = IntField(entry, "identity_group"),
+            MaximumDepth = IntField(entry, "max_depth"),
             RequireUncursed = BoolField(entry, "uncursed"),
         };
     }
 
     private static (int, TierMatch) DecodeTier(JsonNode? value) => value switch
     {
-        null => (0, TierMatch.Any),
-        JsonValue name when name.TryGetValue(out string? text) =>
-            string.Equals(text, "any", StringComparison.OrdinalIgnoreCase)
-                ? (0, TierMatch.Any)
-                : throw new ResultsExportException($"unknown tier mode \"{text}\""),
-        JsonObject filter when filter.Count == 1 && IntField(filter, "exact") is int exact => (exact, TierMatch.Exactly),
-        JsonObject filter when filter.Count == 1 && IntField(filter, "at_least") is int atLeast => (atLeast, TierMatch.AtLeast),
-        JsonObject filter when filter.Count == 1 && IntField(filter, "at_most") is int atMost => (atMost, TierMatch.AtMost),
-        _ => throw new ResultsExportException("unrecognized tier filter"),
+        JsonObject filter when IntField(filter, "exact") is int exact => (exact, TierMatch.Exactly),
+        JsonObject filter when IntField(filter, "at_least") is int atLeast => (atLeast, TierMatch.AtLeast),
+        JsonObject filter when IntField(filter, "at_most") is int atMost => (atMost, TierMatch.AtMost),
+        _ => (0, TierMatch.Any),
     };
 
     private static (int, UpgradeMatch) DecodeUpgrade(JsonNode? value) => value switch
     {
-        null => (0, UpgradeMatch.Any),
         JsonValue number when number.TryGetValue(out int upgrade) => (upgrade, UpgradeMatch.Exactly),
-        JsonValue name when name.TryGetValue(out string? text) =>
-            string.Equals(text, "any", StringComparison.OrdinalIgnoreCase)
-                ? (0, UpgradeMatch.Any)
-                : throw new ResultsExportException($"unknown upgrade mode \"{text}\""),
-        JsonObject filter when filter.Count == 1 && IntField(filter, "exact") is int exact => (exact, UpgradeMatch.Exactly),
-        JsonObject filter when filter.Count == 1 && IntField(filter, "at_least") is int atLeast => (atLeast, UpgradeMatch.AtLeast),
-        _ => throw new ResultsExportException("unrecognized upgrade filter"),
+        JsonObject filter when IntField(filter, "exact") is int exact => (exact, UpgradeMatch.Exactly),
+        JsonObject filter when IntField(filter, "at_least") is int atLeast => (atLeast, UpgradeMatch.AtLeast),
+        _ => (0, UpgradeMatch.Any),
     };
 
-    // Strict typed readers: a present-but-wrong-type value is an error, never
-    // coerced or treated as absent. A JSON null is parsed as a null JsonNode,
-    // so explicit nulls count as absent, matching the core decoder.
-    private static string? StringField(JsonObject entry, string key)
-    {
-        var node = entry[key];
-        if (node is null) return null;
-        if (node is JsonValue value && value.TryGetValue(out string? text)) return text;
-        throw new ResultsExportException($"\"{key}\" must be a string");
-    }
+    /// <summary>Reads a whole number; absent or wrong-typed values read as absent.</summary>
+    private static int? IntField(JsonObject entry, string key) =>
+        entry[key] is JsonValue value && value.TryGetValue(out int number) ? number : null;
 
-    private static int? IntField(JsonObject entry, string key)
-    {
-        var node = entry[key];
-        if (node is null) return null;
-        if (node is JsonValue value && value.TryGetValue(out int number)) return number;
-        throw new ResultsExportException($"\"{key}\" must be a whole number");
-    }
-
-    private static bool BoolField(JsonObject entry, string key)
-    {
-        var node = entry[key];
-        if (node is null) return false;
-        if (node is JsonValue value && value.TryGetValue(out bool flag)) return flag;
-        throw new ResultsExportException($"\"{key}\" must be true or false");
-    }
+    /// <summary>Reads a flag; absent or wrong-typed values read as false.</summary>
+    private static bool BoolField(JsonObject entry, string key) =>
+        entry[key] is JsonValue value && value.TryGetValue(out bool flag) && flag;
 }
