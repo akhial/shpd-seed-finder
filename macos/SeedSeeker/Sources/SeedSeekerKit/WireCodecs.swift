@@ -1,3 +1,4 @@
+import CSeedFinder
 import Foundation
 
 public enum WireCodecError: Error, Equatable, LocalizedError {
@@ -53,29 +54,47 @@ private struct Reader {
     }
 }
 
+/// Seed codes are the game's own base-26 text, so reading and masking them is
+/// the engine's job: `seedfinder_seed_format` is the as-you-type masker and
+/// `seedfinder_seed_parse` the parser, and neither rule is restated here.
 public enum SeedCode {
+    /// One parsed seed code: the canonical text to display and the numeric
+    /// value the engine scans.
+    public struct Parsed: Hashable, Sendable {
+        public let code: String
+        public let value: Int64
+    }
+
+    /// Masks partial, as-you-type input into uppercase groups of three.
     public static func formatInput(_ input: String) -> String {
-        let letters = input.uppercased(with: Locale(identifier: "en_US_POSIX"))
-            .unicodeScalars.filter { (65...90).contains($0.value) }.prefix(9).map(String.init).joined()
-        return stride(from: 0, to: letters.count, by: 3).map { start in
-            let lower = letters.index(letters.startIndex, offsetBy: start)
-            let upper = letters.index(lower, offsetBy: min(3, letters.count - start))
-            return String(letters[lower..<upper])
-        }.joined(separator: "-")
+        guard let packet = try? enginePacket({ out, length in
+                  Data(input.utf8).withUnsafeBytes { bytes in
+                      seedfinder_seed_format(
+                          bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count, out, length)
+                  }
+              }), let text = String(data: packet, encoding: .utf8) else { return "" }
+        return text
     }
-    public static func isCanonical(_ seed: String) -> Bool {
-        seed.wholeMatch(of: /^[A-Z]{3}-[A-Z]{3}-[A-Z]{3}$/) != nil
+
+    /// Reads seed-code text with the game's own rules, or nil when it is not a
+    /// seed code at all.
+    public static func parse(_ input: String) -> Parsed? {
+        guard let packet = try? enginePacket({ out, length in
+                  Data(input.utf8).withUnsafeBytes { bytes in
+                      seedfinder_seed_parse(
+                          bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count, out, length)
+                  }
+              }),
+              let document = (try? JSONSerialization.jsonObject(with: packet)) as? [String: Any],
+              let code = document["code"] as? String,
+              let value = (document["value"] as? NSNumber).flatMap({ Int64(exactly: $0) })
+        else { return nil }
+        return Parsed(code: code, value: value)
     }
-    /// The numeric seed value the engine scans: nine base-26 letters (A = 0)
-    /// with the dashes ignored. Nil unless the seed is canonical.
-    public static func value(of seed: String) -> Int64? {
-        guard isCanonical(seed) else { return nil }
-        var value: Int64 = 0
-        for scalar in seed.unicodeScalars where scalar != "-" {
-            value = value * 26 + Int64(scalar.value - 65)
-        }
-        return value
-    }
+
+    /// Whether `seed` is already written the way the engine spells it: the
+    /// canonical `XXX-XXX-XXX` form the app displays and files carry.
+    public static func isCanonical(_ seed: String) -> Bool { parse(seed)?.code == seed }
 }
 
 public enum QueryCodec {

@@ -381,22 +381,35 @@ final class SeedSeekerKitTests: XCTestCase {
             Array("SSC2".utf8) + [11] + Array("AAA-AAA-AAA".utf8) + [1, 1, 3])))
     }
 
-    func testSeedCodeFormatting() {
+    /// The as-you-type masker is `seedfinder_seed_format`: non-letters are
+    /// dropped, the first nine ASCII letters kept, and only those uppercased.
+    func testSeedCodeFormattingComesFromTheEngine() {
         XCTAssertEqual(SeedCode.formatInput("abc"), "ABC")
         XCTAssertEqual(SeedCode.formatInput("abcd efgh ijk!"), "ABC-DEF-GHI")
         XCTAssertEqual(SeedCode.formatInput("a-b_C 12d"), "ABC-D")
+        XCTAssertEqual(SeedCode.formatInput(""), "")
+        // Non-ASCII letters contribute nothing, whatever their own alphabet
+        // would uppercase them to — the Turkish dotless i is the classic trap.
+        XCTAssertEqual(SeedCode.formatInput("ıİabc"), "ABC")
+        XCTAssertEqual(SeedCode.formatInput("日本語"), "")
         XCTAssertTrue(SeedCode.isCanonical("ABC-DEF-GHI"))
         XCTAssertFalse(SeedCode.isCanonical("abc-def-ghi"))
+        XCTAssertFalse(SeedCode.isCanonical("ABCDEFGHI"))
     }
 
-    func testSeedCodeNumericValue() {
-        XCTAssertEqual(SeedCode.value(of: "AAA-AAA-AAA"), 0)
-        XCTAssertEqual(SeedCode.value(of: "AAA-AAA-AAB"), 1)
-        XCTAssertEqual(SeedCode.value(of: "AAA-AAA-ABA"), 26)
-        XCTAssertEqual(SeedCode.value(of: "ZZZ-ZZZ-ZZZ"), 5_429_503_678_975)
-        XCTAssertNil(SeedCode.value(of: "aaa-aaa-aaa"))
-        XCTAssertNil(SeedCode.value(of: "AAAAAAAAA"))
-        XCTAssertNil(SeedCode.value(of: ""))
+    /// The parser is `seedfinder_seed_parse`: it hands back the canonical code
+    /// to display and the numeric value the search takes.
+    func testSeedCodeParsingComesFromTheEngine() {
+        XCTAssertEqual(SeedCode.parse("AAA-AAA-AAA")?.value, 0)
+        XCTAssertEqual(SeedCode.parse("AAA-AAA-AAB")?.value, 1)
+        XCTAssertEqual(SeedCode.parse("AAA-AAA-ABA")?.value, 26)
+        XCTAssertEqual(SeedCode.parse("ZZZ-ZZZ-ZZZ")?.value, 5_429_503_678_975)
+        XCTAssertEqual(SeedCode.parse("ABC-DEF-GHI")?.code, "ABC-DEF-GHI")
+        // The game accepts a properly dashed code in any case and canonicalizes it.
+        XCTAssertEqual(SeedCode.parse("abc-def-ghi")?.code, "ABC-DEF-GHI")
+        XCTAssertNil(SeedCode.parse(""))
+        XCTAssertNil(SeedCode.parse("ABC-DEF-GH"))
+        XCTAssertNil(SeedCode.parse("ıİabcdefghi"))
     }
 
     func testSearchEstimateFormatting() {

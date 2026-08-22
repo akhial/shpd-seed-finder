@@ -204,8 +204,8 @@ public struct ProductionSeedFinderEngine: SeedFinderEngine {
         guard !seeds.isEmpty else { return [] }
         let encoded = try QueryCodec.encode(request)
         let values: [UInt64] = try seeds.map { seed in
-            guard let value = SeedCode.value(of: seed) else { throw SeedFinderEngineError.invalidArgument }
-            return UInt64(value)
+            guard let parsed = SeedCode.parse(seed) else { throw SeedFinderEngineError.invalidArgument }
+            return UInt64(parsed.value)
         }
         let count = request.requirements.count
         let packet: Data = try await Task.detached {
