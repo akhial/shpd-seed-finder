@@ -319,21 +319,6 @@ extension SearchRequest {
               let encodedBase = try? QueryCodec.encode(base) else { return false }
         return QueryContinuation.continues(candidate, base: encodedBase)
     }
-
-    /// Whether this request and `base` name a common item: some requirement of
-    /// each has the same kind, and either both name the same item or at least
-    /// one names none (a kind-level requirement subsumes every item of its
-    /// kind). Scope and challenge differences are deliberately ignored — a
-    /// filter re-verifies seeds from scratch — so this only estimates whether
-    /// `base`'s results are enriched for this request's matches.
-    public func sharesRequirement(with base: SearchRequest) -> Bool {
-        requirements.contains { candidate in
-            base.requirements.contains { other in
-                candidate.kind == other.kind
-                    && (candidate.item == nil || other.item == nil || candidate.item?.id == other.item?.id)
-            }
-        }
-    }
 }
 
 /// Where a follow-up search must pick up to complete a stopped session's

@@ -436,33 +436,40 @@ final class SeedSeekerKitTests: XCTestCase {
             kind: .weapon, tier: 1, tierMatch: .exactly))
     }
 
-    // The continuation predicate is the engine's, exercised end to end over
-    // the wire in RefineSearchTests; the "shares an item" rule below stays a
-    // local estimate and is tested here.
+    // The continuation predicate and the "shares an item" rule are both the
+    // engine's, exercised end to end over the wire: the continuation in
+    // RefineSearchTests, the sharing rule below through the one outcome it
+    // decides on its own.
 
-    func testSearchRequestSharedItemRules() throws {
-        func request(_ kind: ItemKind, item: CatalogItem? = nil, maximumDepth: Int = 24,
-                     challenges: Int = 0) throws -> SearchRequest {
+    /// Sharing an item reaches the app only as the target-filter outcome of
+    /// the start decision. Every candidate here changes the floor limit, so it
+    /// can never continue the target and sharing alone decides.
+    func testSharedItemsDecideTheTargetFilterOutcome() throws {
+        func request(_ kind: ItemKind, item: CatalogItem? = nil,
+                     maximumDepth: Int = 24) throws -> SearchRequest {
             try SearchRequest(requirements: [
                 ItemRequirement(key: 1, item: item, upgrade: 0, kind: kind, upgradeMatch: .any)],
-                maximumDepth: maximumDepth, challenges: challenges)
+                maximumDepth: maximumDepth)
         }
-        let anyWand = try request(.wand)
-        let missile = try request(.wand, item: ItemCatalog.wands[0])
-        let fireblast = try request(.wand, item: ItemCatalog.wands[1])
+        func decide(_ candidate: SearchRequest, _ target: SearchRequest) -> StartMode {
+            StartDecision.decide(candidate: candidate, target: target, targetSetEmpty: false,
+                                 targetHasUncoveredSeeds: true, detachedBase: nil)
+        }
+        let anyWand = try request(.wand, maximumDepth: 12)
+        let missile = try request(.wand, item: ItemCatalog.wands[0], maximumDepth: 12)
         // Same kind: a kind-level requirement subsumes every item of its kind.
-        XCTAssertTrue(anyWand.sharesRequirement(with: missile))
-        XCTAssertTrue(missile.sharesRequirement(with: anyWand))
-        XCTAssertTrue(missile.sharesRequirement(with: missile))
+        XCTAssertEqual(decide(anyWand, try request(.wand, item: ItemCatalog.wands[0])), .targetFilter)
+        XCTAssertEqual(decide(missile, try request(.wand)), .targetFilter)
+        XCTAssertEqual(decide(missile, try request(.wand, item: ItemCatalog.wands[0])), .targetFilter)
         // Same kind but two different named items share nothing.
-        XCTAssertFalse(missile.sharesRequirement(with: fireblast))
-        // Different kinds never share, and the narrowed weapon kinds count as
-        // kinds of their own (matching the other platforms).
-        XCTAssertFalse(anyWand.sharesRequirement(with: try request(.ring)))
-        XCTAssertFalse(try request(.weapon).sharesRequirement(with: try request(.meleeWeapon)))
-        // Scope and challenge differences are irrelevant to sharing.
-        XCTAssertTrue(anyWand.sharesRequirement(with: try request(.wand, maximumDepth: 12)))
-        XCTAssertTrue(anyWand.sharesRequirement(with: try request(.wand, challenges: 32)))
+        XCTAssertEqual(decide(missile, try request(.wand, item: ItemCatalog.wands[1])), .detached)
+        // Different kinds never share.
+        XCTAssertEqual(decide(anyWand, try request(.ring)), .detached)
+        // The engine's rule reads the item family, so a wielded-weapon
+        // requirement still shares with a plain weapon one — the local copy
+        // this replaces treated the narrowed kinds as kinds of their own.
+        XCTAssertEqual(decide(try request(.weapon, maximumDepth: 12), try request(.meleeWeapon)),
+                       .targetFilter)
     }
 
     func testRealFFIScout() async throws {

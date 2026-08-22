@@ -663,6 +663,44 @@ final class RefineSearchTests: XCTestCase {
                        "a continuation with coverage left scans for more even at the display cap")
     }
 
+    // MARK: - The start decision, as the engine answers it
+
+    /// The whole Start Search table of docs/search-semantics.md comes back
+    /// from `seedfinder_decide_start`; the bridge only hands it the session
+    /// state and maps the name it answers with.
+    func testStartDecisionBridgeAnswersEveryOutcome() throws {
+        let target = try wandRequest(count: 1)
+        let continues = try wandRequest(count: 2)
+        let rescoped = try SearchRequest(requirements: wandRequest(count: 2).requirements,
+                                         maximumDepth: 12)
+        let unrelated = try ringRequest()
+        func decide(_ candidate: SearchRequest, target: SearchRequest?,
+                    empty: Bool = false, uncovered: Bool = true,
+                    detachedBase: SearchRequest? = nil) -> StartMode {
+            StartDecision.decide(candidate: candidate, target: target, targetSetEmpty: empty,
+                                 targetHasUncoveredSeeds: uncovered, detachedBase: detachedBase)
+        }
+
+        // Without a Target every query anchors.
+        XCTAssertEqual(decide(continues, target: nil), .anchor)
+        // A continuation refines the Target Set; a merely related one filters it.
+        XCTAssertEqual(decide(continues, target: target), .targetRefine)
+        XCTAssertEqual(decide(target, target: target), .targetRefine)
+        XCTAssertEqual(decide(rescoped, target: target), .targetFilter)
+        // An unrelated query scans detached, and continues that thread only
+        // when the last concluded run was detached and it continues that run.
+        XCTAssertEqual(decide(unrelated, target: target), .detached)
+        XCTAssertEqual(decide(try ringRequest(count: 2), target: target,
+                              detachedBase: unrelated), .continueDetached)
+        XCTAssertEqual(decide(unrelated, target: target,
+                              detachedBase: try ringRequest(count: 2)), .detached)
+        // An empty Target Set holds nothing worth preserving: only a
+        // continuation with coverage left resumes it.
+        XCTAssertEqual(decide(continues, target: target, empty: true), .targetRefine)
+        XCTAssertEqual(decide(continues, target: target, empty: true, uncovered: false), .anchor)
+        XCTAssertEqual(decide(rescoped, target: target, empty: true), .anchor)
+    }
+
     // MARK: - The continuation predicate, as the engine answers it
 
     /// `isRefinement(of:)` is the engine's own predicate reached over SSF8, so
