@@ -92,11 +92,44 @@ export interface QueryDocument {
   challenges?: ChallengeName[]
 }
 
+/** The query bounds `SearchQuery::validate` itself applies, plus the
+ * results-file limit every frontend must agree on. */
+export interface EngineLimits {
+  maxDepth: number
+  exactTierMin: number
+  exactTierMax: number
+  boundedTierMin: number
+  boundedTierMax: number
+  identityGroupMax: number
+  maxUpgradeDefault: number
+  maxUpgradeRing: number
+  resultsFileMaxBytes: number
+}
+
+/** One challenge as the engine lists it, in mask order. */
+export interface EngineChallenge {
+  name: ChallengeName
+  mask: number
+  /** True for the challenges the level generator itself consults. */
+  changesLevelGeneration: boolean
+}
+
+/**
+ * The engine's constants document (`engine_info`). The app only reads the
+ * first four at runtime; the rest exist so `engine-constants.test.ts` can
+ * check the app's local copies of them against the engine.
+ */
 export interface EngineInfo {
   shpdVersion: string
   shpdCommit: string
   totalSeeds: number
   maxResults: number
+  limits: EngineLimits
+  emptyBossFloors: number[]
+  /** Inclusive `[first, last]` depth window per quest. */
+  questWindows: Record<QuestName, [number, number]>
+  challenges: EngineChallenge[]
+  searchStartStride: number
 }
 
 export interface ParsedSeed { code: string; value: number }

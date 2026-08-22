@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { advanceTraversalStart, goldenStride, partitionRotated, randomTraversalStart } from './traversal'
-
-const TOTAL_SEEDS = 5_429_503_678_976
+import { SEARCH_START_STRIDE, TOTAL_SEEDS, advanceTraversalStart, partitionRotated, randomTraversalStart } from './traversal'
 
 const coveredSeeds = (segments: ReturnType<typeof partitionRotated>) =>
   segments.flat().reduce((sum, range) => sum + (range.endSeedExclusive - range.startSeed), 0)
@@ -47,18 +45,20 @@ describe('rotated traversal partitioning', () => {
 })
 
 describe('traversal start rotation', () => {
-  it('advances by a stride coprime with the seed count, visiting every start', () => {
-    const stride = goldenStride(TOTAL_SEEDS)
-    expect(stride % 2).toBe(1)
-    expect(stride % 13).not.toBe(0)
-    const small = 26
+  it('advances by the engine stride, which is coprime with the seed count', () => {
+    // The browser used to re-derive the stride from the golden ratio and
+    // landed ~406M seeds away from the engine's; it now carries the literal.
+    expect(advanceTraversalStart(0, TOTAL_SEEDS)).toBe(SEARCH_START_STRIDE)
+    expect(SEARCH_START_STRIDE % 2).toBe(1)
+    expect(SEARCH_START_STRIDE % 13).not.toBe(0)
     const starts = new Set<number>()
-    let current = 3
-    for (let step = 0; step < small; step += 1) {
+    let current = 0
+    for (let step = 0; step < 64; step += 1) {
       starts.add(current)
-      current = advanceTraversalStart(current, small)
+      current = advanceTraversalStart(current, TOTAL_SEEDS)
+      expect(Number.isSafeInteger(current)).toBe(true)
     }
-    expect(starts.size).toBe(small)
+    expect(starts.size).toBe(64)
   })
 
   it('spaces consecutive full-range starts by roughly a golden-ratio turn', () => {
