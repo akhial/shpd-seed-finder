@@ -89,62 +89,54 @@ internal val StartMode.concludedKind: StartMode
 internal data class StartPlan(val mode: StartMode, val refine: RefineSpec? = null)
 
 /**
- * Whether two queries name a common item: some requirement of each has the same kind, and
- * either both name the same item or at least one names none (a kind-level requirement subsumes
- * every item of its kind). Scope and challenge differences are deliberately ignored — a filter
- * re-verifies seeds from scratch — so this only estimates whether the Target Set is enriched
- * for the candidate query's matches.
- */
-internal fun sharesRequirement(candidate: SearchRequest, base: SearchRequest): Boolean =
-    candidate.requirements.any { left ->
-        base.requirements.any { right ->
-            left.kind == right.kind &&
-                (left.item == null || right.item == null || left.item.id == right.item.id)
-        }
-    }
-
-/**
- * The single gate for what Search runs, per docs/search-semantics.md. The Target Set is the
- * anchor: a continuation of the Target Query refines it (filter the full Target Set, then
- * resume its uncovered remainder), a query sharing an item filters that full set without
- * scanning, and anything else scans the whole range without touching the Target — continuing
- * [lastRun] instead when that run was itself detached and the query continues it. An empty
- * Target Set holds nothing worth preserving, so a non-continuing query re-anchors on this
- * search instead of filtering nothing.
+ * What Search runs, per docs/search-semantics.md: the engine makes the choice — a continuation
+ * of the Target Query refines it, a query sharing an item filters it, anything else scans
+ * detached or continues the last detached run — and this function supplies the session state the
+ * choice reads and turns the answer into the window that mode starts from.
  *
- * [queryContinues] is the engine's continuation predicate — `NativeSeedFinder.queryContinues`,
- * i.e. `SearchQuery::continues` over the wire — passed in so this policy stays a pure function
- * over the session's state. Only the engine decides whether a query may reuse a run; this
- * function decides what to do with that answer.
+ * [decideStart] is `NativeSeedFinder.decideStart`, i.e. `query::decide_start` over the wire,
+ * passed in so this stays a pure function over the session's state. The continuation predicate
+ * and the sharing relation are both part of that one call and are never re-derived here.
  */
 internal fun startPlanFor(
     request: SearchRequest,
     target: TargetState?,
     lastRun: FinishedRun?,
     lastRunKind: StartMode?,
-    queryContinues: (SearchRequest, SearchRequest) -> Boolean,
+    decideStart: (SearchRequest, SearchRequest?, Boolean, Boolean, SearchRequest?) -> String,
 ): StartPlan {
-    if (target == null) return StartPlan(StartMode.ANCHOR)
-    val continuesTarget = queryContinues(request, target.request)
-    if (target.results.isEmpty() && !(continuesTarget && target.remaining > 0)) {
-        return StartPlan(StartMode.ANCHOR)
+    // A run is a continuation base only when it was itself detached.
+    val detachedBase = lastRun?.request?.takeIf { lastRunKind == StartMode.DETACHED }
+    val decision = decideStart(
+        request,
+        target?.request,
+        target == null || target.results.isEmpty(),
+        (target?.remaining ?: 0L) > 0L,
+        detachedBase,
+    )
+    return when (decision) {
+        "anchor" -> StartPlan(StartMode.ANCHOR)
+        "target-refine" -> {
+            val anchor = checkNotNull(target) { "A target refine needs a Target" }
+            StartPlan(
+                StartMode.TARGET_REFINE,
+                RefineSpec(anchor.resumeFrom, anchor.remaining, anchor.results),
+            )
+        }
+        "target-filter" -> {
+            val anchor = checkNotNull(target) { "A target filter needs a Target" }
+            StartPlan(StartMode.TARGET_FILTER, RefineSpec(anchor.resumeFrom, 0, anchor.results))
+        }
+        "continue-detached" -> {
+            val base = checkNotNull(lastRun) { "Continuing a detached scan needs that run" }
+            StartPlan(
+                StartMode.CONTINUE_DETACHED,
+                RefineSpec(base.resumeFrom, base.remaining, base.results),
+            )
+        }
+        "detached" -> StartPlan(StartMode.DETACHED)
+        else -> error("Unknown start decision '$decision'")
     }
-    if (continuesTarget) {
-        return StartPlan(
-            StartMode.TARGET_REFINE,
-            RefineSpec(target.resumeFrom, target.remaining, target.results),
-        )
-    }
-    if (sharesRequirement(request, target.request)) {
-        return StartPlan(StartMode.TARGET_FILTER, RefineSpec(target.resumeFrom, 0, target.results))
-    }
-    if (lastRunKind == StartMode.DETACHED && lastRun != null && queryContinues(request, lastRun.request)) {
-        return StartPlan(
-            StartMode.CONTINUE_DETACHED,
-            RefineSpec(lastRun.resumeFrom, lastRun.remaining, lastRun.results),
-        )
-    }
-    return StartPlan(StartMode.DETACHED)
 }
 
 /**

@@ -59,6 +59,24 @@ interface NativeSeedFinder {
      * do. Only an explicit Clear starts over.
      */
     fun queryContinues(candidate: SearchRequest, base: SearchRequest): Boolean
+
+    /**
+     * What pressing Search must do with [candidate], per docs/search-semantics.md: one of
+     * `anchor`, `target-refine`, `target-filter`, `continue-detached` or `detached`. [target] is
+     * the Target Query (null when there is no Target, which always anchors), [targetSetEmpty] and
+     * [targetHasUncoveredSeeds] describe the Target Set and its coverage, and [detachedBase] is
+     * the last concluded run's query when — and only when — that run was itself detached.
+     *
+     * The whole multi-way choice is the engine's, continuation predicate included, so callers ask
+     * this instead of combining [queryContinues] with a policy of their own.
+     */
+    fun decideStart(
+        candidate: SearchRequest,
+        target: SearchRequest?,
+        targetSetEmpty: Boolean,
+        targetHasUncoveredSeeds: Boolean,
+        detachedBase: SearchRequest?,
+    ): String
 }
 
 interface NativeSearchSession : AutoCloseable {
@@ -110,6 +128,24 @@ class DemoNativeSeedFinder : NativeSeedFinder {
     // (docs/search-semantics.md), and every APK packages its library.
     override fun queryContinues(candidate: SearchRequest, base: SearchRequest): Boolean =
         JniBindings.queryContinues(QueryCodec.encode(candidate), QueryCodec.encode(base))
+
+    // Same reasoning for the whole start decision the predicate is part of.
+    override fun decideStart(
+        candidate: SearchRequest,
+        target: SearchRequest?,
+        targetSetEmpty: Boolean,
+        targetHasUncoveredSeeds: Boolean,
+        detachedBase: SearchRequest?,
+    ): String = String(
+        JniBindings.decideStart(
+            QueryCodec.encode(candidate),
+            target?.let(QueryCodec::encode),
+            targetSetEmpty,
+            targetHasUncoveredSeeds,
+            detachedBase?.let(QueryCodec::encode),
+        ),
+        StandardCharsets.UTF_8,
+    )
 
     // The demo scout hands back a fabricated world rather than an engine SSC2
     // packet, so the engine's marks — computed over the world this seed really
@@ -347,6 +383,24 @@ class JniNativeSeedFinder(
     override fun queryContinues(candidate: SearchRequest, base: SearchRequest): Boolean =
         bindings.queryContinues(QueryCodec.encode(candidate), QueryCodec.encode(base))
 
+    /** Asks the engine, so docs/search-semantics.md has exactly one implementation. */
+    override fun decideStart(
+        candidate: SearchRequest,
+        target: SearchRequest?,
+        targetSetEmpty: Boolean,
+        targetHasUncoveredSeeds: Boolean,
+        detachedBase: SearchRequest?,
+    ): String = String(
+        bindings.decideStart(
+            QueryCodec.encode(candidate),
+            target?.let(QueryCodec::encode),
+            targetSetEmpty,
+            targetHasUncoveredSeeds,
+            detachedBase?.let(QueryCodec::encode),
+        ),
+        StandardCharsets.UTF_8,
+    )
+
     private class JniSession(
         private val handle: Long,
         private val requirementCount: Int,
@@ -414,6 +468,13 @@ interface NativeBindings {
     fun scoutMatches(request: ByteArray, query: ByteArray): ByteArray
     fun filterSeeds(request: ByteArray, seeds: LongArray): ByteArray
     fun queryContinues(candidate: ByteArray, base: ByteArray): Boolean
+    fun decideStart(
+        candidate: ByteArray,
+        target: ByteArray?,
+        targetSetEmpty: Boolean,
+        targetHasUncoveredSeeds: Boolean,
+        detachedBase: ByteArray?,
+    ): ByteArray
 }
 
 /** Exact class and static method names are retained by ProGuard for Rust's exported JNI symbols. */
@@ -433,6 +494,15 @@ object JniBindings {
     @JvmStatic external fun scoutMatches(request: ByteArray, query: ByteArray): ByteArray
     @JvmStatic external fun filterSeeds(request: ByteArray, seeds: LongArray): ByteArray
     @JvmStatic external fun queryContinues(candidate: ByteArray, base: ByteArray): Boolean
+
+    /** The start decision of docs/search-semantics.md; null packets mean "absent". */
+    @JvmStatic external fun decideStart(
+        candidate: ByteArray,
+        target: ByteArray?,
+        targetSetEmpty: Boolean,
+        targetHasUncoveredSeeds: Boolean,
+        detachedBase: ByteArray?,
+    ): ByteArray
 
     // Share-link codec (docs/share-link-format.md): UTF-8 in, UTF-8 out.
     // Unlike the search entry points above, these also run in debug APKs,
@@ -467,6 +537,15 @@ private object JniBindingsAdapter : NativeBindings {
         JniBindings.filterSeeds(request, seeds)
     override fun queryContinues(candidate: ByteArray, base: ByteArray) =
         JniBindings.queryContinues(candidate, base)
+    override fun decideStart(
+        candidate: ByteArray,
+        target: ByteArray?,
+        targetSetEmpty: Boolean,
+        targetHasUncoveredSeeds: Boolean,
+        detachedBase: ByteArray?,
+    ) = JniBindings.decideStart(
+        candidate, target, targetSetEmpty, targetHasUncoveredSeeds, detachedBase,
+    )
 }
 
 object SeedCode {

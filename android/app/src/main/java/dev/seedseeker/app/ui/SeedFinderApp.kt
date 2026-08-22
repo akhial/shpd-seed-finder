@@ -693,7 +693,7 @@ fun SeedFinderApp(
                         // sharing an item filters that set, and anything else scans
                         // detached — continuing the previous detached run when sound.
                         val plan = startPlanFor(
-                            currentRequest, target, lastFinishedRun, lastRunKind, engine::queryContinues,
+                            currentRequest, target, lastFinishedRun, lastRunKind, engine::decideStart,
                         )
                         if (plan.refine == null) {
                             searchedQuery = PresetQuery(

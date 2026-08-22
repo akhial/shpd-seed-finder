@@ -21,8 +21,8 @@ import org.junit.Test
  * continuing the Target Query refines the full Target Set and resumes its coverage, one sharing
  * an item filters that set, and anything else scans detached without touching the Target.
  *
- * "Continues" is the engine's verdict, so [planFor] feeds the policy the real
- * `JniBindings.queryContinues` (see QueryContinuationTest for the host library these JVM tests
+ * The choice itself is the engine's, so [planFor] feeds the plan the real
+ * `JniBindings.decideStart` (see QueryContinuationTest for the host library these JVM tests
  * load) rather than a stub that would let the two drift apart unnoticed.
  */
 class RefinePlanTest {
@@ -130,16 +130,6 @@ class RefinePlanTest {
     }
 
     @Test
-    fun sharingNeedsACommonKindAndACompatibleItem() {
-        assertTrue(sharesRequirement(request(frost), request(frost, maximumDepth = 12)))
-        assertTrue(sharesRequirement(request(anyWand), request(frost)))
-        assertTrue(sharesRequirement(request(frost), request(anyWand)))
-        assertTrue(sharesRequirement(request(ring, frost), request(frost)))
-        assertFalse(sharesRequirement(request(frost), request(fireblast)))
-        assertFalse(sharesRequirement(request(ring), request(frost)))
-    }
-
-    @Test
     fun theDisplayCapsAtTheResultLimitButTheCollectionDoesNot() {
         assertEquals(1_024, RESULT_CAP)
         // Under the cap the collection is listed as-is (same instance, so growing the display
@@ -207,7 +197,7 @@ class RefinePlanTest {
         target: TargetState?,
         lastRun: FinishedRun?,
         lastRunKind: StartMode?,
-    ) = startPlanFor(request, target, lastRun, lastRunKind, engine::queryContinues)
+    ) = startPlanFor(request, target, lastRun, lastRunKind, engine::decideStart)
 
     /** A distinct well-formed seed code per index, e.g. 1 -> "AAA-AAA-AAB". */
     private fun seedCode(index: Int): String {
