@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react'
 import { useStore } from '@tanstack/react-store'
 import { sourceLabel } from '../../lib/catalog'
-import { formatSeedInput } from '../../lib/format'
 import { itemGlow } from '../../lib/glow'
 import { CheckIcon, CopyIcon, FlagIcon, ForkIcon } from '../../lib/icons'
 import { questLabel, questVariantLabel } from '../../lib/quests'
 import { regionForDepth } from '../../lib/region'
 import type { ResultPosition } from '../../lib/scout-nav'
 import { queryStore } from '../../lib/store'
+import { formatSeedCode } from '../../lib/wasm'
 import type { ScoutItem, ScoutResult } from '../../lib/wasm/types'
 import { Sprite } from './parts'
 
@@ -88,7 +88,7 @@ export function ScoutPanel({
           autoCapitalize="characters"
           spellCheck={false}
           aria-label="Seed code"
-          onChange={(event) => onInput(formatSeedInput(event.currentTarget.value))}
+          onChange={(event) => onInput(formatSeedCode(event.currentTarget.value))}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && input.length === 11) onScout(input)
           }}
