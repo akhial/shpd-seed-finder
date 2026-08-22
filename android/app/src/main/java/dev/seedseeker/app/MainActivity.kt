@@ -10,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import dev.seedseeker.app.catalog.ItemCatalog
 import dev.seedseeker.app.engine.NativeSeedFinderFactory
 import dev.seedseeker.app.ui.SeedFinderApp
 import dev.seedseeker.app.ui.SharedLink
@@ -20,6 +21,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // The item catalog is read from the packaged asset, so point it at this
+        // APK's assets before any screen looks an item up.
+        ItemCatalog.install { path -> assets.open(path) }
         enableEdgeToEdge()
         // Debug-only test hook for the update dialog:
         //   adb shell am start -n dev.seedseeker.unofficial.debug/dev.seedseeker.app.MainActivity \
