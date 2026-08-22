@@ -2,7 +2,8 @@ import { readFile } from 'node:fs/promises'
 import { beforeAll, describe, expect, it } from 'vitest'
 import init from '../wasm/pkg/seedfinder.js'
 import type { ParsedSeed, QueryDocument } from '../wasm/types'
-import { decideStart, distributeSegments, isContinuationOf, remainingSegments, segmentsLength, sharesRequirement, shouldRefine } from './refine'
+import { defaultQueryState, toQueryDocument } from '../query'
+import { decideStart, distributeSegments, isContinuationOf, remainingSegments, segmentsLength } from './refine'
 import { initialCoordinatorState, type CoordinatorState, type SearchStatus, type TargetState } from './coordinator-state'
 import type { SeedRange } from './traversal'
 
@@ -97,42 +98,6 @@ describe('isContinuationOf', () => {
   })
 })
 
-describe('shouldRefine', () => {
-  const finished = (state: SearchStatus) => ({ state, queryJson: JSON.stringify(base) })
-
-  it('continues a completed or cancelled run whose query gained requirements', () => {
-    expect(shouldRefine(finished('completed'), added)).toBe(true)
-    expect(shouldRefine(finished('cancelled'), added)).toBe(true)
-  })
-
-  it('continues a completed or cancelled run whose query is unchanged', () => {
-    // Pressing Start again after a cancel resumes the same session; results
-    // survive until the user clears them.
-    expect(shouldRefine(finished('completed'), base)).toBe(true)
-    expect(shouldRefine(finished('cancelled'), base)).toBe(true)
-  })
-
-  it('rescans when the run never established its coverage', () => {
-    // Imported results carry no scanned region, a failed run's is unknown,
-    // and a running one is still moving.
-    for (const state of ['idle', 'running', 'stopping', 'failed', 'imported'] as SearchStatus[]) {
-      expect(shouldRefine(finished(state), added)).toBe(false)
-    }
-  })
-
-  it('rescans when the query no longer covers the finished one', () => {
-    expect(shouldRefine({ state: 'completed', queryJson: JSON.stringify(added) }, base)).toBe(false)
-    expect(shouldRefine(finished('completed'), { requirements: [{ kind: 'wand' }] })).toBe(false)
-    expect(shouldRefine(finished('completed'), { ...added, max_depth: 9 })).toBe(false)
-    expect(shouldRefine(finished('completed'), { ...base, max_depth: 9 })).toBe(false)
-  })
-
-  it('rescans when there is no readable base query', () => {
-    expect(shouldRefine({ state: 'completed', queryJson: '' }, added)).toBe(false)
-    expect(shouldRefine({ state: 'completed', queryJson: '{not json' }, added)).toBe(false)
-  })
-})
-
 describe('remainingSegments', () => {
   it('drops each segment\'s own scanned prefix', () => {
     const segments: SeedRange[][] = [
@@ -184,26 +149,6 @@ describe('distributeSegments', () => {
   })
 })
 
-describe('sharesRequirement', () => {
-  it('shares on an identical kind-level requirement', () => {
-    expect(sharesRequirement(base, { requirements: [{ kind: 'ring' }] })).toBe(true)
-  })
-  it('a kind-level requirement subsumes any item of its kind', () => {
-    expect(sharesRequirement({ requirements: [{ kind: 'ring', item: 'ring_wealth' }] }, { requirements: [{ kind: 'ring' }] })).toBe(true)
-    expect(sharesRequirement({ requirements: [{ kind: 'ring' }] }, { requirements: [{ kind: 'ring', item: 'ring_wealth' }] })).toBe(true)
-  })
-  it('two different items of the same kind do not share', () => {
-    expect(sharesRequirement(
-      { requirements: [{ kind: 'ring', item: 'ring_wealth' }] },
-      { requirements: [{ kind: 'ring', item: 'ring_tenacity' }] },
-    )).toBe(false)
-  })
-  it('different kinds do not share, and scope differences are ignored', () => {
-    expect(sharesRequirement({ requirements: [{ kind: 'wand' }] }, base)).toBe(false)
-    expect(sharesRequirement({ requirements: [{ kind: 'ring' }], max_depth: 5, challenges: ['on_diet'] }, base)).toBe(true)
-  })
-})
-
 describe('decideStart', () => {
   const target = (query: QueryDocument, matches: ParsedSeed[], remainder: SeedRange[]): TargetState => ({
     queryJson: JSON.stringify(query),
@@ -236,6 +181,20 @@ describe('decideStart', () => {
     // Loosening the ring's upgrade is not a continuation, but it is still about
     // rings, and filtering from the full Target Set brings seeds back.
     expect(decideStart(withTarget({}), { requirements: [{ kind: 'ring', upgrade: { at_least: 1 } }] })).toBe('target-filter')
+    // A named ring shares with the kind-level target requirement; scope and
+    // challenge differences never affect sharing.
+    expect(decideStart(withTarget({}), { requirements: [{ kind: 'ring', item: 'ring_wealth' }], max_depth: 5, challenges: ['on_diet'] })).toBe('target-filter')
+  })
+  it('does not share on a requirement whose category was left implicit', () => {
+    // The browser used to treat a missing kind as a wildcard that shared with
+    // every base requirement, so an item-only requirement always filtered the
+    // Target Set. The engine compares kinds for equality, and the encoder now
+    // always writes one, so a sword query against a ring target detaches.
+    expect(decideStart(withTarget({}), { requirements: [{ item: 'sword' }] })).toBe('detached')
+    expect(decideStart(withTarget({}), toQueryDocument({
+      ...defaultQueryState(),
+      requirements: [{ item: 'sword', tier: { mode: 'any', value: 3 }, upgrade: { mode: 'any', value: 1 }, uncursed: false }],
+    }))).toBe('detached')
   })
   it('detaches an unrelated query, continuing a detached run when sound', () => {
     const wands: QueryDocument = { requirements: [{ kind: 'wand' }] }
@@ -247,8 +206,15 @@ describe('decideStart', () => {
     })
     expect(decideStart(afterDetached, wands)).toBe('continue-detached')
     expect(decideStart(afterDetached, { requirements: [...wands.requirements, { kind: 'armor' }] })).toBe('continue-detached')
-    // A detached run that failed (or is somehow not concluded) cannot be continued.
-    expect(decideStart(withTarget({ runKind: 'detached', queryJson: JSON.stringify(wands), state: 'failed' }), wands)).toBe('detached')
+    // Only a concluded detached run has a known scanned region to continue.
+    for (const state of ['idle', 'running', 'stopping', 'failed', 'imported'] as SearchStatus[]) {
+      expect(decideStart(withTarget({ runKind: 'detached', queryJson: JSON.stringify(wands), matches: seeds, state }), wands), state).toBe('detached')
+    }
+    // A loosened detached query rescans instead of continuing.
+    expect(decideStart(
+      withTarget({ runKind: 'detached', queryJson: JSON.stringify({ requirements: [...wands.requirements, { kind: 'armor' }] }), matches: seeds }),
+      wands,
+    )).toBe('detached')
   })
   it('re-anchors on an empty Target Set unless the query resumes its coverage', () => {
     const empty = withTarget({ target: target(base, [], [{ startSeed: 400, endSeedExclusive: 1_000 }]) })
