@@ -1,90 +1,156 @@
-import { IDENTITY_GROUP_MAX, UPGRADE_SUM_GROUP_MAX, upgradeSumCapacity } from '../../lib/query'
+import {
+  IDENTITY_GROUP_MAX,
+  LEVEL_SUM_GROUP_MAX,
+  STACK_MAX,
+  isBareRequirement,
+  requirementFamily,
+} from '../../lib/query'
 import type { RequirementState } from '../../lib/wasm/types'
 
 /**
- * Pure edits behind the requirement board's direct-manipulation gestures.
- * Every edit returns a new requirement list that the query model already
- * understands; nothing here changes the document format. The model's rules
- * are kept by construction:
+ * Pure edits behind the requirement board. Every edit returns a new
+ * requirement list in the canonical document encoding, so share links and
+ * results files round-trip; the board itself renders the *collapsed* view
+ * that `boardItems` derives from the flat list.
  *
- * - an alternative ("either/or") group is several requirements sharing an
- *   `alternativeGroup`; a group of one is meaningless and is collapsed;
- * - a bundle is several requirements sharing an `upgradeSum.group` and one
- *   total; members of an either/or cluster may not carry a sum, so joining
- *   one relationship leaves the other;
- * - a same-item tether is several requirements sharing an `identityGroup`;
- *   it is orthogonal to the two above.
+ * Two ideas cover all three relationship kinds of the model:
+ *
+ * - an *either/or cluster* is several requirements sharing an
+ *   `alternativeGroup`: one slot, any member fills it;
+ * - a *stack* is a chip (or a whole cluster) asking for more than one item
+ *   of the same kind — the blacksmith's reforge fodder. Its extra copies
+ *   never carry their own constraints. A stack of a concrete item encodes
+ *   as plain repeated requirements; a wildcard or cluster stack encodes as
+ *   bare copies tied to the anchor with an `identityGroup`; a stack with a
+ *   *combined level* encodes as identical members sharing a `levelSum`
+ *   (each matched item counts upgrade+1 towards the total, and members are
+ *   optional, so "up to N items reaching T levels").
  */
 
-export type Relation = 'alternative' | 'identity' | 'upgradeSum'
+/** One board entry: a chip, or an either/or cluster of chips. */
+export interface BoardItem {
+  key: string
+  /** Visible requirement indices: one for a chip, all members for a cluster. */
+  members: number[]
+  /** The cluster's alternative group, when this is a cluster. */
+  cluster?: number
+  /** Hidden copy indices behind the stack badge, in requirement order. */
+  extras: number[]
+  /** The stack's combined level, when one is set. */
+  total?: number
+}
 
-/** What the board lays out: a lone chip, an either/or cluster, or a Σ bundle. */
-export type BoardItem =
-  | { type: 'chip'; index: number }
-  | { type: 'alternatives'; group: number; members: number[] }
-  | { type: 'bundle'; group: number; atLeast: number; members: number[] }
+/** How many items a board item asks for: its anchor plus hidden copies. */
+export const stackCount = (item: BoardItem): number => 1 + item.extras.length
 
-/** The board's items in requirement order; a cluster or bundle sits where its first member is. */
+/** Whether `copy` is the plain repeat of the named item `item` carries. */
+const isPlainItemCopy = (copy: RequirementState, item: string): boolean =>
+  copy.item === item
+  && copy.tier.mode === 'any'
+  && copy.upgrade.mode === 'any'
+  && copy.effect === undefined
+  && !copy.uncursed
+  && copy.source === undefined
+  && copy.maxDepth === undefined
+  && copy.identityGroup === undefined
+  && copy.alternativeGroup === undefined
+  && copy.levelSum === undefined
+
+/**
+ * The board's collapsed view of the flat requirement list: clusters group
+ * alternatives, and a stack's copies fold into their anchor's badge.
+ */
 export function boardItems(requirements: readonly RequirementState[]): BoardItem[] {
-  const items: BoardItem[] = []
-  const alternatives = new Map<number, BoardItem & { type: 'alternatives' }>()
-  const bundles = new Map<number, BoardItem & { type: 'bundle' }>()
+  const hidden = new Set<number>()
+
+  // Combined-level groups: the first member anchors, the rest fold away.
+  const sumAnchors = new Map<number, { anchor: number; extras: number[]; total: number }>()
   requirements.forEach((requirement, index) => {
-    if (requirement.alternativeGroup !== undefined) {
-      const existing = alternatives.get(requirement.alternativeGroup)
-      if (existing) { existing.members.push(index); return }
-      const item = { type: 'alternatives' as const, group: requirement.alternativeGroup, members: [index] }
-      alternatives.set(requirement.alternativeGroup, item)
-      items.push(item)
-      return
-    }
-    if (requirement.upgradeSum) {
-      const existing = bundles.get(requirement.upgradeSum.group)
-      if (existing) { existing.members.push(index); return }
-      const item = { type: 'bundle' as const, group: requirement.upgradeSum.group, atLeast: requirement.upgradeSum.atLeast, members: [index] }
-      bundles.set(requirement.upgradeSum.group, item)
-      items.push(item)
-      return
-    }
-    items.push({ type: 'chip', index })
+    const sum = requirement.levelSum
+    if (!sum) return
+    const existing = sumAnchors.get(sum.group)
+    if (existing) existing.extras.push(index)
+    else sumAnchors.set(sum.group, { anchor: index, extras: [], total: sum.atLeast })
   })
-  // Single-member clusters and bundles render as lone chips.
-  return items.map((item) => (item.type !== 'chip' && item.members.length === 1 ? { type: 'chip', index: item.members[0] } : item))
-}
+  for (const group of sumAnchors.values()) for (const index of group.extras) hidden.add(index)
 
-const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max)
-
-const countBy = (requirements: readonly RequirementState[], key: (requirement: RequirementState) => number | undefined) => {
-  const counts = new Map<number, number>()
-  for (const requirement of requirements) {
-    const group = key(requirement)
-    if (group !== undefined) counts.set(group, (counts.get(group) ?? 0) + 1)
+  // Identity stacks: bare copies fold into the constrained unit (or the
+  // first member when every member is bare). Groups with two constrained
+  // units cannot collapse; validation reports them.
+  const identityMembers = new Map<number, number[]>()
+  requirements.forEach((requirement, index) => {
+    if (requirement.identityGroup !== undefined) {
+      identityMembers.set(requirement.identityGroup, [...(identityMembers.get(requirement.identityGroup) ?? []), index])
+    }
+  })
+  /** Copy indices to fold into the item holding the anchor index. */
+  const identityExtras = new Map<number, number[]>()
+  for (const members of identityMembers.values()) {
+    const constrained = members.filter((index) => !isBareRequirement(requirements[index]))
+    const units = new Set(constrained.map((index) => requirements[index].alternativeGroup === undefined
+      ? `req:${index}` : `alt:${requirements[index].alternativeGroup}`))
+    if (units.size > 1) continue
+    const anchor = constrained[0] ?? members[0]
+    // A cluster anchor labels every member; fold only the lone bare copies.
+    const extras = members.filter((index) => index !== anchor
+      && requirements[index].alternativeGroup === undefined
+      && isBareRequirement(requirements[index]))
+    if (extras.length === 0) continue
+    identityExtras.set(anchor, extras)
+    for (const index of extras) hidden.add(index)
   }
-  return counts
+
+  // Walk the list building chips and clusters, folding plain item repeats
+  // into the nearest earlier chip naming the same item.
+  const items: BoardItem[] = []
+  const clusters = new Map<number, BoardItem>()
+  const chipByItem = new Map<string, BoardItem>()
+  const attach = (item: BoardItem, anchorIndex: number) => {
+    const sum = requirements[anchorIndex].levelSum
+    if (sum) {
+      const group = sumAnchors.get(sum.group)
+      if (group && group.anchor === anchorIndex) {
+        item.extras.push(...group.extras)
+        item.total = group.total
+      }
+    }
+    const extras = identityExtras.get(anchorIndex)
+    if (extras) item.extras.push(...extras)
+  }
+  requirements.forEach((requirement, index) => {
+    if (hidden.has(index)) return
+    if (requirement.alternativeGroup !== undefined) {
+      const existing = clusters.get(requirement.alternativeGroup)
+      if (existing) {
+        existing.members.push(index)
+        attach(existing, index)
+        return
+      }
+      const item: BoardItem = { key: `alt:${requirement.alternativeGroup}`, members: [index], cluster: requirement.alternativeGroup, extras: [] }
+      clusters.set(requirement.alternativeGroup, item)
+      attach(item, index)
+      items.push(item)
+      return
+    }
+    // A plain repeat of an earlier chip's item folds into that chip.
+    if (requirement.item !== undefined && isPlainItemCopy(requirement, requirement.item)) {
+      const earlier = chipByItem.get(requirement.item)
+      if (earlier && earlier.total === undefined && stackCount(earlier) < STACK_MAX) {
+        earlier.extras.push(index)
+        return
+      }
+    }
+    const item: BoardItem = { key: `req:${index}`, members: [index], extras: [] }
+    attach(item, index)
+    if (requirement.item !== undefined && requirement.levelSum === undefined) chipByItem.set(requirement.item, item)
+    items.push(item)
+  })
+  // Single-member clusters render as chips.
+  return items.map((item) => (item.cluster !== undefined && item.members.length === 1 ? { ...item, cluster: undefined } : item))
 }
 
-/** Drops every relationship that has a single member left: a group of one says nothing. */
-export function collapseLoneGroups(requirements: RequirementState[]): RequirementState[] {
-  const alternatives = countBy(requirements, (requirement) => requirement.alternativeGroup)
-  const identities = countBy(requirements, (requirement) => requirement.identityGroup)
-  const sums = countBy(requirements, (requirement) => requirement.upgradeSum?.group)
-  return requirements.map((requirement) => {
-    let next = requirement
-    if (next.alternativeGroup !== undefined && (alternatives.get(next.alternativeGroup) ?? 0) < 2) {
-      const { alternativeGroup: _a, ...rest } = next
-      next = rest
-    }
-    if (next.identityGroup !== undefined && (identities.get(next.identityGroup) ?? 0) < 2) {
-      const { identityGroup: _i, ...rest } = next
-      next = rest
-    }
-    if (next.upgradeSum && (sums.get(next.upgradeSum.group) ?? 0) < 2) {
-      const { upgradeSum: _s, ...rest } = next
-      next = rest
-    }
-    return next
-  })
-}
+/** The number of visible board entries, for the pane's header count. */
+export const boardCount = (requirements: readonly RequirementState[]): number => boardItems(requirements).length
 
 const freeGroup = (used: Iterable<number | undefined>, max: number): number | undefined => {
   const taken = new Set(used)
@@ -95,86 +161,255 @@ const freeGroup = (used: Iterable<number | undefined>, max: number): number | un
 const nextAlternativeGroup = (requirements: readonly RequirementState[]): number =>
   requirements.reduce((highest, requirement) => Math.max(highest, requirement.alternativeGroup ?? 0), 0) + 1
 
-/** Moves the requirement at `from` to sit right after the last requirement matching `after`. */
-function moveAfter(requirements: RequirementState[], from: number, after: (requirement: RequirementState, index: number) => boolean): RequirementState[] {
+const countBy = (requirements: readonly RequirementState[], key: (requirement: RequirementState) => number | undefined) => {
+  const counts = new Map<number, number>()
+  for (const requirement of requirements) {
+    const group = key(requirement)
+    if (group !== undefined) counts.set(group, (counts.get(group) ?? 0) + 1)
+  }
+  return counts
+}
+
+/** The bare copy a stack of `anchor`'s kind grows by. */
+const bareCopy = (anchor: RequirementState, identityGroup: number): RequirementState => ({
+  kind: anchor.kind ?? requirementFamily(anchor) as RequirementState['kind'],
+  tier: { mode: 'any', value: 3 },
+  upgrade: { mode: 'any', value: 1 },
+  uncursed: false,
+  identityGroup,
+})
+
+/** The plain repeat a concrete stack of `item` grows by. */
+const plainCopy = (anchor: RequirementState): RequirementState => ({
+  kind: anchor.kind,
+  item: anchor.item,
+  tier: { mode: 'any', value: 3 },
+  upgrade: { mode: 'any', value: 1 },
+  uncursed: false,
+})
+
+/**
+ * Rewrites the list into its canonical stack encoding and drops every
+ * group that no longer says anything:
+ *
+ * - a lone alternative, a lone identity label, and a lone level-sum member
+ *   dissolve;
+ * - a labelled cluster labels every one of its members;
+ * - a stack anchored on a lone concrete chip carries plain repeats, not
+ *   identity labels.
+ *
+ * Every operation funnels through this, so a deleted anchor can never
+ * leave stale groups behind.
+ */
+export function normalize(requirements: RequirementState[]): RequirementState[] {
+  let next = [...requirements]
+  // A cluster that holds an identity label spreads it to all its members.
+  const clusterLabel = new Map<number, number>()
+  for (const requirement of next) {
+    if (requirement.alternativeGroup !== undefined && requirement.identityGroup !== undefined) {
+      clusterLabel.set(requirement.alternativeGroup, requirement.identityGroup)
+    }
+  }
+  next = next.map((requirement) => {
+    const label = requirement.alternativeGroup === undefined ? undefined : clusterLabel.get(requirement.alternativeGroup)
+    return label !== undefined && requirement.identityGroup !== label
+      ? { ...requirement, identityGroup: label }
+      : requirement
+  })
+  // A stack anchored on a lone concrete chip encodes as plain repeats.
+  const identityMembers = new Map<number, number[]>()
+  next.forEach((requirement, index) => {
+    if (requirement.identityGroup !== undefined) {
+      identityMembers.set(requirement.identityGroup, [...(identityMembers.get(requirement.identityGroup) ?? []), index])
+    }
+  })
+  for (const members of identityMembers.values()) {
+    const constrained = members.filter((index) => !isBareRequirement(next[index]))
+    if (constrained.length !== 1) continue
+    const anchor = next[constrained[0]]
+    if (anchor.item === undefined || anchor.alternativeGroup !== undefined) continue
+    for (const index of members) {
+      next[index] = index === constrained[0]
+        ? { ...anchor, identityGroup: undefined }
+        : plainCopy(anchor)
+    }
+  }
+  // Groups of one say nothing.
+  const alternatives = countBy(next, (requirement) => requirement.alternativeGroup)
+  const identities = countBy(next, (requirement) => requirement.identityGroup)
+  const sums = countBy(next, (requirement) => requirement.levelSum?.group)
+  return next.map((requirement) => {
+    let result = requirement
+    if (result.alternativeGroup !== undefined && (alternatives.get(result.alternativeGroup) ?? 0) < 2) {
+      result = { ...result, alternativeGroup: undefined }
+    }
+    if (result.identityGroup !== undefined && (identities.get(result.identityGroup) ?? 0) < 2) {
+      result = { ...result, identityGroup: undefined }
+    }
+    if (result.levelSum && (sums.get(result.levelSum.group) ?? 0) < 2) {
+      result = { ...result, levelSum: undefined }
+    }
+    return result
+  })
+}
+
+/** Moves the requirement at `from` after the last requirement matching `after`. */
+function moveAfter(requirements: RequirementState[], from: number, after: (requirement: RequirementState) => boolean): RequirementState[] {
   const moving = requirements[from]
   const rest = requirements.filter((_, index) => index !== from)
-  const last = rest.reduce((found, requirement, index) => (after(requirement, index) ? index : found), -1)
+  const last = rest.reduce((found, requirement, index) => (after(requirement) ? index : found), -1)
   return [...rest.slice(0, last + 1), moving, ...rest.slice(last + 1)]
 }
 
-/** The chip at `source` becomes an either/or alternative of the chip at `target`. */
+/**
+ * The chip at `source` becomes an either/or alternative of the chip at
+ * `target`. A combined level cannot travel into a cluster and is dropped;
+ * a plain-repeat stack keeps its copies by trading them for identity
+ * labels, which the cluster's members then share.
+ */
 export function joinAlternatives(requirements: RequirementState[], source: number, target: number): RequirementState[] {
   if (source === target) return requirements
   const group = requirements[target].alternativeGroup ?? nextAlternativeGroup(requirements)
   if (requirements[source].alternativeGroup === group) return requirements
-  const joined = requirements.map((requirement, index) => {
-    if (index !== source && index !== target) return requirement
-    // Alternatives cannot carry a combined-upgrade total.
-    const { upgradeSum: _s, ...rest } = requirement
-    return { ...rest, alternativeGroup: group }
-  })
-  return collapseLoneGroups(moveAfter(joined, source, (requirement) => requirement.alternativeGroup === group))
+  let next = [...requirements]
+  // Trade plain repeats for identity copies so the stack survives the move.
+  for (const index of [source, target]) {
+    const anchor = next[index]
+    if (anchor.item === undefined || anchor.identityGroup !== undefined) continue
+    const copies = next
+      .map((requirement, i) => ({ requirement, i }))
+      .filter(({ requirement, i }) => i !== index && anchor.item !== undefined && isPlainItemCopy(requirement, anchor.item))
+      .map(({ i }) => i)
+    if (copies.length === 0) continue
+    const label = freeGroup(next.map((requirement) => requirement.identityGroup), IDENTITY_GROUP_MAX)
+    if (label === undefined) continue
+    next[index] = { ...anchor, identityGroup: label }
+    for (const i of copies) next[i] = bareCopy(anchor, label)
+  }
+  next = next.map((requirement, index) => (
+    index === source || index === target
+      ? { ...requirement, alternativeGroup: group, levelSum: undefined }
+      : requirement
+  ))
+  return normalize(moveAfter(next, source, (requirement) => requirement.alternativeGroup === group))
 }
 
-/** The chips at `source` and `target` must be the same kind of item. */
-export function linkIdentity(requirements: RequirementState[], source: number, target: number): RequirementState[] | undefined {
-  if (source === target) return requirements
-  const existing = requirements[target].identityGroup ?? requirements[source].identityGroup
-  const group = existing ?? freeGroup(requirements.map((requirement) => requirement.identityGroup), IDENTITY_GROUP_MAX)
-  if (group === undefined) return undefined
-  if (requirements[source].identityGroup === group && requirements[target].identityGroup === group) return requirements
-  return collapseLoneGroups(requirements.map((requirement, index) => (
-    index === source || index === target ? { ...requirement, identityGroup: group } : requirement
+/** Pulls the chip at `index` out of its cluster; it leaves its stack behind. */
+export function detach(requirements: RequirementState[], index: number): RequirementState[] {
+  const { alternativeGroup: _a, identityGroup: _i, ...rest } = requirements[index]
+  return normalize(requirements.map((requirement, i) => (i === index ? rest : requirement)))
+}
+
+/** Deletes a whole board item: its members and its hidden copies. */
+export function removeItem(requirements: RequirementState[], item: BoardItem): RequirementState[] {
+  const doomed = new Set([...item.members, ...item.extras])
+  return normalize(requirements.filter((_, index) => !doomed.has(index)))
+}
+
+/** Deletes one cluster member; the cluster and its stack live on without it. */
+export function removeMember(requirements: RequirementState[], index: number): RequirementState[] {
+  return normalize(requirements.filter((_, i) => i !== index))
+}
+
+/** Sets how many items the board item anchored at `item` asks for. */
+export function setStackCount(requirements: RequirementState[], item: BoardItem, count: number): RequirementState[] {
+  const wanted = Math.max(1, Math.min(STACK_MAX, count)) - 1
+  if (wanted === item.extras.length) return requirements
+  if (wanted < item.extras.length) {
+    const doomed = new Set(item.extras.slice(wanted))
+    return normalize(requirements.filter((_, index) => !doomed.has(index)))
+  }
+  const anchorIndex = item.members[0]
+  const anchor = requirements[anchorIndex]
+  const added = wanted - item.extras.length
+  let copy: RequirementState
+  let next = [...requirements]
+  if (item.total !== undefined && anchor.levelSum) {
+    copy = { ...anchor }
+  } else if (item.cluster === undefined && anchor.item !== undefined) {
+    copy = plainCopy(anchor)
+  } else {
+    const label = anchor.identityGroup
+      ?? freeGroup(next.map((requirement) => requirement.identityGroup), IDENTITY_GROUP_MAX)
+    if (label === undefined) return requirements
+    next = next.map((requirement, index) => (
+      item.members.includes(index) ? { ...requirement, identityGroup: label } : requirement
+    ))
+    copy = bareCopy(anchor, label)
+  }
+  const insertAt = Math.max(...item.members, ...item.extras) + 1
+  next = [...next.slice(0, insertAt), ...Array.from({ length: added }, () => ({ ...copy })), ...next.slice(insertAt)]
+  return normalize(next)
+}
+
+/**
+ * Sets or clears the stack's combined level. Only a lone concrete chip can
+ * count levels; with a total the whole stack becomes identical optional
+ * members ("up to N items reaching T levels"), without one it returns to
+ * an anchor with plain repeats ("exactly N of the item").
+ */
+export function setStackTotal(requirements: RequirementState[], item: BoardItem, total: number | undefined): RequirementState[] {
+  const anchorIndex = item.members[0]
+  const anchor = requirements[anchorIndex]
+  if (item.cluster !== undefined || anchor.item === undefined) return requirements
+  const indices = [anchorIndex, ...item.extras]
+  if (total === undefined) {
+    return normalize(requirements.map((requirement, index) => {
+      if (!indices.includes(index)) return requirement
+      return index === anchorIndex
+        ? { ...requirement, levelSum: undefined }
+        : plainCopy(anchor)
+    }))
+  }
+  const group = anchor.levelSum?.group
+    ?? freeGroup(requirements.map((requirement) => requirement.levelSum?.group), LEVEL_SUM_GROUP_MAX)
+  if (group === undefined) return requirements
+  const member: RequirementState = {
+    ...anchor,
+    upgrade: { mode: 'any', value: 1 },
+    identityGroup: undefined,
+    levelSum: { group, atLeast: total },
+  }
+  return normalize(requirements.map((requirement, index) => (
+    indices.includes(index) ? { ...member } : requirement
   )))
 }
 
-/** The chip at `source` joins the Σ bundle of the chip at `target`, or forms a new one with it. */
-export function joinBundle(requirements: RequirementState[], source: number, target: number): RequirementState[] | undefined {
-  if (source === target) return requirements
-  const existing = requirements[target].upgradeSum?.group
-  const group = existing ?? freeGroup(requirements.map((requirement) => requirement.upgradeSum?.group), UPGRADE_SUM_GROUP_MAX)
-  if (group === undefined) return undefined
-  if (requirements[source].upgradeSum?.group === group) return requirements
-  const members = requirements.filter((requirement, index) => index === source || index === target || requirement.upgradeSum?.group === group)
-  const capacity = upgradeSumCapacity(members)
-  // A new bundle starts at half its capacity: clearly a shared total, clearly reachable.
-  const atLeast = clamp(requirements[target].upgradeSum?.atLeast ?? Math.ceil(capacity / 2), 1, Math.max(1, capacity))
-  const joined = requirements.map((requirement, index) => {
-    if (index !== source && index !== target) return requirement
-    // Bundle members cannot be either/or alternatives.
-    const { alternativeGroup: _a, ...rest } = requirement
-    return { ...rest, upgradeSum: { group, atLeast } }
-  })
-  return collapseLoneGroups(moveAfter(joined, source, (requirement) => requirement.upgradeSum?.group === group))
-}
-
-/** Sets one bundle's shared total. */
-export function setBundleTotal(requirements: RequirementState[], group: number, atLeast: number): RequirementState[] {
-  return requirements.map((requirement) => (
-    requirement.upgradeSum?.group === group ? { ...requirement, upgradeSum: { group, atLeast } } : requirement
-  ))
-}
-
-/** Pulls the chip at `index` out of its either/or cluster and Σ bundle (a same-item tether stays). */
-export function detach(requirements: RequirementState[], index: number): RequirementState[] {
-  const { alternativeGroup: _a, upgradeSum: _s, ...rest } = requirements[index]
-  return collapseLoneGroups(requirements.map((requirement, i) => (i === index ? rest : requirement)))
-}
-
-/** Cuts the same-item tether of the chip at `index`. */
-export function unlinkIdentity(requirements: RequirementState[], index: number): RequirementState[] {
-  const { identityGroup: _i, ...rest } = requirements[index]
-  return collapseLoneGroups(requirements.map((requirement, i) => (i === index ? rest : requirement)))
-}
-
-export function removeAt(requirements: RequirementState[], index: number): RequirementState[] {
-  return collapseLoneGroups(requirements.filter((_, i) => i !== index))
-}
-
-/** Applies the relation a drop or a "with…" pick asked for. */
-export function relate(requirements: RequirementState[], relation: Relation, source: number, target: number): RequirementState[] | undefined {
-  if (relation === 'alternative') return joinAlternatives(requirements, source, target)
-  if (relation === 'identity') return linkIdentity(requirements, source, target)
-  return joinBundle(requirements, source, target)
+/**
+ * Applies the editor's result: the anchor's own fields plus the stack's
+ * shape. `index` is the edited anchor, or `null` for a new chip. Editing a
+ * cluster member leaves the stack's count and total to the cluster.
+ */
+export function applyEdit(
+  requirements: RequirementState[],
+  index: number | null,
+  requirement: RequirementState,
+  count: number,
+  total: number | undefined,
+): RequirementState[] {
+  let next: RequirementState[]
+  let anchorIndex: number
+  if (index === null) {
+    next = [...requirements, requirement]
+    anchorIndex = next.length - 1
+  } else {
+    next = requirements.map((current, i) => (i === index ? { ...requirement, alternativeGroup: current.alternativeGroup } : current))
+    anchorIndex = index
+  }
+  if (next[anchorIndex].alternativeGroup !== undefined) return normalize(next)
+  // Rebuild the stack around the edited anchor: the old copies are found on
+  // the collapsed board, then count and total are re-applied.
+  next = normalize(next)
+  let item = boardItems(next).find((entry) => entry.members.includes(anchorIndex))
+  if (!item) return next
+  if (item.total !== undefined && total === undefined) {
+    next = setStackTotal(next, item, undefined)
+    item = boardItems(next).find((entry) => entry.members.includes(anchorIndex)) ?? item
+  }
+  next = setStackCount(next, item, count)
+  if (total !== undefined) {
+    const refreshed = boardItems(next).find((entry) => entry.members.includes(anchorIndex))
+    if (refreshed) next = setStackTotal(next, refreshed, total)
+  }
+  return next
 }

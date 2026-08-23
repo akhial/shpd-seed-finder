@@ -16,11 +16,11 @@ describe('requirement summary text', () => {
     expect(effectLabel(requirement({ kind: 'armor', effect: 'any_enchantment' }))).toBe('any glyph')
   })
 
-  it('lists the combined upgrade group with its total', () => {
-    expect(requirementDetails(requirement({ kind: 'ring', item: 'ring_might', upgradeSum: { group: 1, atLeast: 4 } })))
-      .toEqual(['sum group A ≥ +4'])
+  it('lists the combined level and the stack', () => {
+    expect(requirementDetails(requirement({ kind: 'ring', item: 'ring_might', levelSum: { group: 1, atLeast: 4 } })))
+      .toEqual(['levels ≥ 4 together'])
     expect(requirementDetails(requirement({ upgrade: { mode: 'exact', value: 2 }, effect: ['Blocking', 'Vampiric'], identityGroup: 2 })))
-      .toEqual(['exactly +2', 'effect: Blocking/Vampiric', 'group B'])
+      .toEqual(['exactly +2', 'effect: Blocking/Vampiric', 'same-kind stack'])
   })
 
   it('titles "any of these" cards and counts slots', () => {

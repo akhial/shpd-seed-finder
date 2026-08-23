@@ -32,11 +32,11 @@ export const BOUNDED_TIER_MAX = 4
 /** Highest same-item group number (groups run 1..this, shown as A..D). */
 export const IDENTITY_GROUP_MAX = 4
 
-/** Highest combined-upgrade group number (groups run 1..this, shown as A..D). */
-export const UPGRADE_SUM_GROUP_MAX = 4
+/** Highest combined-level group number (groups run 1..this). */
+export const LEVEL_SUM_GROUP_MAX = 4
 
-/** The letter a 1-based group number is shown as (1 → A). */
-export const groupLetter = (group: number): string => 'ABCD'[group - 1] ?? String(group)
+/** The most items a stack may ask for, its anchor included. */
+export const STACK_MAX = 4
 
 /** The highest upgrade a search may name for an item family. */
 export const MAX_UPGRADE_DEFAULT = 3
@@ -49,15 +49,29 @@ export const requirementFamily = (requirement: Pick<RequirementState, 'kind' | '
   (requirement.kind ? kindFamily(requirement.kind) : requirement.item ? getItem(requirement.item)?.type : undefined)
 
 /**
- * The most upgrade one requirement can contribute to a combined-upgrade
- * total: an exact upgrade counts as itself, anything else as the family cap.
+ * The most *levels* — upgrade plus one — one requirement can contribute to a
+ * combined-level total: an exact upgrade counts as itself, anything else as
+ * the family cap.
  */
-export const maxUpgradeOf = (requirement: RequirementState): number =>
-  (requirement.upgrade.mode === 'exact' ? requirement.upgrade.value : maxUpgradeFor(requirementFamily(requirement)))
+export const maxLevelOf = (requirement: RequirementState): number =>
+  (requirement.upgrade.mode === 'exact' ? requirement.upgrade.value : maxUpgradeFor(requirementFamily(requirement))) + 1
 
-/** The highest total a combined-upgrade group's members can reach together. */
-export const upgradeSumCapacity = (members: RequirementState[]): number =>
-  members.reduce((total, member) => total + maxUpgradeOf(member), 0)
+/** The highest combined level a group's members can reach together. */
+export const levelSumCapacity = (members: RequirementState[]): number =>
+  members.reduce((total, member) => total + maxLevelOf(member), 0)
+
+/**
+ * Whether a requirement constrains anything beyond its category: a stack's
+ * extra copies are exactly the unconstrained requirements. A per-item floor
+ * limit is a placement bound, not an item property, and does not count.
+ */
+export const isBareRequirement = (requirement: RequirementState): boolean =>
+  requirement.item === undefined
+  && requirement.tier.mode === 'any'
+  && requirement.upgrade.mode === 'any'
+  && requirement.effect === undefined
+  && !requirement.uncursed
+  && requirement.source === undefined
 
 /** True when the effect filter is the "some non-curse effect" shorthand. */
 export const isAnyEnchantment = (effect: EffectFilter | undefined): boolean => effect === ANY_ENCHANTMENT
@@ -188,7 +202,7 @@ function requirementToDocument(requirement: RequirementState): RequirementDocume
   if (requirement.source) output.source = requirement.source
   if (requirement.identityGroup) output.identity_group = requirement.identityGroup
   if (requirement.maxDepth !== undefined) output.max_depth = requirement.maxDepth
-  if (requirement.upgradeSum) output.upgrade_sum = { group: requirement.upgradeSum.group, at_least: requirement.upgradeSum.atLeast }
+  if (requirement.levelSum) output.level_sum = { group: requirement.levelSum.group, at_least: requirement.levelSum.atLeast }
   return output
 }
 
@@ -264,12 +278,12 @@ function effectFromDocument(value: unknown, kind: string | undefined): EffectFil
   throw new Error('unrecognized effect filter')
 }
 
-function upgradeSumFromDocument(value: unknown): RequirementState['upgradeSum'] {
+function levelSumFromDocument(value: unknown): RequirementState['levelSum'] {
   if (value === undefined || value === null) return undefined
   if (isRecord(value) && typeof value.group === 'number' && typeof value.at_least === 'number') {
     return { group: value.group, atLeast: value.at_least }
   }
-  throw new Error('unrecognized upgrade_sum')
+  throw new Error('unrecognized level_sum')
 }
 
 function requirementFromDocument(value: RequirementDocument, alternativeGroup?: number): RequirementState {
@@ -290,8 +304,10 @@ function requirementFromDocument(value: RequirementDocument, alternativeGroup?: 
     maxDepth: value.max_depth === undefined ? undefined : normalizeFloorLimit(value.max_depth),
   }
   if (alternativeGroup !== undefined) requirement.alternativeGroup = alternativeGroup
-  const upgradeSum = upgradeSumFromDocument(raw.upgrade_sum)
-  if (upgradeSum) requirement.upgradeSum = upgradeSum
+  // The unreleased upgrade_sum key is refused rather than reinterpreted.
+  if (raw.upgrade_sum !== undefined) throw new Error('upgrade_sum is no longer supported; use level_sum')
+  const levelSum = levelSumFromDocument(raw.level_sum)
+  if (levelSum) requirement.levelSum = levelSum
   return requirement
 }
 
@@ -366,14 +382,14 @@ export function validateRequirement(requirement: RequirementState): string[] {
       }
     }
   }
-  if (requirement.upgradeSum) {
-    const { group, atLeast } = requirement.upgradeSum
-    if (group < 1 || group > UPGRADE_SUM_GROUP_MAX) errors.push(`Combined upgrade group must be A through ${groupLetter(UPGRADE_SUM_GROUP_MAX)}.`)
-    if (atLeast < 1) errors.push('A combined upgrade total must be at least +1.')
-    if (requirement.alternativeGroup !== undefined) errors.push('An alternative cannot be in a combined upgrade group.')
+  if (requirement.levelSum) {
+    const { group, atLeast } = requirement.levelSum
+    if (group < 1 || group > LEVEL_SUM_GROUP_MAX) errors.push(`A combined-level group must be 1 through ${LEVEL_SUM_GROUP_MAX}.`)
+    if (atLeast < 1) errors.push('A combined level must be at least 1.')
+    if (requirement.alternativeGroup !== undefined) errors.push('An either/or alternative cannot count a combined level.')
   }
   if (requirement.identityGroup !== undefined && (requirement.identityGroup < 1 || requirement.identityGroup > IDENTITY_GROUP_MAX)) {
-    errors.push(`Same-item group must be A through ${groupLetter(IDENTITY_GROUP_MAX)}.`)
+    errors.push(`A stack group must be 1 through ${IDENTITY_GROUP_MAX}.`)
   }
   return errors
 }
@@ -385,50 +401,46 @@ export function validateQuery(state: QueryState): ValidationResult {
   state.requirements.forEach((requirement, index) => {
     for (const error of validateRequirement(requirement)) errors.push(`Requirement ${index + 1}: ${error}`)
   })
-  // Identity groups: members in different slots must be the same kind of
-  // item. Alternatives of one slot may disagree, since only one of them is
-  // ever assigned.
-  const slotKey = new Map<number, string>()
-  querySlots(state.requirements).forEach((slot) => slot.members.forEach((index) => slotKey.set(index, slot.key)))
-  const slotOf = (index: number): string | undefined => slotKey.get(index)
+  // A stack (identity group) has one anchor unit — a lone requirement or
+  // one alternative group — that may constrain the item it binds to; every
+  // other member is a bare copy of the same category.
   const identityMembers = new Map<number, number[]>()
   state.requirements.forEach((requirement, index) => {
     if (!requirement.identityGroup) return
     identityMembers.set(requirement.identityGroup, [...(identityMembers.get(requirement.identityGroup) ?? []), index])
   })
-  for (const [group, members] of identityMembers) {
-    let reported = false
-    for (let a = 0; a < members.length && !reported; a += 1) {
-      for (let b = a + 1; b < members.length; b += 1) {
-        if (slotOf(members[a]) === slotOf(members[b])) continue
-        const first = state.requirements[members[a]]
-        const second = state.requirements[members[b]]
-        const incompatible = requirementFamily(first) !== requirementFamily(second)
-          || (first.item && second.item && first.item !== second.item)
-        if (incompatible) {
-          errors.push(`Identity group ${group} has incompatible category or item requirements.`)
-          reported = true
-          break
-        }
-      }
-    }
-  }
-  // Combined-upgrade groups: one shared total that the members can reach.
-  const sumMembers = new Map<number, RequirementState[]>()
-  for (const requirement of state.requirements) {
-    if (!requirement.upgradeSum) continue
-    sumMembers.set(requirement.upgradeSum.group, [...(sumMembers.get(requirement.upgradeSum.group) ?? []), requirement])
-  }
-  for (const [group, members] of sumMembers) {
-    const letter = groupLetter(group)
-    const totals = new Set(members.map((member) => member.upgradeSum?.atLeast))
-    if (totals.size > 1) {
-      errors.push(`Combined upgrade group ${letter} must share one total.`)
+  for (const members of identityMembers.values()) {
+    const families = new Set(members.map((index) => requirementFamily(state.requirements[index])))
+    if (families.size > 1) {
+      errors.push('The copies of a stack must share its category.')
       continue
     }
-    const needed = members[0].upgradeSum?.atLeast ?? 0
-    const capacity = upgradeSumCapacity(members)
-    if (needed > capacity) errors.push(`Combined upgrade group ${letter} needs +${needed} but its items can carry at most +${capacity}.`)
+    // The constrained members must all live in one unit.
+    const units = new Set(
+      members
+        .filter((index) => !isBareRequirement(state.requirements[index]))
+        .map((index) => state.requirements[index].alternativeGroup === undefined
+          ? `req:${index}`
+          : `alt:${state.requirements[index].alternativeGroup}`),
+    )
+    if (units.size > 1) errors.push('Only one item of a stack can carry constraints; the extra copies are plain.')
+  }
+  // Combined-level groups: one shared, reachable total, counted in levels
+  // (upgrade plus one per item).
+  const sumMembers = new Map<number, RequirementState[]>()
+  for (const requirement of state.requirements) {
+    if (!requirement.levelSum) continue
+    sumMembers.set(requirement.levelSum.group, [...(sumMembers.get(requirement.levelSum.group) ?? []), requirement])
+  }
+  for (const members of sumMembers.values()) {
+    const totals = new Set(members.map((member) => member.levelSum?.atLeast))
+    if (totals.size > 1) {
+      errors.push('A stack must share one combined level.')
+      continue
+    }
+    const needed = members[0].levelSum?.atLeast ?? 0
+    const capacity = levelSumCapacity(members)
+    if (needed > capacity) errors.push(`A combined level of ${needed} needs more items: these ${members.length} can reach ${capacity}.`)
   }
   return { valid: errors.length === 0, errors }
 }

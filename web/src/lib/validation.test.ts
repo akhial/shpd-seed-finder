@@ -18,7 +18,7 @@ describe('query validation', () => {
     expect(validateQuery(state(requirement({ effect: 'Annoying', uncursed: true }))).errors.join(' ')).toMatch(/curse/)
   })
   it('rejects mismatched identity groups', () => {
-    expect(validateQuery(state(requirement({ identityGroup: 1 }), requirement({ kind: 'armor', identityGroup: 1 }))).errors.join(' ')).toMatch(/Identity group/)
+    expect(validateQuery(state(requirement({ identityGroup: 1 }), requirement({ kind: 'armor', identityGroup: 1 }))).errors.join(' ')).toMatch(/share its category/)
   })
   it('validates melee and thrown weapon kinds', () => {
     expect(validateQuery(state(requirement({ kind: 'melee_weapon' })))).toEqual({ valid: true, errors: [] })
@@ -33,7 +33,7 @@ describe('query validation', () => {
   it('accepts a valid full query', () => {
     const query = state(
       requirement({ tier: { mode: 'at_least', value: 3 }, upgrade: { mode: 'at_least', value: 2 }, effect: 'Blazing', source: 'locked_chest', maxDepth: 12, identityGroup: 1 }),
-      requirement({ item: 'sword', upgrade: { mode: 'exact', value: 1 }, identityGroup: 1 }),
+      requirement({ identityGroup: 1 }),
     )
     query.maxDepth = 20; query.requireBlacksmith = true; query.challenges = ['on_diet']
     expect(validateQuery(query)).toEqual({ valid: true, errors: [] })
@@ -50,45 +50,44 @@ describe('query validation', () => {
     expect(validateRequirement(requirement({ effect: [] }))).toEqual(['Choose at least one effect.'])
   })
 
-  it('checks combined upgrade groups for agreement and attainability, naming the group', () => {
+  it('checks combined levels for agreement and attainability', () => {
     const might = (patch: Partial<RequirementState>) => requirement({ kind: 'ring', item: 'ring_might', ...patch })
-    expect(validateQuery(state(might({ upgradeSum: { group: 1, atLeast: 4 } }), might({ upgradeSum: { group: 1, atLeast: 4 } })))).toEqual({ valid: true, errors: [] })
-    expect(validateQuery(state(might({ upgradeSum: { group: 1, atLeast: 2 } }), might({ upgradeSum: { group: 1, atLeast: 3 } }))).errors)
-      .toEqual(['Combined upgrade group A must share one total.'])
-    // An exact upgrade counts as itself, anything else as the family cap (4 for rings).
+    expect(validateQuery(state(might({ levelSum: { group: 1, atLeast: 4 } }), might({ levelSum: { group: 1, atLeast: 4 } })))).toEqual({ valid: true, errors: [] })
+    expect(validateQuery(state(might({ levelSum: { group: 1, atLeast: 2 } }), might({ levelSum: { group: 1, atLeast: 3 } }))).errors)
+      .toEqual(['A stack must share one combined level.'])
+    // An item counts its upgrade plus one: an exact +3 ring reaches 4 levels,
+    // an open one 5, so the pair can reach 9 together.
     expect(validateQuery(state(
-      might({ upgradeSum: { group: 2, atLeast: 9 } }),
-      might({ upgrade: { mode: 'exact', value: 3 }, upgradeSum: { group: 2, atLeast: 9 } }),
-    )).errors).toEqual(['Combined upgrade group B needs +9 but its items can carry at most +7.'])
-    expect(validateQuery(state(might({ upgradeSum: { group: 1, atLeast: 0 } }))).errors.join(' ')).toMatch(/at least \+1/)
-    expect(validateQuery(state(might({ upgradeSum: { group: 5, atLeast: 1 } }))).errors.join(' ')).toMatch(/A through D/)
+      might({ levelSum: { group: 2, atLeast: 10 } }),
+      might({ upgrade: { mode: 'exact', value: 3 }, levelSum: { group: 2, atLeast: 10 } }),
+    )).errors).toEqual(['A combined level of 10 needs more items: these 2 can reach 9.'])
+    expect(validateQuery(state(might({ levelSum: { group: 1, atLeast: 0 } }))).errors.join(' ')).toMatch(/at least 1/)
+    expect(validateQuery(state(might({ levelSum: { group: 5, atLeast: 1 } }))).errors.join(' ')).toMatch(/1 through 4/)
     expect(validateQuery(state(
-      might({ alternativeGroup: 1, upgradeSum: { group: 1, atLeast: 2 } }),
+      might({ alternativeGroup: 1, levelSum: { group: 1, atLeast: 2 } }),
       might({ alternativeGroup: 1 }),
     )).errors.join(' ')).toMatch(/alternative cannot/)
   })
 
-  it('exempts alternatives of one slot from identity-group agreement', () => {
-    // Alternatives of one slot may disagree (only one is ever assigned);
-    // every cross-slot pair must still agree.
+  it('checks stacks: one category, one constrained anchor unit', () => {
+    // An either/or cluster may anchor a stack; its bare copy follows
+    // whichever member matched.
     expect(validateQuery(state(
       requirement({ item: 'spear', identityGroup: 1, alternativeGroup: 1 }),
-      requirement({ kind: 'armor', identityGroup: 1, alternativeGroup: 1 }),
+      requirement({ item: 'sword', identityGroup: 1, alternativeGroup: 1 }),
+      requirement({ identityGroup: 1 }),
     ))).toEqual({ valid: true, errors: [] })
+    // Copies of another category can never be the same item.
     expect(validateQuery(state(
-      requirement({ item: 'spear', identityGroup: 1, alternativeGroup: 1 }),
-      requirement({ kind: 'weapon', identityGroup: 1, alternativeGroup: 1 }),
       requirement({ item: 'spear', identityGroup: 1 }),
-    ))).toEqual({ valid: true, errors: [] })
-    expect(validateQuery(state(
-      requirement({ item: 'spear', identityGroup: 1, alternativeGroup: 1 }),
-      requirement({ kind: 'armor', identityGroup: 1, alternativeGroup: 1 }),
-      requirement({ item: 'spear', identityGroup: 1 }),
-    )).valid).toBe(false)
+      requirement({ kind: 'armor', identityGroup: 1 }),
+    )).errors).toEqual(['The copies of a stack must share its category.'])
+    // A second constrained unit would describe two different items forced
+    // to be the same one.
     expect(validateQuery(state(
       requirement({ item: 'spear', identityGroup: 1, alternativeGroup: 1 }),
       requirement({ item: 'sword', identityGroup: 1, alternativeGroup: 1 }),
       requirement({ item: 'mace', identityGroup: 1 }),
-    )).errors).toEqual(['Identity group 1 has incompatible category or item requirements.'])
+    )).errors).toEqual(['Only one item of a stack can carry constraints; the extra copies are plain.'])
   })
 })

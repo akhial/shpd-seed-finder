@@ -172,7 +172,7 @@ body {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 330px minmax(320px, 0.9fr) minmax(380px, 1.1fr);
+  grid-template-columns: minmax(330px, 0.8fr) minmax(320px, 0.9fr) minmax(380px, 1.1fr);
 }
 
 .d1-pane {
@@ -938,22 +938,6 @@ input[type='range']::-moz-range-thumb {
 .d1-board-dragging { background: rgba(255, 255, 255, 0.025); }
 .d1-board.d1-drop-detach { box-shadow: inset 0 0 0 1px var(--d1-border-strong); }
 
-.d1-tethers {
-  position: absolute;
-  left: 0;
-  top: 0;
-  overflow: visible;
-  pointer-events: none;
-  z-index: 0;
-}
-
-.d1-tethers path {
-  fill: none;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  opacity: 0.85;
-}
-
 .d1-chip {
   --d1-chip-bg: var(--d1-panel-2);
   position: relative;
@@ -1012,22 +996,6 @@ input[type='range']::-moz-range-thumb {
 .d1-chip-effect-curse { background: #111; color: #ddd; box-shadow: inset 0 0 0 1px #555; }
 .d1-chip-effect-any { background: conic-gradient(#ff5555, #ffff55, #55ff55, #55ffff, #5555ff, #ff55ff, #ff5555); }
 
-/* Same-item tether: a dot at the chip's lower edge, where its curve attaches. */
-.d1-chip-tether {
-  position: absolute;
-  left: 50%;
-  bottom: -4px;
-  width: 7px;
-  height: 7px;
-  margin-left: -3.5px;
-  background: var(--d1-tether);
-  border-radius: 50%;
-  box-shadow: 0 0 0 2px var(--d1-bg);
-}
-
-.d1-chip[style*='--d1-tether'] { border-color: color-mix(in srgb, var(--d1-tether) 55%, var(--d1-border-strong)); }
-.d1-chip-peer { box-shadow: 0 0 0 2px color-mix(in srgb, var(--d1-tether) 40%, transparent); }
-
 .d1-chip-x {
   display: none;
   align-items: center;
@@ -1061,10 +1029,8 @@ input[type='range']::-moz-range-thumb {
 
 .d1-chip-add:hover { color: var(--d1-text); border-color: var(--d1-text-3); }
 
-/* Drop feedback: the relation a release would make, by colour. */
+/* Drop feedback: joining an either/or cluster. */
 .d1-drop-alternative { border-color: var(--d1-amber) !important; box-shadow: 0 0 0 2px var(--d1-amber-dim); }
-.d1-drop-identity { border-color: var(--d1-teal) !important; box-shadow: 0 0 0 2px rgba(88, 194, 180, 0.25); }
-.d1-drop-upgradeSum { border-color: var(--d1-green) !important; box-shadow: 0 0 0 2px rgba(110, 201, 143, 0.25); }
 
 /* Pick mode (menu fallback): the source is held, the others invite a click. */
 .d1-chip-pick-source { border-color: var(--d1-amber); box-shadow: 0 0 0 2px var(--d1-amber-dim); }
@@ -1092,8 +1058,6 @@ input[type='range']::-moz-range-thumb {
 }
 
 .d1-ghost-alternative { background: var(--d1-amber); }
-.d1-ghost-identity { background: var(--d1-teal); }
-.d1-ghost-upgradeSum { background: var(--d1-green); }
 
 /* Either/or cluster: the chips share one capsule. */
 .d1-cluster {
@@ -1122,50 +1086,35 @@ input[type='range']::-moz-range-thumb {
   opacity: 0.85;
 }
 
-/* Σ bundle: the chips and one shared total. */
-.d1-bundle {
-  position: relative;
-  z-index: 1;
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 3px 3px 4px;
-  background: rgba(110, 201, 143, 0.05);
-  border: 1px solid rgba(110, 201, 143, 0.45);
-  border-radius: 20px;
-  transition: border-color 0.12s ease, box-shadow 0.12s ease;
-}
+/* Stack badges: how many of the chip (×N / ≤N) and the combined level (Σ). */
 
-.d1-bundle-error { border-color: var(--d1-danger); }
-
-.d1-bundle-badge {
+.d1-stack-badge {
   display: inline-flex;
   align-items: center;
-  height: 22px;
-  padding: 0 8px;
-  font: inherit;
+  height: 18px;
+  padding: 0 6px;
   font-family: var(--d1-mono);
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 700;
   color: var(--d1-accent-ink);
   background: var(--d1-green);
   border: none;
-  border-radius: 11px;
+  border-radius: 9px;
   white-space: nowrap;
 }
 
-.d1-bundle-badge-btn { cursor: pointer; }
-.d1-bundle-badge-btn:hover { background: #84d8a3; }
+.d1-stack-badge-total { color: #000; background: var(--d1-amber); }
+.d1-stack-badge-btn { cursor: pointer; }
+.d1-stack-badge-btn:hover { filter: brightness(1.12); }
 
-.d1-bundle-edit { display: inline-flex; align-items: center; gap: 3px; }
+.d1-stack-edit { display: inline-flex; align-items: center; gap: 3px; }
 
-.d1-bundle-edit > button {
-  width: 22px;
-  height: 22px;
+.d1-stack-edit > button {
+  width: 18px;
+  height: 18px;
   padding: 0;
   font: inherit;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1;
   color: var(--d1-text);
   background: var(--d1-raised);
@@ -1174,8 +1123,11 @@ input[type='range']::-moz-range-thumb {
   cursor: pointer;
 }
 
-.d1-bundle-edit > button:disabled { opacity: 0.35; cursor: default; }
-.d1-bundle-edit > .d1-bundle-done { color: var(--d1-green); font-size: 12px; }
+.d1-stack-edit > button:disabled { opacity: 0.35; cursor: default; }
+.d1-stack-edit > .d1-stack-done { color: var(--d1-green); font-size: 11px; border: none; background: transparent; }
+
+/* The cluster's badges sit at its trailing edge. */
+.d1-cluster > .d1-stack-badge, .d1-cluster > .d1-stack-edit { margin: 0 3px; }
 
 .d1-board-status {
   margin: 0 4px;
@@ -1261,6 +1213,36 @@ input[type='range']::-moz-range-thumb {
 .d1-chip-menu > button > b { min-width: 18px; font-family: var(--d1-mono); font-size: 11.5px; text-align: center; color: var(--d1-amber); }
 .d1-chip-menu-danger { color: var(--d1-danger) !important; }
 .d1-chip-menu-rule { height: 1px; margin: 3px 4px; background: var(--d1-border); }
+
+.d1-chip-menu-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 9px;
+  font-size: 13px;
+}
+
+.d1-chip-menu-stepper > span:first-child { display: flex; align-items: center; gap: 8px; }
+.d1-chip-menu-stepper b { min-width: 18px; font-family: var(--d1-mono); font-size: 11.5px; text-align: center; color: var(--d1-amber); }
+
+.d1-chip-menu-count { display: inline-flex; align-items: center; gap: 6px; }
+
+.d1-chip-menu-count > button {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--d1-text);
+  background: var(--d1-raised);
+  border: 1px solid var(--d1-border-strong);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.d1-chip-menu-count > button:disabled { opacity: 0.35; cursor: default; }
 
 /* ---------- Details / challenges ---------- */
 

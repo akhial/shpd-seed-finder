@@ -1,13 +1,29 @@
 import { describe, expect, it } from 'vitest'
-import { fromQueryJson, toQueryDocument, validateQuery } from '../../lib/query'
-import type { RequirementState } from '../../lib/wasm/types'
-import { boardItems, detach, joinAlternatives, joinBundle, linkIdentity, removeAt, setBundleTotal, unlinkIdentity } from './relations'
+import { fromQueryJson, toQueryDocument, toQueryJson, validateQuery } from '../../lib/query'
+import type { QueryState, RequirementState } from '../../lib/wasm/types'
+import {
+  applyEdit,
+  boardItems,
+  detach,
+  joinAlternatives,
+  removeItem,
+  removeMember,
+  setStackCount,
+  setStackTotal,
+  stackCount,
+} from './relations'
 
 const req = (patch: Partial<RequirementState> = {}): RequirementState => ({
   kind: 'weapon', tier: { mode: 'any', value: 3 }, upgrade: { mode: 'any', value: 1 }, uncursed: false, ...patch,
 })
 
+const asState = (requirements: RequirementState[]): QueryState => ({ ...fromQueryJson('{"requirements":[]}'), requirements })
 const names = (requirements: RequirementState[]) => requirements.map((r) => r.item ?? r.kind)
+const item = (requirements: RequirementState[], index: number) => {
+  const found = boardItems(requirements).find((entry) => entry.members.includes(index))
+  if (!found) throw new Error(`no board item holds ${index}`)
+  return found
+}
 
 describe('either/or clusters', () => {
   it('dropping a chip on another makes one any_of slot, placed after the target', () => {
@@ -15,53 +31,158 @@ describe('either/or clusters', () => {
     const next = joinAlternatives(base, 2, 0)
     expect(names(next)).toEqual(['spear', 'shuriken', 'armor'])
     expect(next[0].alternativeGroup).toBe(next[1].alternativeGroup)
-    expect(boardItems(next)).toEqual([{ type: 'alternatives', group: 1, members: [0, 1] }, { type: 'chip', index: 2 }])
-    expect(toQueryDocument({ ...fromQueryJson('{"requirements":[]}'), requirements: next }).requirements[0]).toHaveProperty('any_of')
+    expect(boardItems(next).map((entry) => entry.members)).toEqual([[0, 1], [2]])
+    expect(toQueryDocument({ ...asState(next) }).requirements[0]).toHaveProperty('any_of')
   })
 
-  it('joining a cluster drops a bundle membership, and leaving a pair dissolves it', () => {
-    const base = [req({ item: 'spear', upgradeSum: { group: 1, atLeast: 2 } }), req({ item: 'mace', upgradeSum: { group: 1, atLeast: 2 } }), req({ item: 'shuriken' })]
+  it('joining a cluster drops a combined level, and leaving a pair dissolves it', () => {
+    const base = [
+      req({ item: 'ring_might', kind: 'ring', levelSum: { group: 1, atLeast: 3 } }),
+      req({ item: 'ring_might', kind: 'ring', levelSum: { group: 1, atLeast: 3 } }),
+      req({ item: 'shuriken' }),
+    ]
     const next = joinAlternatives(base, 0, 2)
-    expect(next.every((r) => r.upgradeSum === undefined)).toBe(true)
-    expect(next.filter((r) => r.alternativeGroup !== undefined).map((r) => r.item)).toEqual(['shuriken', 'spear'])
-    const out = detach(next, 1)
+    expect(next.every((r) => r.levelSum === undefined)).toBe(true)
+    const out = detach(next, next.findIndex((r) => r.item === 'shuriken'))
     expect(out.every((r) => r.alternativeGroup === undefined)).toBe(true)
   })
 })
 
-describe('same-item tethers', () => {
-  it('links two chips with the first free group and keeps them in place', () => {
-    const base = [req({ item: 'spear' }), req({ kind: 'armor' }), req({ kind: 'melee_weapon' })]
-    const next = linkIdentity(base, 2, 0)!
-    expect(names(next)).toEqual(['spear', 'armor', 'melee_weapon'])
-    expect(next[0].identityGroup).toBe(1)
-    expect(next[2].identityGroup).toBe(1)
-    expect(validateQuery({ ...fromQueryJson('{"requirements":[]}'), requirements: next }).valid).toBe(true)
-    expect(unlinkIdentity(next, 0).every((r) => r.identityGroup === undefined)).toBe(true)
+describe('stacks', () => {
+  it('a concrete stack encodes as plain repeats, no identity group', () => {
+    const base = [req({ item: 'ring_might', kind: 'ring', upgrade: { mode: 'exact', value: 2 } }), req({ kind: 'wand' })]
+    const next = setStackCount(base, item(base, 0), 3)
+    expect(next).toHaveLength(4)
+    expect(next.filter((r) => r.item === 'ring_might')).toHaveLength(3)
+    expect(next.every((r) => r.identityGroup === undefined)).toBe(true)
+    // The board folds the repeats back into one ×3 chip.
+    const board = boardItems(next)
+    expect(board).toHaveLength(2)
+    expect(stackCount(board[0])).toBe(3)
+    expect(board[0].total).toBeUndefined()
+    expect(validateQuery(asState(next)).valid).toBe(true)
+    // The round trip through the document keeps the stack.
+    const reloaded = fromQueryJson(toQueryJson(asState(next)))
+    expect(stackCount(boardItems(reloaded.requirements)[0])).toBe(3)
   })
 
-  it('adopts the target group and refuses when all four groups are taken', () => {
-    const base = [1, 1, 2, 2, 3, 3, 4, 4].map((group) => req({ identityGroup: group }))
-    expect(linkIdentity([...base, req()], 8, 0)![8].identityGroup).toBe(1)
-    expect(linkIdentity([...base, req(), req()], 8, 9)).toBeUndefined()
+  it('a wildcard stack encodes as bare copies sharing an identity group', () => {
+    const base = [req({ kind: 'wand', upgrade: { mode: 'at_least', value: 1 } })]
+    const next = setStackCount(base, item(base, 0), 3)
+    expect(next).toHaveLength(3)
+    expect(new Set(next.map((r) => r.identityGroup)).size).toBe(1)
+    expect(next[0].identityGroup).toBe(1)
+    expect(next.slice(1).every((r) => r.kind === 'wand' && r.item === undefined && r.upgrade.mode === 'any')).toBe(true)
+    expect(validateQuery(asState(next)).valid).toBe(true)
+    expect(stackCount(boardItems(next)[0])).toBe(3)
+    // Shrinking to one dissolves the group entirely.
+    const shrunk = setStackCount(next, item(next, 0), 1)
+    expect(shrunk).toHaveLength(1)
+    expect(shrunk[0].identityGroup).toBeUndefined()
+  })
+
+  it('an either/or cluster anchors a stack: every member carries the label', () => {
+    const base = joinAlternatives([req({ item: 'runic_blade' }), req({ item: 'war_hammer' })], 1, 0)
+    const next = setStackCount(base, item(base, 0), 3)
+    expect(next).toHaveLength(4)
+    expect(next.filter((r) => r.identityGroup === 1)).toHaveLength(4)
+    expect(next.filter((r) => r.alternativeGroup !== undefined)).toHaveLength(2)
+    expect(validateQuery(asState(next)).valid).toBe(true)
+    const board = boardItems(next)
+    expect(board).toHaveLength(1)
+    expect(board[0].cluster).toBeDefined()
+    expect(stackCount(board[0])).toBe(3)
+    // Removing one cluster member keeps the stack on the survivor.
+    const dissolved = removeMember(next, 1)
+    expect(boardItems(dissolved)).toHaveLength(1)
+    expect(stackCount(boardItems(dissolved)[0])).toBe(3)
+    expect(validateQuery(asState(dissolved)).valid).toBe(true)
+  })
+
+  it('a plain-repeat stack trades its copies for labels when it joins a cluster', () => {
+    const base = setStackCount([req({ item: 'spear' }), req({ item: 'mace' })], item([req({ item: 'spear' }), req({ item: 'mace' })], 0), 2)
+    const next = joinAlternatives(base, base.findIndex((r) => r.item === 'mace'), 0)
+    // The copy is now a bare weapon tied to the whole cluster.
+    const bare = next.filter((r) => r.item === undefined)
+    expect(bare).toHaveLength(1)
+    expect(bare[0].identityGroup).toBeDefined()
+    expect(next.filter((r) => r.alternativeGroup !== undefined).every((r) => r.identityGroup === bare[0].identityGroup)).toBe(true)
+    expect(validateQuery(asState(next)).valid).toBe(true)
+  })
+
+  it('deleting the anchor deletes its copies and leaves no stale groups', () => {
+    const wildcard = setStackCount([req({ kind: 'wand' }), req({ kind: 'armor' })], item([req({ kind: 'wand' }), req({ kind: 'armor' })], 0), 3)
+    const afterWildcard = removeItem(wildcard, item(wildcard, 0))
+    expect(afterWildcard).toHaveLength(1)
+    expect(afterWildcard[0].kind).toBe('armor')
+    expect(afterWildcard.every((r) => r.identityGroup === undefined)).toBe(true)
+
+    const total = setStackTotal(
+      setStackCount([req({ item: 'ring_might', kind: 'ring' })], item([req({ item: 'ring_might', kind: 'ring' })], 0), 2),
+      item(setStackCount([req({ item: 'ring_might', kind: 'ring' })], item([req({ item: 'ring_might', kind: 'ring' })], 0), 2), 0),
+      3,
+    )
+    const afterTotal = removeItem(total, item(total, 0))
+    expect(afterTotal).toHaveLength(0)
+  })
+
+  it('ejecting a member from a stacked cluster strips its label', () => {
+    let base = joinAlternatives([req({ item: 'spear' }), req({ item: 'mace' })], 1, 0)
+    base = setStackCount(base, item(base, 0), 2)
+    const ejected = detach(base, 0)
+    const spear = ejected.find((r) => r.item === 'spear')
+    expect(spear?.alternativeGroup).toBeUndefined()
+    expect(spear?.identityGroup).toBeUndefined()
+    expect(validateQuery(asState(ejected)).valid).toBe(true)
   })
 })
 
-describe('Σ bundles', () => {
-  it('forms a bundle with a reachable shared total and adopts an existing total', () => {
-    const base = [req({ kind: 'ring' }), req({ kind: 'ring' }), req({ item: 'spear', upgrade: { mode: 'exact', value: 2 } })]
-    const bundled = joinBundle(base, 1, 0)!
-    expect(bundled[0].upgradeSum).toEqual({ group: 1, atLeast: 4 })
-    expect(bundled[1].upgradeSum).toEqual({ group: 1, atLeast: 4 })
-    const raised = setBundleTotal(bundled, 1, 6)
-    const three = joinBundle(raised, 2, 0)!
-    expect(three.map((r) => r.upgradeSum?.atLeast)).toEqual([6, 6, 6])
-    expect(boardItems(three)).toEqual([{ type: 'bundle', group: 1, atLeast: 6, members: [0, 1, 2] }])
-    expect(validateQuery({ ...fromQueryJson('{"requirements":[]}'), requirements: three }).valid).toBe(true)
+describe('combined levels', () => {
+  it('a total turns the stack into identical optional members', () => {
+    let base = [req({ item: 'ring_might', kind: 'ring', upgrade: { mode: 'exact', value: 2 } })]
+    base = setStackCount(base, item(base, 0), 2)
+    const next = setStackTotal(base, item(base, 0), 3)
+    expect(next).toHaveLength(2)
+    expect(next.every((r) => r.levelSum?.group === 1 && r.levelSum.atLeast === 3)).toBe(true)
+    // The total speaks for the stack: per-member upgrades reset to any.
+    expect(next.every((r) => r.upgrade.mode === 'any')).toBe(true)
+    const board = boardItems(next)
+    expect(board).toHaveLength(1)
+    expect(board[0].total).toBe(3)
+    expect(stackCount(board[0])).toBe(2)
+    expect(JSON.parse(toQueryJson(asState(next))).requirements[0].level_sum).toEqual({ group: 1, at_least: 3 })
+    expect(validateQuery(asState(next)).valid).toBe(true)
+    // Clearing the total returns to plain repeats.
+    const cleared = setStackTotal(next, boardItems(next)[0], undefined)
+    expect(cleared.every((r) => r.levelSum === undefined)).toBe(true)
+    expect(stackCount(boardItems(cleared)[0])).toBe(2)
   })
 
-  it('removing a member collapses a bundle of one', () => {
-    const base = [req({ kind: 'ring', upgradeSum: { group: 2, atLeast: 3 } }), req({ kind: 'ring', upgradeSum: { group: 2, atLeast: 3 } })]
-    expect(removeAt(base, 0)).toEqual([req({ kind: 'ring' })])
+  it('a loaded level-sum document collapses back into one chip', () => {
+    const state = fromQueryJson('{"requirements":[' +
+      '{"kind":"ring","item":"ring_might","level_sum":{"group":2,"at_least":4}},' +
+      '{"kind":"ring","item":"ring_might","level_sum":{"group":2,"at_least":4}},' +
+      '{"kind":"wand"}]}')
+    const board = boardItems(state.requirements)
+    expect(board).toHaveLength(2)
+    expect(board[0].total).toBe(4)
+    expect(stackCount(board[0])).toBe(2)
+  })
+})
+
+describe('the editor round trip', () => {
+  it('applies count and total from the editor and rebuilds the stack', () => {
+    let requirements = applyEdit([], null, req({ item: 'ring_might', kind: 'ring' }), 2, 3)
+    expect(requirements).toHaveLength(2)
+    expect(requirements.every((r) => r.levelSum?.atLeast === 3)).toBe(true)
+    // Raising the count keeps the total; clearing it returns plain repeats.
+    requirements = applyEdit(requirements, 0, requirements[0], 3, 5)
+    expect(requirements).toHaveLength(3)
+    expect(requirements.every((r) => r.levelSum?.atLeast === 5)).toBe(true)
+    requirements = applyEdit(requirements, 0, requirements[0], 2, undefined)
+    expect(requirements).toHaveLength(2)
+    expect(requirements.every((r) => r.levelSum === undefined)).toBe(true)
+    expect(requirements.filter((r) => r.item === 'ring_might')).toHaveLength(2)
+    expect(validateQuery(asState(requirements)).valid).toBe(true)
   })
 })

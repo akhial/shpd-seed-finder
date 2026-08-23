@@ -141,15 +141,15 @@ describe('results file', () => {
     expect(decoded.seeds).toEqual([])
   })
 
-  it('round-trips alternative groups, effect sets and upgrade sums through the engine codec', () => {
+  it('round-trips alternative groups, effect sets and combined levels through the engine codec', () => {
     const base = { tier: { mode: 'any' as const, value: 3 }, upgrade: { mode: 'any' as const, value: 1 }, uncursed: false }
     const query: QueryState = { ...defaultQueryState(), requirements: [
       { ...base, kind: 'weapon', item: 'spear', upgrade: { mode: 'exact', value: 3 }, alternativeGroup: 1 },
       { ...base, kind: 'thrown_weapon', item: 'shuriken', upgrade: { mode: 'exact', value: 2 }, alternativeGroup: 1 },
       { ...base, kind: 'weapon', item: 'greatshield', upgrade: { mode: 'exact', value: 2 }, effect: ['Blocking', 'Projecting', 'Vampiric'] },
       { ...base, kind: 'armor', effect: 'any_enchantment', uncursed: true },
-      { ...base, kind: 'ring', item: 'ring_might', identityGroup: 1, upgradeSum: { group: 2, atLeast: 4 } },
-      { ...base, kind: 'ring', item: 'ring_might', identityGroup: 1, upgradeSum: { group: 2, atLeast: 4 } },
+      { ...base, kind: 'ring', item: 'ring_might', levelSum: { group: 2, atLeast: 4 } },
+      { ...base, kind: 'ring', item: 'ring_might', levelSum: { group: 2, atLeast: 4 } },
     ] }
     const decoded = decodeResultsFile(encodeResultsFile(toQueryDocument(query), ['AAA-AAA-BUH']))
     expect(decoded.query).toEqual(query)
@@ -158,13 +158,13 @@ describe('results file', () => {
     expect(decoded.seeds).toEqual(['AAA-AAA-BUH'])
   })
 
-  it('surfaces the engine verdict on an unattainable upgrade sum and a sum inside any_of', () => {
+  it('surfaces the engine verdict on an unattainable combined level and a sum inside any_of', () => {
     expect(() => decodeResultsFile(file({ requirements: [
-      { item: 'ring_might', upgrade_sum: { group: 1, at_least: 9 } },
-      { item: 'ring_might', upgrade_sum: { group: 1, at_least: 9 } },
-    ] }))).toThrowError(/9|sum|total/i)
+      { item: 'ring_might', level_sum: { group: 1, at_least: 11 } },
+      { item: 'ring_might', level_sum: { group: 1, at_least: 11 } },
+    ] }))).toThrowError(/11|level|total/i)
     expect(() => decodeResultsFile(file({ requirements: [{ any_of: [
-      { item: 'ring_might', upgrade_sum: { group: 1, at_least: 2 } },
+      { item: 'ring_might', level_sum: { group: 1, at_least: 2 } },
       { item: 'ring_haste' },
     ] }] }))).toThrowError(/any_of|alternative|sum/i)
   })

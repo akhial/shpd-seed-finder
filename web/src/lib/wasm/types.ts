@@ -55,8 +55,13 @@ export const ANY_ENCHANTMENT = 'any_enchantment'
  */
 export type EffectFilter = string | string[]
 
-/** Membership in a combined-upgrade group: the members' upgrades must add up to `atLeast`. */
-export interface UpgradeSum { group: number; atLeast: number }
+/**
+ * Membership in a combined-level group: some subset of the group's members,
+ * filled by distinct items, must reach `atLeast` combined levels, where an
+ * item counts as its upgrade plus one. Members are optional — one +2 ring
+ * satisfies a two-member group asking for three levels.
+ */
+export interface LevelSum { group: number; atLeast: number }
 
 export interface RequirementState {
   kind?: RequirementKind
@@ -70,7 +75,7 @@ export interface RequirementState {
   maxDepth?: number
   /** Requirements sharing a number form one "any of these" slot. */
   alternativeGroup?: number
-  upgradeSum?: UpgradeSum
+  levelSum?: LevelSum
 }
 
 export interface QueryState {
@@ -97,10 +102,10 @@ export interface RequirementDocument {
   source?: ItemSource
   identity_group?: number
   max_depth?: number
-  upgrade_sum?: { group: number; at_least: number }
+  level_sum?: { group: number; at_least: number }
 }
 
-/** An "any of these" slot: satisfied by any single member. Members may not carry `upgrade_sum`. */
+/** An "any of these" slot: satisfied by any single member. Members may not carry `level_sum`. */
 export interface AnyOfDocument { any_of: RequirementDocument[] }
 
 export type RequirementEntryDocument = RequirementDocument | AnyOfDocument
@@ -124,7 +129,7 @@ export interface EngineLimits {
   boundedTierMin: number
   boundedTierMax: number
   identityGroupMax: number
-  upgradeSumGroupMax: number
+  levelSumGroupMax: number
   maxUpgradeDefault: number
   maxUpgradeRing: number
   resultsFileMaxBytes: number

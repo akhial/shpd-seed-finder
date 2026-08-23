@@ -14,6 +14,7 @@ import {
   EXACT_TIER_MAX,
   EXACT_TIER_MIN,
   FLOOR_LIMIT_OPTIONS,
+  STACK_MAX,
   canonicalEffect,
   effectNamesOf,
   isAnyEnchantment,
@@ -22,6 +23,7 @@ import {
 } from '../../lib/query'
 import { ANY_ENCHANTMENT } from '../../lib/wasm/types'
 import type { ItemCategory, ItemSource, RequirementKind, RequirementState } from '../../lib/wasm/types'
+import type { StackShape } from './RequirementBoard'
 import { Field, Segmented, SliderRow, Sprite } from './parts'
 import { requirementSprite, requirementTitle } from './summary'
 
@@ -75,12 +77,15 @@ const clamp = (value: number, min: number, max: number) => Math.min(Math.max(val
 export function RequirementEditor({
   requirement,
   isNew,
+  stack,
   onSave,
   onCancel,
 }: {
   requirement: RequirementState
   isNew: boolean
-  onSave: (requirement: RequirementState) => void
+  /** The chip's stack shape; a cluster member's belongs to the cluster. */
+  stack: StackShape
+  onSave: (requirement: RequirementState, count: number, total: number | undefined) => void
   onCancel: () => void
 }) {
   const [draft, setDraft] = useState<RequirementState>(() => ({
@@ -88,6 +93,8 @@ export function RequirementEditor({
     tier: { ...requirement.tier },
     upgrade: { ...requirement.upgrade },
   }))
+  const [count, setCount] = useState(stack.count)
+  const [total, setTotal] = useState(stack.total)
   // "Specific…" with nothing ticked yet is a transient editor state, not a
   // filter, so it lives outside the draft; saving it means "any".
   const [choosingEffects, setChoosingEffects] = useState(false)
@@ -99,6 +106,10 @@ export function RequirementEditor({
   const enchantments = family === 'weapon' ? weaponEnchantments : armorGlyphs
   const curses = family === 'weapon' ? weaponCurses : armorCurses
   const errors = validateRequirement(draft)
+  // A combined level is a property of a concrete stack of two or more.
+  const totalable = stack.inCluster ? false : draft.item !== undefined && count > 1
+  const effectiveTotal = totalable ? total : undefined
+  const totalCapacity = count * (maxUpgrade + 1)
   const effectMode: EffectMode = isAnyEnchantment(draft.effect) ? 'any_enchantment'
     : draft.effect !== undefined || choosingEffects ? 'specific' : 'any'
   const chosenEffects = effectMode === 'specific' ? effectNamesOf(draft.effect, kind) : []
@@ -210,6 +221,7 @@ export function RequirementEditor({
                 value={draft.item ?? ''}
                 onChange={(event) => {
                   const id = event.currentTarget.value || undefined
+                  if (!id) setTotal(undefined)
                   setDraft((current) => ({
                     ...current,
                     item: id,
@@ -272,6 +284,7 @@ export function RequirementEditor({
             )}
           </section>
 
+          {effectiveTotal === undefined && (
           <section className="d1-modal-section">
             <h3>Upgrade level</h3>
             <Segmented value={draft.upgrade.mode} options={[...UPGRADE_OPTIONS]} onChange={setUpgradeMode} ariaLabel="Upgrade predicate" fill />
@@ -314,6 +327,47 @@ export function RequirementEditor({
                 </Field>
               ))}
           </section>
+          )}
+
+          {!stack.inCluster && (
+            <section className="d1-modal-section">
+              <h3>How many</h3>
+              <Segmented
+                value={count}
+                options={Array.from({ length: STACK_MAX }, (_, index) => ({ value: index + 1, label: `×${index + 1}` }))}
+                onChange={(value) => {
+                  setCount(value)
+                  if (value < 2) setTotal(undefined)
+                  else if (total !== undefined) setTotal(clamp(total, 1, value * (maxUpgrade + 1)))
+                }}
+                ariaLabel="How many of this"
+                fill
+              />
+              {totalable && (
+                <>
+                  <label className="d1-check">
+                    <input
+                      type="checkbox"
+                      checked={total !== undefined}
+                      onChange={(event) => setTotal(event.currentTarget.checked ? clamp(count, 1, totalCapacity) : undefined)}
+                    />
+                    <span>Count levels together</span>
+                  </label>
+                  {total !== undefined && (
+                    <SliderRow
+                      label="Levels reach"
+                      valueLabel={`≥ ${total} across up to ${count}`}
+                      min={1}
+                      max={totalCapacity}
+                      value={clamp(total, 1, totalCapacity)}
+                      fill
+                      onChange={setTotal}
+                    />
+                  )}
+                </>
+              )}
+            </section>
+          )}
 
           <section className="d1-modal-section">
             <h3>Details</h3>
@@ -422,7 +476,7 @@ export function RequirementEditor({
 
         <footer className="d1-modal-foot">
           <button type="button" className="d1-btn" onClick={onCancel}>Cancel</button>
-          <button type="button" className="d1-btn d1-btn-primary" disabled={errors.length > 0} onClick={() => onSave(draft)}>
+          <button type="button" className="d1-btn d1-btn-primary" disabled={errors.length > 0} onClick={() => onSave(draft, stack.inCluster ? 1 : count, effectiveTotal)}>
             {isNew ? 'Add Requirement' : 'Save Changes'}
           </button>
         </footer>

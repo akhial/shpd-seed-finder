@@ -3,7 +3,7 @@ import { useStore } from '@tanstack/react-store'
 import { LEVEL_GEN_CHALLENGES, challenges as challengeOptions } from '../../lib/catalog'
 import { probabilityLabel } from '../../lib/format'
 import { CheckIcon, CommandIcon, LinkIcon, ReturnIcon, XIcon } from '../../lib/icons'
-import { BLACKSMITH_LAST_FLOOR, FLOOR_LIMIT_OPTIONS, emptyRequirement, fromQueryJson, slotCount, toQueryJson } from '../../lib/query'
+import { BLACKSMITH_LAST_FLOOR, FLOOR_LIMIT_OPTIONS, emptyRequirement, fromQueryJson, toQueryJson } from '../../lib/query'
 import type { ValidationResult } from '../../lib/query'
 import { questVariantLabel } from '../../lib/quests'
 import { builtInPresets, loadPresets, maxWorkers, queryStore, savePresets, setWorkerCount, workerCountStore } from '../../lib/store'
@@ -12,13 +12,15 @@ import { encodeShareLink } from '../../lib/wasm'
 import { WANDMAKER_QUESTS } from '../../lib/wasm/types'
 import type { AnalysisResult, ChallengeName, QueryState, RequirementState, WandmakerQuest } from '../../lib/wasm/types'
 import { RequirementBoard } from './RequirementBoard'
+import type { StackShape } from './RequirementBoard'
+import { applyEdit, boardCount } from './relations'
 import { RequirementEditor } from './RequirementEditor'
 import { SliderRow } from './parts'
 
 const patchQuery = (patch: Partial<QueryState>) => queryStore.setState((state) => ({ ...state, ...patch }))
 const cloneQuery = (query: QueryState): QueryState => fromQueryJson(toQueryJson(query))
 
-interface EditorSession { index: number | null; requirement: RequirementState }
+interface EditorSession { index: number | null; requirement: RequirementState; stack: StackShape }
 
 export function QueryPanel({
   analysis,
@@ -92,12 +94,10 @@ export function QueryPanel({
     queryStore.setState((state) => ({ ...state, requirements }))
   }
 
-  const commitRequirement = (session: EditorSession, requirement: RequirementState) => {
+  const commitRequirement = (session: EditorSession, requirement: RequirementState, count: number, total: number | undefined) => {
     queryStore.setState((state) => ({
       ...state,
-      requirements: session.index === null
-        ? [...state.requirements, requirement]
-        : state.requirements.map((current, i) => (i === session.index ? requirement : current)),
+      requirements: applyEdit(state.requirements, session.index, requirement, count, total),
     }))
     setEditor(null)
   }
@@ -109,7 +109,7 @@ export function QueryPanel({
     })
   }
 
-  const slotTotal = slotCount(query.requirements)
+  const slotTotal = boardCount(query.requirements)
   const challengeCount = query.challenges.length
   const wandmakerCount = Number(Boolean(query.wandmakerQuest))
   const blacksmithCount = Number(query.requireBlacksmith) + Number(query.excludeBlacksmithRewards)
@@ -235,8 +235,8 @@ export function QueryPanel({
           <RequirementBoard
             requirements={query.requirements}
             onChange={setRequirements}
-            onEdit={(index) => setEditor({ index, requirement: query.requirements[index] })}
-            onAdd={() => setEditor({ index: null, requirement: emptyRequirement('weapon') })}
+            onEdit={(index, stack) => setEditor({ index, requirement: query.requirements[index], stack })}
+            onAdd={() => setEditor({ index: null, requirement: emptyRequirement('weapon'), stack: { count: 1, inCluster: false } })}
           />
         </section>
 
@@ -418,7 +418,8 @@ export function QueryPanel({
           key={editor.index ?? 'new'}
           requirement={editor.requirement}
           isNew={editor.index === null}
-          onSave={(requirement) => commitRequirement(editor, requirement)}
+          stack={editor.stack}
+          onSave={(requirement, count, total) => commitRequirement(editor, requirement, count, total)}
           onCancel={() => setEditor(null)}
         />
       )}

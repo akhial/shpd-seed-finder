@@ -135,19 +135,22 @@ describe('query serialization', () => {
     expect(toQueryJson(state)).toBe('{"requirements":[{"kind":"weapon","effect":"Blazing"}]}')
   })
 
-  it('round-trips effect lists, any_enchantment and upgrade sums', () => {
+  it('round-trips effect lists, any_enchantment and combined levels', () => {
     const state: QueryState = { ...defaultQueryState(), requirements: [
       plain({ item: 'greatshield', upgrade: { mode: 'exact', value: 2 }, effect: ['Blocking', 'Projecting', 'Vampiric'] }),
       plain({ kind: 'armor', effect: 'any_enchantment', uncursed: true }),
-      plain({ kind: 'ring', item: 'ring_might', identityGroup: 1, upgradeSum: { group: 1, atLeast: 4 } }),
-      plain({ kind: 'ring', item: 'ring_might', identityGroup: 1, upgradeSum: { group: 1, atLeast: 4 } }),
+      plain({ kind: 'ring', item: 'ring_might', levelSum: { group: 1, atLeast: 4 } }),
+      plain({ kind: 'ring', item: 'ring_might', levelSum: { group: 1, atLeast: 4 } }),
     ] }
     expect(JSON.parse(toQueryJson(state))).toEqual({ requirements: [
       { kind: 'weapon', item: 'greatshield', upgrade: 2, effect: ['Blocking', 'Projecting', 'Vampiric'] },
       { kind: 'armor', effect: 'any_enchantment', uncursed: true },
-      { kind: 'ring', item: 'ring_might', identity_group: 1, upgrade_sum: { group: 1, at_least: 4 } },
-      { kind: 'ring', item: 'ring_might', identity_group: 1, upgrade_sum: { group: 1, at_least: 4 } },
+      { kind: 'ring', item: 'ring_might', level_sum: { group: 1, at_least: 4 } },
+      { kind: 'ring', item: 'ring_might', level_sum: { group: 1, at_least: 4 } },
     ] })
+    // The unreleased upgrade_sum key is refused, not reinterpreted.
+    expect(() => fromQueryJson('{"requirements":[{"kind":"ring","upgrade_sum":{"group":1,"at_least":2}}]}'))
+      .toThrowError(/upgrade_sum/)
     expect(fromQueryJson(toQueryJson(state))).toEqual(state)
     // A single-name list decodes to the bare-name form so a round trip is the identity.
     expect(fromQueryJson('{"requirements":[{"kind":"weapon","effect":["Blazing"]}]}').requirements[0].effect).toBe('Blazing')
