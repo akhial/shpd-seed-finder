@@ -89,7 +89,7 @@ mod tests {
             identity_group: None,
             max_depth: None,
             alternative_group: None,
-            upgrade_sum: None,
+            level_sum: None,
         };
         let query = |kind| SearchQuery {
             requirements: vec![requirement(kind)],

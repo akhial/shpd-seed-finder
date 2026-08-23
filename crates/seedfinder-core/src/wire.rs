@@ -6,8 +6,8 @@ use crate::catalog::{Effect, ItemKind, WeaponCategory, item, item_by_stable_id};
 use crate::challenges::Challenges;
 use crate::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
 use crate::query::{
-    EffectRequirement, EffectSet, Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
-    UpgradeSum,
+    EffectRequirement, EffectSet, LevelSum, Requirement, SearchQuery, TierRequirement,
+    UpgradeRequirement,
 };
 use crate::quests::{
     BlacksmithQuestType, GhostQuestType, ImpTarget, QuestSummary, ScheduledQuest,
@@ -35,7 +35,7 @@ const MAX_EFFECTS: usize = 32;
 /// required Wandmaker quest — `0` for any, otherwise the variant's one-based
 /// game value. Each requirement carries an effect predicate (mode byte 0 for
 /// any, or 1 followed by a count and that many same-family wire names), an
-/// alternative-group byte, a combined-upgrade group byte and total, and ends
+/// alternative-group byte, a combined-level group byte and total, and ends
 /// with a flags byte whose bit 0 requires the matching item to be uncursed.
 ///
 /// # Errors
@@ -144,7 +144,7 @@ pub fn encode_query(query: &SearchQuery) -> Result<Vec<u8>, WireError> {
         output.push(requirement.max_depth.unwrap_or(0));
         output.push(requirement.alternative_group.unwrap_or(0));
         let (sum_group, sum_total) = requirement
-            .upgrade_sum
+            .level_sum
             .map_or((0, 0), |sum| (sum.group, sum.minimum_total));
         output.extend_from_slice(&[sum_group, sum_total]);
         output.push(u8::from(requirement.require_uncursed));
@@ -250,10 +250,10 @@ fn decode_requirement(input: &mut Input<'_>) -> Result<Requirement, WireError> {
     };
     let sum_group = input.u8()?;
     let sum_total = input.u8()?;
-    let upgrade_sum = match (sum_group, sum_total) {
+    let level_sum = match (sum_group, sum_total) {
         (0, 0) => None,
-        (0, _) => return Err(WireError::InvalidUpgradeSum),
-        (group, minimum_total) => Some(UpgradeSum {
+        (0, _) => return Err(WireError::InvalidLevelSum),
+        (group, minimum_total) => Some(LevelSum {
             group,
             minimum_total,
         }),
@@ -274,7 +274,7 @@ fn decode_requirement(input: &mut Input<'_>) -> Result<Requirement, WireError> {
         identity_group,
         max_depth: requirement_max_depth,
         alternative_group,
-        upgrade_sum,
+        level_sum,
     })
 }
 
@@ -783,7 +783,7 @@ pub enum WireError {
     UnknownQuest,
     UnknownQuestVariant,
     InvalidEffectSet,
-    InvalidUpgradeSum,
+    InvalidLevelSum,
     /// A JSON query document the query codec rejected, with its message.
     InvalidQueryDocument(String),
 }
@@ -818,7 +818,7 @@ impl fmt::Display for WireError {
             Self::UnknownQuest => "packet names an unknown quest",
             Self::UnknownQuestVariant => "packet names an unknown quest variant",
             Self::InvalidEffectSet => "packet contains an invalid effect list",
-            Self::InvalidUpgradeSum => "packet contains an invalid combined upgrade group",
+            Self::InvalidLevelSum => "packet contains an invalid combined level group",
             Self::InvalidQueryDocument(message) => message,
         };
         formatter.write_str(message)
@@ -834,8 +834,8 @@ mod tests {
     use crate::main_world::CanonicalMainWorldGenerator;
     use crate::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
     use crate::query::{
-        EffectRequirement, EffectSet, Requirement, SearchQuery, TierRequirement,
-        UpgradeRequirement, UpgradeSum,
+        EffectRequirement, EffectSet, LevelSum, Requirement, SearchQuery, TierRequirement,
+        UpgradeRequirement,
     };
     use crate::quests::WandmakerQuestType;
     use crate::search::WorldGenerator;
@@ -890,7 +890,7 @@ mod tests {
         packet.extend_from_slice(&tier);
         packet.extend_from_slice(&upgrade);
         // Wildcard effect, any source, no identity group, no floor limit, no
-        // alternative group, no combined-upgrade group, no flags.
+        // alternative group, no combined-level group, no flags.
         packet.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0]);
         packet
     }
@@ -911,7 +911,7 @@ mod tests {
                     identity_group: Some(2),
                     max_depth: Some(14),
                     alternative_group: None,
-                    upgrade_sum: None,
+                    level_sum: None,
                 },
                 Requirement {
                     kind: ItemKind::Weapon,
@@ -925,7 +925,7 @@ mod tests {
                     identity_group: None,
                     max_depth: None,
                     alternative_group: None,
-                    upgrade_sum: None,
+                    level_sum: None,
                 },
                 Requirement {
                     kind: ItemKind::Armor,
@@ -939,7 +939,7 @@ mod tests {
                     identity_group: None,
                     max_depth: None,
                     alternative_group: None,
-                    upgrade_sum: None,
+                    level_sum: None,
                 },
             ],
             max_depth: 20,
@@ -992,7 +992,7 @@ mod tests {
     }
 
     #[test]
-    fn ssf9_round_trips_effect_sets_alternatives_and_upgrade_sums() {
+    fn ssf9_round_trips_effect_sets_alternatives_and_level_sums() {
         let query = SearchQuery {
             requirements: vec![
                 Requirement {
@@ -1014,7 +1014,7 @@ mod tests {
                     identity_group: None,
                     max_depth: None,
                     alternative_group: Some(3),
-                    upgrade_sum: None,
+                    level_sum: None,
                 },
                 Requirement {
                     kind: ItemKind::Armor,
@@ -1030,7 +1030,7 @@ mod tests {
                     identity_group: None,
                     max_depth: None,
                     alternative_group: Some(3),
-                    upgrade_sum: None,
+                    level_sum: None,
                 },
                 Requirement {
                     kind: ItemKind::Ring,
@@ -1041,10 +1041,10 @@ mod tests {
                     effect: EffectRequirement::Any,
                     require_uncursed: false,
                     source: None,
-                    identity_group: Some(1),
+                    identity_group: None,
                     max_depth: None,
                     alternative_group: None,
-                    upgrade_sum: Some(UpgradeSum {
+                    level_sum: Some(LevelSum {
                         group: 2,
                         minimum_total: 4,
                     }),
@@ -1058,10 +1058,10 @@ mod tests {
                     effect: EffectRequirement::Any,
                     require_uncursed: false,
                     source: None,
-                    identity_group: Some(1),
+                    identity_group: None,
                     max_depth: None,
                     alternative_group: None,
-                    upgrade_sum: Some(UpgradeSum {
+                    level_sum: Some(LevelSum {
                         group: 2,
                         minimum_total: 4,
                     }),
@@ -1101,11 +1101,11 @@ mod tests {
         packet.splice(effect_mode + 2..effect_mode + 2, name);
         assert_eq!(decode_query(&packet), Err(WireError::UnknownModifier));
 
-        // A combined-upgrade total without a group is malformed.
+        // A combined-level total without a group is malformed.
         let mut packet = query_packet(0, 0, 0, "sword", [0, 0], [0, 0]);
         let sum_total = packet.len() - 2;
         packet[sum_total] = 3;
-        assert_eq!(decode_query(&packet), Err(WireError::InvalidUpgradeSum));
+        assert_eq!(decode_query(&packet), Err(WireError::InvalidLevelSum));
 
         // A sum group whose total is unattainable fails query validation.
         let mut packet = query_packet(0, 0, 0, "sword", [0, 0], [0, 0]);

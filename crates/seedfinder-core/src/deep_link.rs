@@ -16,8 +16,8 @@ use crate::catalog::{
 use crate::challenges::Challenges;
 use crate::model::ItemSource;
 use crate::query::{
-    EffectRequirement, EffectSet, MAX_IDENTITY_GROUP, MAX_UPGRADE_SUM_GROUP, Requirement,
-    SearchQuery, TierRequirement, UpgradeRequirement, UpgradeSum,
+    EffectRequirement, EffectSet, LevelSum, MAX_IDENTITY_GROUP, MAX_LEVEL_SUM_GROUP, Requirement,
+    SearchQuery, TierRequirement, UpgradeRequirement,
 };
 use crate::quests::WandmakerQuestType;
 
@@ -31,7 +31,7 @@ pub const URI_SCHEME: &str = "seedseeker";
 /// beyond same-item groups. Still written whenever a query needs nothing
 /// more, so links keep opening in releases that predate version 2.
 const VERSION_ONE: u8 = 1;
-/// Adds effect sets, alternative groups and combined-upgrade groups to each
+/// Adds effect sets, alternative groups and combined-level groups to each
 /// requirement. Written only when a query uses one of them.
 const VERSION_TWO: u8 = 2;
 /// Requirement-count field width; far above anything the UIs produce.
@@ -64,7 +64,7 @@ pub fn encode(query: &SearchQuery) -> Result<String, String> {
     }
     for (index, requirement) in query.requirements.iter().enumerate() {
         // Like the results-file format, links restrict same-item and
-        // combined-upgrade groups to what every app's editor can express
+        // combined-level groups to what every app's editor can express
         // (A..D), even though the engine allows more.
         if requirement
             .identity_group
@@ -76,12 +76,12 @@ pub fn encode(query: &SearchQuery) -> Result<String, String> {
             ));
         }
         if requirement
-            .upgrade_sum
-            .is_some_and(|sum| sum.group > MAX_UPGRADE_SUM_GROUP)
+            .level_sum
+            .is_some_and(|sum| sum.group > MAX_LEVEL_SUM_GROUP)
         {
             return Err(format!(
-                "requirement {}: combined upgrade group must be between 1 and \
-                 {MAX_UPGRADE_SUM_GROUP} (A..D)",
+                "requirement {}: combined level group must be between 1 and \
+                 {MAX_LEVEL_SUM_GROUP} (A..D)",
                 index + 1
             ));
         }
@@ -122,11 +122,11 @@ pub fn encode(query: &SearchQuery) -> Result<String, String> {
 
 /// Whether a query uses anything the version-one layout cannot carry: a
 /// real alternative group (one member is just a requirement), a
-/// combined-upgrade group, or an effect set of more than one effect.
+/// combined-level group, or an effect set of more than one effect.
 fn needs_version_two(query: &SearchQuery) -> bool {
     query.slots().iter().any(|slot| slot.len() > 1)
         || query.requirements.iter().any(|requirement| {
-            requirement.upgrade_sum.is_some()
+            requirement.level_sum.is_some()
                 || matches!(requirement.effect, EffectRequirement::OneOf(set) if set.count() != 1)
         })
 }
@@ -311,8 +311,8 @@ fn encode_requirement(
             });
         (label as u32, 6)
     });
-    push_optional(&mut *bits, requirement.upgrade_sum.is_some(), || {
-        let sum = requirement.upgrade_sum.unwrap();
+    push_optional(&mut *bits, requirement.level_sum.is_some(), || {
+        let sum = requirement.level_sum.unwrap();
         (
             (u32::from(sum.group) - 1) << 8 | u32::from(sum.minimum_total),
             10,
@@ -385,7 +385,7 @@ fn decode_requirement(bits: &mut BitReader<'_>, version: u8) -> Result<Requireme
     } else {
         None
     };
-    let (alternative_group, upgrade_sum) = if version == VERSION_ONE {
+    let (alternative_group, level_sum) = if version == VERSION_ONE {
         (None, None)
     } else {
         let alternative_group = if bits.pull(1)? == 1 {
@@ -394,16 +394,16 @@ fn decode_requirement(bits: &mut BitReader<'_>, version: u8) -> Result<Requireme
         } else {
             None
         };
-        let upgrade_sum = if bits.pull(1)? == 1 {
+        let level_sum = if bits.pull(1)? == 1 {
             let packed = bits.pull(10)?;
-            Some(UpgradeSum {
+            Some(LevelSum {
                 group: (packed >> 8) as u8 + 1,
                 minimum_total: (packed & 0xff) as u8,
             })
         } else {
             None
         };
-        (alternative_group, upgrade_sum)
+        (alternative_group, level_sum)
     };
     Ok(Requirement {
         kind,
@@ -417,7 +417,7 @@ fn decode_requirement(bits: &mut BitReader<'_>, version: u8) -> Result<Requireme
         identity_group,
         max_depth,
         alternative_group,
-        upgrade_sum,
+        level_sum,
     })
 }
 
@@ -724,8 +724,8 @@ mod tests {
     use crate::json_query;
     use crate::model::ItemSource;
     use crate::query::{
-        EffectRequirement, EffectSet, Requirement, SearchQuery, TierRequirement,
-        UpgradeRequirement, UpgradeSum,
+        EffectRequirement, EffectSet, LevelSum, Requirement, SearchQuery, TierRequirement,
+        UpgradeRequirement,
     };
     use crate::quests::WandmakerQuestType;
 
@@ -747,7 +747,7 @@ mod tests {
             identity_group: None,
             max_depth: None,
             alternative_group: None,
-            upgrade_sum: None,
+            level_sum: None,
         }
     }
 
@@ -787,7 +787,7 @@ mod tests {
                     identity_group: Some(4),
                     max_depth: Some(21),
                     alternative_group: None,
-                    upgrade_sum: None,
+                    level_sum: None,
                 },
                 Requirement {
                     kind: ItemKind::Armor,
@@ -801,7 +801,7 @@ mod tests {
                     identity_group: None,
                     max_depth: None,
                     alternative_group: None,
-                    upgrade_sum: None,
+                    level_sum: None,
                 },
                 Requirement {
                     item: Some(ItemId::RingWealth),
@@ -1250,8 +1250,7 @@ mod tests {
         };
         let ring = Requirement {
             item: Some(ItemId::RingMight),
-            identity_group: Some(2),
-            upgrade_sum: Some(UpgradeSum {
+            level_sum: Some(LevelSum {
                 group: 3,
                 minimum_total: 5,
             }),
@@ -1276,14 +1275,14 @@ mod tests {
     #[test]
     fn combined_upgrade_groups_above_four_are_rejected() {
         let query = minimal(vec![Requirement {
-            upgrade_sum: Some(UpgradeSum {
+            level_sum: Some(LevelSum {
                 group: 5,
                 minimum_total: 1,
             }),
             ..wildcard(ItemKind::Wand)
         }]);
         let error = encode(&query).unwrap_err();
-        assert!(error.contains("combined upgrade group"), "{error}");
+        assert!(error.contains("combined level group"), "{error}");
     }
 
     #[test]

@@ -216,9 +216,9 @@ mod tests {
     }
 
     #[test]
-    fn alternatives_effect_sets_and_upgrade_sums_round_trip() {
+    fn alternatives_effect_sets_and_level_sums_round_trip() {
         use shpd_seedfinder_core::catalog::ArmorEffect;
-        use shpd_seedfinder_core::query::{EffectRequirement, EffectSet, UpgradeSum};
+        use shpd_seedfinder_core::query::{EffectRequirement, EffectSet, LevelSum};
 
         let mut state = AppState::default();
         // An "any of these" slot of two weapons.
@@ -256,8 +256,7 @@ mod tests {
             state.requirements.push(UiRequirement {
                 kind: ItemKind::Ring,
                 item: Some(ItemId::RingMight),
-                identity_group: Some(1),
-                upgrade_sum: Some(UpgradeSum {
+                level_sum: Some(LevelSum {
                     group: 1,
                     minimum_total: 4,
                 }),
@@ -273,7 +272,7 @@ mod tests {
         assert_eq!(entries[1]["effect"], json!(["Brimstone", "Stone"]));
         assert_eq!(entries[2]["effect"], json!("any_enchantment"));
         assert_eq!(
-            entries[3]["upgrade_sum"],
+            entries[3]["level_sum"],
             json!({ "group": 1, "at_least": 4 })
         );
 

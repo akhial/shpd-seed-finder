@@ -13,8 +13,8 @@ use shpd_seedfinder_core::main_world::normalize_floor_limit;
 use shpd_seedfinder_core::model::ItemSource;
 use shpd_seedfinder_core::query::{
     BOUNDED_TIER_MAX, BOUNDED_TIER_MIN, EXACT_TIER_MAX, EXACT_TIER_MIN, EffectRequirement,
-    EffectSet, MAX_IDENTITY_GROUP, MAX_SEARCH_DEPTH, MAX_UPGRADE_SUM_GROUP, RESERVED_GROUP,
-    RESERVED_IDENTITY_GROUP, TierRequirement, UpgradeRequirement, UpgradeSum,
+    EffectSet, LevelSum, MAX_IDENTITY_GROUP, MAX_LEVEL_SUM_GROUP, MAX_SEARCH_DEPTH, RESERVED_GROUP,
+    RESERVED_IDENTITY_GROUP, TierRequirement, UpgradeRequirement,
 };
 
 use crate::query_pane::skip_empty_boss_floors;
@@ -63,10 +63,10 @@ struct Editor {
     updating: Cell<bool>,
     key: u64,
     /// The alternative group the row belongs to; members cannot join a
-    /// combined-upgrade group, so the editor hides that picker.
+    /// combined-level group, so the editor hides that picker.
     alternative_group: Option<u8>,
     /// The query the row is edited within, for cross-row validation and the
-    /// combined-upgrade ranges.
+    /// combined-level ranges.
     context: AppState,
 }
 
@@ -177,7 +177,7 @@ fn build(context: AppState, requirement: &UiRequirement) -> Editor {
         ring_minimum_upgrade: spin_row("Minimum upgrade", 1.0, 1.0, 3.0),
         sum_group_row: combo_row(
             "Combined upgrade group",
-            &borrowed(&group_labels(MAX_UPGRADE_SUM_GROUP)),
+            &borrowed(&group_labels(MAX_LEVEL_SUM_GROUP)),
         ),
         sum_total: spin_row("Total at least", 1.0, 1.0, 4.0),
         effect_mode_group: adw::PreferencesGroup::builder()
@@ -226,7 +226,7 @@ fn groups(editor: &Rc<Editor>) -> Vec<adw::PreferencesGroup> {
     let upgrade_group = adw::PreferencesGroup::builder()
         .title("Upgrade Level")
         .description(if editor.alternative_group.is_some() {
-            "Alternatives cannot join a combined upgrade group."
+            "Alternatives cannot join a combined level group."
         } else {
             "Combined upgrade group members are distinct items whose upgrade levels \
              add up to at least the shared total."
@@ -317,7 +317,7 @@ fn connect(editor: &Rc<Editor>) {
             // Every member of a group shares one total, so joining a group
             // picks up what the other members already ask for.
             if let Some(group) = selected_sum_group(editor)
-                && let Some(total) = editor.context.upgrade_sum_total(group, editor.key)
+                && let Some(total) = editor.context.level_sum_total(group, editor.key)
             {
                 editor.sum_total.set_value(f64::from(total));
             }
@@ -410,11 +410,11 @@ fn restore(editor: &Rc<Editor>, requirement: &UiRequirement) {
     ));
     editor.sum_group_row.set_selected(u32::from(
         requirement
-            .upgrade_sum
+            .level_sum
             .map_or(RESERVED_GROUP, |sum| sum.group)
-            .min(MAX_UPGRADE_SUM_GROUP),
+            .min(MAX_LEVEL_SUM_GROUP),
     ));
-    if let Some(sum) = requirement.upgrade_sum {
+    if let Some(sum) = requirement.level_sum {
         editor.sum_total.set_value(f64::from(sum.minimum_total));
     }
     refresh_sum_range(editor);
@@ -454,7 +454,7 @@ fn collect(editor: &Rc<Editor>) -> UiRequirement {
         group => u8::try_from(group).ok(),
     };
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let upgrade_sum = selected_sum_group(editor).map(|group| UpgradeSum {
+    let level_sum = selected_sum_group(editor).map(|group| LevelSum {
         group,
         minimum_total: editor.sum_total.value().round().max(1.0) as u8,
     });
@@ -476,7 +476,7 @@ fn collect(editor: &Rc<Editor>) -> UiRequirement {
         identity_group,
         max_depth,
         alternative_group: editor.alternative_group,
-        upgrade_sum,
+        level_sum,
     }
 }
 
@@ -573,7 +573,7 @@ fn checked_effects(editor: &Rc<Editor>) -> Vec<Effect> {
         .collect()
 }
 
-/// The combined-upgrade group chosen, or `None` for no group and for
+/// The combined-level group chosen, or `None` for no group and for
 /// alternatives, which cannot have one.
 fn selected_sum_group(editor: &Rc<Editor>) -> Option<u8> {
     if editor.alternative_group.is_some() {
@@ -750,7 +750,7 @@ fn refresh_sum_range(editor: &Rc<Editor>) {
         upgrade: selected_upgrade(editor),
         ..UiRequirement::new(editor.key)
     };
-    let capacity = editor.context.upgrade_sum_capacity(group, &draft).max(1);
+    let capacity = editor.context.level_sum_capacity(group, &draft).max(1);
     let adjustment = editor.sum_total.adjustment();
     adjustment.set_lower(1.0);
     adjustment.set_upper(f64::from(capacity));

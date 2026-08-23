@@ -28,7 +28,7 @@ fn requirement(category: Option<WeaponCategory>, upgrade: UpgradeRequirement) ->
         identity_group: None,
         max_depth: None,
         alternative_group: None,
-        upgrade_sum: None,
+        level_sum: None,
     }
 }
 

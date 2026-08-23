@@ -35,16 +35,16 @@ pub const RESERVED_IDENTITY_GROUP: u8 = 0;
 /// must stay inside this range.
 pub const MAX_IDENTITY_GROUP: u8 = 4;
 
-/// Group label reserved for "no group" in alternative and combined-upgrade
+/// Group label reserved for "no group" in alternative and combined-level
 /// groups, mirroring [`RESERVED_IDENTITY_GROUP`].
 pub const RESERVED_GROUP: u8 = 0;
 
-/// Highest combined-upgrade group label the portable formats and every
+/// Highest combined-level group label the portable formats and every
 /// app's editor can express (groups A..D), the counterpart of
 /// [`MAX_IDENTITY_GROUP`]. Alternative groups carry no such cap: the
 /// portable formats write them structurally, as one `any_of` entry, and
 /// renumber them on read.
-pub const MAX_UPGRADE_SUM_GROUP: u8 = 4;
+pub const MAX_LEVEL_SUM_GROUP: u8 = 4;
 
 /// Upgrade predicate attached to one item requirement.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -288,17 +288,20 @@ impl EffectRequirement {
     }
 }
 
-/// Minimum combined upgrade level shared by every requirement in one group.
+/// Minimum combined item level shared by every requirement in one group.
 ///
-/// All members of a group must be satisfied by distinct items whose upgrade
-/// levels add up to at least `minimum_total`, on top of each member's own
-/// upgrade predicate. Combine with [`Requirement::identity_group`] to demand
-/// copies of the same item, such as two Rings of Might totalling +4.
+/// An item's level counts as its upgrade plus one — a +0 Ring of Might still
+/// grants one strength — and the group is satisfied when some subset of its
+/// members, filled by distinct items, reaches `minimum_total` combined
+/// levels. Members are *optional*: one +2 ring alone satisfies a two-member
+/// group asking for three levels. Combine with [`Requirement::identity_group`]
+/// to demand the contributing items be copies of one kind.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct UpgradeSum {
+pub struct LevelSum {
     /// Non-zero group label shared by the participating requirements.
     pub group: u8,
-    /// Inclusive lower bound on the members' combined upgrade levels.
+    /// Inclusive lower bound on the assigned members' combined levels,
+    /// counting each item as `upgrade + 1`.
     pub minimum_total: u8,
 }
 
@@ -325,9 +328,9 @@ pub struct Requirement {
     /// Requirements in the same non-zero group are alternatives: together
     /// they form one *slot*, and a single item matching any member fills it.
     pub alternative_group: Option<u8>,
-    /// Optional combined-upgrade constraint shared with other requirements.
+    /// Optional combined-level constraint shared with other requirements.
     /// Never set on a member of an alternative group.
-    pub upgrade_sum: Option<UpgradeSum>,
+    pub level_sum: Option<LevelSum>,
 }
 
 impl Requirement {
@@ -356,8 +359,7 @@ impl Requirement {
     }
 
     /// The highest upgrade level an item satisfying this requirement can
-    /// carry, which bounds what it can contribute to a combined-upgrade
-    /// group.
+    /// carry.
     #[must_use]
     pub const fn maximum_upgrade(self) -> u8 {
         match self.upgrade {
@@ -366,6 +368,29 @@ impl Requirement {
                 self.kind.maximum_search_upgrade()
             }
         }
+    }
+
+    /// The most *levels* — upgrade plus one — an item satisfying this
+    /// requirement can contribute to a combined-level group.
+    #[must_use]
+    pub const fn maximum_level(self) -> u8 {
+        self.maximum_upgrade() + 1
+    }
+
+    /// Whether this requirement constrains anything beyond its kind: a named
+    /// item, a tier or upgrade bound, an effect, uncursedness, or a source.
+    /// A stack's extra copies are exactly the unconstrained requirements; a
+    /// per-item floor limit is a placement bound, not an item property, and
+    /// does not count.
+    #[must_use]
+    pub const fn is_bare(self) -> bool {
+        self.item.is_none()
+            && self.weapon_category.is_none()
+            && matches!(self.tier, TierRequirement::Any)
+            && matches!(self.upgrade, UpgradeRequirement::Any)
+            && matches!(self.effect, EffectRequirement::Any)
+            && !self.require_uncursed
+            && self.source.is_none()
     }
 
     /// Whether every item this requirement accepts is also accepted by
@@ -382,7 +407,7 @@ impl Requirement {
     /// A per-item floor limit of `None` means the query's own limit, which is
     /// identical on both sides under equal scope, so `None` on the base side
     /// is implied by everything and on the candidate side implies only
-    /// `None`. Alternative and combined-upgrade groups are slot-level
+    /// `None`. Alternative and combined-level groups are slot-level
     /// structure and are compared by [`SearchQuery::continues`] instead.
     fn implies(self, base: &Self) -> bool {
         self.kind == base.kind
@@ -458,13 +483,13 @@ impl Requirement {
             return Err(QueryError::InvalidAlternativeGroup);
         }
         if self
-            .upgrade_sum
+            .level_sum
             .is_some_and(|sum| sum.group == RESERVED_GROUP || sum.minimum_total == 0)
         {
-            return Err(QueryError::InvalidUpgradeSum);
+            return Err(QueryError::InvalidLevelSum);
         }
-        if self.alternative_group.is_some() && self.upgrade_sum.is_some() {
-            return Err(QueryError::UpgradeSumInsideAlternative);
+        if self.alternative_group.is_some() && self.level_sum.is_some() {
+            return Err(QueryError::LevelSumInsideAlternative);
         }
         if self
             .max_depth
@@ -542,9 +567,9 @@ const fn flag_at_least_as_strict(candidate: bool, base: bool) -> bool {
     candidate || !base
 }
 
-/// One identity-group member seen during validation: its alternative group,
-/// category, and concrete item (when named).
-type IdentityMember = (Option<u8>, ItemKind, Option<ItemId>);
+/// One identity-group member seen during validation: its index, alternative
+/// group, category, and whether it is a bare copy ([`Requirement::is_bare`]).
+type IdentityMember = (usize, Option<u8>, ItemKind, bool);
 
 impl SearchQuery {
     /// Validates bounds and every requirement.
@@ -562,41 +587,50 @@ impl SearchQuery {
             return Err(QueryError::InvalidDepth);
         }
         let mut identity_groups: BTreeMap<u8, Vec<IdentityMember>> = BTreeMap::new();
-        let mut upgrade_sums: BTreeMap<u8, u8> = BTreeMap::new();
-        for requirement in &self.requirements {
+        let mut level_sums: BTreeMap<u8, u8> = BTreeMap::new();
+        for (index, requirement) in self.requirements.iter().enumerate() {
             requirement.validate()?;
             if let Some(group) = requirement.identity_group {
-                let members = identity_groups.entry(group).or_default();
-                for &(alternative, kind, item) in members.iter() {
-                    // Alternatives of one slot are never assigned together,
-                    // so they may disagree; every other pair must agree.
-                    if alternative.is_some() && alternative == requirement.alternative_group {
-                        continue;
-                    }
-                    if kind != requirement.kind
-                        || item
-                            .zip(requirement.item)
-                            .is_some_and(|(left, right)| left != right)
-                    {
-                        return Err(QueryError::InconsistentIdentityGroup);
-                    }
-                }
-                members.push((
+                identity_groups.entry(group).or_default().push((
+                    index,
                     requirement.alternative_group,
                     requirement.kind,
-                    requirement.item,
+                    requirement.is_bare(),
                 ));
             }
-            if let Some(sum) = requirement.upgrade_sum {
-                let agreed = upgrade_sums.entry(sum.group).or_insert(sum.minimum_total);
+            if let Some(sum) = requirement.level_sum {
+                let agreed = level_sums.entry(sum.group).or_insert(sum.minimum_total);
                 if *agreed != sum.minimum_total {
-                    return Err(QueryError::InconsistentUpgradeSum { group: sum.group });
+                    return Err(QueryError::InconsistentLevelSum { group: sum.group });
                 }
             }
         }
-        for (group, summary) in self.upgrade_sum_groups() {
+        // An identity group is a stack: one *anchor unit* — a lone
+        // requirement, or the members of one alternative group — may
+        // constrain which item the stack binds to; every other member is a
+        // bare copy of the anchor's kind. Constraining a second unit would
+        // describe two different items forced to be the same, which the
+        // stack model deliberately cannot say.
+        for members in identity_groups.values() {
+            let (_, _, first_kind, _) = members[0];
+            if members.iter().any(|&(_, _, kind, _)| kind != first_kind) {
+                return Err(QueryError::InconsistentIdentityGroup);
+            }
+            let mut anchor: Option<(Option<u8>, usize)> = None;
+            for &(index, alternative, _, bare) in members {
+                if bare {
+                    continue;
+                }
+                // Members of one alternative group form a single unit.
+                let unit = alternative.map_or((None, index), |group| (Some(group), 0));
+                if *anchor.get_or_insert(unit) != unit {
+                    return Err(QueryError::OverconstrainedIdentityGroup);
+                }
+            }
+        }
+        for (group, summary) in self.level_sum_groups() {
             if summary.minimum_total > summary.capacity {
-                return Err(QueryError::UnattainableUpgradeSum {
+                return Err(QueryError::UnattainableLevelSum {
                     group,
                     minimum_total: summary.minimum_total,
                     capacity: summary.capacity,
@@ -606,16 +640,16 @@ impl SearchQuery {
         Ok(())
     }
 
-    /// Every combined-upgrade group of the query, keyed by label.
+    /// Every combined-level group of the query, keyed by label.
     #[must_use]
-    pub fn upgrade_sum_groups(&self) -> BTreeMap<u8, SumGroup> {
+    pub fn level_sum_groups(&self) -> BTreeMap<u8, SumGroup> {
         let mut groups: BTreeMap<u8, SumGroup> = BTreeMap::new();
         for requirement in &self.requirements {
-            if let Some(sum) = requirement.upgrade_sum {
+            if let Some(sum) = requirement.level_sum {
                 let group = groups.entry(sum.group).or_default();
                 group.members += 1;
                 group.minimum_total = u16::from(sum.minimum_total);
-                group.capacity += u16::from(requirement.maximum_upgrade());
+                group.capacity += u16::from(requirement.maximum_level());
             }
         }
         groups
@@ -649,6 +683,26 @@ impl SearchQuery {
     #[must_use]
     pub fn slot_count(&self) -> usize {
         self.slots().len()
+    }
+
+    /// How many conditions the scout reports: one per slot, except that all
+    /// the slots of one combined-level group collapse into a single
+    /// condition, satisfied together or not at all.
+    #[must_use]
+    pub fn scout_condition_count(&self) -> usize {
+        let slots = self.slots();
+        let mut groups: Vec<u8> = Vec::new();
+        let mut sum_slots = 0;
+        for slot in &slots {
+            // Combined-level members never sit in alternative groups.
+            if let Some(sum) = self.requirements[slot[0]].level_sum {
+                sum_slots += 1;
+                if !groups.contains(&sum.group) {
+                    groups.push(sum.group);
+                }
+            }
+        }
+        slots.len() - sum_slots + groups.len()
     }
 
     /// Whether this query *continues* `base`: identical floor limit,
@@ -692,6 +746,16 @@ impl SearchQuery {
         // could give "any ring" the lone Arcana and then fail "Arcana" against
         // the remaining "any ring". Augmenting paths keep the answer exact.
         let implies = |candidate_slot: &[usize], base_slot: &[usize]| {
+            // A combined-level slot is optional — a match may leave it empty —
+            // so it can only stand in for another combined-level slot; a
+            // mandatory base slot must be covered by a mandatory one.
+            if candidate_slot
+                .iter()
+                .any(|&candidate| self.requirements[candidate].level_sum.is_some())
+                && base.requirements[base_slot[0]].level_sum.is_none()
+            {
+                return false;
+            }
             candidate_slot.iter().all(|&candidate| {
                 base_slot
                     .iter()
@@ -722,11 +786,11 @@ impl SearchQuery {
                 cover[*base_index] = candidate_index;
             }
         }
-        let candidate_groups = self.upgrade_sum_groups();
+        let candidate_groups = self.level_sum_groups();
         let mut base_groups: BTreeMap<u8, (u8, Vec<usize>)> = BTreeMap::new();
         for (base_index, base_slot) in base_slots.iter().enumerate() {
             // Sum members are never alternatives, so the slot is one member.
-            if let Some(sum) = base.requirements[base_slot[0]].upgrade_sum {
+            if let Some(sum) = base.requirements[base_slot[0]].level_sum {
                 base_groups
                     .entry(sum.group)
                     .or_insert((sum.minimum_total, Vec::new()))
@@ -741,7 +805,7 @@ impl SearchQuery {
                 let [candidate] = candidate_slot[..] else {
                     return false;
                 };
-                let Some(sum) = self.requirements[candidate].upgrade_sum else {
+                let Some(sum) = self.requirements[candidate].level_sum else {
                     return false;
                 };
                 sum.minimum_total >= *minimum_total
@@ -778,7 +842,7 @@ impl SearchQuery {
     }
 
     /// Matches requirements as an AND query over slots while respecting
-    /// distinct item instances, alternative groups, combined-upgrade totals,
+    /// distinct item instances, alternative groups, combined-level totals,
     /// and mutually exclusive quest/chest reward branches.
     #[must_use]
     pub fn matches(&self, world: &GeneratedWorld) -> bool {
@@ -803,8 +867,16 @@ impl SearchQuery {
         }
 
         let mut assignment = Assignment::prepare(self, world);
-        if assignment.slots.len() > world.items.len()
-            || assignment.slots.first().is_some_and(Vec::is_empty)
+        let mandatory = assignment
+            .slots
+            .iter()
+            .filter(|slot| !slot.optional)
+            .count();
+        if mandatory > world.items.len()
+            || assignment
+                .slots
+                .iter()
+                .any(|slot| !slot.optional && slot.candidates.is_empty())
         {
             return false;
         }
@@ -851,7 +923,7 @@ fn cover_slot(
 /// matched on, and the member itself.
 type SlotCandidate<'query> = (usize, ItemId, &'query Requirement);
 
-/// Size, required total, and upgrade capacity of one combined-upgrade group.
+/// Size, required total, and upgrade capacity of one combined-level group.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct SumGroup {
     /// How many requirements carry the group.
@@ -859,37 +931,46 @@ pub struct SumGroup {
     /// The total the members agreed on (the last member's, before
     /// validation checks they agree).
     pub minimum_total: u16,
-    /// The most upgrade the members could contribute together: each one's
-    /// [`Requirement::maximum_upgrade`].
+    /// The most combined levels the members could contribute together:
+    /// each one's [`Requirement::maximum_level`].
     pub capacity: u16,
 }
 
 /// Letter every editor shows for a portable group label (A..D), falling
-/// back to the number for labels beyond [`MAX_UPGRADE_SUM_GROUP`].
+/// back to the number for labels beyond [`MAX_LEVEL_SUM_GROUP`].
 #[must_use]
 pub fn group_label(group: u8) -> String {
-    if (1..=MAX_UPGRADE_SUM_GROUP).contains(&group) {
+    if (1..=MAX_LEVEL_SUM_GROUP).contains(&group) {
         char::from(b'A' + group - 1).to_string()
     } else {
         group.to_string()
     }
 }
 
-/// Running state of one combined-upgrade group inside an assignment.
+/// Running state of one combined-level group inside an assignment.
 #[derive(Clone, Copy, Debug, Default)]
 struct SumProgress {
-    assigned: u16,
+    /// Combined levels of the assigned members, each item counting
+    /// `upgrade + 1`.
     total: u16,
-    /// Upgrade capacity of the members assigned so far.
+    /// Level capacity of the members assigned so far.
     spent_capacity: u16,
 }
 
+/// One resolved slot: its candidate matches, and whether it may stay empty
+/// (a combined-level member is optional — the rest of its group can carry
+/// the total).
+struct Slot<'query> {
+    candidates: Vec<SlotCandidate<'query>>,
+    optional: bool,
+}
+
 /// Query slots resolved against one world's items: alternatives collapse to
-/// one slot, and every slot must be served by a distinct item.
+/// one slot, and every mandatory slot must be served by a distinct item.
 struct Assignment<'query> {
     items: &'query [WorldItem],
-    /// Candidate matches per slot, most constrained slot first.
-    slots: Vec<Vec<SlotCandidate<'query>>>,
+    /// Resolved slots, most constrained slot first.
+    slots: Vec<Slot<'query>>,
     sum_groups: BTreeMap<u8, SumGroup>,
     used: Vec<bool>,
     scenarios: BTreeMap<u16, u64>,
@@ -910,9 +991,14 @@ impl<'query> Assignment<'query> {
     /// Builds per-slot candidate lists under the query's floor limits and the
     /// blacksmith-reward exclusion, sorted most constrained slot first.
     fn prepare(query: &'query SearchQuery, world: &'query GeneratedWorld) -> Self {
-        let mut slots: Vec<Vec<SlotCandidate<'query>>> = Vec::new();
+        let mut slots: Vec<Slot<'query>> = Vec::new();
         for slot in query.slots() {
             let mut candidates = Vec::new();
+            // Combined-level members never sit in alternative groups, so a
+            // slot is optional exactly when its members carry a level sum.
+            let optional = slot
+                .iter()
+                .all(|&member| query.requirements[member].level_sum.is_some());
             for member in slot {
                 let requirement = &query.requirements[member];
                 for (index, candidate) in world.items.iter().enumerate() {
@@ -926,11 +1012,14 @@ impl<'query> Assignment<'query> {
                     }
                 }
             }
-            slots.push(candidates);
+            slots.push(Slot {
+                candidates,
+                optional,
+            });
         }
-        let sum_groups = query.upgrade_sum_groups();
+        let sum_groups = query.level_sum_groups();
         // Fail early by assigning the most constrained slot first.
-        slots.sort_by_key(Vec::len);
+        slots.sort_by_key(|slot| slot.candidates.len());
         Self {
             items: &world.items,
             slots,
@@ -942,13 +1031,14 @@ impl<'query> Assignment<'query> {
         }
     }
 
-    /// Depth-first assignment requiring every slot to hold a distinct item.
+    /// Depth-first assignment requiring every mandatory slot to hold a
+    /// distinct item and every combined-level group to reach its total.
     fn fills_every_slot(&mut self, slot: usize) -> bool {
         if slot == self.slots.len() {
-            return true;
+            return self.level_sums_satisfied();
         }
-        for candidate in 0..self.slots[slot].len() {
-            let (item_index, identity, requirement) = self.slots[slot][candidate];
+        for candidate in 0..self.slots[slot].candidates.len() {
+            let (item_index, identity, requirement) = self.slots[slot].candidates[candidate];
             let Some(undo) = self.assign(item_index, identity, requirement) else {
                 continue;
             };
@@ -957,7 +1047,16 @@ impl<'query> Assignment<'query> {
             }
             self.unassign(undo);
         }
-        false
+        // A combined-level slot may stay empty: the rest of its group can
+        // carry the total.
+        self.slots[slot].optional && self.fills_every_slot(slot + 1)
+    }
+
+    /// Whether every combined-level group's assigned members reach its total.
+    fn level_sums_satisfied(&self) -> bool {
+        self.sum_groups.iter().all(|(label, group)| {
+            self.sums.get(label).map_or(0, |progress| progress.total) >= group.minimum_total
+        })
     }
 
     /// Places one item into one slot when every cross-item constraint still
@@ -998,13 +1097,12 @@ impl<'query> Assignment<'query> {
             }
             undo.scenario = Some((group, self.scenarios.insert(group, compatible)));
         }
-        if let Some(sum) = requirement.upgrade_sum {
+        if let Some(sum) = requirement.level_sum {
             let group = self.sum_groups.get(&sum.group).copied().unwrap_or_default();
             let previous = self.sums.get(&sum.group).copied().unwrap_or_default();
             let progress = SumProgress {
-                assigned: previous.assigned + 1,
-                total: previous.total + u16::from(self.items[item_index].upgrade),
-                spent_capacity: previous.spent_capacity + u16::from(requirement.maximum_upgrade()),
+                total: previous.total + u16::from(self.items[item_index].upgrade) + 1,
+                spent_capacity: previous.spent_capacity + u16::from(requirement.maximum_level()),
             };
             // Prune once even the unassigned members at their caps cannot
             // lift the total to the target.
@@ -1026,14 +1124,13 @@ impl<'query> Assignment<'query> {
         rewind(&mut self.identities, undo.identity);
     }
 
-    /// Combined-upgrade groups not fully assigned or short of their total:
-    /// their assigned members do not count as satisfied.
+    /// Combined-level groups short of their total: their assigned members
+    /// do not count as satisfied.
     fn failed_sum_groups(&self) -> Vec<u8> {
-        self.sums
+        self.sum_groups
             .iter()
-            .filter(|(label, progress)| {
-                let group = self.sum_groups.get(label).copied().unwrap_or_default();
-                progress.assigned < group.members || progress.total < group.minimum_total
+            .filter(|(label, group)| {
+                self.sums.get(label).map_or(0, |progress| progress.total) < group.minimum_total
             })
             .map(|(label, _)| *label)
             .collect()
@@ -1055,14 +1152,17 @@ fn rewind<K: Ord, V>(map: &mut BTreeMap<K, V>, previous: Option<(K, Option<V>)>)
 pub struct ScoutMatches {
     /// One flag per world item, in the scouted world's own item order — the
     /// order [`crate::wire::encode_scout_world`] emits — set for every item
-    /// the selection claimed for a satisfied slot.
+    /// the selection claimed for a satisfied condition.
     pub matched: Vec<bool>,
-    /// How many slots the selection satisfies. Every slot claims a distinct
-    /// item, and items serving a failed combined-upgrade group are not
-    /// flagged, so this is also the number of flags set.
+    /// How many conditions the selection satisfies: one per filled plain
+    /// slot, plus one per combined-level group whose assigned items reach
+    /// its total. A satisfied group flags every contributing item, so more
+    /// flags than conditions may be set; items of a group short of its
+    /// total are not flagged at all.
     pub matched_requirements: usize,
-    /// How many slots the query has in total — one per alternative group,
-    /// however many members it holds, plus one per other requirement.
+    /// How many conditions the query has in total — one per slot, with all
+    /// the slots of a combined-level group counting once
+    /// ([`SearchQuery::scout_condition_count`]).
     pub total_requirements: usize,
 }
 
@@ -1087,8 +1187,9 @@ impl ScoutMatches {
 /// requirement's own, the blacksmith-reward exclusion, one item per slot,
 /// any member of an alternative group filling its slot, identity groups
 /// bound to a single item ID, accessibility scenarios intersected per group,
-/// and combined-upgrade groups counting only when every member is assigned
-/// and the total is met — a lone ring of a wanted pair is not highlighted.
+/// and combined-level groups counting as one condition, satisfied when the
+/// assigned members' levels reach the total — a lone +0 ring of a wanted
+/// pair that falls short is not highlighted.
 /// World-level conditions (`require_blacksmith`, the Wandmaker filter) are
 /// *not* applied — they say nothing about which item explains which slot.
 ///
@@ -1096,11 +1197,12 @@ impl ScoutMatches {
 /// [`SearchQuery::matches`] on a query without those world conditions.
 #[must_use]
 pub fn scout_matches(world: &GeneratedWorld, query: &SearchQuery) -> ScoutMatches {
-    let total_requirements = query.slot_count();
+    let total_requirements = query.scout_condition_count();
     let mut search = BestSubset {
         assignment: Assignment::prepare(query, world),
         selected: Vec::new(),
         best: Vec::new(),
+        best_conditions: 0,
     };
     search.visit(0);
     let mut matched = vec![false; world.items.len()];
@@ -1109,48 +1211,69 @@ pub fn scout_matches(world: &GeneratedWorld, query: &SearchQuery) -> ScoutMatche
     }
     ScoutMatches {
         matched,
-        matched_requirements: search.best.len(),
+        matched_requirements: search.best_conditions,
         total_requirements,
     }
 }
 
-/// Backtracking search for the largest assignment, keeping the best selection
-/// seen so far and pruning branches which can no longer beat it.
+/// Backtracking search for the most satisfied conditions, keeping the best
+/// selection seen so far and pruning branches which can no longer beat it.
 struct BestSubset<'query> {
     assignment: Assignment<'query>,
-    /// Assigned items with the combined-upgrade group they serve, if any.
+    /// Assigned items with the combined-level group they serve, if any.
     selected: Vec<(usize, Option<u8>)>,
+    /// The items of the best selection.
     best: Vec<usize>,
+    /// The conditions the best selection satisfies.
+    best_conditions: usize,
 }
 
 impl BestSubset<'_> {
     fn visit(&mut self, slot: usize) {
         if slot == self.assignment.slots.len() {
-            // Items serving an incomplete or short combined-upgrade group do
-            // not count and are not highlighted.
+            // Items serving a group short of its total do not count and are
+            // not highlighted; a satisfied group counts once, however many
+            // items carried it.
             let failed = self.assignment.failed_sum_groups();
-            let counted: Vec<usize> = self
-                .selected
-                .iter()
-                .filter(|(_, sum_group)| sum_group.is_none_or(|group| !failed.contains(&group)))
-                .map(|(item_index, _)| *item_index)
-                .collect();
-            if counted.len() > self.best.len() {
-                self.best = counted;
+            let mut items: Vec<usize> = Vec::new();
+            let mut satisfied_groups: Vec<u8> = Vec::new();
+            let mut conditions = 0;
+            for &(item_index, sum_group) in &self.selected {
+                match sum_group {
+                    None => {
+                        conditions += 1;
+                        items.push(item_index);
+                    }
+                    Some(group) if !failed.contains(&group) => {
+                        if !satisfied_groups.contains(&group) {
+                            satisfied_groups.push(group);
+                            conditions += 1;
+                        }
+                        items.push(item_index);
+                    }
+                    Some(_) => {}
+                }
+            }
+            if conditions > self.best_conditions {
+                self.best_conditions = conditions;
+                self.best = items;
             }
             return;
         }
-        // The remaining slots bound what this branch can still add.
-        if self.selected.len() + (self.assignment.slots.len() - slot) <= self.best.len() {
+        // The remaining slots bound what this branch can still add: each
+        // selected item and each remaining slot satisfies at most one
+        // condition.
+        if self.selected.len() + (self.assignment.slots.len() - slot) <= self.best_conditions {
             return;
         }
-        for candidate in 0..self.assignment.slots[slot].len() {
-            let (item_index, identity, requirement) = self.assignment.slots[slot][candidate];
+        for candidate in 0..self.assignment.slots[slot].candidates.len() {
+            let (item_index, identity, requirement) =
+                self.assignment.slots[slot].candidates[candidate];
             let Some(undo) = self.assignment.assign(item_index, identity, requirement) else {
                 continue;
             };
             self.selected
-                .push((item_index, requirement.upgrade_sum.map(|sum| sum.group)));
+                .push((item_index, requirement.level_sum.map(|sum| sum.group)));
             self.visit(slot + 1);
             self.selected.pop();
             self.assignment.unassign(undo);
@@ -1252,40 +1375,43 @@ pub enum QueryError {
     UncursedWithCurse,
     InvalidIdentityGroup,
     InconsistentIdentityGroup,
+    /// Two members of an identity group outside one alternative group carry
+    /// their own constraints; a stack has one anchor and bare copies.
+    OverconstrainedIdentityGroup,
     InvalidAlternativeGroup,
-    InvalidUpgradeSum,
+    InvalidLevelSum,
     /// The members of the group disagree on the total.
-    InconsistentUpgradeSum {
+    InconsistentLevelSum {
         group: u8,
     },
     /// The group's total exceeds what its members can carry together.
-    UnattainableUpgradeSum {
+    UnattainableLevelSum {
         group: u8,
         minimum_total: u16,
         capacity: u16,
     },
-    UpgradeSumInsideAlternative,
+    LevelSumInsideAlternative,
 }
 
 impl fmt::Display for QueryError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InconsistentUpgradeSum { group } => {
+            Self::InconsistentLevelSum { group } => {
                 return write!(
                     formatter,
-                    "the items in combined upgrade group {} must agree on the total",
+                    "the items in combined level group {} must agree on the total",
                     group_label(*group)
                 );
             }
-            Self::UnattainableUpgradeSum {
+            Self::UnattainableLevelSum {
                 group,
                 minimum_total,
                 capacity,
             } => {
                 return write!(
                     formatter,
-                    "combined upgrade group {} needs +{minimum_total} but its items can carry at \
-                     most +{capacity}",
+                    "combined level group {} needs {minimum_total} levels but its items can \
+                     reach at most {capacity}",
                     group_label(*group)
                 );
             }
@@ -1306,15 +1432,19 @@ impl fmt::Display for QueryError {
             Self::UncursedWithCurse => "an uncursed item cannot be limited to curses",
             Self::InvalidIdentityGroup => "identity group zero is reserved for no group",
             Self::InconsistentIdentityGroup => {
-                "linked item requirements must use the same category and item"
+                "linked item requirements must use the same category"
+            }
+            Self::OverconstrainedIdentityGroup => {
+                "only one linked requirement (or one alternative group) may carry item \
+                 constraints; the extra copies must be plain"
             }
             Self::InvalidAlternativeGroup => "alternative group zero is reserved for no group",
-            Self::InvalidUpgradeSum => "combined upgrade groups need a non-zero group and total",
-            Self::InconsistentUpgradeSum { .. } | Self::UnattainableUpgradeSum { .. } => {
+            Self::InvalidLevelSum => "combined level groups need a non-zero group and total",
+            Self::InconsistentLevelSum { .. } | Self::UnattainableLevelSum { .. } => {
                 unreachable!("written above")
             }
-            Self::UpgradeSumInsideAlternative => {
-                "a combined upgrade group cannot include alternative requirements"
+            Self::LevelSumInsideAlternative => {
+                "a combined level group cannot include alternative requirements"
             }
         };
         formatter.write_str(message)
@@ -1330,8 +1460,8 @@ mod tests {
     use crate::seed::DungeonSeed;
 
     use super::{
-        EffectRequirement, EffectSet, QueryError, Requirement, SearchQuery, TierRequirement,
-        UpgradeRequirement, UpgradeSum, scout_matches,
+        EffectRequirement, EffectSet, LevelSum, QueryError, Requirement, SearchQuery,
+        TierRequirement, UpgradeRequirement, scout_matches,
     };
 
     fn world_item(item: ItemId, accessibility: Accessibility) -> WorldItem {
@@ -1360,7 +1490,7 @@ mod tests {
             identity_group: None,
             max_depth: None,
             alternative_group: None,
-            upgrade_sum: None,
+            level_sum: None,
         }
     }
 
@@ -1451,7 +1581,7 @@ mod tests {
             identity_group: None,
             max_depth: None,
             alternative_group: None,
-            upgrade_sum: None,
+            level_sum: None,
         };
         let arcana = Requirement {
             item: Some(ItemId::RingArcana),
@@ -1534,7 +1664,7 @@ mod tests {
                 identity_group: None,
                 max_depth: None,
                 alternative_group: None,
-                upgrade_sum: None,
+                level_sum: None,
             }],
             max_depth: 24,
             challenges: crate::challenges::Challenges::NONE,
@@ -1816,7 +1946,7 @@ mod tests {
             identity_group: None,
             max_depth: None,
             alternative_group: None,
-            upgrade_sum: None,
+            level_sum: None,
         };
         assert!(invalid.validate().is_err());
     }
@@ -1837,7 +1967,7 @@ mod tests {
             identity_group: None,
             max_depth: None,
             alternative_group: None,
-            upgrade_sum: None,
+            level_sum: None,
         };
         let melee = Requirement {
             weapon_category: Some(WeaponCategory::Melee),
@@ -1929,7 +2059,7 @@ mod tests {
             identity_group: None,
             max_depth: None,
             alternative_group: None,
-            upgrade_sum: None,
+            level_sum: None,
         };
         assert_eq!(ring.validate(), Ok(()));
 
@@ -1945,7 +2075,7 @@ mod tests {
             identity_group: None,
             max_depth: None,
             alternative_group: None,
-            upgrade_sum: None,
+            level_sum: None,
         };
         assert_eq!(wand.validate(), Err(QueryError::InvalidUpgrade));
     }
@@ -1964,7 +2094,7 @@ mod tests {
             identity_group: None,
             max_depth: None,
             alternative_group: None,
-            upgrade_sum: None,
+            level_sum: None,
         };
         assert!(tier_five.matches(&world_item(ItemId::Greatsword, Accessibility::Independent)));
         assert!(!tier_five.matches(&world_item(ItemId::Longsword, Accessibility::Independent)));
@@ -2040,7 +2170,7 @@ mod tests {
             identity_group: Some(1),
             max_depth: None,
             alternative_group: None,
-            upgrade_sum: None,
+            level_sum: None,
         };
         let mut query = SearchQuery {
             requirements: vec![
@@ -2048,8 +2178,8 @@ mod tests {
                     UpgradeRequirement::Exact(3),
                     Some(ItemSource::WandmakerReward),
                 ),
-                linked(UpgradeRequirement::AtLeast(0), None),
-                linked(UpgradeRequirement::AtLeast(0), None),
+                linked(UpgradeRequirement::Any, None),
+                linked(UpgradeRequirement::Any, None),
                 Requirement {
                     kind: ItemKind::Wand,
                     weapon_category: None,
@@ -2062,7 +2192,7 @@ mod tests {
                     identity_group: None,
                     max_depth: None,
                     alternative_group: None,
-                    upgrade_sum: None,
+                    level_sum: None,
                 },
             ],
             max_depth: 14,
@@ -2148,7 +2278,7 @@ mod tests {
     }
 
     #[test]
-    fn wildcard_does_not_hide_conflicting_concrete_identity_group_members() {
+    fn a_stack_carries_constraints_on_one_member_only() {
         let linked = |item| Requirement {
             kind: ItemKind::Wand,
             weapon_category: None,
@@ -2161,14 +2291,10 @@ mod tests {
             identity_group: Some(1),
             max_depth: None,
             alternative_group: None,
-            upgrade_sum: None,
+            level_sum: None,
         };
-        let query = SearchQuery {
-            requirements: vec![
-                linked(Some(ItemId::WandFrost)),
-                linked(None),
-                linked(Some(ItemId::WandLightning)),
-            ],
+        let query = |members: Vec<Requirement>| SearchQuery {
+            requirements: members,
             max_depth: 24,
             challenges: crate::challenges::Challenges::NONE,
             require_blacksmith: false,
@@ -2177,7 +2303,87 @@ mod tests {
             fast_mode: false,
         };
 
-        assert_eq!(query.validate(), Err(QueryError::InconsistentIdentityGroup));
+        // Two members naming items would describe two different wands forced
+        // to be the same wand; the stack model refuses it.
+        assert_eq!(
+            query(vec![
+                linked(Some(ItemId::WandFrost)),
+                linked(None),
+                linked(Some(ItemId::WandLightning)),
+            ])
+            .validate(),
+            Err(QueryError::OverconstrainedIdentityGroup)
+        );
+        // One anchor with bare copies is the intended shape.
+        assert_eq!(
+            query(vec![
+                linked(Some(ItemId::WandFrost)),
+                linked(None),
+                linked(None),
+            ])
+            .validate(),
+            Ok(())
+        );
+        // Members of different kinds never describe one item.
+        assert_eq!(
+            query(vec![
+                linked(None),
+                Requirement {
+                    kind: ItemKind::Ring,
+                    ..linked(None)
+                },
+            ])
+            .validate(),
+            Err(QueryError::InconsistentIdentityGroup)
+        );
+    }
+
+    #[test]
+    fn a_stack_can_anchor_on_a_whole_alternative_group() {
+        // "Runic Blade OR War Hammer, plus two more of whichever matched":
+        // the anchor unit is the alternative group, the copies are bare.
+        let anchor = |item| Requirement {
+            item: Some(item),
+            upgrade: UpgradeRequirement::AtLeast(1),
+            alternative_group: Some(1),
+            identity_group: Some(1),
+            ..plain(ItemKind::Weapon)
+        };
+        let copy = Requirement {
+            identity_group: Some(1),
+            ..plain(ItemKind::Weapon)
+        };
+        let query = SearchQuery {
+            requirements: vec![
+                anchor(ItemId::RunicBlade),
+                anchor(ItemId::WarHammer),
+                copy,
+                copy,
+            ],
+            ..scout_query(Vec::new())
+        };
+        assert_eq!(query.validate(), Ok(()));
+        assert_eq!(query.slot_count(), 3);
+
+        // Three hammers: the group binds to the hammer and the copies follow.
+        assert!(query.matches(&scout_world(vec![
+            upgraded(ItemId::WarHammer, 1),
+            upgraded(ItemId::WarHammer, 0),
+            upgraded(ItemId::WarHammer, 0),
+        ])));
+        // Copies of the wrong identity do not count, whichever member won.
+        assert!(!query.matches(&scout_world(vec![
+            upgraded(ItemId::WarHammer, 1),
+            upgraded(ItemId::WarHammer, 0),
+            upgraded(ItemId::RunicBlade, 0),
+        ])));
+        // An upgraded blade with two more blades matches through the other
+        // alternative.
+        assert!(query.matches(&scout_world(vec![
+            upgraded(ItemId::RunicBlade, 2),
+            upgraded(ItemId::RunicBlade, 0),
+            upgraded(ItemId::RunicBlade, 0),
+        ])));
     }
 
     fn plain(kind: ItemKind) -> Requirement {
@@ -2193,7 +2399,7 @@ mod tests {
             identity_group: None,
             max_depth: None,
             alternative_group: None,
-            upgrade_sum: None,
+            level_sum: None,
         }
     }
 
@@ -2389,21 +2595,20 @@ mod tests {
                 ..scout_query(Vec::new())
             }
             .validate(),
-            Err(QueryError::InconsistentIdentityGroup)
+            Err(QueryError::OverconstrainedIdentityGroup)
         );
     }
 
     #[test]
-    fn combined_upgrade_groups_sum_distinct_items() {
-        let might = |upgrade_sum| Requirement {
+    fn combined_level_groups_sum_distinct_items_and_members_are_optional() {
+        let might = |level_sum| Requirement {
             item: Some(ItemId::RingMight),
-            identity_group: Some(1),
-            upgrade_sum: Some(upgrade_sum),
+            level_sum: Some(level_sum),
             ..plain(ItemKind::Ring)
         };
         let pair = |minimum_total| SearchQuery {
             requirements: vec![
-                might(UpgradeSum {
+                might(LevelSum {
                     group: 1,
                     minimum_total,
                 });
@@ -2411,60 +2616,67 @@ mod tests {
             ],
             ..scout_query(Vec::new())
         };
-        assert_eq!(pair(4).validate(), Ok(()));
-        assert_eq!(pair(8).validate(), Ok(()));
+        // A ring reaches +4, so it counts up to five levels; two rings ten.
+        assert_eq!(pair(3).validate(), Ok(()));
+        assert_eq!(pair(10).validate(), Ok(()));
         assert_eq!(
-            pair(9).validate(),
-            Err(QueryError::UnattainableUpgradeSum {
+            pair(11).validate(),
+            Err(QueryError::UnattainableLevelSum {
                 group: 1,
-                minimum_total: 9,
-                capacity: 8,
+                minimum_total: 11,
+                capacity: 10,
             })
         );
         assert_eq!(
-            pair(9).validate().unwrap_err().to_string(),
-            "combined upgrade group A needs +9 but its items can carry at most +8"
+            pair(11).validate().unwrap_err().to_string(),
+            "combined level group A needs 11 levels but its items can reach at most 10"
         );
 
-        let rings = |levels: &[u8]| {
+        let rings = |upgrades: &[u8]| {
             scout_world(
-                levels
+                upgrades
                     .iter()
-                    .map(|level| upgraded(ItemId::RingMight, *level))
+                    .map(|upgrade| upgraded(ItemId::RingMight, *upgrade))
                     .collect(),
             )
         };
-        assert!(pair(4).matches(&rings(&[2, 2])));
-        assert!(pair(4).matches(&rings(&[0, 1, 3])));
-        assert!(pair(4).matches(&rings(&[1, 3])));
-        assert!(!pair(4).matches(&rings(&[1, 2])));
-        assert!(!pair(4).matches(&rings(&[4])));
-        // Backtracking over assignments: the first pair tried (+0, +1)
-        // falls short, the sum is met by +1 and +3.
-        assert!(pair(4).matches(&rings(&[0, 1, 3])));
-        assert!(!pair(5).matches(&rings(&[0, 1, 3])));
+        // +3 strength from Rings of Might: one +2 ring, or a +0 and a +1.
+        assert!(pair(3).matches(&rings(&[2])));
+        assert!(pair(3).matches(&rings(&[0, 1])));
+        assert!(!pair(3).matches(&rings(&[1])));
+        assert!(!pair(3).matches(&rings(&[0])));
+        // Distinct items only: a pair cannot count one ring twice.
+        assert!(pair(8).matches(&rings(&[3, 3])));
+        assert!(!pair(8).matches(&rings(&[3, 2])));
+        assert!(!pair(8).matches(&rings(&[4])));
+        // Backtracking over assignments: the +0 and +1 pair falls short,
+        // the +1 and +3 pair carries it.
+        assert!(pair(6).matches(&rings(&[0, 1, 3])));
+        assert!(!pair(7).matches(&rings(&[0, 1, 3])));
 
-        // The scout highlights a sum group only when it is complete and met.
-        let lone = scout_matches(&rings(&[3]), &pair(4));
-        assert_eq!(lone.total_requirements, 2);
-        assert_eq!(lone.matched_requirements, 0);
-        assert!(lone.matched_indices().is_empty());
-        let short = scout_matches(&rings(&[1, 2]), &pair(4));
-        assert_eq!(short.matched_requirements, 0);
-        let met = scout_matches(&rings(&[1, 3]), &pair(4));
-        assert_eq!(met.matched_requirements, 2);
+        // The scout counts the whole group as one condition and flags every
+        // contributing item once the total is met.
+        let met = scout_matches(&rings(&[1, 3]), &pair(6));
+        assert_eq!(met.total_requirements, 1);
+        assert_eq!(met.matched_requirements, 1);
         assert_eq!(met.matched_indices(), vec![0, 1]);
+        let lone = scout_matches(&rings(&[3]), &pair(4));
+        assert_eq!(lone.matched_requirements, 1);
+        assert_eq!(lone.matched_indices(), vec![0]);
+        let short = scout_matches(&rings(&[1]), &pair(4));
+        assert_eq!(short.matched_requirements, 0);
+        assert!(short.matched_indices().is_empty());
 
         // Members agree on the total, sums need a group and a total, and a
         // sum cannot live inside an alternative group.
         assert_eq!(
             SearchQuery {
                 requirements: vec![
-                    might(UpgradeSum {
+                    might(LevelSum {
                         group: 1,
                         minimum_total: 2
                     }),
-                    might(UpgradeSum {
+                    might(LevelSum {
                         group: 1,
                         minimum_total: 3
                     }),
@@ -2472,34 +2684,34 @@ mod tests {
                 ..scout_query(Vec::new())
             }
             .validate(),
-            Err(QueryError::InconsistentUpgradeSum { group: 1 })
+            Err(QueryError::InconsistentLevelSum { group: 1 })
         );
         assert_eq!(
-            might(UpgradeSum {
+            might(LevelSum {
                 group: 0,
                 minimum_total: 2
             })
             .validate(),
-            Err(QueryError::InvalidUpgradeSum)
+            Err(QueryError::InvalidLevelSum)
         );
         assert_eq!(
-            might(UpgradeSum {
+            might(LevelSum {
                 group: 1,
                 minimum_total: 0
             })
             .validate(),
-            Err(QueryError::InvalidUpgradeSum)
+            Err(QueryError::InvalidLevelSum)
         );
         assert_eq!(
             Requirement {
                 alternative_group: Some(1),
-                ..might(UpgradeSum {
+                ..might(LevelSum {
                     group: 1,
                     minimum_total: 1
                 })
             }
             .validate(),
-            Err(QueryError::UpgradeSumInsideAlternative)
+            Err(QueryError::LevelSumInsideAlternative)
         );
     }
 
@@ -2556,23 +2768,26 @@ mod tests {
             .continues(&query(vec![plain(ItemKind::Weapon)]))
         );
 
-        let might = |sum: Option<UpgradeSum>| Requirement {
+        let might = |sum: Option<LevelSum>| Requirement {
             item: Some(ItemId::RingMight),
-            upgrade_sum: sum,
+            level_sum: sum,
             ..plain(ItemKind::Ring)
         };
         let sum = |group, minimum_total| {
-            Some(UpgradeSum {
+            Some(LevelSum {
                 group,
                 minimum_total,
             })
         };
         let pair = |total| query(vec![might(sum(1, total)); 2]);
         let plain_pair = query(vec![might(None); 2]);
-        // Adding or raising a total narrows; dropping or lowering it widens.
+        // Raising a total narrows; lowering it widens. Adding a total to a
+        // plain pair also *widens* — its members become optional, so one
+        // strong ring now suffices where two were demanded — and dropping
+        // one widens the totals away; neither direction continues.
         assert!(pair(4).continues(&pair(4)));
         assert!(pair(5).continues(&pair(4)));
-        assert!(pair(4).continues(&plain_pair));
+        assert!(!pair(4).continues(&plain_pair));
         assert!(!pair(3).continues(&pair(4)));
         assert!(!plain_pair.continues(&pair(4)));
         // The base group must map onto exactly one candidate group of the
@@ -2619,7 +2834,7 @@ mod tests {
             identity_group: None,
             max_depth: None,
             alternative_group: None,
-            upgrade_sum: None,
+            level_sum: None,
         }
     }
 

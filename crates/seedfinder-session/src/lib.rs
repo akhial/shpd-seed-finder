@@ -703,7 +703,7 @@ mod tests {
                 max_depth: None,
                 require_uncursed: false,
                 alternative_group: None,
-                upgrade_sum: None,
+                level_sum: None,
             }],
             max_depth: 24,
             challenges: Challenges::NONE,
@@ -867,7 +867,7 @@ mod tests {
                 max_depth: None,
                 require_uncursed: false,
                 alternative_group: None,
-                upgrade_sum: None,
+                level_sum: None,
             }],
             max_depth: known.depth,
             challenges: Challenges::NONE,
@@ -967,7 +967,7 @@ mod tests {
                 identity_group: None,
                 max_depth: None,
                 alternative_group: None,
-                upgrade_sum: None,
+                level_sum: None,
             }],
             max_depth: 16,
             challenges: Challenges::NONE,
@@ -1055,7 +1055,7 @@ mod tests {
             identity_group: None,
             max_depth: None,
             alternative_group: None,
-            upgrade_sum: None,
+            level_sum: None,
         }
     }
 

@@ -1,5 +1,6 @@
 //! Brute-force oracle for the slot-based matcher: alternative groups,
-//! combined-upgrade totals, effect sets, identity groups and accessibility
+//! combined-level totals with optional members, same-kind stacks and
+//! accessibility
 //! scenarios are all exercised on random small worlds and random queries,
 //! and the engine's answers are compared with an exhaustive enumeration of
 //! every assignment. The continuation predicate is checked for soundness the
@@ -14,8 +15,8 @@ use shpd_seedfinder_core::catalog::{
 use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
 use shpd_seedfinder_core::query::{
-    EffectRequirement, EffectSet, Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
-    UpgradeSum, scout_matches,
+    EffectRequirement, EffectSet, LevelSum, Requirement, SearchQuery, TierRequirement,
+    UpgradeRequirement, scout_matches,
 };
 use shpd_seedfinder_core::quests::QuestSummary;
 use shpd_seedfinder_core::seed::DungeonSeed;
@@ -144,14 +145,12 @@ fn random_requirement(rng: &mut Rng) -> Requirement {
         effect,
         require_uncursed: rng.chance(20),
         source: None,
-        identity_group: rng
-            .chance(25)
-            .then(|| 1 + u8::try_from(rng.below(2)).unwrap()),
+        identity_group: None,
         max_depth: rng
             .chance(30)
             .then(|| 1 + u8::try_from(rng.below(10)).unwrap()),
         alternative_group: None,
-        upgrade_sum: None,
+        level_sum: None,
     }
 }
 
@@ -169,7 +168,8 @@ fn random_query(rng: &mut Rng) -> Option<SearchQuery> {
         }
     }
     if rng.chance(40) {
-        // Put every single-member slot of one kind into a sum group.
+        // Put every single-member slot into one level-sum group; members are
+        // optional in the matcher, so any subset may carry the total.
         let singles: Vec<usize> = requirements
             .iter()
             .enumerate()
@@ -179,13 +179,53 @@ fn random_query(rng: &mut Rng) -> Option<SearchQuery> {
         if singles.len() >= 2 {
             let capacity: u16 = singles
                 .iter()
-                .map(|&index| u16::from(requirements[index].maximum_upgrade()))
+                .map(|&index| u16::from(requirements[index].maximum_level()))
                 .sum();
             let minimum_total = 1 + u8::try_from(rng.below(usize::from(capacity))).unwrap();
             for index in singles {
-                requirements[index].upgrade_sum = Some(UpgradeSum {
+                requirements[index].level_sum = Some(LevelSum {
                     group: 1,
                     minimum_total,
+                });
+            }
+        }
+    }
+    if rng.chance(40) {
+        // Turn one slot into a stack anchor: its members share an identity
+        // label with one or two appended bare copies of the same kind. Only
+        // a slot whose members agree on a kind can anchor a stack.
+        let slots: Vec<Vec<usize>> = {
+            let query = SearchQuery {
+                requirements: requirements.clone(),
+                max_depth: 10,
+                challenges: Challenges::NONE,
+                require_blacksmith: false,
+                exclude_blacksmith_rewards: false,
+                wandmaker_quest: None,
+                fast_mode: false,
+            };
+            query.slots()
+        };
+        let slot = &slots[rng.below(slots.len())];
+        let kind = requirements[slot[0]].kind;
+        if slot.iter().all(|&member| requirements[member].kind == kind) {
+            for &member in slot {
+                requirements[member].identity_group = Some(1);
+            }
+            for _ in 0..=rng.below(2) {
+                requirements.push(Requirement {
+                    kind,
+                    weapon_category: None,
+                    item: None,
+                    tier: TierRequirement::Any,
+                    upgrade: UpgradeRequirement::Any,
+                    effect: EffectRequirement::Any,
+                    require_uncursed: false,
+                    source: None,
+                    identity_group: Some(1),
+                    max_depth: None,
+                    alternative_group: None,
+                    level_sum: None,
                 });
             }
         }
@@ -257,43 +297,43 @@ fn score(
                 return None;
             }
         }
-        if let Some(sum) = requirement.upgrade_sum {
+        if let Some(sum) = requirement.level_sum {
             let entry = sums.entry(sum.group).or_insert((0, 0));
             entry.0 += 1;
-            entry.1 += u16::from(candidate.upgrade);
+            entry.1 += u16::from(candidate.upgrade) + 1;
         }
     }
-    let mut group_sizes: BTreeMap<u8, (usize, u16)> = BTreeMap::new();
+    let mut group_totals: BTreeMap<u8, u16> = BTreeMap::new();
     for requirement in &query.requirements {
-        if let Some(sum) = requirement.upgrade_sum {
-            let entry = group_sizes
+        if let Some(sum) = requirement.level_sum {
+            group_totals
                 .entry(sum.group)
-                .or_insert((0, u16::from(sum.minimum_total)));
-            entry.0 += 1;
+                .or_insert(u16::from(sum.minimum_total));
         }
     }
-    let failed = |group: u8| {
-        let (members, minimum_total) = group_sizes[&group];
-        let (assigned, total) = sums.get(&group).copied().unwrap_or((0, 0));
-        assigned < members || total < minimum_total
+    let satisfied = |group: u8| {
+        let (_, total) = sums.get(&group).copied().unwrap_or((0, 0));
+        total >= group_totals[&group]
     };
-    Some(
-        chosen
-            .iter()
-            .flatten()
-            .filter(|(member, _)| {
-                query.requirements[*member]
-                    .upgrade_sum
-                    .is_none_or(|sum| !failed(sum.group))
-            })
-            .count(),
-    )
+    // One condition per assigned plain slot, plus one per level-sum group
+    // whose assigned members reach the total.
+    let plain = chosen
+        .iter()
+        .flatten()
+        .filter(|(member, _)| query.requirements[*member].level_sum.is_none())
+        .count();
+    let groups = group_totals
+        .keys()
+        .filter(|group| satisfied(**group))
+        .count();
+    Some(plain + groups)
 }
 
 fn best_partial(
     query: &SearchQuery,
     world: &GeneratedWorld,
     candidates: &[Vec<(usize, usize)>],
+    slots: &[Vec<usize>],
     slot: usize,
     chosen: &mut Vec<Option<(usize, usize)>>,
     full_only: bool,
@@ -304,14 +344,21 @@ fn best_partial(
     let mut best = None;
     for pair in &candidates[slot] {
         chosen.push(Some(*pair));
-        if let Some(value) = best_partial(query, world, candidates, slot + 1, chosen, full_only) {
+        if let Some(value) =
+            best_partial(query, world, candidates, slots, slot + 1, chosen, full_only)
+        {
             best = Some(best.map_or(value, |current: usize| current.max(value)));
         }
         chosen.pop();
     }
-    if !full_only {
+    // Level-sum members are optional even in a full assignment: the rest of
+    // their group may carry the total.
+    let optional = query.requirements[slots[slot][0]].level_sum.is_some();
+    if !full_only || optional {
         chosen.push(None);
-        if let Some(value) = best_partial(query, world, candidates, slot + 1, chosen, full_only) {
+        if let Some(value) =
+            best_partial(query, world, candidates, slots, slot + 1, chosen, full_only)
+        {
             best = Some(best.map_or(value, |current: usize| current.max(value)));
         }
         chosen.pop();
@@ -329,27 +376,47 @@ fn matcher_and_scout_agree_with_exhaustive_enumeration() {
             continue;
         };
         let world = random_world(&mut rng);
+        let slots = query.slots();
         let candidates = candidates(&query, &world);
-        // A full assignment whose sum group falls short scores below the
-        // slot count, so only a perfect score is a match.
-        let full = best_partial(&query, &world, &candidates, 0, &mut Vec::new(), true);
-        let expected = full == Some(query.slot_count());
+        // A match fills every plain slot and satisfies every level-sum
+        // group, which is exactly a full-mode score of every condition.
+        let conditions = query.scout_condition_count();
+        let full = best_partial(
+            &query,
+            &world,
+            &candidates,
+            &slots,
+            0,
+            &mut Vec::new(),
+            true,
+        );
+        let expected = full == Some(conditions);
         assert_eq!(
             query.matches(&world),
             expected,
             "matcher disagrees with brute force for {query:?} on {world:?}"
         );
-        let best = best_partial(&query, &world, &candidates, 0, &mut Vec::new(), false)
-            .expect("skipping every slot is always a valid selection");
+        let best = best_partial(
+            &query,
+            &world,
+            &candidates,
+            &slots,
+            0,
+            &mut Vec::new(),
+            false,
+        )
+        .expect("skipping every slot is always a valid selection");
         let marks = scout_matches(&world, &query);
-        assert_eq!(marks.total_requirements, query.slot_count());
+        assert_eq!(marks.total_requirements, conditions);
         assert_eq!(
             marks.matched_requirements, best,
             "scout disagrees with brute force for {query:?} on {world:?}"
         );
-        assert_eq!(marks.matched_indices().len(), marks.matched_requirements);
+        // A satisfied level-sum group flags every contributing item, so the
+        // flags can outnumber the conditions but never undercut them.
+        assert!(marks.matched_indices().len() >= marks.matched_requirements);
         if expected {
-            assert_eq!(marks.matched_requirements, query.slot_count());
+            assert_eq!(marks.matched_requirements, conditions);
         }
         checked += 1;
         matched += usize::from(expected);
@@ -392,12 +459,12 @@ fn mutate(rng: &mut Rng, base: &SearchQuery) -> Option<SearchQuery> {
             }
             6 => {
                 // Raise or lower a sum total for a whole group.
-                if let Some(sum) = requirement.upgrade_sum {
+                if let Some(sum) = requirement.level_sum {
                     let delta = if rng.chance(50) { 1 } else { -1 };
                     let total = i16::from(sum.minimum_total) + delta;
                     let total = u8::try_from(total.max(1)).unwrap();
                     for other in &mut query.requirements {
-                        if let Some(other_sum) = &mut other.upgrade_sum
+                        if let Some(other_sum) = &mut other.level_sum
                             && other_sum.group == sum.group
                         {
                             other_sum.minimum_total = total;
@@ -416,7 +483,7 @@ fn mutate(rng: &mut Rng, base: &SearchQuery) -> Option<SearchQuery> {
             _ => {
                 // Drop a sum group from everyone.
                 for other in &mut query.requirements {
-                    other.upgrade_sum = None;
+                    other.level_sum = None;
                 }
             }
         }

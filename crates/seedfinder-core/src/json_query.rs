@@ -5,8 +5,8 @@ use crate::catalog::{Effect, ItemKind, WeaponCategory, item, item_by_stable_id};
 use crate::challenges::Challenges;
 use crate::model::ItemSource;
 use crate::query::{
-    EffectRequirement, EffectSet, Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
-    UpgradeSum,
+    EffectRequirement, EffectSet, LevelSum, Requirement, SearchQuery, TierRequirement,
+    UpgradeRequirement,
 };
 use crate::quests::WandmakerQuestType;
 use serde::Deserialize;
@@ -100,7 +100,7 @@ enum FileEffect {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct FileUpgradeSum {
+struct FileLevelSum {
     group: u8,
     at_least: u8,
 }
@@ -130,7 +130,7 @@ struct FileRequirement {
     #[serde(default)]
     max_depth: Option<u8>,
     #[serde(default)]
-    upgrade_sum: Option<FileUpgradeSum>,
+    level_sum: Option<FileLevelSum>,
 }
 
 #[derive(Deserialize)]
@@ -442,7 +442,7 @@ fn convert_requirement(
         identity_group: requirement.identity_group,
         max_depth: requirement.max_depth,
         alternative_group,
-        upgrade_sum: requirement.upgrade_sum.map(|sum| UpgradeSum {
+        level_sum: requirement.level_sum.map(|sum| LevelSum {
             group: sum.group,
             minimum_total: sum.at_least,
         }),
@@ -622,9 +622,9 @@ fn encode_requirement(requirement: &Requirement) -> Value {
     if let Some(depth) = requirement.max_depth {
         output.insert("max_depth".to_owned(), json!(depth));
     }
-    if let Some(sum) = requirement.upgrade_sum {
+    if let Some(sum) = requirement.level_sum {
         output.insert(
-            "upgrade_sum".to_owned(),
+            "level_sum".to_owned(),
             json!({ "group": sum.group, "at_least": sum.minimum_total }),
         );
     }
@@ -637,8 +637,8 @@ mod tests {
     use crate::challenges::Challenges;
     use crate::model::ItemSource;
     use crate::query::{
-        EffectRequirement, EffectSet, Requirement, SearchQuery, TierRequirement,
-        UpgradeRequirement, UpgradeSum,
+        EffectRequirement, EffectSet, LevelSum, Requirement, SearchQuery, TierRequirement,
+        UpgradeRequirement,
     };
     use crate::quests::WandmakerQuestType;
 
@@ -930,40 +930,38 @@ mod tests {
     }
 
     #[test]
-    fn upgrade_sums_link_requirements_through_shared_groups() {
+    fn level_sums_link_requirements_through_shared_groups() {
         let query = decode(
             r#"{"requirements":[
-                {"item":"ring_might","identity_group":1,
-                 "upgrade_sum":{"group":1,"at_least":2}},
-                {"item":"ring_might","identity_group":1,
-                 "upgrade_sum":{"group":1,"at_least":2}}
+                {"item":"ring_might","level_sum":{"group":1,"at_least":2}},
+                {"item":"ring_might","level_sum":{"group":1,"at_least":2}}
             ]}"#,
         )
         .unwrap();
         assert_eq!(
-            query.requirements[0].upgrade_sum,
-            Some(UpgradeSum {
+            query.requirements[0].level_sum,
+            Some(LevelSum {
                 group: 1,
                 minimum_total: 2,
             })
         );
         assert_eq!(
-            query.requirements[0].upgrade_sum,
-            query.requirements[1].upgrade_sum
+            query.requirements[0].level_sum,
+            query.requirements[1].level_sum
         );
         // Disagreeing totals and unattainable sums are query errors.
         for invalid in [
             r#"{"requirements":[
-                {"item":"ring_might","upgrade_sum":{"group":1,"at_least":2}},
-                {"item":"ring_might","upgrade_sum":{"group":1,"at_least":3}}
+                {"item":"ring_might","level_sum":{"group":1,"at_least":2}},
+                {"item":"ring_might","level_sum":{"group":1,"at_least":3}}
             ]}"#,
             r#"{"requirements":[
-                {"item":"ring_might","upgrade_sum":{"group":1,"at_least":9}},
-                {"item":"ring_might","upgrade_sum":{"group":1,"at_least":9}}
+                {"item":"ring_might","level_sum":{"group":1,"at_least":11}},
+                {"item":"ring_might","level_sum":{"group":1,"at_least":11}}
             ]}"#,
             // A sum inside an any_of group is rejected.
             r#"{"requirements":[{"any_of":[
-                {"item":"ring_might","upgrade_sum":{"group":1,"at_least":2}},
+                {"item":"ring_might","level_sum":{"group":1,"at_least":2}},
                 {"item":"ring_haste"}
             ]}]}"#,
         ] {
@@ -980,10 +978,8 @@ mod tests {
                     {"kind":"thrown_weapon","effect":["projecting","sacrificial","annoying","blazing","blocking"]}
                 ]},
                 {"kind":"armor","effect":"any_enchantment","uncursed":true},
-                {"item":"ring_might","identity_group":1,
-                 "upgrade_sum":{"group":2,"at_least":4}},
-                {"item":"ring_might","identity_group":1,
-                 "upgrade_sum":{"group":2,"at_least":4}}
+                {"item":"ring_might","level_sum":{"group":2,"at_least":4}},
+                {"item":"ring_might","level_sum":{"group":2,"at_least":4}}
             ]}"#,
         )
         .unwrap();
@@ -999,10 +995,10 @@ mod tests {
                          "effect": ["Blazing", "Blocking", "Projecting", "Annoying", "Sacrificial"]},
                     ]},
                     {"kind": "armor", "effect": "any_enchantment", "uncursed": true},
-                    {"kind": "ring", "item": "ring_might", "identity_group": 1,
-                     "upgrade_sum": {"group": 2, "at_least": 4}},
-                    {"kind": "ring", "item": "ring_might", "identity_group": 1,
-                     "upgrade_sum": {"group": 2, "at_least": 4}},
+                    {"kind": "ring", "item": "ring_might",
+                     "level_sum": {"group": 2, "at_least": 4}},
+                    {"kind": "ring", "item": "ring_might",
+                     "level_sum": {"group": 2, "at_least": 4}},
                 ],
             })
         );
@@ -1025,7 +1021,7 @@ mod tests {
                     identity_group: Some(2),
                     max_depth: Some(9),
                     alternative_group: None,
-                    upgrade_sum: None,
+                    level_sum: None,
                 },
                 Requirement {
                     kind: ItemKind::Ring,
@@ -1039,7 +1035,7 @@ mod tests {
                     identity_group: None,
                     max_depth: None,
                     alternative_group: None,
-                    upgrade_sum: None,
+                    level_sum: None,
                 },
             ],
             max_depth: 19,
@@ -1091,7 +1087,7 @@ mod tests {
                 identity_group: None,
                 max_depth: None,
                 alternative_group: None,
-                upgrade_sum: None,
+                level_sum: None,
             }],
             max_depth: 24,
             challenges: Challenges::NONE,

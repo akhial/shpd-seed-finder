@@ -10,8 +10,8 @@ use shpd_seedfinder_core::feasibility::Quest;
 use shpd_seedfinder_core::main_world::EMPTY_BOSS_FLOORS;
 use shpd_seedfinder_core::model::ItemSource;
 use shpd_seedfinder_core::query::{
-    EffectRequirement, EffectSet, Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
-    UpgradeSum,
+    EffectRequirement, EffectSet, LevelSum, Requirement, SearchQuery, TierRequirement,
+    UpgradeRequirement,
 };
 use shpd_seedfinder_core::quests::{
     BlacksmithQuestType, GhostQuestType, ImpTarget, QuestSummary, WandmakerQuestType,
@@ -68,8 +68,8 @@ pub struct UiRequirement {
     pub max_depth: Option<u8>,
     /// Members of one alternative group form a single "any of these" slot.
     pub alternative_group: Option<u8>,
-    /// Membership in a combined-upgrade group; never set on an alternative.
-    pub upgrade_sum: Option<UpgradeSum>,
+    /// Membership in a combined-level group; never set on an alternative.
+    pub level_sum: Option<LevelSum>,
 }
 
 impl UiRequirement {
@@ -87,7 +87,7 @@ impl UiRequirement {
             identity_group: None,
             max_depth: None,
             alternative_group: None,
-            upgrade_sum: None,
+            level_sum: None,
         }
     }
 
@@ -105,7 +105,7 @@ impl UiRequirement {
             identity_group: self.identity_group,
             max_depth: self.max_depth,
             alternative_group: self.alternative_group,
-            upgrade_sum: self.upgrade_sum,
+            level_sum: self.level_sum,
         }
     }
 
@@ -166,7 +166,7 @@ impl UiRequirement {
         if let Some(group) = self.identity_group {
             let _ = write!(text, " · same item group {}", group_letter(group));
         }
-        if let Some(sum) = self.upgrade_sum {
+        if let Some(sum) = self.level_sum {
             let _ = write!(
                 text,
                 " · combined +{} group {}",
@@ -261,7 +261,7 @@ impl AppState {
                 identity_group: requirement.identity_group,
                 max_depth: requirement.max_depth,
                 alternative_group: requirement.alternative_group,
-                upgrade_sum: requirement.upgrade_sum,
+                level_sum: requirement.level_sum,
             });
         }
         state.normalize();
@@ -338,28 +338,28 @@ impl AppState {
         Some(UiRequirement {
             key: draft_key,
             alternative_group: Some(group),
-            upgrade_sum: None,
+            level_sum: None,
             ..row
         })
     }
 
     /// Stores a confirmed alternative drafted from the row `source`, which
-    /// joins the draft's group now; a combined-upgrade membership cannot
+    /// joins the draft's group now; a combined-level membership cannot
     /// survive inside an alternative, so the source sheds it.
     pub fn add_alternative(&mut self, source: u64, result: UiRequirement) {
         if let Some(row) = self.requirements.iter_mut().find(|r| r.key == source) {
             row.alternative_group = result.alternative_group;
-            row.upgrade_sum = None;
+            row.level_sum = None;
         }
         self.upsert(result);
     }
 
     /// Stores an edited or new row. A new alternative lands right after the
     /// other members of its group so the document keeps them together; a
-    /// combined-upgrade total set here propagates to the whole group.
+    /// combined-level total set here propagates to the whole group.
     pub fn upsert(&mut self, mut result: UiRequirement) {
         if result.alternative_group.is_some() {
-            result.upgrade_sum = None;
+            result.level_sum = None;
         }
         if let Some(slot) = self.requirements.iter_mut().find(|r| r.key == result.key) {
             *slot = result;
@@ -374,9 +374,9 @@ impl AppState {
                 .map_or(self.requirements.len(), |last| last + 1);
             self.requirements.insert(position, result);
         }
-        if let Some(sum) = result.upgrade_sum {
+        if let Some(sum) = result.level_sum {
             for other in &mut self.requirements {
-                if let Some(existing) = &mut other.upgrade_sum
+                if let Some(existing) = &mut other.level_sum
                     && existing.group == sum.group
                 {
                     existing.minimum_total = sum.minimum_total;
@@ -407,25 +407,25 @@ impl AppState {
         }
     }
 
-    /// The total the other members of combined-upgrade group `group` share,
+    /// The total the other members of combined-level group `group` share,
     /// ignoring the row `key` (which may be about to change it).
     #[must_use]
-    pub fn upgrade_sum_total(&self, group: u8, key: u64) -> Option<u8> {
+    pub fn level_sum_total(&self, group: u8, key: u64) -> Option<u8> {
         self.requirements
             .iter()
             .filter(|r| r.key != key)
-            .filter_map(|r| r.upgrade_sum)
+            .filter_map(|r| r.level_sum)
             .find(|sum| sum.group == group)
             .map(|sum| sum.minimum_total)
     }
 
-    /// The highest total combined-upgrade group `group` could reach with
+    /// The highest total combined-level group `group` could reach with
     /// `draft` stored as a member (replacing the row with its key).
     #[must_use]
-    pub fn upgrade_sum_capacity(&self, group: u8, draft: &UiRequirement) -> u8 {
+    pub fn level_sum_capacity(&self, group: u8, draft: &UiRequirement) -> u8 {
         let mut preview = self.clone();
         preview.upsert(UiRequirement {
-            upgrade_sum: Some(UpgradeSum {
+            level_sum: Some(LevelSum {
                 group,
                 minimum_total: 1,
             }),
@@ -433,7 +433,7 @@ impl AppState {
         });
         preview
             .unvalidated_query()
-            .upgrade_sum_groups()
+            .level_sum_groups()
             .get(&group)
             .map_or(0, |sum| u8::try_from(sum.capacity).unwrap_or(u8::MAX))
     }
@@ -962,7 +962,7 @@ mod tests {
     #[test]
     fn labels_describe_effect_sets_and_combined_upgrades() {
         use shpd_seedfinder_core::catalog::{ArmorEffect, Effect, WeaponEffect};
-        use shpd_seedfinder_core::query::{EffectRequirement, EffectSet, UpgradeSum};
+        use shpd_seedfinder_core::query::{EffectRequirement, EffectSet, LevelSum};
 
         let mut requirement = UiRequirement::new(1);
         requirement.effect = EffectRequirement::exactly(Effect::Weapon(WeaponEffect::Blazing));
@@ -999,7 +999,7 @@ mod tests {
         requirement.require_uncursed = false;
         requirement.upgrade = UpgradeRequirement::AtLeast(1);
         requirement.identity_group = Some(1);
-        requirement.upgrade_sum = Some(UpgradeSum {
+        requirement.level_sum = Some(LevelSum {
             group: 1,
             minimum_total: 4,
         });
@@ -1063,7 +1063,7 @@ mod tests {
 
     #[test]
     fn combined_upgrade_totals_propagate_and_are_checked_locally() {
-        use shpd_seedfinder_core::query::UpgradeSum;
+        use shpd_seedfinder_core::query::LevelSum;
 
         let mut state = AppState::default();
         for _ in 0..2 {
@@ -1071,40 +1071,41 @@ mod tests {
             state.requirements.push(UiRequirement {
                 kind: ItemKind::Ring,
                 item: Some(ItemId::RingMight),
-                upgrade_sum: Some(UpgradeSum {
+                level_sum: Some(LevelSum {
                     group: 1,
                     minimum_total: 4,
                 }),
                 ..UiRequirement::new(key)
             });
         }
-        assert_eq!(state.upgrade_sum_total(1, 1), Some(4));
-        assert_eq!(state.upgrade_sum_total(1, 99), Some(4));
-        assert_eq!(state.upgrade_sum_total(2, 1), None);
+        assert_eq!(state.level_sum_total(1, 1), Some(4));
+        assert_eq!(state.level_sum_total(1, 99), Some(4));
+        assert_eq!(state.level_sum_total(2, 1), None);
 
-        // Capacity counts the other members plus the draft as edited.
+        // Capacity counts levels (upgrade plus one) of the other members
+        // plus the draft as edited.
         let mut draft = state.requirements[0];
-        assert_eq!(state.upgrade_sum_capacity(1, &draft), 8);
+        assert_eq!(state.level_sum_capacity(1, &draft), 10);
         draft.upgrade = UpgradeRequirement::Exact(1);
-        assert_eq!(state.upgrade_sum_capacity(1, &draft), 5);
+        assert_eq!(state.level_sum_capacity(1, &draft), 7);
         assert!(state.validate_draft(&draft).is_ok());
 
         // An unattainable total is refused with a message naming the group.
-        draft.upgrade_sum = Some(UpgradeSum {
+        draft.level_sum = Some(LevelSum {
             group: 1,
-            minimum_total: 6,
+            minimum_total: 8,
         });
         assert_eq!(
             state.validate_draft(&draft).unwrap_err(),
-            "combined upgrade group A needs +6 but its items can carry at most +5"
+            "combined level group A needs 8 levels but its items can reach at most 7"
         );
-        assert_eq!(state.upgrade_sum_capacity(1, &draft), 5);
+        assert_eq!(state.level_sum_capacity(1, &draft), 7);
 
         // Saving a member's total updates the whole group.
         draft.upgrade = UpgradeRequirement::Any;
-        draft.upgrade_sum = Some(UpgradeSum {
+        draft.level_sum = Some(LevelSum {
             group: 1,
-            minimum_total: 7,
+            minimum_total: 9,
         });
         assert!(state.validate_draft(&draft).is_ok());
         state.upsert(draft);
@@ -1112,7 +1113,7 @@ mod tests {
             state
                 .requirements
                 .iter()
-                .all(|r| r.upgrade_sum.map(|sum| sum.minimum_total) == Some(7))
+                .all(|r| r.level_sum.map(|sum| sum.minimum_total) == Some(9))
         );
         assert!(state.to_query().is_ok());
 
@@ -1120,25 +1121,25 @@ mod tests {
         state.requirements[1].upgrade = UpgradeRequirement::Exact(1);
         assert_eq!(
             state.to_query().unwrap_err(),
-            "combined upgrade group A needs +7 but its items can carry at most +5"
+            "combined level group A needs 9 levels but its items can reach at most 7"
         );
 
         // Drafting an alternative from a sum member changes nothing until
         // it is confirmed: cancelling the editor keeps the membership.
         let before = state.requirements.clone();
         let mut alternative = state.begin_alternative(1).unwrap();
-        assert_eq!(alternative.upgrade_sum, None);
+        assert_eq!(alternative.level_sum, None);
         assert_eq!(state.requirements, before);
 
         // Confirming sheds the source's sum, and a stored alternative never
         // carries one.
-        alternative.upgrade_sum = Some(UpgradeSum {
+        alternative.level_sum = Some(LevelSum {
             group: 2,
             minimum_total: 1,
         });
         state.add_alternative(1, alternative);
-        assert_eq!(state.requirements[0].upgrade_sum, None);
-        assert_eq!(state.requirements[1].upgrade_sum, None);
+        assert_eq!(state.requirements[0].level_sum, None);
+        assert_eq!(state.requirements[1].level_sum, None);
         assert_eq!(state.requirements[1].alternative_group, Some(1));
     }
 }

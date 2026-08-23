@@ -292,7 +292,7 @@ fn benchmark_query() -> SearchQuery {
             identity_group: None,
             max_depth: None,
             alternative_group: None,
-            upgrade_sum: None,
+            level_sum: None,
         }],
         max_depth: 24,
         challenges: Challenges::NONE,

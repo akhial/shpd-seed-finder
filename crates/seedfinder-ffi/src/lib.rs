@@ -570,7 +570,7 @@ mod tests {
         packet.extend_from_slice(&[24, 0, 0, 0, 0, 0, 1, 2, 0, 10]);
         packet.extend_from_slice(b"wand_frost");
         // Tier any, upgrade +2 exactly, any effect, any source, no identity
-        // group, no floor limit, no alternative group, no combined-upgrade
+        // group, no floor limit, no alternative group, no combined-level
         // group, no flags.
         packet.extend_from_slice(&[0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0]);
         packet
