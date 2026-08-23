@@ -1,61 +1,24 @@
 import { useState } from 'react'
 import { useStore } from '@tanstack/react-store'
-import { LEVEL_GEN_CHALLENGES, challenges as challengeOptions, wildcardSprites } from '../../lib/catalog'
+import { LEVEL_GEN_CHALLENGES, challenges as challengeOptions } from '../../lib/catalog'
 import { probabilityLabel } from '../../lib/format'
-import { effectGlow } from '../../lib/glow'
-import { CheckIcon, CommandIcon, ForkIcon, LinkIcon, PlusIcon, ReturnIcon, XIcon } from '../../lib/icons'
-import { BLACKSMITH_LAST_FLOOR, FLOOR_LIMIT_OPTIONS, emptyRequirement, fromQueryJson, querySlots, toQueryJson, validateRequirement } from '../../lib/query'
-import type { QuerySlot } from '../../lib/query'
+import { CheckIcon, CommandIcon, LinkIcon, ReturnIcon, XIcon } from '../../lib/icons'
+import { BLACKSMITH_LAST_FLOOR, FLOOR_LIMIT_OPTIONS, emptyRequirement, fromQueryJson, slotCount, toQueryJson } from '../../lib/query'
 import type { ValidationResult } from '../../lib/query'
 import { questVariantLabel } from '../../lib/quests'
 import { builtInPresets, loadPresets, maxWorkers, queryStore, savePresets, setWorkerCount, workerCountStore } from '../../lib/store'
 import type { Preset } from '../../lib/store'
 import { encodeShareLink } from '../../lib/wasm'
 import { WANDMAKER_QUESTS } from '../../lib/wasm/types'
-import type { AnalysisResult, ChallengeName, ItemCategory, QueryState, RequirementState, WandmakerQuest } from '../../lib/wasm/types'
+import type { AnalysisResult, ChallengeName, QueryState, RequirementState, WandmakerQuest } from '../../lib/wasm/types'
+import { RequirementBoard } from './RequirementBoard'
 import { RequirementEditor } from './RequirementEditor'
-import { SliderRow, Sprite } from './parts'
-import { alternativesTitle, categoryPlural, requirementDetails, requirementKind, requirementSprite, requirementTitle } from './summary'
-
-const KIND_ORDER: ItemCategory[] = ['weapon', 'armor', 'wand', 'ring']
+import { SliderRow } from './parts'
 
 const patchQuery = (patch: Partial<QueryState>) => queryStore.setState((state) => ({ ...state, ...patch }))
 const cloneQuery = (query: QueryState): QueryState => fromQueryJson(toQueryJson(query))
 
-interface EditorSession {
-  index: number | null
-  requirement: RequirementState
-  /** Set when adding an alternative to the requirement at this index. */
-  alternativeOf?: number
-}
-
-/** A free alternative-group number: one above the highest in use. */
-const nextAlternativeGroup = (requirements: RequirementState[]): number =>
-  requirements.reduce((highest, requirement) => Math.max(highest, requirement.alternativeGroup ?? 0), 0) + 1
-
-/** Drops alternative groups that no longer have two members, so a lone member is a plain row again. */
-function collapseLoneAlternatives(requirements: RequirementState[]): RequirementState[] {
-  const counts = new Map<number, number>()
-  for (const requirement of requirements) {
-    if (requirement.alternativeGroup !== undefined) counts.set(requirement.alternativeGroup, (counts.get(requirement.alternativeGroup) ?? 0) + 1)
-  }
-  return requirements.map((requirement) => {
-    if (requirement.alternativeGroup === undefined || (counts.get(requirement.alternativeGroup) ?? 0) > 1) return requirement
-    const { alternativeGroup: _dropped, ...rest } = requirement
-    return rest
-  })
-}
-
-/** Every member of a combined-upgrade group shares one total: the edited member's wins. */
-function syncUpgradeSums(requirements: RequirementState[], changed: RequirementState): RequirementState[] {
-  const sum = changed.upgradeSum
-  if (!sum) return requirements
-  return requirements.map((requirement) => (
-    requirement !== changed && requirement.upgradeSum?.group === sum.group && requirement.upgradeSum.atLeast !== sum.atLeast
-      ? { ...requirement, upgradeSum: { group: sum.group, atLeast: sum.atLeast } }
-      : requirement
-  ))
-}
+interface EditorSession { index: number | null; requirement: RequirementState }
 
 export function QueryPanel({
   analysis,
@@ -125,52 +88,17 @@ export function QueryPanel({
     savePresets(next)
   }
 
-  const removeRequirement = (index: number) => {
-    queryStore.setState((state) => ({
-      ...state,
-      requirements: collapseLoneAlternatives(state.requirements.filter((_, i) => i !== index)),
-    }))
-  }
-
-  const removeSlot = (slot: QuerySlot) => {
-    queryStore.setState((state) => ({
-      ...state,
-      requirements: state.requirements.filter((_, i) => !slot.members.includes(i)),
-    }))
-  }
-
-  /** Opens the editor on a fresh alternative for the requirement at `index`. */
-  const addAlternative = (index: number) => {
-    const source = query.requirements[index]
-    const group = source.alternativeGroup ?? nextAlternativeGroup(query.requirements)
-    setEditor({
-      index: null,
-      alternativeOf: index,
-      requirement: { ...emptyRequirement(source.kind), alternativeGroup: group },
-    })
+  const setRequirements = (requirements: RequirementState[]) => {
+    queryStore.setState((state) => ({ ...state, requirements }))
   }
 
   const commitRequirement = (session: EditorSession, requirement: RequirementState) => {
-    queryStore.setState((state) => {
-      let requirements: RequirementState[]
-      if (session.alternativeOf !== undefined) {
-        // The source joins the new member's group (dropping any combined-upgrade
-        // sum, which alternatives cannot carry) and the member lands right
-        // after the group's last row so the card reads in order.
-        const group = requirement.alternativeGroup ?? nextAlternativeGroup(state.requirements)
-        const member = { ...requirement, alternativeGroup: group, upgradeSum: undefined }
-        requirements = state.requirements.map((current, i) => (
-          i === session.alternativeOf ? { ...current, alternativeGroup: group, upgradeSum: undefined } : current
-        ))
-        const last = requirements.reduce((found, current, i) => (current.alternativeGroup === group ? i : found), session.alternativeOf)
-        requirements = [...requirements.slice(0, last + 1), member, ...requirements.slice(last + 1)]
-      } else if (session.index === null) {
-        requirements = [...state.requirements, requirement]
-      } else {
-        requirements = state.requirements.map((current, i) => (i === session.index ? requirement : current))
-      }
-      return { ...state, requirements: syncUpgradeSums(requirements, requirement) }
-    })
+    queryStore.setState((state) => ({
+      ...state,
+      requirements: session.index === null
+        ? [...state.requirements, requirement]
+        : state.requirements.map((current, i) => (i === session.index ? requirement : current)),
+    }))
     setEditor(null)
   }
 
@@ -181,20 +109,7 @@ export function QueryPanel({
     })
   }
 
-  // Rows are "any of these" slots. A slot sits under its members' family
-  // when they share one; mixed or kind-less slots list after the families.
-  const slots = querySlots(query.requirements)
-  const slotFamily = (slot: QuerySlot): ItemCategory | undefined => {
-    const families = new Set(slot.members.map((index) => requirementKind(query.requirements[index])))
-    const [only] = families
-    return families.size === 1 ? only : undefined
-  }
-  const groups = KIND_ORDER.map((kind) => ({
-    kind,
-    entries: slots.filter((slot) => slotFamily(slot) === kind),
-  })).filter((group) => group.entries.length > 0)
-  const ungrouped = slots.filter((slot) => slotFamily(slot) === undefined)
-  const slotTotal = slots.length
+  const slotTotal = slotCount(query.requirements)
   const challengeCount = query.challenges.length
   const wandmakerCount = Number(Boolean(query.wandmakerQuest))
   const blacksmithCount = Number(query.requireBlacksmith) + Number(query.excludeBlacksmithRewards)
@@ -316,59 +231,13 @@ export function QueryPanel({
         </section>
 
         <section className="d1-section">
-          <div className="d1-section-head">
-            <h3>Requirements</h3>
-            <button
-              type="button"
-              className="d1-btn d1-btn-sm d1-btn-primary"
-              onClick={() => setEditor({ index: null, requirement: emptyRequirement('weapon') })}
-            >
-              <PlusIcon size={14} />
-              Add
-            </button>
-          </div>
-          {!hasRequirements && ungrouped.length === 0 ? (
-            <p className="d1-empty">No requirements yet. Add one to describe the item you're hunting for.</p>
-          ) : (
-            <>
-              {groups.map((group) => (
-                <div className="d1-req-group" key={group.kind}>
-                  <div className="d1-req-group-head" style={{ color: 'rgb(234, 234, 234)' }}>
-                    <Sprite index={wildcardSprites[group.kind]} size={16} />
-                    <span>{categoryPlural[group.kind]}</span>
-                  </div>
-                  <ul className="d1-req-list">
-                    {group.entries.map((slot) => (
-                      <SlotRow
-                        key={slot.key}
-                        slot={slot}
-                        requirements={query.requirements}
-                        onEdit={(index) => setEditor({ index, requirement: query.requirements[index] })}
-                        onAddAlternative={addAlternative}
-                        onRemove={removeRequirement}
-                        onRemoveSlot={() => removeSlot(slot)}
-                      />
-                    ))}
-                  </ul>
-                </div>
-              ))}
-              {ungrouped.length > 0 && (
-                <ul className="d1-req-list">
-                  {ungrouped.map((slot) => (
-                    <SlotRow
-                      key={slot.key}
-                      slot={slot}
-                      requirements={query.requirements}
-                      onEdit={(index) => setEditor({ index, requirement: query.requirements[index] })}
-                      onAddAlternative={addAlternative}
-                      onRemove={removeRequirement}
-                      onRemoveSlot={() => removeSlot(slot)}
-                    />
-                  ))}
-                </ul>
-              )}
-            </>
-          )}
+          <div className="d1-section-head"><h3>Requirements</h3></div>
+          <RequirementBoard
+            requirements={query.requirements}
+            onChange={setRequirements}
+            onEdit={(index) => setEditor({ index, requirement: query.requirements[index] })}
+            onAdd={() => setEditor({ index: null, requirement: emptyRequirement('weapon') })}
+          />
         </section>
 
         <section className="d1-section">
@@ -549,102 +418,10 @@ export function QueryPanel({
           key={editor.index ?? 'new'}
           requirement={editor.requirement}
           isNew={editor.index === null}
-          others={query.requirements.filter((_, index) => index !== editor.index)}
           onSave={(requirement) => commitRequirement(editor, requirement)}
           onCancel={() => setEditor(null)}
         />
       )}
     </>
-  )
-}
-
-/** One slot: a plain requirement row, or an "any of these" card when it has several members. */
-function SlotRow({
-  slot,
-  requirements,
-  onEdit,
-  onAddAlternative,
-  onRemove,
-  onRemoveSlot,
-}: {
-  slot: QuerySlot
-  requirements: RequirementState[]
-  onEdit: (index: number) => void
-  onAddAlternative: (index: number) => void
-  onRemove: (index: number) => void
-  onRemoveSlot: () => void
-}) {
-  if (slot.members.length === 1) {
-    const index = slot.members[0]
-    return (
-      <RequirementRow
-        requirement={requirements[index]}
-        onEdit={() => onEdit(index)}
-        onAddAlternative={() => onAddAlternative(index)}
-        onRemove={() => onRemove(index)}
-      />
-    )
-  }
-  return (
-    <li className="d1-alt-card">
-      <div className="d1-alt-head">
-        <span className="d1-alt-title">{alternativesTitle(slot.members.length)}</span>
-        <span className="d1-alt-hint">one of these satisfies the slot</span>
-        <button type="button" className="d1-req-remove" aria-label="Remove this group" title="Remove group" onClick={onRemoveSlot}>
-          <XIcon size={15} />
-        </button>
-      </div>
-      <ul className="d1-req-list d1-alt-list">
-        {slot.members.map((index, position) => (
-          <RequirementRow
-            key={index}
-            requirement={requirements[index]}
-            separator={position > 0 ? 'OR' : undefined}
-            onEdit={() => onEdit(index)}
-            onAddAlternative={() => onAddAlternative(index)}
-            onRemove={() => onRemove(index)}
-          />
-        ))}
-      </ul>
-    </li>
-  )
-}
-
-function RequirementRow({
-  requirement,
-  separator,
-  onEdit,
-  onAddAlternative,
-  onRemove,
-}: {
-  requirement: RequirementState
-  /** Text shown above the row inside an "any of these" card. */
-  separator?: string
-  onEdit: () => void
-  onAddAlternative: () => void
-  onRemove: () => void
-}) {
-  const errors = validateRequirement(requirement)
-  const details = requirementDetails(requirement)
-  return (
-    <li className="d1-req-slot">
-      {separator && <span className="d1-alt-or" aria-hidden="true">{separator}</span>}
-      <div className="d1-req">
-        <button type="button" className="d1-req-main" onClick={onEdit} title="Edit requirement">
-          <Sprite index={requirementSprite(requirement)} size={28} glow={effectGlow(requirement.effect)} />
-          <span className="d1-req-text">
-            <span className="d1-req-title">{requirementTitle(requirement)}</span>
-            <span className="d1-req-sub">{details.length > 0 ? details.join(' · ') : 'any upgrade · any source'}</span>
-            {errors.length > 0 && <span className="d1-req-error">{errors[0]}</span>}
-          </span>
-        </button>
-        <button type="button" className="d1-req-fork" aria-label="Add an alternative" title="Add an alternative (any of these)" onClick={onAddAlternative}>
-          <ForkIcon size={14} />
-        </button>
-        <button type="button" className="d1-req-remove" aria-label="Remove requirement" title="Remove" onClick={onRemove}>
-          <XIcon size={15} />
-        </button>
-      </div>
-    </li>
   )
 }
