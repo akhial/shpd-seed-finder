@@ -85,7 +85,7 @@ export function RequirementEditor({
   isNew: boolean
   /** The chip's stack shape; a cluster member's belongs to the cluster. */
   stack: StackShape
-  onSave: (requirement: RequirementState, count: number, total: number | undefined) => void
+  onSave: (requirement: RequirementState, count: number, total: number | undefined, copyDepth: number | undefined) => void
   onCancel: () => void
 }) {
   const [draft, setDraft] = useState<RequirementState>(() => ({
@@ -95,6 +95,7 @@ export function RequirementEditor({
   }))
   const [count, setCount] = useState(stack.count)
   const [total, setTotal] = useState(stack.total)
+  const [copyDepth, setCopyDepth] = useState(stack.copyDepth)
   // "Specific…" with nothing ticked yet is a transient editor state, not a
   // filter, so it lives outside the draft; saving it means "any".
   const [choosingEffects, setChoosingEffects] = useState(false)
@@ -344,6 +345,28 @@ export function RequirementEditor({
                 }}
                 ariaLabel="How many of this"
               />
+              {count > 1 && effectiveTotal === undefined && (
+                <>
+                  <label className="d1-check">
+                    <input
+                      type="checkbox"
+                      checked={copyDepth !== undefined}
+                      onChange={(event) => setCopyDepth(event.currentTarget.checked ? 4 : undefined)}
+                    />
+                    <span>Limit the extra copies to a floor</span>
+                  </label>
+                  {copyDepth !== undefined && (
+                    <SliderRow
+                      label="Copies within first"
+                      valueLabel={`${copyDepth} floor${copyDepth === 1 ? '' : 's'}`}
+                      values={FLOOR_LIMIT_OPTIONS}
+                      value={copyDepth}
+                      fill
+                      onChange={setCopyDepth}
+                    />
+                  )}
+                </>
+              )}
               {totalable && (
                 <>
                   <label className="d1-check">
@@ -477,7 +500,7 @@ export function RequirementEditor({
 
         <footer className="d1-modal-foot">
           <button type="button" className="d1-btn" onClick={onCancel}>Cancel</button>
-          <button type="button" className="d1-btn d1-btn-primary" disabled={errors.length > 0} onClick={() => onSave(draft, stack.inCluster ? 1 : count, effectiveTotal)}>
+          <button type="button" className="d1-btn d1-btn-primary" disabled={errors.length > 0} onClick={() => onSave(draft, stack.inCluster ? 1 : count, effectiveTotal, stack.inCluster || count < 2 || effectiveTotal !== undefined ? undefined : copyDepth)}>
             {isNew ? 'Add Requirement' : 'Save Changes'}
           </button>
         </footer>

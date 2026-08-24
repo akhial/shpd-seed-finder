@@ -94,10 +94,10 @@ export function QueryPanel({
     queryStore.setState((state) => ({ ...state, requirements }))
   }
 
-  const commitRequirement = (session: EditorSession, requirement: RequirementState, count: number, total: number | undefined) => {
+  const commitRequirement = (session: EditorSession, requirement: RequirementState, count: number, total: number | undefined, copyDepth: number | undefined) => {
     queryStore.setState((state) => ({
       ...state,
-      requirements: applyEdit(state.requirements, session.index, requirement, count, total),
+      requirements: applyEdit(state.requirements, session.index, requirement, count, total, copyDepth),
     }))
     setEditor(null)
   }
@@ -419,7 +419,7 @@ export function QueryPanel({
           requirement={editor.requirement}
           isNew={editor.index === null}
           stack={editor.stack}
-          onSave={(requirement, count, total) => commitRequirement(editor, requirement, count, total)}
+          onSave={(requirement, count, total, copyDepth) => commitRequirement(editor, requirement, count, total, copyDepth)}
           onCancel={() => setEditor(null)}
         />
       )}

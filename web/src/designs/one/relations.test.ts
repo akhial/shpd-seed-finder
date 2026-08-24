@@ -4,6 +4,7 @@ import type { QueryState, RequirementState } from '../../lib/wasm/types'
 import {
   applyEdit,
   boardItems,
+  copyDepthOf,
   detach,
   joinAlternatives,
   removeItem,
@@ -216,5 +217,58 @@ describe('categories', () => {
     expect(joined.some((r) => r.identityGroup !== undefined)).toBe(false)
     expect(validateQuery(asState(joined)).valid).toBe(true)
     expect(boardItems(joined)).toHaveLength(2)
+  })
+})
+
+describe('copy floor limits', () => {
+  it('the anchor and its copies carry independent floor limits', () => {
+    const requirements = applyEdit([], null, req({ item: 'plate_armor', kind: 'armor', upgrade: { mode: 'exact', value: 3 }, maxDepth: 4 }), 2, undefined, 9)
+    expect(requirements).toHaveLength(2)
+    expect(requirements[0].maxDepth).toBe(4)
+    expect(requirements[1].maxDepth).toBe(9)
+    // Still one chip: a repeat with only a floor limit folds into its stack.
+    const board = boardItems(requirements)
+    expect(board).toHaveLength(1)
+    expect(stackCount(board[0])).toBe(2)
+    expect(copyDepthOf(requirements, board[0])).toBe(9)
+    expect(validateQuery(asState(requirements)).valid).toBe(true)
+    // The round trip through the document keeps both limits.
+    const reloaded = fromQueryJson(toQueryJson(asState(requirements))).requirements
+    expect(reloaded.map((r) => r.maxDepth)).toEqual([4, 9])
+    expect(boardItems(reloaded)).toHaveLength(1)
+  })
+
+  it('unlimited copies stay unlimited while the anchor is floor-bound', () => {
+    const requirements = applyEdit([], null, req({ kind: 'armor', upgrade: { mode: 'exact', value: 3 }, maxDepth: 4 }), 2, undefined, undefined)
+    expect(requirements[0].maxDepth).toBe(4)
+    expect(requirements[1].maxDepth).toBeUndefined()
+    expect(requirements[1].identityGroup).toBe(requirements[0].identityGroup)
+    expect(validateQuery(asState(requirements)).valid).toBe(true)
+  })
+
+  it('a wildcard stack limits its bare copies without constraining them otherwise', () => {
+    let requirements = applyEdit([], null, req({ kind: 'wand', upgrade: { mode: 'at_least', value: 2 } }), 3, undefined, 9)
+    expect(requirements.slice(1).every((r) => r.maxDepth === 9 && r.upgrade.mode === 'any')).toBe(true)
+    expect(validateQuery(asState(requirements)).valid).toBe(true)
+    // Growing the stack from the chip badge keeps the copies' floor.
+    requirements = setStackCount(requirements, item(requirements, 0), 4)
+    expect(requirements).toHaveLength(4)
+    expect(requirements.slice(1).every((r) => r.maxDepth === 9)).toBe(true)
+  })
+
+  it('editing away the limit clears it from every copy', () => {
+    let requirements = applyEdit([], null, req({ item: 'longsword' }), 3, undefined, 6)
+    expect(requirements.slice(1).every((r) => r.maxDepth === 6)).toBe(true)
+    requirements = applyEdit(requirements, 0, req({ item: 'longsword' }), 3, undefined, undefined)
+    expect(requirements.every((r) => r.maxDepth === undefined)).toBe(true)
+  })
+
+  it('the copies keep their floor when the stack follows its chip into a cluster', () => {
+    let requirements = applyEdit([], null, req({ item: 'ring_might', kind: 'ring' }), 2, undefined, 7)
+    requirements = [...requirements, req({ item: 'ring_haste', kind: 'ring' })]
+    const joined = joinAlternatives(requirements, 0, 2)
+    const copy = joined.find((r) => r.item === undefined)
+    expect(copy?.maxDepth).toBe(7)
+    expect(validateQuery(asState(joined)).valid).toBe(true)
   })
 })

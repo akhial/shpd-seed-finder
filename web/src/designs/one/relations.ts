@@ -43,7 +43,9 @@ export interface BoardItem {
 /** How many items a board item asks for: its anchor plus hidden copies. */
 export const stackCount = (item: BoardItem): number => 1 + item.extras.length
 
-/** Whether `copy` is the plain repeat of the named item `item` carries. */
+/** Whether `copy` is the plain repeat of the named item `item` carries.
+ * A floor limit is a placement bound, not an item property, so a repeat
+ * that carries only one still folds into its stack. */
 const isPlainItemCopy = (copy: RequirementState, item: string): boolean =>
   copy.item === item
   && copy.tier.mode === 'any'
@@ -51,7 +53,6 @@ const isPlainItemCopy = (copy: RequirementState, item: string): boolean =>
   && copy.effect === undefined
   && !copy.uncursed
   && copy.source === undefined
-  && copy.maxDepth === undefined
   && copy.identityGroup === undefined
   && copy.alternativeGroup === undefined
   && copy.levelSum === undefined
@@ -170,22 +171,25 @@ const countBy = (requirements: readonly RequirementState[], key: (requirement: R
   return counts
 }
 
-/** The bare copy a stack of `anchor`'s kind grows by. */
-const bareCopy = (anchor: RequirementState, identityGroup: number): RequirementState => ({
+/** The bare copy a stack of `anchor`'s kind grows by; it may carry its own
+ * floor limit, the one bound that is a placement, not an item property. */
+const bareCopy = (anchor: RequirementState, identityGroup: number, maxDepth?: number): RequirementState => ({
   kind: anchor.kind ?? requirementFamily(anchor) as RequirementState['kind'],
   tier: { mode: 'any', value: 3 },
   upgrade: { mode: 'any', value: 1 },
   uncursed: false,
   identityGroup,
+  maxDepth,
 })
 
 /** The plain repeat a concrete stack of `item` grows by. */
-const plainCopy = (anchor: RequirementState): RequirementState => ({
+const plainCopy = (anchor: RequirementState, maxDepth?: number): RequirementState => ({
   kind: anchor.kind,
   item: anchor.item,
   tier: { mode: 'any', value: 3 },
   upgrade: { mode: 'any', value: 1 },
   uncursed: false,
+  maxDepth,
 })
 
 /**
@@ -231,7 +235,7 @@ export function normalize(requirements: RequirementState[]): RequirementState[] 
     for (const index of members) {
       next[index] = index === constrained[0]
         ? { ...anchor, identityGroup: undefined }
-        : plainCopy(anchor)
+        : plainCopy(anchor, next[index].maxDepth)
     }
   }
   // Groups of one say nothing.
@@ -291,7 +295,7 @@ export function joinAlternatives(requirements: RequirementState[], source: numbe
     const label = freeGroup(next.map((requirement) => requirement.identityGroup), IDENTITY_GROUP_MAX)
     if (label === undefined) continue
     next[index] = { ...anchor, identityGroup: label }
-    for (const i of copies) next[i] = bareCopy(anchor, label)
+    for (const i of copies) next[i] = bareCopy(anchor, label, next[i].maxDepth)
   }
   next = next.map((requirement, index) => (
     index === source || index === target
@@ -329,12 +333,14 @@ export function setStackCount(requirements: RequirementState[], item: BoardItem,
   const anchorIndex = item.members[0]
   const anchor = requirements[anchorIndex]
   const added = wanted - item.extras.length
+  // New copies keep to the floor limit the existing copies already carry.
+  const inherited = item.extras.length > 0 ? requirements[item.extras[0]].maxDepth : undefined
   let copy: RequirementState
   let next = [...requirements]
   if (item.total !== undefined && anchor.levelSum) {
     copy = { ...anchor }
   } else if (item.cluster === undefined && anchor.item !== undefined) {
-    copy = plainCopy(anchor)
+    copy = plainCopy(anchor, inherited)
   } else {
     const label = anchor.identityGroup
       ?? freeGroup(next.map((requirement) => requirement.identityGroup), IDENTITY_GROUP_MAX)
@@ -342,11 +348,30 @@ export function setStackCount(requirements: RequirementState[], item: BoardItem,
     next = next.map((requirement, index) => (
       item.members.includes(index) ? { ...requirement, identityGroup: label } : requirement
     ))
-    copy = bareCopy(anchor, label)
+    copy = bareCopy(anchor, label, inherited)
   }
   const insertAt = Math.max(...item.members, ...item.extras) + 1
   next = [...next.slice(0, insertAt), ...Array.from({ length: added }, () => ({ ...copy })), ...next.slice(insertAt)]
   return normalize(next)
+}
+
+/** The floor limit the stack's extra copies share (the first copy's, when
+ * a hand-written document gave them different ones). */
+export const copyDepthOf = (requirements: readonly RequirementState[], item: BoardItem): number | undefined =>
+  item.extras.length > 0 ? requirements[item.extras[0]].maxDepth : undefined
+
+/**
+ * Sets or clears the floor limit of the stack's extra copies. The anchor
+ * keeps its own limit: "the +3 one before floor 4, the rest wherever" and
+ * "…the rest before floor 10" are both sayable. A combined-level stack has
+ * identical members and no lone copies to bound.
+ */
+export function setCopyDepth(requirements: RequirementState[], item: BoardItem, maxDepth: number | undefined): RequirementState[] {
+  if (item.total !== undefined) return requirements
+  const extras = new Set(item.extras)
+  return normalize(requirements.map((requirement, index) => (
+    extras.has(index) ? { ...requirement, maxDepth } : requirement
+  )))
 }
 
 /**
@@ -393,6 +418,7 @@ export function applyEdit(
   requirement: RequirementState,
   count: number,
   total: number | undefined,
+  copyDepth?: number,
 ): RequirementState[] {
   let next: RequirementState[]
   let anchorIndex: number
@@ -427,6 +453,9 @@ export function applyEdit(
   if (total !== undefined) {
     const refreshed = boardItems(next).find((entry) => entry.members.includes(anchorIndex))
     if (refreshed) next = setStackTotal(next, refreshed, total)
+  } else {
+    const refreshed = boardItems(next).find((entry) => entry.members.includes(anchorIndex))
+    if (refreshed) next = setCopyDepth(next, refreshed, copyDepth)
   }
   return next
 }

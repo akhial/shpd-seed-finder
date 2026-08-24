@@ -8,6 +8,7 @@ import type { RequirementState } from '../../lib/wasm/types'
 import { Sprite } from './parts'
 import {
   boardItems,
+  copyDepthOf,
   detach,
   joinAlternatives,
   removeItem,
@@ -79,6 +80,8 @@ interface StepperState { key: string; which: 'count' | 'total' }
 export interface StackShape {
   count: number
   total?: number
+  /** The floor limit the extra copies share, when they carry one. */
+  copyDepth?: number
   /** A cluster member's stack belongs to the cluster, not the editor. */
   inCluster: boolean
 }
@@ -108,6 +111,7 @@ export function RequirementBoard({
   const stackOf = (item: BoardItem): StackShape => ({
     count: stackCount(item),
     total: item.total,
+    copyDepth: copyDepthOf(requirements, item),
     inCluster: item.cluster !== undefined,
   })
 
@@ -502,8 +506,11 @@ function ChipPopover({ requirements, index, item, style }: {
   if (item && item.total !== undefined) {
     relations.push({ glyph: 'Σ', text: `up to ${stackCount(item)} — levels add to ≥ ${item.total}` })
   } else if (item && stackCount(item) > 1) {
-    // The chip's own bounds (+3, F≤4) describe one copy; the extras are free.
-    relations.push({ glyph: '×', text: `${stackCount(item)} of the same kind — the extra copies: any upgrade, any floor` })
+    // The chip's own bounds (+3, F≤4) describe one copy, not the extras.
+    const depths = [...new Set(item.extras.map((extra) => requirements[extra].maxDepth))]
+    const floors = depths.length > 1 ? 'own floor limits'
+      : depths[0] !== undefined ? `floors 1–${depths[0]}` : 'any floor'
+    relations.push({ glyph: '×', text: `${stackCount(item)} of the same kind — the extra copies: any upgrade, ${floors}` })
   }
   return (
     <div className="d1-chip-pop" role="tooltip" style={style}>
