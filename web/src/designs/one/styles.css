@@ -172,7 +172,7 @@ body {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(330px, 0.8fr) minmax(320px, 0.9fr) minmax(380px, 1.1fr);
+  grid-template-columns: minmax(330px, 1fr) minmax(320px, 0.8fr) minmax(380px, 0.8fr);
 }
 
 .d1-pane {
