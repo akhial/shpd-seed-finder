@@ -1024,6 +1024,9 @@ input[type='range']::-moz-range-thumb {
 
 .d1-chip-effect {
   display: inline-flex;
+  /* Pulled in against the chip's own gap: the badge reads as part of the name
+     it qualifies rather than as another item in the row. */
+  margin-left: -2px;
   align-items: center;
   justify-content: center;
   width: 12px;
@@ -1040,10 +1043,19 @@ input[type='range']::-moz-range-thumb {
 .d1-chip-effect-any { background: conic-gradient(#ff5555, #ffff55, #55ff55, #55ffff, #5555ff, #ff55ff, #ff5555); }
 
 /* Several effects on one chip: the count stays on the chip's own background so
-   it always reads, and the ring around it sweeps through the chosen colours.
-   The gradient is painted in the border box and masked by the padding-box fill,
-   which leaves only the ring coloured. */
+   it always reads, and the ring around it takes each effect's colour in turn,
+   the next wiping over the one showing while the whole ring turns, so the wipe
+   travels on the way a spinner does instead of restarting at the top each time.
+   The rings are painted on ::before and blurred, which carries one colour into
+   the next over a soft edge rather than a seam; once a ring has covered the
+   others it is one flat colour, where the blur has nothing to soften and so
+   leaves no trace of where the edge went. ::after covers the middle, leaving
+   only the ring. Both are held below the count by the stacking context here.
+   How the stack of rings is built is in effectRingCss. */
 .d1-chip-effect-multi {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   width: auto;
   min-width: 16px;
   height: 16px;
@@ -1051,26 +1063,47 @@ input[type='range']::-moz-range-thumb {
   font-size: 10px;
   font-weight: 700;
   color: var(--d1-text);
-  border: 2px solid transparent;
   border-radius: 999px;
-  background:
-    linear-gradient(var(--d1-chip-bg), var(--d1-chip-bg)) padding-box,
-    var(--d1-sweep) border-box;
-  background-size: auto, var(--d1-sweep-width) 100%;
-  background-repeat: no-repeat, repeat;
   box-shadow: none;
-  animation-name: d1-effect-sweep;
-  animation-timing-function: linear;
-  animation-iteration-count: infinite;
+  animation: d1-effect-wipe var(--d1-round) linear infinite;
 }
 
-@keyframes d1-effect-sweep {
-  from { background-position: 0 0, 0 0; }
-  to { background-position: 0 0, var(--d1-sweep-shift) 0; }
+/* Reaching out past the badge gives the blur colour to work with at the edges
+   instead of fading into nothing; the overflow clip trims it back to the ring. */
+.d1-chip-effect-multi::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  z-index: -1;
+  background: var(--d1-ring);
+  filter: blur(2px);
 }
 
+.d1-chip-effect-multi::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  z-index: -1;
+  border-radius: 999px;
+  background: var(--d1-chip-bg);
+}
+
+/* How far the wipe has come, over the whole round: 360° per effect, so each
+   turn of it covers the ring in one more colour. Registering it lets the
+   browser interpolate it as an angle rather than swap it at the keyframe; it
+   inherits so that the badge can carry the animation and ::before, which draws
+   the rings, can read it. */
+@property --d1-phase { syntax: '<angle>'; inherits: true; initial-value: 0deg; }
+
+@keyframes d1-effect-wipe {
+  to { --d1-phase: var(--d1-full); }
+}
+
+/* Still, the ring holds every colour at once, the blur softening where they
+   meet. */
 @media (prefers-reduced-motion: reduce) {
   .d1-chip-effect-multi { animation: none; }
+  .d1-chip-effect-multi::before { background: var(--d1-still); }
 }
 
 .d1-chip-error { border-color: var(--d1-danger); }

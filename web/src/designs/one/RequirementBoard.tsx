@@ -63,30 +63,56 @@ export function chipTags(requirement: RequirementState): ChipTag[] {
   return tags
 }
 
-/** How wide one effect's colour holds the badge's ring, and its blend into the next. */
-const SWEEP_BAND = 28
-const SWEEP_FADE = 10
-
 /**
- * The many-effects badge: a ring that sweeps through every selected effect's
- * colour, each holding for one pulse cycle (2 × its period) so the badge beats
- * at the cadence the sprites glow at. The colours are laid out as one tile that
- * ends where it began and the ring scrolls by exactly that tile, so the loop
- * never seams.
+ * The many-effects badge: the ring holds one effect's colour, and the next
+ * wipes over it, on and on around the ring, until it is wholly that colour and
+ * the one after it starts. Never a gap or a bare stretch of track — only ever
+ * one colour giving way to the next.
+ *
+ * The wipe is a stack of rings, one per effect, each filled clockwise as far as
+ * `--d1-phase` has come past its own turn: nothing before it, all of it after.
+ * A single sweep of the phase, 360° per effect over the round, therefore covers
+ * the ring in each colour in turn. Every ring is turned by that same phase over
+ * the number of effects, one whole turn a round, which spins the picture as the
+ * wipe crosses it and carries each hand-over to a new place on the ring. The
+ * bottom of the stack holds the last effect's colour — where the round ends —
+ * so the phase snapping back to zero uncovers the very colour that was showing,
+ * and both the wipe and the spin come round to where they started.
+ *
+ * The round lasts the sum of the glows' pulse cycles (2 × period each) and each
+ * colour takes an equal share, exactly as the chip's sprite paces the same
+ * colours, so badge and sprite arrive at each one together.
  */
-function effectSweepCss(glows: Glow[]): CSSProperties {
-  const width = glows.length * SWEEP_BAND
-  const stops = glows.flatMap((glow, index) => [
-    `${glow.color} ${index * SWEEP_BAND}px`,
-    `${glow.color} ${(index + 1) * SWEEP_BAND - SWEEP_FADE}px`,
-  ])
-  stops.push(`${glows[0].color} ${width}px`)
+function effectRingCss(glows: Glow[]): CSSProperties {
+  const spin = `from calc(var(--d1-phase) / ${glows.length})`
+  const last = glows[glows.length - 1].color
+  const layers = [`linear-gradient(${last}, ${last})`]
+  glows.forEach((glow, index) => {
+    const turn = index === 0 ? 'var(--d1-phase)' : `calc(var(--d1-phase) - ${index * 360}deg)`
+    const filled = `clamp(0deg, ${turn}, 360deg)`
+    layers.unshift(`conic-gradient(${spin}, ${glow.color} 0deg, ${glow.color} ${filled}, transparent ${filled})`)
+  })
+  const round = glows.reduce((total, glow) => total + glow.period * 2, 0)
   return {
-    '--d1-sweep': `linear-gradient(90deg, ${stops.join(', ')})`,
-    '--d1-sweep-width': `${width}px`,
-    '--d1-sweep-shift': `${-width}px`,
-    animationDuration: `${glows.reduce((total, glow) => total + glow.period * 2, 0)}s`,
+    '--d1-ring': layers.join(', '),
+    '--d1-still': stillRingCss(glows),
+    '--d1-full': `${glows.length * 360}deg`,
+    '--d1-round': `${round}s`,
   } as CSSProperties
+}
+
+/** The badge with the wipe taken away: every colour at once, an equal arc each,
+    the first centred on the seam so there is nothing to give the seam away. The
+    badge's blur is what softens one colour into the next. */
+function stillRingCss(glows: Glow[]): string {
+  const band = 360 / glows.length
+  const stops = [`${glows[0].color} 0deg`, `${glows[0].color} ${band / 2}deg`]
+  glows.slice(1).forEach((glow, index) => {
+    const centre = (index + 1) * band
+    stops.push(`${glow.color} ${centre - band / 2}deg`, `${glow.color} ${centre + band / 2}deg`)
+  })
+  stops.push(`${glows[0].color} ${360 - band / 2}deg`, `${glows[0].color} 360deg`)
+  return `conic-gradient(${stops.join(', ')})`
 }
 
 type DropTarget =
@@ -346,7 +372,7 @@ export function RequirementBoard({
           <span key={tag.text} className={tag.upgrade ? 'd1-chip-tag d1-chip-tag-up' : 'd1-chip-tag'}>{tag.text}</span>
         ))}
         {effect && (glows.length > 1 ? (
-          <span className="d1-chip-effect d1-chip-effect-multi" style={effectSweepCss(glows)} title={effect}>
+          <span className="d1-chip-effect d1-chip-effect-multi" style={effectRingCss(glows)} title={effect}>
             {glows.length}
           </span>
         ) : (
