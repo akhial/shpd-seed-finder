@@ -400,9 +400,7 @@ export function RequirementBoard({
   }
 
   const dragSource = drag ? requirements[drag.source] : null
-  const statusLine = pick
-    ? 'Either/or with… choose a chip'
-    : drag ? 'drop on a chip: either/or · empty space: on its own' : null
+  const statusLine = pick ? 'Either/or with… choose a chip' : null
 
   return (
     <div ref={wrapRef} className="d1-board-wrap">
