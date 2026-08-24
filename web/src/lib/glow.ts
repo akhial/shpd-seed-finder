@@ -69,14 +69,21 @@ export function itemGlow(item: Pick<ScoutItem, 'cursed' | 'effect'>): Glow | nul
 }
 
 /**
+ * One glow per name a requirement's effect filter accepts, in the filter's own
+ * order — what a badge showing several effects cycles through. Any unknown name
+ * is a curse and glows black; the "any enchantment" shorthand stands for no
+ * fixed set of its own and yields nothing.
+ */
+export function effectGlows(effect: EffectFilter | undefined): Glow[] {
+  if (!effect || effect === ANY_ENCHANTMENT) return []
+  const names = typeof effect === 'string' ? [effect] : effect
+  return names.map((name) => ENCHANT_GLOW[name] ?? CURSE_GLOW)
+}
+
+/**
  * The pulse glow for a requirement's effect filter, or null when there is
- * none. A bare name pulses its colour (any unknown name is a curse and pulses
- * black); a set pulses its first member's colour; the "any enchantment"
- * shorthand has no single colour and does not glow.
+ * none. A set pulses its first member's colour.
  */
 export function effectGlow(effect: EffectFilter | undefined): Glow | null {
-  if (!effect || effect === ANY_ENCHANTMENT) return null
-  const name = typeof effect === 'string' ? effect : effect[0]
-  if (!name) return null
-  return ENCHANT_GLOW[name] ?? CURSE_GLOW
+  return effectGlows(effect)[0] ?? null
 }

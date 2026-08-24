@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { displayItemName, sourceLabel } from '../../lib/catalog'
-import { effectGlow } from '../../lib/glow'
+import { effectGlows } from '../../lib/glow'
+import type { Glow } from '../../lib/glow'
 import { PlusIcon, XIcon } from '../../lib/icons'
-import { STACK_MAX, effectNamesOf, isAnyEnchantment, levelSumCapacity, maxUpgradeFor, requirementFamily, validateRequirement } from '../../lib/query'
+import { STACK_MAX, isAnyEnchantment, levelSumCapacity, maxUpgradeFor, requirementFamily, validateRequirement } from '../../lib/query'
 import type { RequirementState } from '../../lib/wasm/types'
 import { Sprite } from './parts'
 import {
@@ -46,17 +47,46 @@ export const chipName = (requirement: RequirementState): string => {
   return requirement.kind ? WILDCARD_SHORT[requirement.kind] ?? requirement.kind : 'Any item'
 }
 
+/** A qualifier beside a chip's name; the upgrade is tinted apart from the rest. */
+export interface ChipTag { text: string; upgrade?: true }
+
 /** The tiny qualifiers beside a chip's name: tier, upgrade, floor. */
-export function chipTags(requirement: RequirementState): string[] {
-  const tags: string[] = []
+export function chipTags(requirement: RequirementState): ChipTag[] {
+  const tags: ChipTag[] = []
   const { tier, upgrade } = requirement
-  if (!requirement.item && tier.mode === 'exact') tags.push(`T${tier.value}`)
-  if (!requirement.item && tier.mode === 'at_least') tags.push(`T${tier.value}+`)
-  if (!requirement.item && tier.mode === 'at_most') tags.push(`T≤${tier.value}`)
-  if (upgrade.mode === 'exact') tags.push(`+${upgrade.value}`)
-  if (upgrade.mode === 'at_least') tags.push(`+${upgrade.value}↑`)
-  if (requirement.maxDepth !== undefined) tags.push(`F≤${requirement.maxDepth}`)
+  if (!requirement.item && tier.mode === 'exact') tags.push({ text: `T${tier.value}` })
+  if (!requirement.item && tier.mode === 'at_least') tags.push({ text: `T${tier.value}+` })
+  if (!requirement.item && tier.mode === 'at_most') tags.push({ text: `T≤${tier.value}` })
+  if (upgrade.mode === 'exact') tags.push({ text: `+${upgrade.value}`, upgrade: true })
+  if (upgrade.mode === 'at_least') tags.push({ text: `+${upgrade.value}↑`, upgrade: true })
+  if (requirement.maxDepth !== undefined) tags.push({ text: `F≤${requirement.maxDepth}` })
   return tags
+}
+
+/** How wide one effect's colour holds the badge's ring, and its blend into the next. */
+const SWEEP_BAND = 28
+const SWEEP_FADE = 10
+
+/**
+ * The many-effects badge: a ring that sweeps through every selected effect's
+ * colour, each holding for one pulse cycle (2 × its period) so the badge beats
+ * at the cadence the sprites glow at. The colours are laid out as one tile that
+ * ends where it began and the ring scrolls by exactly that tile, so the loop
+ * never seams.
+ */
+function effectSweepCss(glows: Glow[]): CSSProperties {
+  const width = glows.length * SWEEP_BAND
+  const stops = glows.flatMap((glow, index) => [
+    `${glow.color} ${index * SWEEP_BAND}px`,
+    `${glow.color} ${(index + 1) * SWEEP_BAND - SWEEP_FADE}px`,
+  ])
+  stops.push(`${glows[0].color} ${width}px`)
+  return {
+    '--d1-sweep': `linear-gradient(90deg, ${stops.join(', ')})`,
+    '--d1-sweep-width': `${width}px`,
+    '--d1-sweep-shift': `${-width}px`,
+    animationDuration: `${glows.reduce((total, glow) => total + glow.period * 2, 0)}s`,
+  } as CSSProperties
 }
 
 type DropTarget =
@@ -281,9 +311,9 @@ export function RequirementBoard({
     if (drag?.source === index) classes.push('d1-chip-dragging')
     if (errors.length > 0) classes.push('d1-chip-error')
     if (pick) classes.push(pick.source === index ? 'd1-chip-pick-source' : 'd1-chip-pickable')
-    const glow = effectGlow(requirement.effect)
+    const glows = effectGlows(requirement.effect)
+    const glow = glows[0] ?? null
     const effect = effectLabel(requirement)
-    const effectCount = requirement.effect !== undefined && !isAnyEnchantment(requirement.effect) ? effectNamesOf(requirement.effect, requirement.kind).length : 0
     const item = itemOf(index)
     const showBadges = item !== undefined && !inCluster
     return (
@@ -312,16 +342,20 @@ export function RequirementBoard({
       >
         <Sprite index={requirementSprite(requirement)} size={18} glow={glow} />
         <span className="d1-chip-name">{chipName(requirement)}</span>
-        {chipTags(requirement).map((tag) => <span key={tag} className="d1-chip-tag">{tag}</span>)}
-        {effect && (
+        {chipTags(requirement).map((tag) => (
+          <span key={tag.text} className={tag.upgrade ? 'd1-chip-tag d1-chip-tag-up' : 'd1-chip-tag'}>{tag.text}</span>
+        ))}
+        {effect && (glows.length > 1 ? (
+          <span className="d1-chip-effect d1-chip-effect-multi" style={effectSweepCss(glows)} title={effect}>
+            {glows.length}
+          </span>
+        ) : (
           <span
             className={`d1-chip-effect${isAnyEnchantment(requirement.effect) ? ' d1-chip-effect-any' : glow ? '' : ' d1-chip-effect-curse'}`}
             style={glow ? { background: glow.color } : undefined}
             title={effect}
-          >
-            {effectCount > 1 ? effectCount : ''}
-          </span>
-        )}
+          />
+        ))}
         {requirement.uncursed && <span className="d1-chip-tag d1-chip-tag-soft" title="Uncursed">✓</span>}
         {showBadges && item && renderBadges(item)}
       </div>
@@ -421,8 +455,9 @@ export function RequirementBoard({
         }}
       >
         {items.map(renderItem)}
-        <button type="button" className="d1-chip d1-chip-add" onClick={onAdd} title="Add a requirement" aria-label="Add a requirement">
+        <button type="button" className="d1-chip d1-chip-add" onClick={onAdd} title="Add a requirement">
           <PlusIcon size={13} />
+          <span>Add</span>
         </button>
       </div>
       {drag && (
