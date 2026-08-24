@@ -123,6 +123,23 @@ class RelationsTest {
     }
 
     @Test
+    fun aLabelledStackLetsGoOfItsCopiesInACrossCategoryCluster() {
+        // Dragging a ×3 "any weapon" onto a wand: the copies named weapons, and
+        // "weapon or wand" is not a kind anything can copy, so they go rather
+        // than leaving a query the engine refuses.
+        val start = listOf(anyWand(1).copy(kind = ItemKind.WEAPON, item = null))
+        val stacked = start.setStackCount(start.boardItems().single(), count = 3) +
+            ItemRequirement(9, fireblast, 3)
+        assertEquals(3, stacked.count { it.identityGroup != null })
+        val joined = stacked.joinAlternatives(source = 0, target = 3)
+        assertNull(joined.validationProblem())
+        assertNull(joined.firstOrNull { it.identityGroup != null })
+        val item = joined.boardItems().single()
+        assertEquals(2, item.members.size)
+        assertEquals(1, item.stackCount)
+    }
+
+    @Test
     fun aStackDoesNotFollowItsChipIntoAClusterOfAnotherCategory() {
         // A copy has to name the kind it copies, and "ring or wand" names none,
         // so the second ring stays the standalone chip it already encodes as

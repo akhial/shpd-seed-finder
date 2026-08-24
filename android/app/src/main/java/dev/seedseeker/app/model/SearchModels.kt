@@ -26,7 +26,7 @@ object SearchLimits {
     const val LEVEL_SUM_GROUP_MAX = 4
 
     /** The most items a stack may ask for, its anchor included. */
-    const val STACK_MAX = 4
+    const val STACK_MAX = 3
 
     /** Highest upgrade a search may name, for everything but rings. */
     const val MAX_UPGRADE_DEFAULT = 3

@@ -283,33 +283,50 @@ fun List<ItemRequirement>.joinAlternatives(source: Int, target: Int): List<ItemR
     if (source == target) return this
     val group = this[target].alternativeGroup ?: nextAlternativeGroup()
     if (this[source].alternativeGroup == group) return this
-    val next = toMutableList()
-    // A copy has to name the kind it copies, so only a cluster that stays
-    // within one category can anchor a stack. When the join would mix
-    // categories the repeats simply stay the standalone chips they encode as.
+    val sourceKey = this[source].key
+    val targetKey = this[target].key
+    // A copy has to name the kind it copies, and a cluster spanning categories
+    // names none — "weapon or wand" is not a kind anything can be a copy of. So
+    // a stack follows its chip into a cluster only while the cluster stays
+    // within one category.
     val clusterMembers = indices.filter {
         it == source || it == target || this[it].alternativeGroup == group
     }
     val oneCategory = clusterMembers.map { this[it].kind.family }.distinct().size == 1
-    // Trade plain repeats for identity copies so the stack survives the move.
-    for (index in if (oneCategory) listOf(source, target) else emptyList()) {
-        val anchor = next[index]
-        val named = anchor.item ?: continue
-        if (anchor.identityGroup != null) continue
-        val copies = next.indices.filter { it != index && isPlainItemCopy(next[it], named) }
-        if (copies.isEmpty()) continue
-        val label = freeGroup(next.map { it.identityGroup }, SearchLimits.IDENTITY_GROUP_MAX) ?: continue
-        next[index] = anchor.copy(identityGroup = label)
-        for (copy in copies) next[copy] = bareCopy(anchor, label, next[copy].key)
+    val next: MutableList<ItemRequirement>
+    if (oneCategory) {
+        next = toMutableList()
+        // Trade plain repeats for identity copies so the stack survives the move.
+        for (index in listOf(source, target)) {
+            val anchor = next[index]
+            val named = anchor.item ?: continue
+            if (anchor.identityGroup != null) continue
+            val copies = next.indices.filter { it != index && isPlainItemCopy(next[it], named) }
+            if (copies.isEmpty()) continue
+            val label = freeGroup(next.map { it.identityGroup }, SearchLimits.IDENTITY_GROUP_MAX) ?: continue
+            next[index] = anchor.copy(identityGroup = label)
+            for (copy in copies) next[copy] = bareCopy(anchor, label, next[copy].key)
+        }
+    } else {
+        // The stacks let go: labelled copies are dropped and plain repeats stay
+        // the standalone chips they already encode as. The chip's badge falls
+        // back to ×1, which is the visible half of this.
+        val labels = clusterMembers.mapNotNull { this[it].identityGroup }.toSet()
+        val clusterKeys = clusterMembers.map { this[it].key }.toSet()
+        next = filterNot { it.identityGroup in labels && it.key !in clusterKeys }
+            .map { if (it.identityGroup in labels) it.copy(identityGroup = null) else it }
+            .toMutableList()
     }
+    val movedSource = next.indexOfFirst { it.key == sourceKey }
+    val movedTarget = next.indexOfFirst { it.key == targetKey }
     val joined = next.mapIndexed { index, requirement ->
-        if (index == source || index == target) {
+        if (index == movedSource || index == movedTarget) {
             requirement.copy(alternativeGroup = group, levelSum = null)
         } else {
             requirement
         }
     }
-    return joined.moveAfter(source) { it.alternativeGroup == group }.normalizeRelations()
+    return joined.moveAfter(movedSource) { it.alternativeGroup == group }.normalizeRelations()
 }
 
 /** Pulls the chip at [index] out of its cluster; it leaves its stack behind. */

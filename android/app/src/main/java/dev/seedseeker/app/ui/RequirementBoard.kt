@@ -154,11 +154,14 @@ private fun BoardEntry(
     onDragEnd: () -> Unit,
     onDragCancel: () -> Unit,
 ) {
+    // A lone chip carries its own stack badges; a cluster's belong to the
+    // capsule, since the stack binds to whichever member the search picks.
+    val onCapsule = item.cluster != null
     val chip: @Composable (Int) -> Unit = { index ->
         RequirementChip(
             requirement = requirements[index],
-            stackCount = if (index == item.anchor) item.stackCount else 1,
-            total = if (index == item.anchor) item.total else null,
+            stackCount = if (!onCapsule && index == item.anchor) item.stackCount else 1,
+            total = if (!onCapsule && index == item.anchor) item.total else null,
             enabled = enabled,
             dimmed = draggingIndex == index,
             highlighted = hoveredIndex == index,
@@ -186,16 +189,29 @@ private fun BoardEntry(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             item.members.forEachIndexed { position, index ->
-                if (position > 0) {
-                    Text(
-                        "or",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier.align(Alignment.CenterVertically),
-                    )
+                // The connector and the chip it introduces travel together, so
+                // a wrap never leaves a dangling "or" at the end of a row.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (position > 0) {
+                        Text(
+                            "or",
+                            modifier = Modifier.padding(end = 4.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.tertiary,
+                        )
+                    }
+                    chip(index)
                 }
-                chip(index)
+            }
+            if (item.stackCount > 1 || item.total != null) {
+                Row(
+                    modifier = Modifier.align(Alignment.CenterVertically),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    if (item.stackCount > 1) ChipTag("×${item.stackCount}", accent = true)
+                    item.total?.let { ChipTag("Σ≥$it", accent = true) }
+                }
             }
         }
     }
