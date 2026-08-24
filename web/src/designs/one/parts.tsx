@@ -65,6 +65,23 @@ export function Segmented<T extends string | number>({
   )
 }
 
+export function Stepper({ value, min, max, onChange, ariaLabel, format }: {
+  value: number
+  min: number
+  max: number
+  onChange: (value: number) => void
+  ariaLabel: string
+  format?: (value: number) => string
+}) {
+  return (
+    <div className="d1-stepper" role="group" aria-label={ariaLabel}>
+      <button type="button" aria-label="One fewer" disabled={value <= min} onClick={() => onChange(value - 1)}>−</button>
+      <span className="d1-stepper-value d1-mono" aria-live="polite">{format ? format(value) : String(value)}</span>
+      <button type="button" aria-label="One more" disabled={value >= max} onClick={() => onChange(value + 1)}>+</button>
+    </div>
+  )
+}
+
 export function Field({ label, stack, children }: {
   label: string
   /** Let a wide control drop under its label on narrow screens. */

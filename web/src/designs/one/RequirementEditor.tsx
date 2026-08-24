@@ -24,7 +24,7 @@ import {
 import { ANY_ENCHANTMENT } from '../../lib/wasm/types'
 import type { ItemCategory, ItemSource, RequirementKind, RequirementState } from '../../lib/wasm/types'
 import type { StackShape } from './RequirementBoard'
-import { Field, Segmented, SliderRow, Sprite } from './parts'
+import { Field, Segmented, SliderRow, Sprite, Stepper } from './parts'
 import { requirementSprite, requirementTitle } from './summary'
 
 const CATEGORY_OPTIONS: { value: ItemCategory; label: string }[] = [
@@ -332,16 +332,17 @@ export function RequirementEditor({
           {!stack.inCluster && (
             <section className="d1-modal-section">
               <h3>How many</h3>
-              <Segmented
+              <Stepper
                 value={count}
-                options={Array.from({ length: STACK_MAX }, (_, index) => ({ value: index + 1, label: `×${index + 1}` }))}
+                min={1}
+                max={STACK_MAX}
+                format={(value) => `×${value}`}
                 onChange={(value) => {
                   setCount(value)
                   if (value < 2) setTotal(undefined)
                   else if (total !== undefined) setTotal(clamp(total, 1, value * (maxUpgrade + 1)))
                 }}
                 ariaLabel="How many of this"
-                fill
               />
               {totalable && (
                 <>

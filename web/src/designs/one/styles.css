@@ -587,6 +587,44 @@ input[type='range']:focus-visible,
   background: var(--d1-amber);
 }
 
+/* Stepper: −/value/+ in the segmented control's clothes. */
+
+.d1-stepper {
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  gap: 2px;
+  background: var(--d1-panel-2);
+  border: 1px solid var(--d1-border-strong);
+  border-radius: 7px;
+  width: fit-content;
+}
+
+.d1-stepper button {
+  font: inherit;
+  font-size: 15px;
+  font-weight: 550;
+  line-height: 1;
+  padding: 4px 12px;
+  color: var(--d1-text-2);
+  background: transparent;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.d1-stepper button:hover:not(:disabled) { color: var(--d1-text); background: var(--d1-raised); }
+.d1-stepper button:disabled { opacity: 0.35; cursor: default; }
+
+.d1-stepper-value {
+  min-width: 44px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--d1-text);
+}
+
 /* Checkboxes */
 
 .d1-check {
