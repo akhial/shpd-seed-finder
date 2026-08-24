@@ -407,7 +407,14 @@ export function RequirementBoard({
       <div
         className={`d1-board${drag ? ' d1-board-dragging' : ''}${dropClass({ kind: 'board' })}`}
         data-drop="board"
-        onMouseDown={() => { setMenu(null); setStepper(null) }}
+        onMouseDown={(event) => {
+          // The steppers stop pointerdown, but this compatibility mousedown
+          // still bubbles — closing the stepper here would unmount its
+          // buttons before their click can fire.
+          if ((event.target as HTMLElement).closest('[data-no-drag]')) return
+          setMenu(null)
+          setStepper(null)
+        }}
       >
         {items.map(renderItem)}
         <button type="button" className="d1-chip d1-chip-add" onClick={onAdd} title="Add a requirement" aria-label="Add a requirement">
@@ -495,7 +502,8 @@ function ChipPopover({ requirements, index, item, style }: {
   if (item && item.total !== undefined) {
     relations.push({ glyph: 'Σ', text: `up to ${stackCount(item)} — levels add to ≥ ${item.total}` })
   } else if (item && stackCount(item) > 1) {
-    relations.push({ glyph: '×', text: `${stackCount(item)} of the same kind, any upgrade` })
+    // The chip's own bounds (+3, F≤4) describe one copy; the extras are free.
+    relations.push({ glyph: '×', text: `${stackCount(item)} of the same kind — the extra copies: any upgrade, any floor` })
   }
   return (
     <div className="d1-chip-pop" role="tooltip" style={style}>
