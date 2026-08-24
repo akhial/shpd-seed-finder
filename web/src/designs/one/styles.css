@@ -997,7 +997,11 @@ input[type='range']::-moz-range-thumb {
 .d1-chip-effect-any { background: conic-gradient(#ff5555, #ffff55, #55ff55, #55ffff, #5555ff, #ff55ff, #ff5555); }
 
 .d1-chip-x {
-  display: none;
+  display: inline-flex;
+  /* Hidden, not display:none — revealing it on hover must not widen the chip,
+     or a chip at the end of a full row wraps, loses the pointer, and snaps
+     back in an endless flicker. */
+  visibility: hidden;
   align-items: center;
   justify-content: center;
   width: 16px;
@@ -1011,7 +1015,7 @@ input[type='range']::-moz-range-thumb {
   cursor: pointer;
 }
 
-.d1-chip:hover .d1-chip-x, .d1-chip:focus-within .d1-chip-x { display: inline-flex; }
+.d1-chip:hover .d1-chip-x, .d1-chip:focus-within .d1-chip-x { visibility: visible; }
 .d1-chip-x:hover { color: var(--d1-danger); background: rgba(217, 108, 95, 0.14); }
 
 .d1-chip-error { border-color: var(--d1-danger); }
