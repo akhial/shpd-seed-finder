@@ -61,6 +61,7 @@ export function chipTags(requirement: RequirementState): string[] {
 type DropTarget =
   | { kind: 'chip'; index: number }
   | { kind: 'cluster'; group: number }
+  | { kind: 'delete' }
   | { kind: 'board' }
 
 interface DragState {
@@ -93,7 +94,7 @@ export function RequirementBoard({
   onEdit: (index: number, stack: StackShape) => void
   onAdd: () => void
 }) {
-  const boardRef = useRef<HTMLDivElement>(null)
+  const wrapRef = useRef<HTMLDivElement>(null)
   const [drag, setDrag] = useState<DragState | null>(null)
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [pick, setPick] = useState<PickState | null>(null)
@@ -124,10 +125,11 @@ export function RequirementBoard({
 
   const targetAt = (x: number, y: number): DropTarget | null => {
     const element = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-drop]')
-    if (!element || !boardRef.current?.contains(element)) return null
+    if (!element || !wrapRef.current?.contains(element)) return null
     const kind = element.dataset.drop
     if (kind === 'chip') return { kind: 'chip', index: Number(element.dataset.chip) }
     if (kind === 'cluster') return { kind: 'cluster', group: Number(element.dataset.group) }
+    if (kind === 'delete') return { kind: 'delete' }
     return { kind: 'board' }
   }
 
@@ -148,6 +150,9 @@ export function RequirementBoard({
       if (current.alternativeGroup === over.group) return
       const target = items.find((entry) => entry.cluster === over.group)
       if (target) next = joinAlternatives(requirements, source, target.members[0])
+    } else if (over.kind === 'delete') {
+      const item = itemOf(source)
+      if (item) next = item.cluster !== undefined ? removeMember(requirements, source) : removeItem(requirements, item)
     } else if (current.alternativeGroup !== undefined) {
       next = detach(requirements, source)
     }
@@ -156,7 +161,7 @@ export function RequirementBoard({
 
   const onChipPointerDown = (index: number) => (event: ReactPointerEvent<HTMLElement>) => {
     if (event.button !== 0) return
-    if ((event.target as HTMLElement).closest('[data-chip-x]')) return
+    if ((event.target as HTMLElement).closest('[data-no-drag]')) return
     event.currentTarget.setPointerCapture(event.pointerId)
     const timer = event.pointerType === 'mouse' ? undefined : window.setTimeout(() => {
       const press = pressRef.current
@@ -256,8 +261,8 @@ export function RequirementBoard({
     if (!over) return ''
     const same = over.kind === target.kind
       && (over.kind === 'chip' ? over.index === (target as { index: number }).index
-        : over.kind === 'board' ? true
-          : over.group === (target as { group: number }).group)
+        : over.kind === 'cluster' ? over.group === (target as { group: number }).group
+          : true)
     if (!same) return ''
     if (over.kind === 'board') {
       return drag && requirements[drag.source].alternativeGroup !== undefined ? ' d1-drop-detach' : ''
@@ -315,22 +320,6 @@ export function RequirementBoard({
         )}
         {requirement.uncursed && <span className="d1-chip-tag d1-chip-tag-soft" title="Uncursed">✓</span>}
         {showBadges && item && renderBadges(item)}
-        <button
-          type="button"
-          className="d1-chip-x"
-          data-chip-x
-          tabIndex={-1}
-          aria-label="Remove requirement"
-          title="Remove"
-          onClick={(event) => {
-            event.stopPropagation()
-            const owner = itemOf(index)
-            if (!owner) return
-            onChange(inCluster ? removeMember(requirements, index) : removeItem(requirements, owner))
-          }}
-        >
-          <XIcon size={11} />
-        </button>
       </div>
     )
   }
@@ -347,7 +336,7 @@ export function RequirementBoard({
     return (
       <>
         {editingCount ? (
-          <span className="d1-stack-edit" role="group" aria-label="How many" onPointerDown={(event) => event.stopPropagation()} data-chip-x>
+          <span className="d1-stack-edit" role="group" aria-label="How many" onPointerDown={(event) => event.stopPropagation()} data-no-drag>
             <button type="button" aria-label="One fewer" disabled={count <= 1} onClick={() => onChange(setStackCount(requirements, item, count - 1))}>−</button>
             <span className="d1-stack-badge">{item.total !== undefined ? `≤${count}` : `×${count}`}</span>
             <button type="button" aria-label="One more" disabled={count >= STACK_MAX} onClick={() => onChange(setStackCount(requirements, item, count + 1))}>+</button>
@@ -357,7 +346,7 @@ export function RequirementBoard({
           <button
             type="button"
             className="d1-stack-badge d1-stack-badge-btn"
-            data-chip-x
+            data-no-drag
             title={item.total !== undefined ? `Up to ${count} items` : `${count} of the same kind`}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={() => setStepper({ key: item.key, which: 'count' })}
@@ -366,7 +355,7 @@ export function RequirementBoard({
           </button>
         )}
         {editingTotal ? (
-          <span className="d1-stack-edit d1-stack-edit-total" role="group" aria-label="Combined level" onPointerDown={(event) => event.stopPropagation()} data-chip-x>
+          <span className="d1-stack-edit d1-stack-edit-total" role="group" aria-label="Combined level" onPointerDown={(event) => event.stopPropagation()} data-no-drag>
             <button type="button" aria-label="Lower total" onClick={() => onChange(item.total === 1 ? setStackTotal(requirements, item, undefined) : setStackTotal(requirements, item, (item.total ?? 2) - 1))}>−</button>
             <span className="d1-stack-badge d1-stack-badge-total">Σ ≥ {item.total ?? 0}</span>
             <button type="button" aria-label="Raise total" disabled={(item.total ?? 0) >= capacity} onClick={() => onChange(setStackTotal(requirements, item, (item.total ?? 0) + 1))}>+</button>
@@ -376,7 +365,7 @@ export function RequirementBoard({
           <button
             type="button"
             className="d1-stack-badge d1-stack-badge-total d1-stack-badge-btn"
-            data-chip-x
+            data-no-drag
             title={`Levels add to at least ${item.total} (a +0 item counts 1)`}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={() => setStepper({ key: item.key, which: 'total' })}
@@ -416,9 +405,8 @@ export function RequirementBoard({
     : drag ? 'drop on a chip: either/or · empty space: on its own' : null
 
   return (
-    <div className="d1-board-wrap">
+    <div ref={wrapRef} className="d1-board-wrap">
       <div
-        ref={boardRef}
         className={`d1-board${drag ? ' d1-board-dragging' : ''}${dropClass({ kind: 'board' })}`}
         data-drop="board"
         onMouseDown={() => { setMenu(null); setStepper(null) }}
@@ -428,6 +416,15 @@ export function RequirementBoard({
           <PlusIcon size={13} />
         </button>
       </div>
+      {drag && (
+        <div
+          className={`d1-delete-zone${drag.over?.kind === 'delete' ? ' d1-delete-zone-over' : ''}`}
+          data-drop="delete"
+        >
+          <XIcon size={12} />
+          <span>drop to remove</span>
+        </div>
+      )}
       {statusLine && <div className="d1-board-status d1-mono" aria-live="polite">{statusLine}</div>}
       {hovered && !drag && !menu && requirements[hovered.index] && (
         <ChipPopover
@@ -441,7 +438,8 @@ export function RequirementBoard({
         <div className="d1-chip d1-chip-ghost" style={{ left: drag.x, top: drag.y }} aria-hidden="true">
           <Sprite index={requirementSprite(dragSource)} size={18} />
           <span className="d1-chip-name">{chipName(dragSource)}</span>
-          {drag.over && drag.over.kind !== 'board' && <span className="d1-chip-ghost-tag d1-ghost-alternative">or</span>}
+          {(drag.over?.kind === 'chip' || drag.over?.kind === 'cluster') && <span className="d1-chip-ghost-tag d1-ghost-alternative">or</span>}
+          {drag.over?.kind === 'delete' && <span className="d1-chip-ghost-tag d1-ghost-delete">remove</span>}
         </div>
       )}
       {menu && (

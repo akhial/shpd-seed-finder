@@ -996,28 +996,6 @@ input[type='range']::-moz-range-thumb {
 .d1-chip-effect-curse { background: #111; color: #ddd; box-shadow: inset 0 0 0 1px #555; }
 .d1-chip-effect-any { background: conic-gradient(#ff5555, #ffff55, #55ff55, #55ffff, #5555ff, #ff55ff, #ff5555); }
 
-.d1-chip-x {
-  display: inline-flex;
-  /* Hidden, not display:none — revealing it on hover must not widen the chip,
-     or a chip at the end of a full row wraps, loses the pointer, and snaps
-     back in an endless flicker. */
-  visibility: hidden;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  margin: 0 -4px 0 -2px;
-  padding: 0;
-  color: var(--d1-text-3);
-  background: transparent;
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-}
-
-.d1-chip:hover .d1-chip-x, .d1-chip:focus-within .d1-chip-x { visibility: visible; }
-.d1-chip-x:hover { color: var(--d1-danger); background: rgba(217, 108, 95, 0.14); }
-
 .d1-chip-error { border-color: var(--d1-danger); }
 .d1-chip-dragging { opacity: 0.35; pointer-events: none; }
 
@@ -1062,6 +1040,26 @@ input[type='range']::-moz-range-thumb {
 }
 
 .d1-ghost-alternative { background: var(--d1-amber); }
+.d1-ghost-delete { color: #fff; background: var(--d1-danger-fill); }
+
+/* The bin: only exists while a chip is in flight, and is the pointer's only
+   way to delete. */
+.d1-delete-zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: 8px 4px 0;
+  padding: 8px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--d1-danger);
+  border: 1px dashed var(--d1-danger-edge);
+  border-radius: 10px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.d1-delete-zone-over { color: #fff; background: var(--d1-danger-fill); border-style: solid; }
 
 /* Either/or cluster: the chips share one capsule. */
 .d1-cluster {
