@@ -19,11 +19,14 @@ object SearchLimits {
     /** Tiers an "at least / at most tier N" requirement may name. */
     val BOUNDED_TIERS: IntRange = 3..4
 
-    /** Highest same-item group number (groups run 1..this, shown as A..D). */
+    /** Highest stack (same-item) group number; groups run 1..this. */
     const val IDENTITY_GROUP_MAX = 4
 
-    /** Highest combined-upgrade group number (groups run 1..this, shown as A..D). */
-    const val UPGRADE_SUM_GROUP_MAX = 4
+    /** Highest combined-level group number; groups run 1..this. */
+    const val LEVEL_SUM_GROUP_MAX = 4
+
+    /** The most items a stack may ask for, its anchor included. */
+    const val STACK_MAX = 4
 
     /** Highest upgrade a search may name, for everything but rings. */
     const val MAX_UPGRADE_DEFAULT = 3
@@ -120,21 +123,21 @@ sealed interface EffectFilter {
     }
 }
 
-/** Membership in a combined-upgrade group: the members' upgrade levels must add up to at least [atLeast]. */
-data class UpgradeSum(val group: Int, val atLeast: Int) {
+/**
+ * Membership in a combined-level group: the members' *levels* must add up to
+ * at least [atLeast], where one matched item contributes its upgrade plus one.
+ * Members are optional, so the group reads "up to N items reaching [atLeast]
+ * levels" — one +2 ring satisfies a total of 3 on its own, and so does a +0
+ * with a +1.
+ */
+data class LevelSum(val group: Int, val atLeast: Int) {
     init {
-        require(group in 1..SearchLimits.UPGRADE_SUM_GROUP_MAX) {
-            "Combined upgrade group must be A..${groupLetter(SearchLimits.UPGRADE_SUM_GROUP_MAX)}"
+        require(group in 1..SearchLimits.LEVEL_SUM_GROUP_MAX) {
+            "A combined-level group must be 1..${SearchLimits.LEVEL_SUM_GROUP_MAX}"
         }
-        require(atLeast >= 1) { "A combined upgrade total must be at least +1" }
+        require(atLeast >= 1) { "A combined level must be at least 1" }
     }
-
-    val letter: Char
-        get() = groupLetter(group)
 }
-
-/** The letter a one-based group number is shown as (1 → A). */
-fun groupLetter(group: Int): Char = ('A'.code + group - 1).toChar()
 
 data class ItemRequirement(
     val key: Long,
@@ -155,8 +158,8 @@ data class ItemRequirement(
      * requirement that any of them satisfies.
      */
     val alternativeGroup: Int? = null,
-    /** Membership in a combined-upgrade group; never together with [alternativeGroup]. */
-    val upgradeSum: UpgradeSum? = null,
+    /** Membership in a combined-level group; never together with [alternativeGroup]. */
+    val levelSum: LevelSum? = null,
 ) {
     init {
         require(item == null || kind.accepts(item)) { "Selected item must belong to its category" }
@@ -191,14 +194,14 @@ data class ItemRequirement(
             }
         }
         require(identityGroup == null || identityGroup in 1..SearchLimits.IDENTITY_GROUP_MAX) {
-            "Same-item group must be A..${groupLetter(SearchLimits.IDENTITY_GROUP_MAX)}"
+            "A stack group must be 1..${SearchLimits.IDENTITY_GROUP_MAX}"
         }
         require(maximumDepth == null || maximumDepth in 1..SearchLimits.MAX_DEPTH) {
             "Item floor limit must be 1..${SearchLimits.MAX_DEPTH}"
         }
         require(alternativeGroup == null || alternativeGroup >= 1) { "Alternative group ids start at 1" }
-        require(alternativeGroup == null || upgradeSum == null) {
-            "An alternative cannot be in a combined upgrade group"
+        require(alternativeGroup == null || levelSum == null) {
+            "An either/or alternative cannot count a combined level"
         }
     }
 
@@ -206,9 +209,29 @@ data class ItemRequirement(
     val singleEffect: String?
         get() = (effect as? EffectFilter.OneOf)?.names?.singleOrNull()
 
-    /** The highest upgrade an item satisfying this requirement can carry (what a sum group can count on). */
+    /** The highest upgrade an item satisfying this requirement can carry. */
     val maximumUpgrade: Int
         get() = if (upgradeMatch == UpgradeMatch.EXACT) upgrade else kind.maximumSearchUpgrade
+
+    /**
+     * The most *levels* this requirement can contribute to a combined total:
+     * its highest upgrade plus one, since every matched item counts itself.
+     */
+    val maximumLevel: Int
+        get() = maximumUpgrade + 1
+
+    /**
+     * Whether this constrains nothing beyond its category — the shape a
+     * stack's extra copies take. A per-item floor limit is a placement bound,
+     * not an item property, and does not count.
+     */
+    val isBare: Boolean
+        get() = item == null &&
+            tierMatch == TierMatch.ANY &&
+            upgradeMatch == UpgradeMatch.ANY &&
+            effect == EffectFilter.Any &&
+            !requireUncursed &&
+            source == null
 
     /** Human-readable effect constraint, or null when any effect is accepted. */
     val effectLabel: String?
@@ -236,14 +259,8 @@ data class ItemRequirement(
                 append(" • ")
                 append(it.label)
             }
-            identityGroup?.let {
-                append(" • same item group ")
-                append(groupLetter(it))
-            }
-            upgradeSum?.let {
-                append(" • combined upgrade group ")
-                append(it.letter)
-                append(" ≥ +")
+            levelSum?.let {
+                append(" • combined level ≥ ")
                 append(it.atLeast)
             }
             maximumDepth?.let {
@@ -299,32 +316,35 @@ fun List<ItemRequirement>.slotCount(): Int = slots().size
  */
 fun List<ItemRequirement>.validationProblem(): String? {
     if (isEmpty()) return "Add at least one requirement."
-    val sumGroups = filter { it.upgradeSum != null }.groupBy { it.upgradeSum!!.group }
-    for ((group, members) in sumGroups.toSortedMap()) {
-        val totals = members.map { it.upgradeSum!!.atLeast }.distinct()
-        if (totals.size > 1) {
-            return "Combined upgrade group ${groupLetter(group)} must use one total " +
-                "(it has ${totals.sorted().joinToString(" and ") { "+$it" }})."
+    // A stack (identity group) has one anchor unit — a lone requirement or one
+    // whole alternative group — that may constrain the item it binds to; every
+    // other member is a bare copy of the same category.
+    val identityGroups = filter { it.identityGroup != null }.groupBy { it.identityGroup!! }
+    for ((_, members) in identityGroups.toSortedMap()) {
+        if (members.map { it.kind.family }.distinct().size > 1) {
+            return "The copies of a stack must share its category."
         }
-        val reachable = members.sumOf { it.maximumUpgrade }
-        val needed = totals.single()
-        if (needed > reachable) {
-            return "Combined upgrade group ${groupLetter(group)} needs +$needed but its items " +
-                "can carry at most +$reachable."
+        val units = members.filterNot { it.isBare }
+            .map { it.alternativeGroup?.let { group -> "alt:$group" } ?: "req:${it.key}" }
+            .distinct()
+        if (units.size > 1) {
+            return "Only one item of a stack can carry constraints; the extra copies are plain."
         }
     }
-    // Same-item group members in different slots must agree on category and item.
-    val identityGroups = filter { it.identityGroup != null }.groupBy { it.identityGroup!! }
-    for ((group, members) in identityGroups.toSortedMap()) {
-        for (left in members) {
-            for (right in members) {
-                if (left.alternativeGroup != null && left.alternativeGroup == right.alternativeGroup) continue
-                val agree = left.kind == right.kind &&
-                    (left.item == null || right.item == null || left.item.id == right.item.id)
-                if (!agree) {
-                    return "Same-item group ${groupLetter(group)} mixes different items or categories."
-                }
-            }
+    // Combined-level groups: one shared, reachable total, counted in levels
+    // (upgrade plus one per item).
+    val sumGroups = filter { it.levelSum != null }.groupBy { it.levelSum!!.group }
+    for ((_, members) in sumGroups.toSortedMap()) {
+        val totals = members.map { it.levelSum!!.atLeast }.distinct()
+        if (totals.size > 1) {
+            return "A stack must share one combined level " +
+                "(it has ${totals.sorted().joinToString(" and ")})."
+        }
+        val reachable = members.sumOf { it.maximumLevel }
+        val needed = totals.single()
+        if (needed > reachable) {
+            return "A combined level of $needed needs more items: " +
+                "these ${members.size} can reach $reachable."
         }
     }
     return null

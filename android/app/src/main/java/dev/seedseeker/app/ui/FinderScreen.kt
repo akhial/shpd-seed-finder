@@ -4,6 +4,8 @@ package dev.seedseeker.app.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -79,7 +81,8 @@ import dev.seedseeker.app.model.SearchStatus
 import dev.seedseeker.app.model.SeedResult
 import dev.seedseeker.app.model.WandmakerQuest
 import dev.seedseeker.app.model.floorLimitIndex
-import dev.seedseeker.app.model.slotCount
+import dev.seedseeker.app.model.BoardItem
+import dev.seedseeker.app.model.boardCount
 import dev.seedseeker.app.model.slots
 import kotlin.math.roundToInt
 
@@ -110,9 +113,9 @@ fun FinderScreen(
     onSavePreset: (String) -> Unit,
     onDeletePreset: (QueryPreset) -> Unit,
     onAdd: () -> Unit,
-    onEdit: (ItemRequirement) -> Unit,
-    onAddAlternative: (ItemRequirement) -> Unit,
-    onRemove: (ItemRequirement) -> Unit,
+    onEdit: (BoardItem) -> Unit,
+    onRequirementsChange: (List<ItemRequirement>) -> Unit,
+    onRemove: (BoardItem) -> Unit,
     onMaximumDepthChange: (Int) -> Unit,
     onRequireBlacksmithChange: (Boolean) -> Unit,
     onExcludeBlacksmithRewardsChange: (Boolean) -> Unit,
@@ -242,7 +245,7 @@ fun FinderScreen(
                     validationMessage = validationMessage,
                     onAdd = onAdd,
                     onEdit = onEdit,
-                    onAddAlternative = onAddAlternative,
+                    onRequirementsChange = onRequirementsChange,
                     onRemove = onRemove,
                     onMaximumDepthChange = onMaximumDepthChange,
                     onRequireBlacksmithChange = onRequireBlacksmithChange,
@@ -324,9 +327,9 @@ private fun QueryHeader(
     error: String?,
     validationMessage: String?,
     onAdd: () -> Unit,
-    onEdit: (ItemRequirement) -> Unit,
-    onAddAlternative: (ItemRequirement) -> Unit,
-    onRemove: (ItemRequirement) -> Unit,
+    onEdit: (BoardItem) -> Unit,
+    onRequirementsChange: (List<ItemRequirement>) -> Unit,
+    onRemove: (BoardItem) -> Unit,
     onMaximumDepthChange: (Int) -> Unit,
     onRequireBlacksmithChange: (Boolean) -> Unit,
     onExcludeBlacksmithRewardsChange: (Boolean) -> Unit,
@@ -335,51 +338,25 @@ private fun QueryHeader(
     onChallenges: () -> Unit,
 ) {
     Column(Modifier.padding(horizontal = 16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "Requirements (${requirements.slotCount()})",
-                style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.weight(1f),
+        Text(
+            "Requirements (${requirements.boardCount()})",
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(bottom = 6.dp),
+        )
+        Column(
+            modifier = Modifier
+                .heightIn(max = 280.dp)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            RequirementBoard(
+                requirements = requirements,
+                enabled = !isSearching,
+                onChange = onRequirementsChange,
+                onEdit = onEdit,
+                onRemove = onRemove,
+                onAdd = onAdd,
+                modifier = Modifier.fillMaxWidth(),
             )
-            TextButton(onClick = onAdd, enabled = !isSearching) {
-                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Add")
-            }
-        }
-        if (requirements.isEmpty()) {
-            Text(
-                "None — add at least one.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 4.dp),
-            )
-        } else {
-            LazyColumn(
-                modifier = Modifier.heightIn(max = 280.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                // One list entry per slot: an "any of these" group is a card of its members.
-                items(requirements.slots(), key = { it.first().key }) { slot ->
-                    if (slot.size == 1) {
-                        RequirementRow(
-                            requirement = slot.single(),
-                            enabled = !isSearching,
-                            onEdit = { onEdit(slot.single()) },
-                            onAddAlternative = { onAddAlternative(slot.single()) },
-                            onRemove = { onRemove(slot.single()) },
-                        )
-                    } else {
-                        AlternativesCard(
-                            members = slot,
-                            enabled = !isSearching,
-                            onEdit = onEdit,
-                            onAddAlternative = onAddAlternative,
-                            onRemove = onRemove,
-                        )
-                    }
-                }
-            }
         }
         if (validationMessage != null && requirements.isNotEmpty()) {
             Text(
@@ -430,120 +407,6 @@ private fun QueryHeader(
  * edits, forks and removes like a plain row; the caller collapses the card
  * back to a row once one member is left.
  */
-@Composable
-private fun AlternativesCard(
-    members: List<ItemRequirement>,
-    enabled: Boolean,
-    onEdit: (ItemRequirement) -> Unit,
-    onAddAlternative: (ItemRequirement) -> Unit,
-    onRemove: (ItemRequirement) -> Unit,
-) {
-    Surface(
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(4.dp)) {
-            Text(
-                "Any of these · ${alternativesSummary(members.size)}",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(start = 8.dp, top = 4.dp, bottom = 4.dp),
-            )
-            members.forEachIndexed { index, member ->
-                if (index > 0) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        HorizontalDivider(Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant)
-                        Text(
-                            "OR",
-                            modifier = Modifier.padding(horizontal = 10.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        HorizontalDivider(Modifier.weight(1f), color = MaterialTheme.colorScheme.outlineVariant)
-                    }
-                }
-                RequirementRow(
-                    requirement = member,
-                    enabled = enabled,
-                    onEdit = { onEdit(member) },
-                    onAddAlternative = { onAddAlternative(member) },
-                    onRemove = { onRemove(member) },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun RequirementRow(
-    requirement: ItemRequirement,
-    enabled: Boolean,
-    onEdit: () -> Unit,
-    onAddAlternative: () -> Unit,
-    onRemove: () -> Unit,
-) {
-    Surface(
-        onClick = onEdit,
-        enabled = enabled,
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            modifier = Modifier.padding(start = 10.dp, top = 6.dp, end = 2.dp, bottom = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            SpriteTile(
-                item = requirement.item,
-                glow = ItemGlows.forEffect(requirement.singleEffect),
-                tileSize = 40,
-            )
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    requirement.title,
-                    style = MaterialTheme.typography.bodyLarge,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                val detail = requirementDetailLine(requirement)
-                if (detail.isNotEmpty()) {
-                    Text(
-                        detail,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            // Forks this row into (or extends) an "any of these" group.
-            TextButton(
-                onClick = onAddAlternative,
-                enabled = enabled,
-                contentPadding = PaddingValues(horizontal = 8.dp),
-                modifier = Modifier.semantics { contentDescription = "Add alternative" },
-            ) {
-                Text("OR", style = MaterialTheme.typography.labelMedium)
-            }
-            IconButton(onClick = onRemove, enabled = enabled) {
-                Icon(
-                    Icons.Filled.Close,
-                    contentDescription = "Remove requirement",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
 @Composable
 private fun ScopeSection(
     maximumDepth: Int,

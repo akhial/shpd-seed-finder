@@ -41,7 +41,7 @@ class PresetStorageTest {
         assertEquals(2, armor.identityGroup)
         assertEquals(4, armor.maximumDepth)
         assertEquals(null, armor.alternativeGroup)
-        assertEquals(null, armor.upgradeSum)
+        assertEquals(null, armor.levelSum)
     }
 
     @Test
@@ -59,8 +59,8 @@ class PresetStorageTest {
                     alternativeGroup = 1,
                 ),
                 ItemRequirement(3, null, 0, kind = ItemKind.ARMOR, upgradeMatch = UpgradeMatch.ANY, effect = EffectFilter.AnyEnchantment),
-                ItemRequirement(4, ItemCatalog.findById("ring_might"), 0, upgradeMatch = UpgradeMatch.ANY, upgradeSum = UpgradeSum(2, 4)),
-                ItemRequirement(5, ItemCatalog.findById("ring_might"), 0, upgradeMatch = UpgradeMatch.ANY, upgradeSum = UpgradeSum(2, 4)),
+                ItemRequirement(4, ItemCatalog.findById("ring_might"), 0, upgradeMatch = UpgradeMatch.ANY, levelSum = LevelSum(2, 4)),
+                ItemRequirement(5, ItemCatalog.findById("ring_might"), 0, upgradeMatch = UpgradeMatch.ANY, levelSum = LevelSum(2, 4)),
             ),
         )
         storage.save(listOf(QueryPreset(id = "new", name = "New preset", query = query)))

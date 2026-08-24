@@ -46,6 +46,7 @@ import dev.seedseeker.app.engine.NativeSearchSession
 import dev.seedseeker.app.engine.NativeSeedFinder
 import dev.seedseeker.app.engine.ScoutMatches
 import dev.seedseeker.app.engine.SeedCode
+import dev.seedseeker.app.model.BoardItem
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.Challenge
 import dev.seedseeker.app.model.DeepLink
@@ -59,6 +60,8 @@ import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.SearchState
 import dev.seedseeker.app.model.SearchStatus
 import dev.seedseeker.app.model.SeedResult
+import dev.seedseeker.app.model.applyEdit
+import dev.seedseeker.app.model.removeItem
 import dev.seedseeker.app.model.slotCount
 import dev.seedseeker.app.model.toPresetQuery
 import dev.seedseeker.app.model.validationProblem
@@ -161,11 +164,12 @@ fun SeedFinderApp(
             preferences.getInt(CHALLENGES_KEY, 0).takeIf { it in 0..Challenge.ALL_MASK } ?: 0,
         )
     }
-    var editingRequirement by remember { mutableStateOf<ItemRequirement?>(null) }
+    // The board anchor the editor is open on, plus the stack shape it showed;
+    // null means the sheet is building a new chip.
+    var editingIndex by remember { mutableStateOf<Int?>(null) }
+    var editingCount by remember { mutableStateOf(1) }
+    var editingTotal by remember { mutableStateOf<Int?>(null) }
     var showRequirementSheet by remember { mutableStateOf(false) }
-    // A freshly forked alternative is a copy of its sibling until saved; dismissing the
-    // sheet without saving drops it again so a duplicate never lingers in the list.
-    var pendingAlternativeKey by remember { mutableStateOf<Long?>(null) }
     var results by remember { mutableStateOf(emptyList<SeedResult>()) }
     // The run's full collection size: the listed `results` stop at RESULT_CAP
     // rows, but every seed count the user reads reports this number.
@@ -672,43 +676,19 @@ fun SeedFinderApp(
                     presetStorage.save(userPresets)
                 },
                 onAdd = {
-                    editingRequirement = null
+                    editingIndex = null
+                    editingCount = 1
+                    editingTotal = null
                     showRequirementSheet = true
                 },
-                onEdit = {
-                    editingRequirement = it
+                onEdit = { item ->
+                    editingIndex = item.anchor
+                    editingCount = item.stackCount
+                    editingTotal = item.total
                     showRequirementSheet = true
                 },
-                onAddAlternative = { requirement ->
-                    // Fork the row into an "any of these" group: it and its copy share a
-                    // fresh group id (or the row's existing one), and neither may keep a
-                    // combined-upgrade group, which alternatives cannot carry.
-                    val group = requirement.alternativeGroup
-                        ?: ((requirements.maxOfOrNull { it.alternativeGroup ?: 0 } ?: 0) + 1)
-                    val copy = requirement.copy(
-                        key = nextRequirementKey++,
-                        alternativeGroup = group,
-                        upgradeSum = null,
-                    )
-                    requirements = buildList {
-                        for (existing in requirements) {
-                            if (existing.key == requirement.key) {
-                                add(existing.copy(alternativeGroup = group, upgradeSum = null))
-                                add(copy)
-                            } else {
-                                add(existing)
-                            }
-                        }
-                    }
-                    pendingAlternativeKey = copy.key
-                    editingRequirement = copy
-                    showRequirementSheet = true
-                },
-                onRemove = { requirement ->
-                    requirements = requirements
-                        .filterNot { it.key == requirement.key }
-                        .collapseSingletonGroups()
-                },
+                onRequirementsChange = { requirements = it },
+                onRemove = { item -> requirements = requirements.removeItem(item) },
                 onMaximumDepthChange = { maximumDepth = it },
                 onRequireBlacksmithChange = { requireBlacksmith = it },
                 onExcludeBlacksmithRewardsChange = { excludeBlacksmithRewards = it },
@@ -861,33 +841,12 @@ fun SeedFinderApp(
 
         if (showRequirementSheet) {
             RequirementSheet(
-                editing = editingRequirement,
-                requirements = requirements,
-                startWithItemPicker = pendingAlternativeKey != null,
-                onDismiss = {
-                    showRequirementSheet = false
-                    pendingAlternativeKey?.let { key ->
-                        requirements = requirements.filterNot { it.key == key }.collapseSingletonGroups()
-                    }
-                    pendingAlternativeKey = null
-                },
-                onSave = { saved ->
-                    val existing = editingRequirement
-                    val placed = if (existing == null) {
-                        requirements + saved.copy(key = nextRequirementKey++)
-                    } else {
-                        requirements.map { if (it.key == existing.key) saved.copy(key = existing.key) else it }
-                    }
-                    // Every member of a combined-upgrade group shares one total.
-                    val sum = saved.upgradeSum
-                    requirements = if (sum == null) {
-                        placed
-                    } else {
-                        placed.map {
-                            if (it.upgradeSum?.group == sum.group) it.copy(upgradeSum = sum) else it
-                        }
-                    }
-                    pendingAlternativeKey = null
+                editing = editingIndex?.let(requirements::get),
+                editingCount = editingCount,
+                editingTotal = editingTotal,
+                onDismiss = { showRequirementSheet = false },
+                onSave = { saved, count, total ->
+                    requirements = requirements.applyEdit(editingIndex, saved, count, total)
                     showRequirementSheet = false
                 },
             )
@@ -945,15 +904,6 @@ fun SeedFinderApp(
                 },
             )
         }
-    }
-}
-
-/** Drops the alternative group of any row left alone in it, so its card collapses back to a row. */
-private fun List<ItemRequirement>.collapseSingletonGroups(): List<ItemRequirement> {
-    val sizes = filter { it.alternativeGroup != null }.groupingBy { it.alternativeGroup!! }.eachCount()
-    return map { requirement ->
-        val group = requirement.alternativeGroup
-        if (group != null && sizes[group] == 1) requirement.copy(alternativeGroup = null) else requirement
     }
 }
 

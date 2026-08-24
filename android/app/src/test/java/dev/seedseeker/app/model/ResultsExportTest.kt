@@ -243,7 +243,7 @@ class ResultsExportTest {
     }
 
     @Test
-    fun decodeReadsAlternativeGroupsEffectListsAndCombinedUpgradeGroups() {
+    fun decodeReadsAlternativeGroupsEffectListsAndCombinedLevelGroups() {
         val imported = ResultsExport.decode(
             """
             {"format":"seed-seeker-results",
@@ -252,8 +252,8 @@ class ResultsExportTest {
                           {"kind":"thrown_weapon","effect":["projecting","blocking"]}]},
                {"kind":"armor","effect":"ANY_ENCHANTMENT","uncursed":true},
                {"any_of":[{"item":"sword"}]},
-               {"item":"ring_might","identity_group":1,"upgrade_sum":{"group":2,"at_least":4}},
-               {"item":"ring_might","identity_group":1,"upgrade_sum":{"group":2,"at_least":4}}
+               {"item":"ring_might","level_sum":{"group":2,"at_least":4}},
+               {"item":"ring_might","level_sum":{"group":2,"at_least":4}}
              ]},
              "results":[]}
             """.trimIndent(),
@@ -266,8 +266,8 @@ class ResultsExportTest {
         assertEquals(EffectFilter.OneOf(listOf("Blocking", "Projecting")), requirements[1].effect)
         assertEquals(ItemKind.THROWN_WEAPON, requirements[1].kind)
         assertEquals(EffectFilter.AnyEnchantment, requirements[2].effect)
-        assertEquals(UpgradeSum(group = 2, atLeast = 4), requirements[4].upgradeSum)
-        assertEquals(UpgradeSum(group = 2, atLeast = 4), requirements[5].upgradeSum)
+        assertEquals(LevelSum(group = 2, atLeast = 4), requirements[4].levelSum)
+        assertEquals(LevelSum(group = 2, atLeast = 4), requirements[5].levelSum)
 
         // And the same structures survive a trip back through the engine's writer.
         val reImported = ResultsExport.decode(
@@ -282,7 +282,7 @@ class ResultsExportTest {
         assertEquals(5, entries.length())
         assertEquals(2, entries.getJSONObject(0).getJSONArray("any_of").length())
         assertEquals("any_enchantment", entries.getJSONObject(1).getString("effect"))
-        assertEquals(4, entries.getJSONObject(3).getJSONObject("upgrade_sum").getInt("at_least"))
+        assertEquals(4, entries.getJSONObject(3).getJSONObject("level_sum").getInt("at_least"))
     }
 
     @Test
@@ -292,7 +292,7 @@ class ResultsExportTest {
                 """
                 {"format":"seed-seeker-results",
                  "query":{"requirements":[{"any_of":[
-                   {"item":"ring_might","upgrade_sum":{"group":1,"at_least":2}},
+                   {"item":"ring_might","level_sum":{"group":1,"at_least":2}},
                    {"item":"sword"}]}]},
                  "results":[]}
                 """.trimIndent(),

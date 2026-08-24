@@ -143,7 +143,7 @@ class DeepLinkTest {
      * writing the identical version-1 code it always did.
      */
     @Test
-    fun roundTripsAlternativeGroupsEffectSetsAndCombinedUpgradeGroups() {
+    fun roundTripsAlternativeGroupsEffectSetsAndCombinedLevelGroups() {
         val query = PresetQuery(
             requirements = listOf(
                 ItemRequirement(
@@ -174,16 +174,14 @@ class DeepLinkTest {
                     item = ItemCatalog.findById("ring_might"),
                     upgrade = 0,
                     upgradeMatch = UpgradeMatch.ANY,
-                    identityGroup = 1,
-                    upgradeSum = UpgradeSum(group = 2, atLeast = 4),
+                    levelSum = LevelSum(group = 2, atLeast = 4),
                 ),
                 ItemRequirement(
                     key = 5,
                     item = ItemCatalog.findById("ring_might"),
                     upgrade = 0,
                     upgradeMatch = UpgradeMatch.ANY,
-                    identityGroup = 1,
-                    upgradeSum = UpgradeSum(group = 2, atLeast = 4),
+                    levelSum = LevelSum(group = 2, atLeast = 4),
                 ),
             ),
         )

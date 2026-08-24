@@ -59,9 +59,9 @@ class PresetStorage(private val preferences: SharedPreferences) {
                     put("maximumDepth", requirement.maximumDepth ?: JSONObject.NULL)
                     put("requireUncursed", requirement.requireUncursed)
                     put("alternativeGroup", requirement.alternativeGroup ?: JSONObject.NULL)
-                    requirement.upgradeSum?.let {
-                        put("upgradeSumGroup", it.group)
-                        put("upgradeSumAtLeast", it.atLeast)
+                    requirement.levelSum?.let {
+                        put("levelSumGroup", it.group)
+                        put("levelSumAtLeast", it.atLeast)
                     }
                 })
             }
@@ -110,8 +110,8 @@ class PresetStorage(private val preferences: SharedPreferences) {
                         requireUncursed = encoded.optBoolean("requireUncursed", false),
                         alternativeGroup = encoded.optInt("alternativeGroup")
                             .takeIf { !encoded.isNull("alternativeGroup") },
-                        upgradeSum = encoded.optInt("upgradeSumGroup").takeIf { !encoded.isNull("upgradeSumGroup") }
-                            ?.let { UpgradeSum(group = it, atLeast = encoded.getInt("upgradeSumAtLeast")) },
+                        levelSum = encoded.optInt("levelSumGroup").takeIf { !encoded.isNull("levelSumGroup") }
+                            ?.let { LevelSum(group = it, atLeast = encoded.getInt("levelSumAtLeast")) },
                     ),
                 )
             }

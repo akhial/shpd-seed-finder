@@ -9,7 +9,7 @@ import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.ScoutItemSource
 import dev.seedseeker.app.model.TierMatch
 import dev.seedseeker.app.model.UpgradeMatch
-import dev.seedseeker.app.model.UpgradeSum
+import dev.seedseeker.app.model.LevelSum
 import dev.seedseeker.app.model.WandmakerQuest
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -45,8 +45,9 @@ class QuerySummaryTest {
             identityGroup = 2,
         )
 
+        // A stack shows as a ×N badge on its chip, not in the detail line.
         assertEquals(
-            "≥+1 · uncursed · Ghost reward · grp B",
+            "≥+1 · uncursed · Ghost reward",
             requirementDetailLine(requirement),
         )
     }
@@ -97,15 +98,11 @@ class QuerySummaryTest {
             upgrade = 0,
             upgradeMatch = UpgradeMatch.ANY,
             identityGroup = 1,
-            upgradeSum = UpgradeSum(group = 1, atLeast = 4),
+            levelSum = LevelSum(group = 1, atLeast = 4),
             maximumDepth = 4,
         )
-        assertEquals("grp A · sum A ≥ +4 · ≤ floor 4", requirementDetailLine(might))
-        assertEquals(
-            "Any upgrade • same item group A • combined upgrade group A ≥ +4 • by floor 4",
-            might.description,
-        )
-        assertEquals("any of 3", alternativesSummary(3))
+        assertEquals("Σ≥4 · ≤ floor 4", requirementDetailLine(might))
+        assertEquals("Any upgrade • combined level ≥ 4 • by floor 4", might.description)
         assertEquals("1 of 2 requirements", scoutMatchText(1, 2))
         assertEquals("1 of 1 requirement", scoutMatchText(1, 1))
     }

@@ -24,7 +24,7 @@ class SearchRequestValidationTest {
         item = might,
         upgrade = upgrade ?: 0,
         upgradeMatch = if (upgrade == null) UpgradeMatch.ANY else UpgradeMatch.EXACT,
-        upgradeSum = UpgradeSum(group = group, atLeast = atLeast),
+        levelSum = LevelSum(group = group, atLeast = atLeast),
     )
 
     @Test
@@ -34,32 +34,41 @@ class SearchRequestValidationTest {
     }
 
     @Test
-    fun anUnattainableTotalNamesTheGroupAndWhatItsItemsCanCarry() {
-        // Two rings: an exact +1 counts as 1, an unbounded ring as the ring cap of 4.
-        val members = listOf(ring(1, atLeast = 6, upgrade = 1), ring(2, atLeast = 6))
+    fun anUnattainableTotalNamesWhatTheItemsCanReach() {
+        // Levels, not upgrades: an exact +1 ring counts 2, an unbounded ring
+        // counts the ring cap of 4 plus one, so the pair reaches 7.
+        val members = listOf(ring(1, atLeast = 8, upgrade = 1), ring(2, atLeast = 8))
         assertEquals(
-            "Combined upgrade group A needs +6 but its items can carry at most +5.",
+            "A combined level of 8 needs more items: these 2 can reach 7.",
             members.validationProblem(),
         )
-        assertNull(listOf(ring(1, atLeast = 5, upgrade = 1), ring(2, atLeast = 5)).validationProblem())
+        assertNull(listOf(ring(1, atLeast = 7, upgrade = 1), ring(2, atLeast = 7)).validationProblem())
         val failure = assertThrows(IllegalArgumentException::class.java) { SearchRequest(members) }
-        assertEquals("Combined upgrade group A needs +6 but its items can carry at most +5.", failure.message)
+        assertEquals("A combined level of 8 needs more items: these 2 can reach 7.", failure.message)
 
-        // A weapon group uses the default cap of 3 and its own letter.
+        // A weapon pair uses the default cap of 3, so 4 levels each.
         val weapons = listOf(
-            ItemRequirement(1, sword, 0, upgradeMatch = UpgradeMatch.ANY, upgradeSum = UpgradeSum(2, 7)),
-            ItemRequirement(2, sword, 0, upgradeMatch = UpgradeMatch.ANY, upgradeSum = UpgradeSum(2, 7)),
+            ItemRequirement(1, sword, 0, upgradeMatch = UpgradeMatch.ANY, levelSum = LevelSum(2, 9)),
+            ItemRequirement(2, sword, 0, upgradeMatch = UpgradeMatch.ANY, levelSum = LevelSum(2, 9)),
         )
         assertEquals(
-            "Combined upgrade group B needs +7 but its items can carry at most +6.",
+            "A combined level of 9 needs more items: these 2 can reach 8.",
             weapons.validationProblem(),
         )
     }
 
     @Test
+    fun oneUpgradedItemCanCoverACombinedLevelOnItsOwn() {
+        // The reforge case: "+3 strength" is one +2 ring, or a +0 and a +1.
+        // Members are optional, so a two-ring group asking for 3 levels is
+        // reachable — and a single ring reaching 3 on its own is too.
+        assertNull(listOf(ring(1, atLeast = 3), ring(2, atLeast = 3)).validationProblem())
+    }
+
+    @Test
     fun membersOfASumGroupMustShareOneTotal() {
         assertEquals(
-            "Combined upgrade group A must use one total (it has +2 and +3).",
+            "A stack must share one combined level (it has 2 and 3).",
             listOf(ring(1, atLeast = 2), ring(2, atLeast = 3)).validationProblem(),
         )
         // Different groups are independent.
@@ -67,17 +76,21 @@ class SearchRequestValidationTest {
     }
 
     @Test
-    fun sameItemGroupsMayDisagreeOnlyBetweenAlternativesOfOneSlot() {
+    fun onlyOneItemOfAStackMayCarryConstraints() {
         val frost = ItemCatalog.findById("wand_frost")
         val fire = ItemCatalog.findById("wand_fireblast")
         val clash = listOf(
             ItemRequirement(1, frost, 1, identityGroup = 1),
             ItemRequirement(2, fire, 1, identityGroup = 1),
         )
-        assertEquals("Same-item group A mixes different items or categories.", clash.validationProblem())
-        // The same two as alternatives of one slot are fine: only one is ever assigned.
+        assertEquals(
+            "Only one item of a stack can carry constraints; the extra copies are plain.",
+            clash.validationProblem(),
+        )
+        // The same two as alternatives of one slot are fine: they are one unit,
+        // and the stack binds to whichever of them the search assigns.
         assertNull(clash.map { it.copy(alternativeGroup = 1) }.validationProblem())
-        // A wildcard agrees with a named item of its category, not with another category.
+        // The reforge shape: one constrained anchor plus bare copies of its kind.
         assertNull(
             listOf(
                 ItemRequirement(1, frost, 1, identityGroup = 1),
@@ -85,7 +98,7 @@ class SearchRequestValidationTest {
             ).validationProblem(),
         )
         assertEquals(
-            "Same-item group A mixes different items or categories.",
+            "The copies of a stack must share its category.",
             listOf(
                 ItemRequirement(1, frost, 1, identityGroup = 1),
                 ItemRequirement(2, null, 0, kind = ItemKind.RING, upgradeMatch = UpgradeMatch.ANY, identityGroup = 1),

@@ -10,7 +10,7 @@ import dev.seedseeker.app.model.ScoutItemSource
 import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.TierMatch
 import dev.seedseeker.app.model.UpgradeMatch
-import dev.seedseeker.app.model.UpgradeSum
+import dev.seedseeker.app.model.LevelSum
 import dev.seedseeker.app.model.WandmakerQuest
 import org.json.JSONArray
 import org.json.JSONObject
@@ -164,7 +164,7 @@ class QueryDocumentTest {
     }
 
     @Test
-    fun combinedUpgradeGroupsWriteGroupAndTotal() {
+    fun combinedLevelGroupsWriteGroupAndTotal() {
         val might = ItemCatalog.findById("ring_might")
         val request = SearchRequest(
             listOf(
@@ -173,27 +173,25 @@ class QueryDocumentTest {
                     item = might,
                     upgrade = 0,
                     upgradeMatch = UpgradeMatch.ANY,
-                    identityGroup = 1,
                     maximumDepth = 4,
-                    upgradeSum = UpgradeSum(group = 1, atLeast = 4),
+                    levelSum = LevelSum(group = 1, atLeast = 4),
                 ),
                 ItemRequirement(
                     key = 2,
                     item = might,
                     upgrade = 0,
                     upgradeMatch = UpgradeMatch.ANY,
-                    identityGroup = 1,
                     maximumDepth = 4,
-                    upgradeSum = UpgradeSum(group = 1, atLeast = 4),
+                    levelSum = LevelSum(group = 1, atLeast = 4),
                 ),
             ),
         )
         assertDocument(
             """{"requirements":[
-                 {"kind":"ring","item":"ring_might","identity_group":1,"max_depth":4,
-                  "upgrade_sum":{"group":1,"at_least":4}},
-                 {"kind":"ring","item":"ring_might","identity_group":1,"max_depth":4,
-                  "upgrade_sum":{"group":1,"at_least":4}}]}""",
+                 {"kind":"ring","item":"ring_might","max_depth":4,
+                  "level_sum":{"group":1,"at_least":4}},
+                 {"kind":"ring","item":"ring_might","max_depth":4,
+                  "level_sum":{"group":1,"at_least":4}}]}""",
             request,
         )
     }
@@ -225,14 +223,14 @@ class QueryDocumentTest {
                     item = ItemCatalog.findById("ring_might"),
                     upgrade = 0,
                     upgradeMatch = UpgradeMatch.ANY,
-                    upgradeSum = UpgradeSum(group = 1, atLeast = 4),
+                    levelSum = LevelSum(group = 1, atLeast = 4),
                 ),
                 ItemRequirement(
                     key = 5,
                     item = ItemCatalog.findById("ring_might"),
                     upgrade = 0,
                     upgradeMatch = UpgradeMatch.ANY,
-                    upgradeSum = UpgradeSum(group = 1, atLeast = 4),
+                    levelSum = LevelSum(group = 1, atLeast = 4),
                 ),
             ),
         )
@@ -244,8 +242,9 @@ class QueryDocumentTest {
         val marks = JSONObject(
             String(JniBindings.scoutMatches(ScoutRequestCodec.encode("AAA-AAA-BUH", 0), bytes), Charsets.UTF_8),
         )
-        // Four slots: the alternative group counts once.
-        assertEquals(4, marks.getInt("totalRequirements"))
+        // Three conditions: the alternative group counts once, and so does the
+        // whole combined-level group — its members stand or fall together.
+        assertEquals(3, marks.getInt("totalRequirements"))
     }
 
     /** What the app refuses to build, and what the engine refuses when asked directly. */
@@ -261,16 +260,16 @@ class QueryDocumentTest {
             ItemRequirement(key = 1, item = null, kind = ItemKind.WAND, upgrade = 1, effect = EffectFilter.AnyEnchantment)
         }
         assertThrows(IllegalArgumentException::class.java) {
-            ItemRequirement(key = 1, item = sword, upgrade = 1, alternativeGroup = 1, upgradeSum = UpgradeSum(1, 1))
+            ItemRequirement(key = 1, item = sword, upgrade = 1, alternativeGroup = 1, levelSum = LevelSum(1, 1))
         }
         val valid = QueryDocument.encode(SearchRequest(listOf(ItemRequirement(key = 1, item = sword, upgrade = 1))))
         for (rejected in listOf(
             // A sum inside an alternative group.
-            """{"requirements":[{"any_of":[{"item":"ring_might","upgrade_sum":{"group":1,"at_least":2}},{"item":"sword"}]}]}""",
+            """{"requirements":[{"any_of":[{"item":"ring_might","level_sum":{"group":1,"at_least":2}},{"item":"sword"}]}]}""",
             // Members disagreeing on the total.
-            """{"requirements":[{"item":"ring_might","upgrade_sum":{"group":1,"at_least":2}},{"item":"ring_might","upgrade_sum":{"group":1,"at_least":3}}]}""",
+            """{"requirements":[{"item":"ring_might","level_sum":{"group":1,"at_least":2}},{"item":"ring_might","level_sum":{"group":1,"at_least":3}}]}""",
             // An unattainable total.
-            """{"requirements":[{"item":"ring_might","upgrade_sum":{"group":1,"at_least":9}}]}""",
+            """{"requirements":[{"item":"ring_might","level_sum":{"group":1,"at_least":9}}]}""",
             // A curses-only set on an uncursed item.
             """{"requirements":[{"kind":"weapon","uncursed":true,"effect":["Annoying","Sacrificial"]}]}""",
             // Nested groups.

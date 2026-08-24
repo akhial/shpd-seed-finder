@@ -272,8 +272,15 @@ export function joinAlternatives(requirements: RequirementState[], source: numbe
   const group = requirements[target].alternativeGroup ?? nextAlternativeGroup(requirements)
   if (requirements[source].alternativeGroup === group) return requirements
   let next = [...requirements]
+  // A copy has to name the kind it copies, so only a cluster that stays within
+  // one category can anchor a stack. When the join would mix categories the
+  // repeats simply stay the standalone chips they encode as.
+  const clusterMembers = requirements
+    .map((requirement, index) => ({ requirement, index }))
+    .filter(({ requirement, index }) => index === source || index === target || requirement.alternativeGroup === group)
+  const oneCategory = new Set(clusterMembers.map(({ requirement }) => requirementFamily(requirement))).size === 1
   // Trade plain repeats for identity copies so the stack survives the move.
-  for (const index of [source, target]) {
+  for (const index of oneCategory ? [source, target] : []) {
     const anchor = next[index]
     if (anchor.item === undefined || anchor.identityGroup !== undefined) continue
     const copies = next
@@ -390,16 +397,26 @@ export function applyEdit(
   let next: RequirementState[]
   let anchorIndex: number
   if (index === null) {
-    next = [...requirements, requirement]
+    next = [...requirements, { ...requirement }]
     anchorIndex = next.length - 1
   } else {
-    next = requirements.map((current, i) => (i === index ? { ...requirement, alternativeGroup: current.alternativeGroup } : current))
-    anchorIndex = index
+    const current = requirements[index]
+    // The copies belonged to the chip as it was, and the edit may have changed
+    // the very kind they copy — so the stack comes down here and is rebuilt
+    // below from the count and total the editor returned. A cluster member
+    // leaves its stack to the cluster and keeps its copies.
+    const doomed = current.alternativeGroup !== undefined
+      ? new Set<number>()
+      : new Set(boardItems(requirements).find((entry) => entry.members.includes(index))?.extras ?? [])
+    next = requirements
+      .map((existing, i) => (i === index ? { ...requirement, alternativeGroup: current.alternativeGroup } : existing))
+      .filter((_, i) => !doomed.has(i))
+    // Deleting the copies before the anchor pulls it down the list; normalize
+    // rewrites entries but never reorders them, so this stays right.
+    anchorIndex = index - [...doomed].filter((i) => i < index).length
   }
-  if (next[anchorIndex].alternativeGroup !== undefined) return normalize(next)
-  // Rebuild the stack around the edited anchor: the old copies are found on
-  // the collapsed board, then count and total are re-applied.
   next = normalize(next)
+  if (next[anchorIndex]?.alternativeGroup !== undefined) return next
   let item = boardItems(next).find((entry) => entry.members.includes(anchorIndex))
   if (!item) return next
   if (item.total !== undefined && total === undefined) {

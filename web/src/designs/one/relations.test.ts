@@ -185,4 +185,36 @@ describe('the editor round trip', () => {
     expect(requirements.filter((r) => r.item === 'ring_might')).toHaveLength(2)
     expect(validateQuery(asState(requirements)).valid).toBe(true)
   })
+
+  it('rebuilds the copies when the edit changes the anchor\'s category', () => {
+    let requirements = applyEdit([], null, req({ kind: 'wand' }), 3, undefined)
+    expect(requirements.every((r) => r.kind === 'wand')).toBe(true)
+    // The old copies named wands; the edited chip asks for rings, so the
+    // stack comes down and is rebuilt rather than keeping stale wands.
+    requirements = applyEdit(requirements, 0, req({ kind: 'ring' }), 3, undefined)
+    expect(requirements).toHaveLength(3)
+    expect(requirements.every((r) => r.kind === 'ring')).toBe(true)
+    expect(validateQuery(asState(requirements)).valid).toBe(true)
+  })
+
+  it('shrinking a level-sum stack from the editor drops its orphaned members', () => {
+    let requirements = applyEdit([], null, req({ item: 'ring_might', kind: 'ring' }), 3, 4)
+    expect(requirements).toHaveLength(3)
+    requirements = applyEdit(requirements, 0, req({ item: 'ring_might', kind: 'ring' }), 1, undefined)
+    expect(requirements).toHaveLength(1)
+    expect(requirements[0].levelSum).toBeUndefined()
+  })
+})
+
+describe('categories', () => {
+  it('a stack does not follow its chip into a cluster of another category', () => {
+    // A copy has to name the kind it copies, and "ring or wand" names none, so
+    // the second ring stays the standalone chip it already encodes as.
+    let requirements = applyEdit([], null, req({ item: 'ring_might', kind: 'ring' }), 2, undefined)
+    requirements = [...requirements, req({ kind: 'wand' })]
+    const joined = joinAlternatives(requirements, 0, 2)
+    expect(joined.some((r) => r.identityGroup !== undefined)).toBe(false)
+    expect(validateQuery(asState(joined)).valid).toBe(true)
+    expect(boardItems(joined)).toHaveLength(2)
+  })
 })

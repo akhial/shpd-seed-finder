@@ -12,7 +12,7 @@ import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.ScoutItemSource
 import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.UpgradeMatch
-import dev.seedseeker.app.model.UpgradeSum
+import dev.seedseeker.app.model.LevelSum
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -179,34 +179,37 @@ class ScoutMatcherTest {
     }
 
     @Test
-    fun aCombinedUpgradeGroupMarksAllOrNothing() {
-        // Two distinct rings whose levels add up to the total. Raising the total
-        // one step past what this world can reach marks nothing at all — the
-        // group is all-or-nothing — rather than the rings that fell short.
+    fun aCombinedLevelGroupMarksAllOrNothing() {
+        // Two rings whose levels — each item's upgrade plus one — add up to the
+        // total. The group is one scout condition, and its members are optional,
+        // so one upgraded ring can cover a small total alone. Raising the total
+        // past what this world can reach marks nothing at all rather than the
+        // rings that fell short.
         fun anyRing(key: Long, atLeast: Int) = ItemRequirement(
             key = key,
             item = null,
             kind = ItemKind.RING,
             upgrade = 0,
             upgradeMatch = UpgradeMatch.ANY,
-            upgradeSum = UpgradeSum(group = 1, atLeast = atLeast),
+            levelSum = LevelSum(group = 1, atLeast = atLeast),
         )
+        val capacity = 2 * (ItemKind.RING.maximumSearchUpgrade + 1)
         var reachable = 0
-        for (total in 1..(2 * ItemKind.RING.maximumSearchUpgrade)) {
+        for (total in 1..capacity) {
             val marks = marksFor(anyRing(1, total), anyRing(2, total))
-            assertEquals(2, marks.totalSlots)
+            assertEquals(1, marks.totalSlots)
             if (marks.items.isEmpty()) {
                 assertEquals(0, marks.matchedSlots)
                 break
             }
-            assertEquals(2, marks.items.size)
-            assertEquals(2, marks.matchedSlots)
+            assertEquals(1, marks.matchedSlots)
+            assertTrue("$marks", marks.items.size in 1..2)
             assertTrue(marks.items.all { world.items[it].item.kind == ItemKind.RING })
-            assertTrue("$marks", marks.items.sumOf { world.items[it].upgrade } >= total)
+            assertTrue("$marks", marks.items.sumOf { world.items[it].upgrade + 1 } >= total)
             reachable = total
         }
         assertTrue("no ring total is reachable in $SEED", reachable >= 1)
-        assertTrue("every total up to +8 was reachable", reachable < 2 * ItemKind.RING.maximumSearchUpgrade)
+        assertTrue("every total up to $capacity was reachable", reachable < capacity)
     }
 
     @Test

@@ -124,8 +124,8 @@ object ResultsExport {
         requirement.source?.let { put("source", it.name.lowercase()) }
         requirement.identityGroup?.let { put("identity_group", it) }
         requirement.maximumDepth?.let { put("max_depth", it) }
-        requirement.upgradeSum?.let {
-            put("upgrade_sum", JSONObject().put("group", it.group).put("at_least", it.atLeast))
+        requirement.levelSum?.let {
+            put("level_sum", JSONObject().put("group", it.group).put("at_least", it.atLeast))
         }
     }
 
@@ -211,6 +211,9 @@ object ResultsExport {
     }
 
     private fun decodeRequirement(entry: JSONObject, index: Int, key: Long): ItemRequirement {
+        require(!entry.has("upgrade_sum")) {
+            "upgrade_sum is no longer supported; use level_sum"
+        }
         val item = (entry.opt("item") as? String)?.let(ItemCatalog::findById)
         val kind = (entry.opt("kind") as? String)
             ?.let { name -> ItemKind.entries.firstOrNull { it.name.lowercase() == name } }
@@ -269,8 +272,8 @@ object ResultsExport {
             identityGroup = if (entry.has("identity_group")) entry.getInt("identity_group") else null,
             maximumDepth = if (entry.has("max_depth")) entry.getInt("max_depth") else null,
             requireUncursed = entry.optBoolean("uncursed"),
-            upgradeSum = entry.optJSONObject("upgrade_sum")?.let {
-                UpgradeSum(group = it.getInt("group"), atLeast = it.getInt("at_least"))
+            levelSum = entry.optJSONObject("level_sum")?.let {
+                LevelSum(group = it.getInt("group"), atLeast = it.getInt("at_least"))
             },
         )
     }

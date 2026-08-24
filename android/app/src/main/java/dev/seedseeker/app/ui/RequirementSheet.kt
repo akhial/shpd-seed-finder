@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -24,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -36,6 +38,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -67,9 +70,7 @@ import dev.seedseeker.app.model.ScoutItemSource
 import dev.seedseeker.app.model.SearchLimits
 import dev.seedseeker.app.model.TierMatch
 import dev.seedseeker.app.model.UpgradeMatch
-import dev.seedseeker.app.model.UpgradeSum
 import dev.seedseeker.app.model.floorLimitIndex
-import dev.seedseeker.app.model.groupLetter
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -83,12 +84,14 @@ private enum class EffectMode(val label: String) {
 }
 
 /**
- * The requirement editor. [requirements] is the whole list the row lives in:
- * the combined-upgrade slider reads the other members of a group from it, and
- * [onSave] receives the finished row — with [editing]'s key and alternative
- * group, or key 0 for a new row — for the caller to place.
+ * The requirement editor. It edits one chip — the anchor of its stack — plus
+ * the shape of that stack: [editingCount] items of the same kind, reaching
+ * [editingTotal] combined levels when a total is set. [onSave] hands the
+ * finished chip and stack shape back — with [editing]'s key and alternative
+ * group, or key 0 for a new chip — for the caller to place through
+ * `applyEdit`.
  *
- * [startWithItemPicker] opens an existing row on the item step, which is what
+ * [startWithItemPicker] opens an existing chip on the item step, which is what
  * a freshly forked alternative wants: the copy is meant to become a different
  * item.
  */
@@ -96,10 +99,11 @@ private enum class EffectMode(val label: String) {
 @Composable
 fun RequirementSheet(
     editing: ItemRequirement?,
-    requirements: List<ItemRequirement>,
+    editingCount: Int = 1,
+    editingTotal: Int? = null,
     startWithItemPicker: Boolean = false,
     onDismiss: () -> Unit,
-    onSave: (ItemRequirement) -> Unit,
+    onSave: (requirement: ItemRequirement, count: Int, total: Int?) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val identity = editing?.key ?: -1L
@@ -140,20 +144,19 @@ fun RequirementSheet(
     }
     var source by remember(identity) { mutableStateOf(editing?.source) }
     var sourceMenuExpanded by remember(identity) { mutableStateOf(false) }
-    var identityGroup by remember(identity) { mutableStateOf(editing?.identityGroup) }
     var maximumDepth by remember(identity) { mutableStateOf(editing?.maximumDepth) }
     var requireUncursed by remember(identity) { mutableStateOf(editing?.requireUncursed ?: false) }
-    var sumGroup by remember(identity) { mutableStateOf(editing?.upgradeSum?.group) }
-    var sumAtLeast by remember(identity) { mutableStateOf(editing?.upgradeSum?.atLeast ?: 1) }
+    // The stack this chip anchors: how many items of its kind to find, and the
+    // combined level they must reach together (null when it just wants copies).
+    var stackCount by remember(identity) { mutableStateOf(editingCount.coerceIn(1, SearchLimits.STACK_MAX)) }
+    var stackTotal by remember(identity) { mutableStateOf(editingTotal) }
 
-    // Alternatives of one slot may not carry a combined-upgrade group.
+    // A member of an either/or cluster leaves the stack to the cluster itself.
     val inAlternativeGroup = editing?.alternativeGroup != null
     val draftMaximumUpgrade = if (upgradeMatch == UpgradeMatch.EXACT) upgrade else kind.maximumSearchUpgrade
-    // The other members of the chosen group, whose totals this row will share.
-    val sumSiblings = sumGroup?.let { group ->
-        requirements.filter { it.key != identity && it.upgradeSum?.group == group }
-    }.orEmpty()
-    val sumMaximum = draftMaximumUpgrade + sumSiblings.sumOf { it.maximumUpgrade }
+    // Every item of a stack that counts levels is a copy of the anchor, and each
+    // contributes its upgrade plus one.
+    val levelCapacity = (draftMaximumUpgrade + 1) * stackCount
 
     fun clampUpgrade(match: UpgradeMatch, forKind: ItemKind) {
         upgrade = normalizedUpgrade(upgrade, match, forKind)
@@ -179,15 +182,11 @@ fun RequirementSheet(
             tierMatch = tierMatch,
             upgradeMatch = upgradeMatch,
             source = source,
-            identityGroup = identityGroup,
+            identityGroup = editing?.identityGroup,
             maximumDepth = maximumDepth,
             requireUncursed = requireUncursed,
             alternativeGroup = editing?.alternativeGroup,
-            upgradeSum = if (inAlternativeGroup) {
-                null
-            } else {
-                sumGroup?.let { UpgradeSum(it, sumAtLeast.coerceIn(1, maxOf(1, sumMaximum))) }
-            },
+            levelSum = editing?.levelSum,
         )
     }
 
@@ -678,77 +677,73 @@ fun RequirementSheet(
                             },
                         )
 
-                        Spacer(Modifier.height(18.dp))
-                        Text("Same-item group", style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            "Requirements sharing a letter must resolve to the same item type, using distinct copies.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        GroupPicker(
-                            selected = identityGroup,
-                            groupMax = SearchLimits.IDENTITY_GROUP_MAX,
-                            onSelect = { identityGroup = it },
-                        )
-
                         if (!inAlternativeGroup) {
                             Spacer(Modifier.height(18.dp))
-                            Text("Combined upgrade group", style = MaterialTheme.typography.titleSmall)
-                            Text(
-                                "Distinct items sharing a letter must have upgrade levels that add up to the group's total.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            GroupPicker(
-                                selected = sumGroup,
-                                groupMax = SearchLimits.UPGRADE_SUM_GROUP_MAX,
-                                onSelect = { group ->
-                                    sumGroup = group
-                                    if (group != null) {
-                                        // Joining a group adopts its total; every member shares one.
-                                        val shared = requirements
-                                            .firstOrNull { it.key != identity && it.upgradeSum?.group == group }
-                                            ?.upgradeSum?.atLeast
-                                        if (shared != null) sumAtLeast = shared
-                                    }
-                                },
-                            )
-                            if (sumGroup != null) {
-                                val total = sumAtLeast.coerceIn(1, maxOf(1, sumMaximum))
-                                Spacer(Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text("How many", style = MaterialTheme.typography.titleSmall)
+                                Spacer(Modifier.weight(1f))
+                                Stepper(
+                                    value = stackCount,
+                                    range = 1..SearchLimits.STACK_MAX,
+                                    label = { "×$it" },
+                                    onChange = { count ->
+                                        stackCount = count
+                                        // A shrinking stack cannot keep a total its items
+                                        // can no longer reach.
+                                        stackTotal = stackTotal?.coerceAtMost((draftMaximumUpgrade + 1) * count)
+                                    },
+                                )
+                            }
+                            if (stackCount > 1 && selectedItem != null) {
+                                val total = stackTotal
+                                Spacer(Modifier.height(12.dp))
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Text("Total at least", style = MaterialTheme.typography.labelLarge)
-                                    Text(
-                                        "+$total",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = MaterialTheme.colorScheme.primary,
+                                    Column(Modifier.weight(1f)) {
+                                        Text("Combined level", style = MaterialTheme.typography.titleSmall)
+                                        Text(
+                                            "Each item counts its upgrade plus one, and spare " +
+                                                "items may go unused.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Switch(
+                                        checked = total != null,
+                                        onCheckedChange = { on ->
+                                            stackTotal = if (on) levelCapacity.coerceAtLeast(1) else null
+                                        },
                                     )
                                 }
-                                // A one-item group can only ask for +1; the track still needs two ends.
-                                val sliderMaximum = maxOf(2, sumMaximum)
-                                Slider(
-                                    value = total.toFloat(),
-                                    onValueChange = { sumAtLeast = it.roundToInt() },
-                                    valueRange = 1f..sliderMaximum.toFloat(),
-                                    steps = sliderMaximum - 2,
-                                    enabled = sumMaximum > 1,
-                                    modifier = Modifier.semantics { stateDescription = "Total at least +$total" },
-                                )
-                                Text(
-                                    if (sumSiblings.isEmpty()) {
-                                        "Only this item so far: add more items to group ${groupLetter(sumGroup!!)} to raise the total."
-                                    } else {
-                                        "Shared with ${sumSiblings.size} other item${if (sumSiblings.size == 1) "" else "s"} " +
-                                            "in group ${groupLetter(sumGroup!!)}; together they can carry up to +$sumMaximum."
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                                if (total != null) {
+                                    val clamped = total.coerceIn(1, maxOf(1, levelCapacity))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Text("Levels together", style = MaterialTheme.typography.labelLarge)
+                                        Text(
+                                            "≥ $clamped of $levelCapacity",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                    val sliderMaximum = maxOf(2, levelCapacity)
+                                    Slider(
+                                        value = clamped.toFloat(),
+                                        onValueChange = { stackTotal = it.roundToInt() },
+                                        valueRange = 1f..sliderMaximum.toFloat(),
+                                        steps = sliderMaximum - 2,
+                                        modifier = Modifier.semantics {
+                                            stateDescription = "Combined level at least $clamped"
+                                        },
+                                    )
+                                }
                             }
                         }
                         Spacer(Modifier.height(14.dp))
@@ -766,7 +761,11 @@ fun RequirementSheet(
                                 Text("Back")
                             }
                             Button(
-                                onClick = { draft.getOrNull()?.let(onSave) },
+                                onClick = {
+                                    draft.getOrNull()?.let {
+                                        onSave(it, stackCount, if (inAlternativeGroup) null else stackTotal)
+                                    }
+                                },
                                 enabled = draft.isSuccess,
                                 modifier = Modifier
                                     .weight(1f)
@@ -792,41 +791,33 @@ private fun normalizedUpgrade(value: Int, match: UpgradeMatch, kind: ItemKind): 
     UpgradeMatch.AT_LEAST -> value.coerceIn(1, kind.maximumSearchUpgrade - 1)
 }
 
-/** None / A–D toggle row shared by the same-item and combined-upgrade pickers. */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+/** A compact −/+ stepper for the small bounded counts the board deals in. */
 @Composable
-private fun GroupPicker(
-    selected: Int?,
-    groupMax: Int,
-    onSelect: (Int?) -> Unit,
+private fun Stepper(
+    value: Int,
+    range: IntRange,
+    label: (Int) -> String,
+    onChange: (Int) -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-    ) {
-        ToggleButton(
-            checked = selected == null,
-            onCheckedChange = { if (it) onSelect(null) },
-            modifier = Modifier.weight(1f),
-            colors = ToggleButtonDefaults.toggleButtonColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            ),
-            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        IconButton(
+            onClick = { onChange(value - 1) },
+            enabled = value > range.first,
         ) {
-            Text("None", maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("−", style = MaterialTheme.typography.titleLarge)
         }
-        (1..groupMax).forEach { group ->
-            ToggleButton(
-                checked = selected == group,
-                onCheckedChange = { if (it) onSelect(group) },
-                modifier = Modifier.weight(1f),
-                colors = ToggleButtonDefaults.toggleButtonColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                ),
-                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
-            ) {
-                Text(groupLetter(group).toString())
-            }
+        Text(
+            label(value),
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.widthIn(min = 40.dp),
+            textAlign = TextAlign.Center,
+        )
+        IconButton(
+            onClick = { onChange(value + 1) },
+            enabled = value < range.last,
+        ) {
+            Text("+", style = MaterialTheme.typography.titleLarge)
         }
     }
 }

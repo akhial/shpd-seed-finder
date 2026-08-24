@@ -33,7 +33,7 @@ class EngineConstantsTest {
         assertEquals(limits.getInt("exactTierMin")..limits.getInt("exactTierMax"), SearchLimits.EXACT_TIERS)
         assertEquals(limits.getInt("boundedTierMin")..limits.getInt("boundedTierMax"), SearchLimits.BOUNDED_TIERS)
         assertEquals(limits.getInt("identityGroupMax"), SearchLimits.IDENTITY_GROUP_MAX)
-        assertEquals(limits.getInt("upgradeSumGroupMax"), SearchLimits.UPGRADE_SUM_GROUP_MAX)
+        assertEquals(limits.getInt("levelSumGroupMax"), SearchLimits.LEVEL_SUM_GROUP_MAX)
         assertEquals(limits.getInt("maxUpgradeDefault"), SearchLimits.MAX_UPGRADE_DEFAULT)
         assertEquals(limits.getInt("maxUpgradeRing"), SearchLimits.MAX_UPGRADE_RING)
         // The families route to the right maximum, narrowed weapon kinds included.
