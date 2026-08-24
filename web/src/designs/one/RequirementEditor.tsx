@@ -332,19 +332,21 @@ export function RequirementEditor({
 
           {!stack.inCluster && (
             <section className="d1-modal-section">
-              <h3>How many</h3>
-              <Stepper
-                value={count}
-                min={1}
-                max={STACK_MAX}
-                format={(value) => `×${value}`}
-                onChange={(value) => {
-                  setCount(value)
-                  if (value < 2) setTotal(undefined)
-                  else if (total !== undefined) setTotal(clamp(total, 1, value * (maxUpgrade + 1)))
-                }}
-                ariaLabel="How many of this"
-              />
+              <div className="d1-modal-section-head">
+                <h3>Reforging duplicates</h3>
+                <Stepper
+                  value={count}
+                  min={1}
+                  max={STACK_MAX}
+                  format={(value) => `×${value}`}
+                  onChange={(value) => {
+                    setCount(value)
+                    if (value < 2) setTotal(undefined)
+                    else if (total !== undefined) setTotal(clamp(total, 1, value * (maxUpgrade + 1)))
+                  }}
+                  ariaLabel="How many of this"
+                />
+              </div>
               {count > 1 && effectiveTotal === undefined && (
                 <>
                   <label className="d1-check">

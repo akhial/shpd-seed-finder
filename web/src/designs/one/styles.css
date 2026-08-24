@@ -2071,6 +2071,18 @@ input[type='range']::-moz-range-thumb {
 
 .d1-modal-section .d1-seg { margin-bottom: 2px; }
 
+/* A section whose control sits on the title row, right-aligned — the
+   stepper is too small to deserve a row of its own. */
+.d1-modal-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.d1-modal-section-head h3 { margin: 0; }
+
 .d1-editor-errors {
   margin: 6px 0 0;
   padding: 8px 11px 8px 26px;
