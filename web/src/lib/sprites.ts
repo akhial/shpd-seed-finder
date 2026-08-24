@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react'
 import spriteBounds from '../generated/sprite-bounds.json'
+import type { Glow } from './glow'
 
 const SHEET_URL = '/third_party/shattered-pixel-dungeon/items.png'
 const SHEET_COLUMNS = 16
@@ -104,25 +105,35 @@ export function spriteBoxCss(index: number, size: number): SpriteBoxCss {
   }
 }
 
+/** How much gradient one glow's turn occupies, and its blend into the next. */
+const GLOW_BAND = 160
+const GLOW_FADE = 12
+
 /**
  * Overlay CSS for an enchantment/curse glow, sized to sit exactly on top of the
  * `inner` sprite art (as its child, inset 0). A solid colour layer is masked to
  * the sprite's opaque pixels so only the art tints; animating the layer's
- * opacity from 0 to 0.6 blends the sprite toward `color`, reproducing upstream's
- * `texel*(1-value) + glow*value` glow shader. The pulse period is supplied via
- * the `.d1-sprite-glow` animation; `2 × period` seconds per full cycle.
+ * opacity from 0 to 0.6 blends the sprite toward the glow colour, reproducing
+ * upstream's `texel*(1-value) + glow*value` glow shader. The pulse period is
+ * supplied via the `.d1-sprite-glow` animation; `2 x period` seconds per cycle.
+ *
+ * Given several glows the sprite takes them in turn, one pulse each: the layer
+ * is painted with a wide band per colour and scrolled by exactly one band per
+ * pulse, so the colour under the sprite only ever changes as the pulse passes
+ * through its trough and the swap is never seen. Turns are equal and the whole
+ * round lasts the sum of the glows' cycles, matching the many-effects badge, so
+ * a chip's sprite and badge move through the colours together.
  */
-export function spriteGlowCss(index: number, size: number, color: string, period: number): CSSProperties {
+export function spriteGlowCss(index: number, size: number, glows: Glow[]): CSSProperties {
   const scale = size / CELL
   const col = index % SHEET_COLUMNS
   const row = Math.floor(index / SHEET_COLUMNS)
   const [x, y] = bounds[String(index)] ?? [0, 0, CELL, CELL]
   const maskPosition = `${-(col * CELL + x) * scale}px ${-(row * CELL + y) * scale}px`
   const maskSize = `${SHEET_COLUMNS * CELL * scale}px auto`
-  return {
+  const base: CSSProperties = {
     position: 'absolute',
     inset: 0,
-    backgroundColor: color,
     WebkitMaskImage: `url(${SHEET_URL})`,
     maskImage: `url(${SHEET_URL})`,
     WebkitMaskPosition: maskPosition,
@@ -131,7 +142,31 @@ export function spriteGlowCss(index: number, size: number, color: string, period
     maskSize,
     WebkitMaskRepeat: 'no-repeat',
     maskRepeat: 'no-repeat',
-    animationDuration: `${2 * period}s`,
     pointerEvents: 'none',
   }
+  if (glows.length < 2) {
+    return {
+      ...base,
+      backgroundColor: glows[0]?.color,
+      animationDuration: `${2 * (glows[0]?.period ?? 1)}s`,
+    }
+  }
+  const round = glows.reduce((total, glow) => total + glow.period * 2, 0)
+  const width = glows.length * GLOW_BAND
+  const stops = glows.flatMap((glow, band) => [
+    `${glow.color} ${band * GLOW_BAND}px`,
+    `${glow.color} ${(band + 1) * GLOW_BAND - GLOW_FADE}px`,
+  ])
+  stops.push(`${glows[0].color} ${width}px`)
+  return {
+    ...base,
+    backgroundImage: `linear-gradient(90deg, ${stops.join(', ')})`,
+    backgroundSize: `${width}px 100%`,
+    backgroundRepeat: 'repeat',
+    // Start with a band boundary halfway across the sprite: that is where the
+    // pulse begins, at zero opacity, so every later swap lands there too.
+    '--d1-glow-from': `${size / 2}px`,
+    '--d1-glow-to': `${size / 2 - width}px`,
+    animationDuration: `${round / glows.length}s, ${round}s`,
+  } as CSSProperties
 }

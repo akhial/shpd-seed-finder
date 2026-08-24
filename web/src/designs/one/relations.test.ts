@@ -247,12 +247,12 @@ describe('copy floor limits', () => {
   })
 
   it('a wildcard stack limits its bare copies without constraining them otherwise', () => {
-    let requirements = applyEdit([], null, req({ kind: 'wand', upgrade: { mode: 'at_least', value: 2 } }), 3, undefined, 9)
+    let requirements = applyEdit([], null, req({ kind: 'wand', upgrade: { mode: 'at_least', value: 2 } }), 2, undefined, 9)
     expect(requirements.slice(1).every((r) => r.maxDepth === 9 && r.upgrade.mode === 'any')).toBe(true)
     expect(validateQuery(asState(requirements)).valid).toBe(true)
     // Growing the stack from the chip badge keeps the copies' floor.
-    requirements = setStackCount(requirements, item(requirements, 0), 4)
-    expect(requirements).toHaveLength(4)
+    requirements = setStackCount(requirements, item(requirements, 0), 3)
+    expect(requirements).toHaveLength(3)
     expect(requirements.slice(1).every((r) => r.maxDepth === 9)).toBe(true)
   })
 

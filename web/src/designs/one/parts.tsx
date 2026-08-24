@@ -12,11 +12,15 @@ export function Sprite({
   index: number
   size?: number
   label?: string
-  /** Enchantment/curse glow that pulses the icon, matching the game. */
-  glow?: Glow | null
+  /**
+   * Enchantment/curse glow that pulses the icon, matching the game. Several
+   * glows pulse in turn, one after another.
+   */
+  glow?: Glow | Glow[] | null
 }) {
   const box = spriteBoxCss(index, size)
   const ringIcon = ringIconCss(index, size)
+  const glows = glow ? (Array.isArray(glow) ? glow : [glow]) : []
   return (
     <span
       className="d1-sprite"
@@ -26,7 +30,12 @@ export function Sprite({
       style={box.outer}
     >
       <span style={box.inner}>
-        {glow && <span className="d1-sprite-glow" style={spriteGlowCss(index, size, glow.color, glow.period)} />}
+        {glows.length > 0 && (
+          <span
+            className={glows.length > 1 ? 'd1-sprite-glow d1-sprite-glow-seq' : 'd1-sprite-glow'}
+            style={spriteGlowCss(index, size, glows)}
+          />
+        )}
       </span>
       {ringIcon && <span style={ringIcon} />}
     </span>

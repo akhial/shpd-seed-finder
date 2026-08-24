@@ -36,7 +36,7 @@ export const IDENTITY_GROUP_MAX = 4
 export const LEVEL_SUM_GROUP_MAX = 4
 
 /** The most items a stack may ask for, its anchor included. */
-export const STACK_MAX = 4
+export const STACK_MAX = 3
 
 /** The highest upgrade a search may name for an item family. */
 export const MAX_UPGRADE_DEFAULT = 3

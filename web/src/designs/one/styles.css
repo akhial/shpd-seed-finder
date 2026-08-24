@@ -986,7 +986,7 @@ input[type='range']::-moz-range-thumb {
   align-items: center;
   gap: 6px;
   height: 30px;
-  padding: 0 8px 0 6px;
+  padding: 0 8px 0 9px;
   font: inherit;
   font-size: 13px;
   font-weight: 600;
@@ -1005,6 +1005,8 @@ input[type='range']::-moz-range-thumb {
 .d1-chip:hover { border-color: #555c6c; }
 .d1-chip:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--d1-amber-dim), 0 0 0 1px var(--d1-amber); }
 .d1-chip-name { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+/* The name belongs to the sprite beside it, so it sits closer than the tags do. */
+.d1-chip > .d1-sprite { margin-right: -8px; }
 
 .d1-chip-tag {
   padding: 0 4px;
@@ -2312,6 +2314,21 @@ input[type='range']::-moz-range-thumb {
   animation-name: d1-ench-pulse;
   animation-timing-function: linear;
   animation-iteration-count: infinite;
+}
+
+/*
+ * Several glows in turn: the pulse keeps its own cadence while the colour bands
+ * painted across the layer scroll by exactly one band per pulse, so each colour
+ * holds for one full fade-in/out and the hand-over happens at the trough, where
+ * nothing shows. Both durations are set inline, in the order named here.
+ */
+.d1-sprite-glow-seq {
+  animation-name: d1-ench-pulse, d1-glow-turn;
+}
+
+@keyframes d1-glow-turn {
+  from { background-position: var(--d1-glow-from) 0; }
+  to { background-position: var(--d1-glow-to) 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

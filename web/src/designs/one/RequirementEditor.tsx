@@ -333,7 +333,7 @@ export function RequirementEditor({
           {!stack.inCluster && (
             <section className="d1-modal-section">
               <div className="d1-modal-section-head">
-                <h3>Reforging duplicates</h3>
+                <h3>Total item count</h3>
                 <Stepper
                   value={count}
                   min={1}

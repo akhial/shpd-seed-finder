@@ -340,7 +340,7 @@ export function RequirementBoard({
         onFocus={(event) => setHovered(index, event.currentTarget)}
         onBlur={() => { if (hoveredIndex === index) setHovered(null) }}
       >
-        <Sprite index={requirementSprite(requirement)} size={18} glow={glow} />
+        <Sprite index={requirementSprite(requirement)} size={18} glow={glows} />
         <span className="d1-chip-name">{chipName(requirement)}</span>
         {chipTags(requirement).map((tag) => (
           <span key={tag.text} className={tag.upgrade ? 'd1-chip-tag d1-chip-tag-up' : 'd1-chip-tag'}>{tag.text}</span>
