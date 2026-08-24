@@ -371,14 +371,17 @@ export function RequirementBoard({
         {chipTags(requirement).map((tag) => (
           <span key={tag.text} className={tag.upgrade ? 'd1-chip-tag d1-chip-tag-up' : 'd1-chip-tag'}>{tag.text}</span>
         ))}
+        {/* A single glow wants no badge of its own: the sprite is already
+            pulsing that very colour, and the hover card names it. What is left
+            for a badge is what one pulse cannot say — several effects at once,
+            or "any enchantment", which settles on no colour. */}
         {effect && (glows.length > 1 ? (
           <span className="d1-chip-effect d1-chip-effect-multi" style={effectRingCss(glows)} title={effect}>
             {glows.length}
           </span>
-        ) : (
+        ) : glow ? null : (
           <span
-            className={`d1-chip-effect${isAnyEnchantment(requirement.effect) ? ' d1-chip-effect-any' : glow ? '' : ' d1-chip-effect-curse'}`}
-            style={glow ? { background: glow.color } : undefined}
+            className={`d1-chip-effect ${isAnyEnchantment(requirement.effect) ? 'd1-chip-effect-any' : 'd1-chip-effect-curse'}`}
             title={effect}
           />
         ))}
