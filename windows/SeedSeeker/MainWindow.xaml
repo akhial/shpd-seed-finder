@@ -48,61 +48,26 @@
               </Grid>
             </StackPanel>
             <TextBlock Text="Requirements" Style="{StaticResource SectionHeader}" Margin="1,2,0,8"/>
-            <!-- One entry per slot: a plain requirement row, or an "any of these"
-                 card listing the alternatives of one slot with OR separators. The
-                 code-behind rebuilds the slot views from the query on every change. -->
-            <ItemsRepeater x:Name="RequirementList">
-              <ItemsRepeater.Layout><StackLayout Spacing="4"/></ItemsRepeater.Layout>
-              <ItemsRepeater.ItemTemplate>
-                <DataTemplate>
-                  <Border BorderThickness="{Binding CardBorder}" Padding="{Binding CardPadding}" CornerRadius="6"
-                          BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}">
-                    <StackPanel Spacing="4">
-                      <TextBlock Text="{Binding Header}" Visibility="{Binding HeaderVisibility}" Style="{StaticResource Caption}" Margin="2,0,0,2"/>
-                      <ItemsRepeater ItemsSource="{Binding Rows}">
-                        <ItemsRepeater.Layout><StackLayout Spacing="4"/></ItemsRepeater.Layout>
-                        <ItemsRepeater.ItemTemplate>
-                          <DataTemplate>
-                            <StackPanel Spacing="4">
-                              <TextBlock Text="OR" Visibility="{Binding OrVisibility}" Style="{StaticResource Caption}" HorizontalAlignment="Center" FontWeight="SemiBold"/>
-                              <Button Style="{StaticResource CardButton}" Click="Requirement_Click">
-                                <Grid ColumnSpacing="12">
-                                  <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                  <!-- The real item sprite when one is pinned; the generic
-                                       Fluent glyph only for wildcard requirements. -->
-                                  <Grid Width="24" Height="24" VerticalAlignment="Center">
-                                    <FontIcon Glyph="{Binding Requirement.Glyph}" Foreground="{Binding Requirement.Tint}" FontSize="16"
-                                              Visibility="{Binding Requirement.FallbackVisibility}"/>
-                                    <local:SpriteView SpriteIndex="{Binding Requirement.SpriteIndex}" SpriteSize="24"
-                                                      GlowColor="{Binding Requirement.GlowColor}" GlowPeriod="{Binding Requirement.GlowPeriod}"
-                                                      Visibility="{Binding Requirement.SpriteVisibility}"/>
-                                  </Grid>
-                                  <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding Requirement.Title}" TextWrapping="Wrap"/>
-                                    <TextBlock Text="{Binding Requirement.Description}" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
-                                  </StackPanel>
-                                  <Button Grid.Column="2" Style="{StaticResource SubtleIconButton}" Tag="{Binding Requirement}" Click="RemoveRequirement_Click" ToolTipService.ToolTip="Remove requirement" VerticalAlignment="Center" Margin="0,0,-6,0">
-                                    <FontIcon Glyph="&#xE711;" FontSize="12"/>
-                                  </Button>
-                                </Grid>
-                              </Button>
-                            </StackPanel>
-                          </DataTemplate>
-                        </ItemsRepeater.ItemTemplate>
-                      </ItemsRepeater>
-                    </StackPanel>
-                  </Border>
-                </DataTemplate>
-              </ItemsRepeater.ItemTemplate>
-            </ItemsRepeater>
-            <TextBlock x:Name="NoRequirements" Text="No requirements yet. Add one to describe the item you're hunting for." Style="{StaticResource Caption}" Margin="1,0,1,10"/>
-            <Button Click="AddRequirement_Click" HorizontalAlignment="Stretch" Margin="0,4,0,0">
-              <StackPanel Orientation="Horizontal" Spacing="8">
-                <FontIcon Glyph="&#xE710;" FontSize="13"/><TextBlock Text="Add requirement"/>
+            <!-- The requirement board: one chip per requirement, the members of
+                 an either/or cluster sharing a dashed capsule, stack badges at
+                 the trailing edge. The code-behind rebuilds it from
+                 QueryRelationships.BoardItems on every change; dropping a chip
+                 on another makes an either/or, and dropping one on the board
+                 itself takes it out of its cluster. -->
+            <local:WrapPanel x:Name="RequirementBoard" Spacing="6" LineSpacing="8" MinHeight="34"
+                             Background="Transparent" AllowDrop="True"
+                             DragOver="Board_DragOver" Drop="Board_Drop"/>
+            <!-- Only there while a chip is in flight: the pointer's way to delete. -->
+            <Border x:Name="RemoveZone" Visibility="Collapsed" AllowDrop="True"
+                    DragOver="RemoveZone_DragOver" Drop="RemoveZone_Drop"
+                    Margin="0,8,0,0" Padding="0,8" CornerRadius="10" BorderThickness="1"
+                    Background="Transparent" BorderBrush="{ThemeResource SystemFillColorCriticalBrush}">
+              <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                <FontIcon Glyph="&#xE74D;" FontSize="12" Foreground="{ThemeResource SystemFillColorCriticalBrush}"/>
+                <TextBlock Text="drop to remove" FontSize="12" FontWeight="SemiBold" Foreground="{ThemeResource SystemFillColorCriticalBrush}"/>
               </StackPanel>
-              <Button.KeyboardAccelerators><KeyboardAccelerator Modifiers="Control" Key="N"/></Button.KeyboardAccelerators>
-            </Button>
-
+            </Border>
+            <TextBlock x:Name="NoRequirements" Text="No requirements yet. Add one to describe the item you're hunting for." Style="{StaticResource Caption}" Margin="1,0,1,10"/>
             <TextBlock Text="Search scope" Style="{StaticResource SectionHeader}"/>
             <Border Style="{StaticResource SettingsCard}">
               <StackPanel>

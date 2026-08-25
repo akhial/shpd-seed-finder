@@ -188,6 +188,9 @@ public sealed class EffectFilter
 /// </summary>
 public sealed record LevelSum(int Group, int AtLeast);
 
+/// <summary>A tiny qualifier beside a chip's name; the upgrade is tinted apart from the rest.</summary>
+public sealed record ChipTag(string Text, bool Upgrade = false);
+
 public sealed partial class ItemRequirement
 {
     public long Key { get; set; } = Random.Shared.NextInt64(1, long.MaxValue);
@@ -235,6 +238,26 @@ public sealed partial class ItemRequirement
             if (LevelSum is { } sum) parts.Add($"levels \u2265 {sum.AtLeast} together");
             if (MaximumDepth is int d) parts.Add($"by floor {d}");
             return string.Join(" \u2022 ", parts);
+        }
+    }
+    /// <summary>The short name a chip shows: the item, or its wildcard family.</summary>
+    [JsonIgnore] public string ShortTitle => Item?.Name ?? (Kind switch
+    {
+        ItemKind.MeleeWeapon => "Any melee", ItemKind.ThrownWeapon => "Any thrown", _ => $"Any {Labels.Singular(Kind)}",
+    });
+    /// <summary>The tiny qualifiers beside a chip's name: tier (wildcards only), upgrade, floor.</summary>
+    [JsonIgnore] public IReadOnlyList<ChipTag> Tags
+    {
+        get
+        {
+            var tags = new List<ChipTag>();
+            if (Item is null && TierMatch == TierMatch.Exactly) tags.Add(new($"T{Tier}"));
+            if (Item is null && TierMatch == TierMatch.AtLeast) tags.Add(new($"T{Tier}+"));
+            if (Item is null && TierMatch == TierMatch.AtMost) tags.Add(new($"T\u2264{Tier}"));
+            if (UpgradeMatch == UpgradeMatch.Exactly) tags.Add(new($"+{Upgrade}", true));
+            if (UpgradeMatch == UpgradeMatch.AtLeast) tags.Add(new($"+{Upgrade}\u2191", true));
+            if (MaximumDepth is int depth) tags.Add(new($"F\u2264{depth}"));
+            return tags;
         }
     }
     /// <summary>
@@ -773,6 +796,39 @@ public static class QueryRelationships
         next = SetStackCount(next, item, count);
         if (ItemOf(next, anchorIndex) is not { } refreshed) return next;
         return total is int atLeast ? SetStackTotal(next, refreshed, atLeast) : SetCopyDepth(next, refreshed, copyDepth);
+    }
+
+    /// <summary>
+    /// The chip's hover detail: its title, what it asks of one item, the
+    /// relationships it stands in, and the problem the engine would reject it
+    /// for. One line each, as the web board's popover has them.
+    /// </summary>
+    public static string ChipDetail(IReadOnlyList<ItemRequirement> requirements, int index, BoardItem? item, string? problem)
+    {
+        var requirement = requirements[index];
+        var lines = new List<string> { requirement.Title };
+        var facts = new List<string>();
+        if (requirement.UpgradeMatch == UpgradeMatch.Exactly) facts.Add($"exactly +{requirement.Upgrade}");
+        else if (requirement.UpgradeMatch == UpgradeMatch.AtLeast) facts.Add($"+{requirement.Upgrade} or higher");
+        // A combined level speaks for the stack's upgrades, so the chip's own says nothing.
+        else if (item?.Total is null) facts.Add("any upgrade");
+        if (requirement.Effect.Describe() is string effect) facts.Add(effect);
+        if (requirement.RequireUncursed) facts.Add("uncursed");
+        if (requirement.Source is ScoutItemSource source) facts.Add(Labels.Source(source));
+        if (requirement.MaximumDepth is int depth) facts.Add($"floors 1\u2013{depth}");
+        if (facts.Count > 0) lines.Add(string.Join(" \u00b7 ", facts));
+        if (requirement.AlternativeGroup is int cluster)
+            lines.Add($"or {string.Join(", ", requirements.Where((other, position) => position != index && other.AlternativeGroup == cluster).Select(other => other.ShortTitle))}");
+        if (item is { Total: int total }) lines.Add($"\u03a3 up to {item.StackCount} \u2014 levels add to \u2265 {total}");
+        else if (item is not null && item.StackCount > 1)
+        {
+            // The chip's own bounds (+3, floors 1–4) describe one copy, not the extras.
+            var depths = item.Extras.Select(extra => requirements[extra].MaximumDepth).Distinct().ToList();
+            var floors = depths.Count > 1 ? "own floor limits" : depths[0] is int only ? $"floors 1\u2013{only}" : "any floor";
+            lines.Add($"\u00d7 {item.StackCount} of the same kind \u2014 the extra copies: any upgrade, {floors}");
+        }
+        if (problem is not null) lines.Add(problem);
+        return string.Join("\n", lines);
     }
 
     /// <summary>

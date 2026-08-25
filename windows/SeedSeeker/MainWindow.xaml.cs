@@ -233,7 +233,7 @@ public sealed partial class MainWindow : Window
     }
     private void RefreshQuery()
     {
-        RequirementList.ItemsSource = RequirementSlotView.Build(query.Requirements); NoRequirements.Visibility = query.Requirements.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        BuildBoard(); NoRequirements.Visibility = QueryRelationships.BoardCount(query.Requirements) == 0 ? Visibility.Visible : Visibility.Collapsed;
         FloorLabel.Text = $"first {query.MaximumDepth} floor{(query.MaximumDepth == 1 ? "" : "s")}"; RequireBlacksmith.IsEnabled = query.MaximumDepth < ScoutQuests.Window(QuestGiver.Blacksmith).Last; StartButton.IsEnabled = search is not null || (!busy && query.Requirements.Count != 0); CopyLinkButton.IsEnabled = !searchRunning && query.Requirements.Count != 0;
         var count = BitOperations.PopCount((uint)query.Challenges); ChallengeSummary.Text = count == 0 ? "None" : $"{count} enabled";
     }
@@ -276,12 +276,372 @@ public sealed partial class MainWindow : Window
         query.Requirements = new ObservableCollection<ItemRequirement>(requirements);
         RefreshQuery(); SaveSettings();
     }
-    private async void Requirement_Click(object sender, RoutedEventArgs e)
+
+    // ---- the requirement board ----------------------------------------------
+    // Every requirement is a chip: drop one chip onto another for an either/or
+    // cluster, drag a chip out of its cluster onto the empty board to make it
+    // standalone again, drop it on the zone below to remove it. Everything else
+    // is a property of the chip itself — a stack badge (×N / ≤N) for "more of
+    // the same kind", and a Σ badge for a stack counting its levels together.
+    // The board is rebuilt from QueryRelationships.BoardItems on every change.
+
+    /// <summary>The key of the chip in flight, while a drag is on.</summary>
+    private long? draggingKey;
+
+    private static Brush ChipFill => ThemeBrush("CardBackgroundFillColorSecondaryBrush", Microsoft.UI.Colors.Transparent);
+    private static Brush ChipEdge => ThemeBrush("CardStrokeColorDefaultBrush", Microsoft.UI.Colors.Gray);
+    private static Brush DangerInk => ThemeBrush("SystemFillColorCriticalBrush", Microsoft.UI.Colors.IndianRed);
+    private static Brush CautionInk => ThemeBrush("SystemFillColorCautionBrush", Microsoft.UI.Colors.Goldenrod);
+    private static Brush CautionFill => ThemeBrush("SystemFillColorCautionBackgroundBrush", Microsoft.UI.Colors.Transparent);
+    private static Brush SuccessInk => ThemeBrush("SystemFillColorSuccessBrush", Microsoft.UI.Colors.MediumSeaGreen);
+    private static Brush SuccessFill => ThemeBrush("SystemFillColorSuccessBackgroundBrush", Microsoft.UI.Colors.Transparent);
+    private static FontFamily Mono => new("Cascadia Mono, Consolas");
+
+    /// <summary>The index of the requirement carrying <paramref name="key"/>, or -1.</summary>
+    private int IndexOfKey(long key)
     {
-        if ((sender as FrameworkElement)?.DataContext is not RequirementRowView row) return;
-        await EditChip(query.Requirements.IndexOf(row.Requirement));
+        for (var index = 0; index < query.Requirements.Count; index++) if (query.Requirements[index].Key == key) return index;
+        return -1;
     }
-    private void RemoveRequirement_Click(object sender, RoutedEventArgs e) { if ((sender as Button)?.Tag is ItemRequirement r) RemoveChip(query.Requirements.IndexOf(r)); }
+
+    /// <summary>Where the chip keyed <paramref name="key"/> stands now: its index and its board entry.</summary>
+    private (int Index, BoardItem? Item) Locate(long key)
+    {
+        var index = IndexOfKey(key);
+        return (index, index < 0 ? null : QueryRelationships.ItemOf(query.Requirements, index));
+    }
+
+    /// <summary>
+    /// Rebuilds the board: a chip per visible requirement, the members of a
+    /// cluster inside one capsule, and the dashed "+ Add" chip at the end.
+    /// </summary>
+    private void BuildBoard()
+    {
+        RequirementBoard.Children.Clear();
+        var requirements = query.Requirements.ToList();
+        foreach (var item in QueryRelationships.BoardItems(requirements))
+        {
+            // The whole entry is validated at once, so a stack's total is
+            // weighed against every member that helps reach it.
+            var problem = QueryRelationships.Validate(new QuerySettings
+            {
+                Requirements = new(item.Members.Concat(item.Extras).Select(index => requirements[index])),
+            });
+            if (item.Cluster is null) RequirementBoard.Children.Add(Chip(requirements, item, item.Anchor, problem));
+            else RequirementBoard.Children.Add(Cluster(requirements, item, problem));
+        }
+        RequirementBoard.Children.Add(AddChip());
+    }
+
+    /// <summary>
+    /// One chip: the sprite with its glow, the name, the qualifiers, and — for
+    /// a lone chip — its stack badges. The capsule drags, opens the editor when
+    /// clicked, and carries the entry's detail as its tooltip.
+    /// </summary>
+    private Button Chip(IReadOnlyList<ItemRequirement> requirements, BoardItem item, int index, string? problem)
+    {
+        var requirement = requirements[index];
+        var content = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+        // The real item sprite when one is pinned; the generic Fluent glyph only
+        // for wildcards, which have no sprite of their own.
+        var art = new Grid { Width = 18, Height = 18, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, -2, 0) };
+        if (requirement.Item is null) art.Children.Add(new FontIcon { Glyph = requirement.Glyph, Foreground = KindStyle.Tint(requirement.Kind), FontSize = 13, VerticalAlignment = VerticalAlignment.Center });
+        else art.Children.Add(new SpriteView { SpriteIndex = requirement.SpriteIndex, SpriteSize = 18, GlowColor = requirement.GlowColor, GlowPeriod = requirement.GlowPeriod });
+        content.Children.Add(art);
+        content.Children.Add(new TextBlock { Text = requirement.ShortTitle, FontSize = 13, FontWeight = FontWeights.SemiBold, MaxWidth = 150, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center });
+        foreach (var tag in requirement.Tags)
+            content.Children.Add(ChipTagPill(tag.Text, tag.Upgrade ? SuccessInk : CautionInk, tag.Upgrade ? SuccessFill : CautionFill));
+        if (EffectBadge(requirement) is UIElement effect) content.Children.Add(effect);
+        if (requirement.RequireUncursed) content.Children.Add(ChipTagPill("\u2713", SuccessInk, SuccessFill));
+        // A cluster's badges belong to its capsule, not to any one member.
+        if (item.Cluster is null) foreach (var badge in StackBadges(requirements, item)) content.Children.Add(badge);
+        var chip = new Button
+        {
+            Content = content, Tag = requirement.Key, Height = 30, MinWidth = 0, MinHeight = 0,
+            Padding = new Thickness(9, 0, 8, 0), CornerRadius = new CornerRadius(15),
+            BorderThickness = new Thickness(1), BorderBrush = problem is null ? ChipEdge : DangerInk,
+            Background = ChipFill, VerticalAlignment = VerticalAlignment.Center,
+            CanDrag = true, AllowDrop = true,
+            ContextFlyout = ChipMenu(requirements, item, index),
+        };
+        chip.Click += Chip_Click; chip.KeyDown += Chip_KeyDown;
+        chip.DragStarting += Chip_DragStarting; chip.DropCompleted += Chip_DropCompleted;
+        chip.DragOver += Chip_DragOver; chip.Drop += Chip_Drop;
+        ToolTipService.SetToolTip(chip, new TextBlock { Text = QueryRelationships.ChipDetail(requirements, index, item, problem), TextWrapping = TextWrapping.Wrap, MaxWidth = 280 });
+        return chip;
+    }
+
+    /// <summary>An either/or cluster: its members share one dashed capsule, with "or" between them and the stack badges at the trailing edge.</summary>
+    private Grid Cluster(IReadOnlyList<ItemRequirement> requirements, BoardItem item, string? problem)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 2, Margin = new Thickness(4, 3, 4, 3), VerticalAlignment = VerticalAlignment.Center };
+        for (var position = 0; position < item.Members.Count; position++)
+        {
+            if (position > 0) row.Children.Add(new TextBlock { Text = "or", FontFamily = Mono, FontSize = 11, FontWeight = FontWeights.Bold, Foreground = CautionInk, Margin = new Thickness(4, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center });
+            row.Children.Add(Chip(requirements, item, item.Members[position], problem));
+        }
+        foreach (var badge in StackBadges(requirements, item)) { badge.Margin = new Thickness(3, 0, 3, 0); row.Children.Add(badge); }
+        var capsule = new Grid { Tag = requirements[item.Anchor].Key, AllowDrop = true, VerticalAlignment = VerticalAlignment.Center };
+        capsule.Children.Add(DashedCapsule(20, CautionInk, CautionFill));
+        capsule.Children.Add(row);
+        capsule.DragOver += Chip_DragOver; capsule.Drop += Chip_Drop;
+        return capsule;
+    }
+
+    /// <summary>The dashed "+ Add" chip that closes the board; Ctrl+N reaches it from anywhere.</summary>
+    private Button AddChip()
+    {
+        var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, VerticalAlignment = VerticalAlignment.Center };
+        label.Children.Add(new FontIcon { Glyph = "", FontSize = 12, VerticalAlignment = VerticalAlignment.Center });
+        label.Children.Add(new TextBlock { Text = "Add", FontSize = 13, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center });
+        label.Margin = new Thickness(12, 0, 12, 0);
+        var content = new Grid();
+        content.Children.Add(DashedCapsule(15, ChipEdge, ThemeBrush("SubtleFillColorTransparentBrush", Microsoft.UI.Colors.Transparent)));
+        content.Children.Add(label);
+        var chip = new Button
+        {
+            Content = content, Height = 30, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0),
+            CornerRadius = new CornerRadius(15), BorderThickness = new Thickness(0),
+            Background = ThemeBrush("SubtleFillColorTransparentBrush", Microsoft.UI.Colors.Transparent),
+            Foreground = ThemeBrush("TextFillColorSecondaryBrush", Microsoft.UI.Colors.Gray),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        ToolTipService.SetToolTip(chip, "Add a requirement");
+        chip.KeyboardAccelerators.Add(new KeyboardAccelerator { Modifiers = VirtualKeyModifiers.Control, Key = VirtualKey.N });
+        chip.Click += AddRequirement_Click;
+        return chip;
+    }
+
+    /// <summary>A tiny monospace pill: the chip's tier, upgrade and floor qualifiers.</summary>
+    private static Border ChipTagPill(string text, Brush ink, Brush fill) => new()
+    {
+        Background = fill, CornerRadius = new CornerRadius(4), Padding = new Thickness(4, 0, 4, 0), VerticalAlignment = VerticalAlignment.Center,
+        Child = new TextBlock { Text = text, FontFamily = Mono, FontSize = 11, FontWeight = FontWeights.SemiBold, Foreground = ink },
+    };
+
+    /// <summary>
+    /// What a single pulse cannot say: several effects at once, shown as their
+    /// count, and "any enchantment", which settles on no colour. A single
+    /// effect — enchantment or curse — needs no badge of its own: the sprite is
+    /// already pulsing that very colour, and the tooltip names it.
+    /// </summary>
+    private static UIElement? EffectBadge(ItemRequirement requirement)
+    {
+        if (requirement.Effect.AnyEnchantment) return Dot(Rainbow());
+        return requirement.Effect.Effects.Count > 1
+            ? ChipTagPill(requirement.Effect.Effects.Count.ToString(), CautionInk, CautionFill)
+            : null;
+    }
+
+    private static Microsoft.UI.Xaml.Shapes.Ellipse Dot(Brush fill) => new()
+    {
+        Width = 10, Height = 10, Fill = fill, StrokeThickness = 1, VerticalAlignment = VerticalAlignment.Center,
+        Stroke = ThemeBrush("CardStrokeColorDefaultBrush", Microsoft.UI.Colors.Gray),
+    };
+
+    /// <summary>Every enchantment colour at once, for the "any enchantment" dot.</summary>
+    private static Brush Rainbow()
+    {
+        var brush = new LinearGradientBrush { StartPoint = new Windows.Foundation.Point(0, 0), EndPoint = new Windows.Foundation.Point(1, 1) };
+        var colors = new[] { 0xff5555u, 0xffff55u, 0x55ff55u, 0x55ffffu, 0x5555ffu, 0xff55ffu };
+        for (var index = 0; index < colors.Length; index++)
+            brush.GradientStops.Add(new GradientStop
+            {
+                Offset = index / (double)(colors.Length - 1),
+                Color = Color.FromArgb(255, (byte)(colors[index] >> 16), (byte)(colors[index] >> 8), (byte)colors[index]),
+            });
+        return brush;
+    }
+
+    /// <summary>The dashed outline of a cluster capsule or the "+ Add" chip; WinUI dashes only shapes.</summary>
+    private static Microsoft.UI.Xaml.Shapes.Rectangle DashedCapsule(double radius, Brush stroke, Brush fill)
+    {
+        var dashes = new DoubleCollection(); dashes.Add(3); dashes.Add(3);
+        return new Microsoft.UI.Xaml.Shapes.Rectangle { RadiusX = radius, RadiusY = radius, Stroke = stroke, StrokeThickness = 1, StrokeDashArray = dashes, Fill = fill };
+    }
+
+    /// <summary>
+    /// The stack badges of one board entry: how many items it asks for and,
+    /// when it counts levels, the total they reach. Each opens a flyout that
+    /// adjusts it; the edit lands when the flyout closes, so the board is
+    /// rebuilt once rather than under the pointer.
+    /// </summary>
+    private List<Button> StackBadges(IReadOnlyList<ItemRequirement> requirements, BoardItem item)
+    {
+        var badges = new List<Button>();
+        var anchorKey = requirements[item.Anchor].Key;
+        if (item.StackCount > 1)
+            badges.Add(StackBadge(item.Total is null ? $"\u00d7{item.StackCount}" : $"\u2264{item.StackCount}", SuccessInk, SuccessFill,
+                "How many", item.StackCount, 1, SearchLimits.StackMax,
+                value => { if (Locate(anchorKey).Item is { } entry) SetRequirements(QueryRelationships.SetStackCount(query.Requirements, entry, value)); }));
+        if (item.Total is int total)
+        {
+            // Never a total the stack cannot reach: each item counts its upgrade plus one.
+            var capacity = QueryRelationships.StackCapacity(requirements[item.Anchor].Kind, item.StackCount);
+            badges.Add(StackBadge($"\u03a3 \u2265 {total}", CautionInk, CautionFill,
+                "Combined level", total, 1, Math.Max(1, capacity),
+                value => { if (Locate(anchorKey).Item is { } entry) SetRequirements(QueryRelationships.SetStackTotal(query.Requirements, entry, value)); }));
+        }
+        return badges;
+    }
+
+    private static Button StackBadge(string text, Brush ink, Brush fill, string header, int value, int minimum, int maximum, Action<int> apply)
+    {
+        var box = new NumberBox { Header = header, Value = value, Minimum = minimum, Maximum = maximum, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, Width = 180 };
+        var flyout = new Flyout { Content = box };
+        flyout.Closed += (_, _) => { if (!double.IsNaN(box.Value) && (int)box.Value != value) apply(Math.Clamp((int)box.Value, minimum, maximum)); };
+        return new Button
+        {
+            Content = new TextBlock { Text = text, FontFamily = Mono, FontSize = 11, FontWeight = FontWeights.Bold, Foreground = ink },
+            Background = fill, BorderThickness = new Thickness(0), CornerRadius = new CornerRadius(9),
+            Padding = new Thickness(6, 0, 6, 0), MinWidth = 0, MinHeight = 0, Height = 18,
+            VerticalAlignment = VerticalAlignment.Center, Flyout = flyout,
+        };
+    }
+
+    /// <summary>The chip's menu: every gesture of the board said in words, for the keyboard and for touch.</summary>
+    private MenuFlyout ChipMenu(IReadOnlyList<ItemRequirement> requirements, BoardItem item, int index)
+    {
+        var key = requirements[index].Key;
+        var menu = new MenuFlyout();
+        var edit = new MenuFlyoutItem { Text = "Edit\u2026" };
+        edit.Click += async (_, _) => await EditChip(IndexOfKey(key));
+        menu.Items.Add(edit);
+        // "Either/or with…" names the other chips, the menu's way of saying the
+        // drop a pointer would make.
+        var join = new MenuFlyoutSubItem { Text = "Either/or with\u2026" };
+        foreach (var other in QueryRelationships.BoardItems(requirements).Where(entry => !entry.Members.Contains(index)).SelectMany(entry => entry.Members))
+        {
+            var targetKey = requirements[other].Key;
+            var choice = new MenuFlyoutItem { Text = requirements[other].ShortTitle };
+            choice.Click += (_, _) =>
+            {
+                var source = IndexOfKey(key); var onto = IndexOfKey(targetKey);
+                if (source >= 0 && onto >= 0) SetRequirements(QueryRelationships.JoinAlternatives(query.Requirements, source, onto));
+            };
+            join.Items.Add(choice);
+        }
+        if (join.Items.Count > 0) menu.Items.Add(join);
+        menu.Items.Add(new MenuFlyoutSeparator());
+        var howMany = new MenuFlyoutSubItem { Text = "How many" };
+        for (var wanted = 1; wanted <= SearchLimits.StackMax; wanted++)
+        {
+            var count = wanted;
+            var choice = new RadioMenuFlyoutItem { Text = count.ToString(), GroupName = $"stack:{key}", IsChecked = count == item.StackCount };
+            choice.Click += (_, _) => { if (Locate(key).Item is { } entry) SetRequirements(QueryRelationships.SetStackCount(query.Requirements, entry, count)); };
+            howMany.Items.Add(choice);
+        }
+        menu.Items.Add(howMany);
+        // Only a lone chip naming one item can count levels: its copies are the
+        // same item over again, so their upgrades add up to something.
+        if (item.Cluster is null && requirements[item.Anchor].Item is not null && item.StackCount > 1)
+        {
+            var levels = new MenuFlyoutItem { Text = item.Total is null ? "Count levels together" : "Stop counting levels" };
+            levels.Click += (_, _) =>
+            {
+                if (Locate(key).Item is not { } entry) return;
+                SetRequirements(QueryRelationships.SetStackTotal(query.Requirements, entry, entry.Total is null ? Math.Max(1, entry.StackCount) : null));
+            };
+            menu.Items.Add(levels);
+        }
+        if (item.Cluster is not null)
+        {
+            menu.Items.Add(new MenuFlyoutSeparator());
+            var detach = new MenuFlyoutItem { Text = "On its own" };
+            detach.Click += (_, _) => { var at = IndexOfKey(key); if (at >= 0) SetRequirements(QueryRelationships.Detach(query.Requirements, at)); };
+            menu.Items.Add(detach);
+        }
+        menu.Items.Add(new MenuFlyoutSeparator());
+        var remove = new MenuFlyoutItem { Text = "Remove", Icon = new FontIcon { Glyph = "" } };
+        remove.Click += (_, _) => RemoveChip(IndexOfKey(key));
+        menu.Items.Add(remove);
+        return menu;
+    }
+
+    private async void Chip_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.Tag is long key) await EditChip(IndexOfKey(key));
+    }
+
+    private void Chip_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key is not (VirtualKey.Delete or VirtualKey.Back)) return;
+        if ((sender as FrameworkElement)?.Tag is not long key) return;
+        var index = IndexOfKey(key);
+        if (index < 0) return;
+        e.Handled = true; RemoveChip(index);
+    }
+
+    private void Chip_DragStarting(UIElement sender, DragStartingEventArgs args)
+    {
+        if ((sender as FrameworkElement)?.Tag is not long key) { args.Cancel = true; return; }
+        draggingKey = key;
+        args.Data.SetText(key.ToString());
+        args.Data.RequestedOperation = DataPackageOperation.Move;
+        RemoveZone.Visibility = Visibility.Visible;
+    }
+
+    private void Chip_DropCompleted(UIElement sender, DropCompletedEventArgs args) => EndDrag();
+
+    private void EndDrag() { draggingKey = null; RemoveZone.Visibility = Visibility.Collapsed; }
+
+    /// <summary>A chip (or a whole cluster) will take the one in flight as an alternative.</summary>
+    private void Chip_DragOver(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        if (draggingKey is not long key || (sender as FrameworkElement)?.Tag is not long target || key == target)
+        {
+            e.AcceptedOperation = DataPackageOperation.None; return;
+        }
+        e.AcceptedOperation = DataPackageOperation.Move;
+        if (e.DragUIOverride is { } overlay) { overlay.Caption = "or"; overlay.IsGlyphVisible = false; }
+    }
+
+    private void Chip_Drop(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        if (draggingKey is not long key || (sender as FrameworkElement)?.Tag is not long target) return;
+        EndDrag();
+        var source = IndexOfKey(key); var onto = IndexOfKey(target);
+        if (source < 0 || onto < 0 || source == onto) return;
+        SetRequirements(QueryRelationships.JoinAlternatives(query.Requirements, source, onto));
+    }
+
+    /// <summary>The board itself is where a cluster member goes to stand on its own.</summary>
+    private void Board_DragOver(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        var index = draggingKey is long key ? IndexOfKey(key) : -1;
+        if (index < 0 || query.Requirements[index].AlternativeGroup is null) { e.AcceptedOperation = DataPackageOperation.None; return; }
+        e.AcceptedOperation = DataPackageOperation.Move;
+        if (e.DragUIOverride is { } overlay) { overlay.Caption = "on its own"; overlay.IsGlyphVisible = false; }
+    }
+
+    private void Board_Drop(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        if (draggingKey is not long key) return;
+        EndDrag();
+        var index = IndexOfKey(key);
+        if (index < 0 || query.Requirements[index].AlternativeGroup is null) return;
+        SetRequirements(QueryRelationships.Detach(query.Requirements, index));
+    }
+
+    private void RemoveZone_DragOver(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        if (draggingKey is null) { e.AcceptedOperation = DataPackageOperation.None; return; }
+        e.AcceptedOperation = DataPackageOperation.Move;
+        if (e.DragUIOverride is { } overlay) { overlay.Caption = "remove"; overlay.IsGlyphVisible = false; }
+    }
+
+    private void RemoveZone_Drop(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        if (draggingKey is not long key) return;
+        EndDrag();
+        RemoveChip(IndexOfKey(key));
+    }
 
     /// <param name="r">The requirement edited in place; left as it was when the dialog is cancelled.</param>
     /// <param name="stack">The chip's stack as it stands; a cluster member's belongs to the cluster, so its section stays hidden.</param>
@@ -1200,33 +1560,6 @@ public sealed partial class MainWindow : Window
     }
     private void CopySeed_Click(object sender, RoutedEventArgs e) { if (SeedCode.IsCanonical(SeedInput.Text)) Copy(SeedInput.Text); }
     private static void Copy(string text) { var data = new DataPackage(); data.SetText(text); Clipboard.SetContent(data); }
-}
-
-/// <summary>
-/// One entry of the requirement list: a slot, which is a plain row or an
-/// "any of these" card holding every alternative of the slot in order. Built
-/// afresh from the query whenever it changes.
-/// </summary>
-public sealed class RequirementSlotView
-{
-    public IReadOnlyList<RequirementRowView> Rows { get; init; } = [];
-    public bool IsGroup => Rows.Count > 1;
-    public string Header => $"Any of these ({Rows.Count})";
-    public Visibility HeaderVisibility => IsGroup ? Visibility.Visible : Visibility.Collapsed;
-    public Thickness CardBorder => IsGroup ? new Thickness(1) : new Thickness(0);
-    public Thickness CardPadding => IsGroup ? new Thickness(8, 6, 8, 8) : new Thickness(0);
-
-    public static List<RequirementSlotView> Build(IEnumerable<ItemRequirement> requirements) =>
-        QueryRelationships.Slots(requirements)
-            .Select(slot => new RequirementSlotView { Rows = slot.Select((member, index) => new RequirementRowView(member, index > 0)).ToList() })
-            .ToList();
-}
-
-/// <summary>A requirement row; an "OR" separator precedes every member of a slot but its first.</summary>
-public sealed class RequirementRowView(ItemRequirement requirement, bool followsAlternative)
-{
-    public ItemRequirement Requirement => requirement;
-    public Visibility OrVisibility => followsAlternative ? Visibility.Visible : Visibility.Collapsed;
 }
 
 public sealed class ScoutGroup : List<ScoutRow>

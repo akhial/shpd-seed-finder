@@ -483,4 +483,37 @@ public sealed class QueryRelationshipsTests
         Assert.Equal(2, QueryRelationships.BoardCount(requirements));
         Assert.Equal(3, QueryRelationships.SlotCount(requirements));
     }
+
+    [Fact]
+    public void AChipNamesItselfAndCarriesItsQualifiersAsTags()
+    {
+        var wildcard = new ItemRequirement { Kind = ItemKind.ThrownWeapon, TierMatch = TierMatch.AtLeast, Tier = 3, UpgradeMatch = UpgradeMatch.AtLeast, Upgrade = 2, MaximumDepth = 4 };
+        Assert.Equal("Any thrown", wildcard.ShortTitle);
+        Assert.Equal(["T3+", "+2\u2191", "F\u22644"], wildcard.Tags.Select(tag => tag.Text));
+        Assert.Equal([false, true, false], wildcard.Tags.Select(tag => tag.Upgrade));
+        // A named item shows no tier: it is the tier it is.
+        var named = RingOf("ring_might", UpgradeMatch.Exactly, 2);
+        Assert.Equal("Ring of Might", named.ShortTitle);
+        Assert.Equal(["+2"], named.Tags.Select(tag => tag.Text));
+        Assert.Equal("Any wand", new ItemRequirement { Kind = ItemKind.Wand }.ShortTitle);
+    }
+
+    [Fact]
+    public void TheChipDetailReadsTheStackAndTheRelationsAroundIt()
+    {
+        var requirements = QueryRelationships.ApplyEdit([], null, WeaponItem("longsword"), 3, null, 4);
+        Assert.Equal(
+            "Longsword\nany upgrade\n\u00d7 3 of the same kind \u2014 the extra copies: any upgrade, floors 1\u20134",
+            QueryRelationships.ChipDetail(requirements, 0, Entry(requirements, 0), null));
+        // A combined level speaks for the upgrades, so the chip's own says nothing.
+        var counted = QueryRelationships.SetStackTotal(requirements, Entry(requirements, 0), 5);
+        Assert.Equal(
+            "Longsword\n\u03a3 up to 3 \u2014 levels add to \u2265 5",
+            QueryRelationships.ChipDetail(counted, 0, Entry(counted, 0), null));
+        // A cluster member names its peers, and a problem has the last word.
+        var joined = QueryRelationships.JoinAlternatives([WeaponItem("spear"), WeaponItem("shuriken")], 1, 0);
+        Assert.Equal(
+            "Spear\nany upgrade\nor Shuriken\nfrom the engine",
+            QueryRelationships.ChipDetail(joined, 0, Entry(joined, 0), "from the engine"));
+    }
 }
