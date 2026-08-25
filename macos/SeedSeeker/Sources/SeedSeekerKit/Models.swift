@@ -15,6 +15,11 @@ public enum SearchLimits {
     public static let identityGroupMax = 4
     /// Highest combined-level group number (groups run 1...this, shown as A..D).
     public static let levelSumGroupMax = 4
+    /// The most items one board chip may ask for, its anchor included. Unlike
+    /// its neighbours this is the board's own bound, not the engine's — the
+    /// engine takes any number of copies; three is what a chip badge can say
+    /// without turning into a list.
+    public static let stackMax = 3
     /// Highest upgrade a search may name, for everything but rings.
     public static let maxUpgradeDefault = 3
     /// Highest upgrade a ring requirement may name.
@@ -420,8 +425,11 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
         if let effect = effect.label(for: kind) { text += " • \(effect)" }
         if requireUncursed { text += " • uncursed" }
         if let source { text += " • \(source.label)" }
-        if let identityGroup { text += " • same item group \(groupLetter(identityGroup))" }
-        if let levelSum { text += " • level group \(groupLetter(levelSum.group)) ≥ \(levelSum.atLeast)" }
+        // The board says the relationships — a stack through its ×N badge, a
+        // combined level through its Σ badge — so the line names only what the
+        // chip itself cannot show. The group numbers are an encoding detail and
+        // were never anything a reader could act on.
+        if let levelSum { text += " • levels ≥ \(levelSum.atLeast) together" }
         if let maximumDepth { text += " • by floor \(maximumDepth)" }
         return text
     }
