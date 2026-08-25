@@ -308,39 +308,73 @@ extension Array where Element == ItemRequirement {
      The chip at `source` becomes an either/or alternative of the chip at
      `target`. A combined level cannot travel into a cluster and is dropped; a
      plain-repeat stack keeps its copies by trading them for identity labels,
-     which the cluster's members then share.
+     which the cluster's members then share — but only while the cluster stays
+     within one category. Across categories the stacks let go instead.
      */
     public func joinAlternatives(source: Int, target: Int) -> [ItemRequirement] {
         guard source != target, indices.contains(source), indices.contains(target) else { return self }
         let group = self[target].alternativeGroup ?? nextAlternativeGroup()
         if self[source].alternativeGroup == group { return self }
-        var next = self
-        // A copy has to name the kind it copies, so only a cluster that stays
-        // within one category can anchor a stack. When the join would mix
-        // categories the repeats simply stay the standalone chips they encode as.
+        let sourceKey = self[source].key
+        let targetKey = self[target].key
+        // A copy has to name the kind it copies, and a cluster spanning
+        // categories names none — "weapon or wand" is not a kind anything can
+        // be a copy of. So a stack follows its chip into a cluster only while
+        // the cluster stays within one category.
         let clusterMembers = indices.filter {
             $0 == source || $0 == target || self[$0].alternativeGroup == group
         }
         let oneCategory = Set(clusterMembers.map { self[$0].kind.family }).count == 1
-        // Trade plain repeats for identity copies so the stack survives the move.
-        for index in oneCategory ? [source, target] : [] {
-            let anchor = next[index]
-            guard let named = anchor.item, anchor.identityGroup == nil else { continue }
-            let copies = next.indices.filter { $0 != index && isPlainItemCopy(next[$0], of: named) }
-            if copies.isEmpty { continue }
-            guard let label = freeGroup(next.map(\.identityGroup), upTo: SearchLimits.identityGroupMax)
-            else { continue }
-            next[index].identityGroup = label
-            for copy in copies {
-                next[copy] = bareCopy(anchor, identityGroup: label, key: next[copy].key,
-                                      maximumDepth: next[copy].maximumDepth)
+        var next: [ItemRequirement]
+        if oneCategory {
+            next = self
+            // Trade plain repeats for identity copies so the stack survives the move.
+            for index in [source, target] {
+                let anchor = next[index]
+                guard let named = anchor.item, anchor.identityGroup == nil else { continue }
+                let copies = next.indices.filter { $0 != index && isPlainItemCopy(next[$0], of: named) }
+                if copies.isEmpty { continue }
+                guard let label = freeGroup(next.map(\.identityGroup), upTo: SearchLimits.identityGroupMax)
+                else { continue }
+                next[index].identityGroup = label
+                for copy in copies {
+                    next[copy] = bareCopy(anchor, identityGroup: label, key: next[copy].key,
+                                          maximumDepth: next[copy].maximumDepth)
+                }
+            }
+        } else {
+            // The stacks let go: labelled copies are dropped and plain repeats
+            // stay the standalone chips they already encode as. The chip's
+            // badge falls back to ×1, which is the visible half of this.
+            let labels = Set(clusterMembers.compactMap { self[$0].identityGroup })
+            let clusterKeys = Set(clusterMembers.map { self[$0].key })
+            next = filter { requirement in
+                guard let label = requirement.identityGroup, labels.contains(label) else { return true }
+                return clusterKeys.contains(requirement.key)
+            }
+            for index in next.indices {
+                guard let label = next[index].identityGroup, labels.contains(label) else { continue }
+                next[index].identityGroup = nil
             }
         }
-        for index in [source, target] {
+        // Dropping the copies renumbers the list, so both ends of the join are
+        // found again by key.
+        let movedSource = next.firstIndex { $0.key == sourceKey } ?? source
+        let movedTarget = next.firstIndex { $0.key == targetKey } ?? target
+        for index in [movedSource, movedTarget] {
             next[index].alternativeGroup = group
             next[index].levelSum = nil
         }
-        return next.moveAfter(from: source) { $0.alternativeGroup == group }.normalizeRelations()
+        return next.moveAfter(from: movedSource) { $0.alternativeGroup == group }.normalizeRelations()
+    }
+
+    /// Whether the board item can carry a stack. A copy has to name the kind
+    /// it copies, and a cluster spanning two categories — "spear or wand" —
+    /// names none, so such a cluster is offered no stack and cannot grow one.
+    public func canStack(_ item: BoardItem) -> Bool {
+        guard let anchor = item.members.first, indices.contains(anchor) else { return false }
+        let family = self[anchor].kind.family
+        return item.members.allSatisfy { indices.contains($0) && self[$0].kind.family == family }
     }
 
     /// Pulls the chip at `index` out of its cluster; it leaves its stack behind.
@@ -370,6 +404,8 @@ extension Array where Element == ItemRequirement {
         if wanted < item.extras.count {
             return dropping(Set(item.extras.dropFirst(wanted))).normalizeRelations()
         }
+        // Shrinking a cluster that spans categories is fine; growing one is not.
+        if !canStack(item) { return self }
         let anchor = self[item.anchor]
         let added = wanted - item.extras.count
         // New copies keep to the floor limit the existing copies already carry.

@@ -281,6 +281,35 @@ final class RelationsTests: XCTestCase {
         XCTAssertEqual(joined.boardItems().count, 2)
     }
 
+    func testAWildcardStackLetsItsCopiesGoWhenItsChipJoinsAnotherCategory() throws {
+        // The copies were bare wands tied to the anchor by a label; a "wand or
+        // spear" cluster is nothing they can be copies of, so they are dropped
+        // rather than left behind as a stack the engine would refuse.
+        var requirements = [ItemRequirement]()
+            .applyEdit(index: nil, requirement: try req(1, kind: .wand), count: 3, total: nil)
+        requirements += [try req(99, item: "spear")]
+        let joined = requirements.joinAlternatives(source: 0, target: 3)
+        XCTAssertEqual(names(joined), ["spear", "wand"])
+        XCTAssertFalse(joined.contains { $0.identityGroup != nil })
+        XCTAssertNotNil(joined[0].alternativeGroup)
+        XCTAssertEqual(joined[0].alternativeGroup, joined[1].alternativeGroup)
+        XCTAssertEqual(try item(joined, 0).stackCount, 1)
+        assertSearchable(joined)
+    }
+
+    func testAClusterSpanningTwoCategoriesCannotGrowAStack() throws {
+        let base = [try req(1, kind: .wand), try req(2, item: "spear")]
+        let requirements = base.joinAlternatives(source: 0, target: 1)
+        let cluster = try item(requirements, 0)
+        XCTAssertEqual(cluster.members.count, 2)
+        XCTAssertFalse(requirements.canStack(cluster))
+        XCTAssertEqual(requirements.setStackCount(cluster, 2), requirements)
+        // A cluster of one category is still free to stack.
+        let weapons = [try req(1, item: "mace"), try req(2, item: "spear")]
+            .joinAlternatives(source: 0, target: 1)
+        XCTAssertTrue(weapons.canStack(try item(weapons, 0)))
+    }
+
     // MARK: - Copy floor limits
 
     func testTheAnchorAndItsCopiesCarryIndependentFloorLimits() throws {

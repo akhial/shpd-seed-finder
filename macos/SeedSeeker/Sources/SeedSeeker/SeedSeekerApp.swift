@@ -1049,15 +1049,19 @@ private struct ChipView: View {
                 }
             }
         }
-        Divider()
-        Menu("How many") {
-            ForEach(1...SearchLimits.stackMax, id: \.self) { count in
-                Toggle("\(count)", isOn: Binding(
-                    get: { (liveItem?.stackCount ?? 1) == count },
-                    set: { on in
-                        guard on, let fresh = liveItem else { return }
-                        requirements = requirements.setStackCount(fresh, count)
-                    }))
+        // A cluster spanning two categories cannot anchor a stack, so it is
+        // not offered one.
+        if requirements.canStack(liveItem ?? item) {
+            Divider()
+            Menu("How many") {
+                ForEach(1...SearchLimits.stackMax, id: \.self) { count in
+                    Toggle("\(count)", isOn: Binding(
+                        get: { (liveItem?.stackCount ?? 1) == count },
+                        set: { on in
+                            guard on, let fresh = liveItem else { return }
+                            requirements = requirements.setStackCount(fresh, count)
+                        }))
+                }
             }
         }
         // Only a lone concrete chip can count levels: "up to N rings reaching
@@ -1119,6 +1123,7 @@ private struct StackBadgesView: View {
     }
     private var count: Int { item?.stackCount ?? 1 }
     private var total: Int? { item?.total }
+    private var canGrow: Bool { item.map { requirements.canStack($0) } ?? false }
 
     var body: some View {
         HStack(spacing: 3) {
@@ -1129,7 +1134,9 @@ private struct StackBadgesView: View {
                 .buttonStyle(.plain)
                 .help(total == nil ? "\(count) of the same kind" : "Up to \(count) items")
                 .popover(isPresented: $editingCount, arrowEdge: .bottom) {
-                    Stepper(value: countBinding, in: 1...SearchLimits.stackMax) {
+                    // A hand-written document can hand a mixed cluster a
+                    // stack; it may then only be shrunk, never grown.
+                    Stepper(value: countBinding, in: 1...(canGrow ? SearchLimits.stackMax : count)) {
                         Text("How many: \(count)").monospacedDigit()
                     }
                     .padding(14).frame(width: 200)
