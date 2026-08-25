@@ -1461,16 +1461,17 @@ input[type='range']::-moz-range-thumb {
   .d1-progress-sweep { animation: d1-pulse 1.4s ease-in-out infinite; width: 100%; }
 }
 
-/* The tracks are weighted by what each stat is actually asked to render, so the
-   slack lands where it is needed instead of pooling under "Tested". Tested is
-   the narrowest real column — compactNumber drops to no decimals past 100, so
-   it never exceeds "99.99 K" and usually reads shorter than that. Rate carries
-   that same number plus "/s", and Elapsed has to clear "ELAPSED" itself, which
-   is one word: too tight a column spills it into its neighbour rather than
-   wrapping it. */
+/* Tested is the one stat with a hard ceiling: compactNumber drops to no
+   decimals past 100, so it never exceeds "99.99 T" — seven monospace
+   characters, under 58px in every font this stack falls back to. Holding it
+   there rather than at a share of the row keeps it from hogging space it can
+   never use on a wide pane, and from clipping the fifth digit on a narrow one.
+   The rest split what is left: Rate carries that same number plus "/s", and
+   Elapsed has to clear "ELAPSED" itself, which is one word — too tight a
+   column spills it into its neighbour rather than wrapping it. */
 .d1-stat-grid {
   display: grid;
-  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.45fr) minmax(0, 1.15fr) minmax(0, 1.1fr);
+  grid-template-columns: minmax(0, 58px) minmax(0, 1.45fr) minmax(0, 1.15fr) minmax(0, 1.1fr);
   gap: 8px;
 }
 
