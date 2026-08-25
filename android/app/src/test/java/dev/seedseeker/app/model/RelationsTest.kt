@@ -6,6 +6,7 @@ import org.json.JSONObject
 import dev.seedseeker.app.catalog.PackagedCatalog
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -234,6 +235,92 @@ class RelationsTest {
         assertEquals(2, added.size)
         assertEquals(2L, added.last().key)
         assertEquals(2, added.boardCount())
+    }
+
+    // --- the copies' floor limits ---
+
+    @Test
+    fun theAnchorAndItsCopiesCarryIndependentFloorLimits() {
+        // "The +3 ring in the first four floors, a second one by floor nine."
+        val edited = emptyList<ItemRequirement>().applyEdit(
+            index = null,
+            requirement = ring(0, upgrade = 3).copy(maximumDepth = 4),
+            count = 2,
+            total = null,
+            copyDepth = 9,
+        )
+        assertEquals(listOf(4, 9), edited.map { it.maximumDepth })
+        // Still one chip: a repeat carrying only a floor limit is a placement
+        // bound, not a second kind of item, so it folds into the stack.
+        val item = edited.boardItems().single()
+        assertEquals(2, item.stackCount)
+        assertEquals(9, edited.copyDepthOf(item))
+        assertNull(edited.validationProblem())
+        // The document keeps both limits apart across a round trip.
+        val decoded = ResultsExport.decodeQuery(ResultsExport.encodeQuery(SearchRequest(edited))).requirements
+        assertEquals(listOf(4, 9), decoded.map { it.maximumDepth })
+        assertEquals(1, decoded.boardCount())
+    }
+
+    @Test
+    fun unlimitedCopiesStayUnlimitedWhileTheAnchorIsFloorBound() {
+        val edited = emptyList<ItemRequirement>().applyEdit(
+            index = null,
+            requirement = anyWand(0).copy(maximumDepth = 4),
+            count = 2,
+            total = null,
+            copyDepth = null,
+        )
+        assertEquals(listOf(4, null), edited.map { it.maximumDepth })
+        assertEquals(edited[0].identityGroup, edited[1].identityGroup)
+        assertNull(edited.validationProblem())
+    }
+
+    @Test
+    fun aWildcardStackLimitsItsBareCopiesWithoutConstrainingThemOtherwise() {
+        val edited = emptyList<ItemRequirement>().applyEdit(
+            index = null,
+            requirement = anyWand(0),
+            count = 2,
+            total = null,
+            copyDepth = 9,
+        )
+        assertTrue(edited.drop(1).all { it.maximumDepth == 9 && it.upgradeMatch == UpgradeMatch.ANY })
+        assertNull(edited.validationProblem())
+        // Growing the stack from the chip badge keeps the copies' floor.
+        val grown = edited.setStackCount(edited.boardItems().single(), count = 3)
+        assertEquals(3, grown.size)
+        assertTrue(grown.drop(1).all { it.maximumDepth == 9 })
+    }
+
+    @Test
+    fun editingAwayTheLimitClearsItFromEveryCopy() {
+        val limited = emptyList<ItemRequirement>().applyEdit(
+            index = null,
+            requirement = ring(0),
+            count = 3,
+            total = null,
+            copyDepth = 6,
+        )
+        assertTrue(limited.drop(1).all { it.maximumDepth == 6 })
+        val cleared = limited.applyEdit(index = 0, requirement = limited[0], count = 3, total = null, copyDepth = null)
+        assertEquals(listOf(null, null, null), cleared.map { it.maximumDepth })
+        assertEquals(1, cleared.boardCount())
+    }
+
+    @Test
+    fun theCopiesKeepTheirFloorWhenTheStackFollowsItsChipIntoACluster() {
+        val stacked = emptyList<ItemRequirement>().applyEdit(
+            index = null,
+            requirement = ring(0),
+            count = 2,
+            total = null,
+            copyDepth = 7,
+        ) + ItemRequirement(9, ItemCatalog.findById("ring_energy"), 1)
+        val joined = stacked.joinAlternatives(source = 0, target = 2)
+        // The plain repeat became a labelled bare copy, and kept its floor.
+        assertEquals(7, joined.single { it.item == null }.maximumDepth)
+        assertNull(joined.validationProblem())
     }
 
     // --- parity with the document the engine reads ---

@@ -41,7 +41,11 @@ data class BoardItem(
     val anchor: Int get() = members.first()
 }
 
-/** Whether [copy] is the plain repeat of the named [item]. */
+/**
+ * Whether [copy] is the plain repeat of the named [item]. A floor limit is a
+ * placement bound, not an item property, so a repeat carrying only one still
+ * folds into its stack.
+ */
 private fun isPlainItemCopy(copy: ItemRequirement, item: CatalogItem): Boolean =
     copy.item?.id == item.id &&
         copy.tierMatch == TierMatch.ANY &&
@@ -49,7 +53,6 @@ private fun isPlainItemCopy(copy: ItemRequirement, item: CatalogItem): Boolean =
         copy.effect == EffectFilter.Any &&
         !copy.requireUncursed &&
         copy.source == null &&
-        copy.maximumDepth == null &&
         copy.identityGroup == null &&
         copy.alternativeGroup == null &&
         copy.levelSum == null
@@ -174,23 +177,33 @@ private fun List<ItemRequirement>.nextAlternativeGroup(): Int =
 
 private fun List<ItemRequirement>.nextKey(): Long = (maxOfOrNull { it.key } ?: 0L) + 1L
 
-/** The bare copy a stack of [anchor]'s kind grows by. */
-private fun bareCopy(anchor: ItemRequirement, identityGroup: Int, key: Long) = ItemRequirement(
+/**
+ * The bare copy a stack of [anchor]'s kind grows by; it may carry its own floor
+ * limit, the one bound that is a placement rather than an item property.
+ */
+private fun bareCopy(
+    anchor: ItemRequirement,
+    identityGroup: Int,
+    key: Long,
+    maximumDepth: Int? = null,
+) = ItemRequirement(
     key = key,
     item = null,
     upgrade = 0,
     kind = anchor.kind,
     upgradeMatch = UpgradeMatch.ANY,
     identityGroup = identityGroup,
+    maximumDepth = maximumDepth,
 )
 
 /** The plain repeat a concrete stack of [anchor]'s item grows by. */
-private fun plainCopy(anchor: ItemRequirement, key: Long) = ItemRequirement(
+private fun plainCopy(anchor: ItemRequirement, key: Long, maximumDepth: Int? = null) = ItemRequirement(
     key = key,
     item = anchor.item,
     upgrade = 0,
     kind = anchor.kind,
     upgradeMatch = UpgradeMatch.ANY,
+    maximumDepth = maximumDepth,
 )
 
 /**
@@ -238,7 +251,7 @@ fun List<ItemRequirement>.normalizeRelations(): List<ItemRequirement> {
             next[index] = if (index == anchorIndex) {
                 anchor.copy(identityGroup = null)
             } else {
-                plainCopy(anchor, next[index].key)
+                plainCopy(anchor, next[index].key, next[index].maximumDepth)
             }
         }
     }
@@ -305,7 +318,7 @@ fun List<ItemRequirement>.joinAlternatives(source: Int, target: Int): List<ItemR
             if (copies.isEmpty()) continue
             val label = freeGroup(next.map { it.identityGroup }, SearchLimits.IDENTITY_GROUP_MAX) ?: continue
             next[index] = anchor.copy(identityGroup = label)
-            for (copy in copies) next[copy] = bareCopy(anchor, label, next[copy].key)
+            for (copy in copies) next[copy] = bareCopy(anchor, label, next[copy].key, next[copy].maximumDepth)
         }
     } else {
         // The stacks let go: labelled copies are dropped and plain repeats stay
@@ -355,12 +368,14 @@ fun List<ItemRequirement>.setStackCount(item: BoardItem, count: Int): List<ItemR
     }
     val anchor = this[item.anchor]
     val added = wanted - item.extras.size
+    // New copies keep to the floor limit the existing copies already carry.
+    val inherited = item.extras.firstOrNull()?.let { this[it].maximumDepth }
     var next = toMutableList()
     val copy: (Long) -> ItemRequirement
     if (item.total != null && anchor.levelSum != null) {
         copy = { key -> anchor.copy(key = key) }
     } else if (item.cluster == null && anchor.item != null) {
-        copy = { key -> plainCopy(anchor, key) }
+        copy = { key -> plainCopy(anchor, key, inherited) }
     } else {
         val label = anchor.identityGroup
             ?: freeGroup(next.map { it.identityGroup }, SearchLimits.IDENTITY_GROUP_MAX)
@@ -368,12 +383,33 @@ fun List<ItemRequirement>.setStackCount(item: BoardItem, count: Int): List<ItemR
         next = next.mapIndexed { index, requirement ->
             if (index in item.members) requirement.copy(identityGroup = label) else requirement
         }.toMutableList()
-        copy = { key -> bareCopy(anchor, label, key) }
+        copy = { key -> bareCopy(anchor, label, key, inherited) }
     }
     val insertAt = (item.members + item.extras).maxOrNull()!! + 1
     var key = next.nextKey()
     val grown = List(added) { copy(key++) }
     return (next.subList(0, insertAt) + grown + next.subList(insertAt, next.size)).normalizeRelations()
+}
+
+/**
+ * The floor limit the stack's extra copies share (the first copy's, when a
+ * hand-written document gave them different ones).
+ */
+fun List<ItemRequirement>.copyDepthOf(item: BoardItem): Int? =
+    item.extras.firstOrNull()?.let { this[it].maximumDepth }
+
+/**
+ * Sets or clears the floor limit of the stack's extra copies. The anchor keeps
+ * its own limit: "the +3 one before floor 4, the rest wherever" and "…the rest
+ * before floor 10" are both sayable. A combined-level stack has identical
+ * members and no lone copies to bound.
+ */
+fun List<ItemRequirement>.setCopyDepth(item: BoardItem, maximumDepth: Int?): List<ItemRequirement> {
+    if (item.total != null) return this
+    val extras = item.extras.toSet()
+    return mapIndexed { index, requirement ->
+        if (index in extras) requirement.copy(maximumDepth = maximumDepth) else requirement
+    }.normalizeRelations()
 }
 
 /**
@@ -414,15 +450,17 @@ fun List<ItemRequirement>.setStackTotal(item: BoardItem, total: Int?): List<Item
 }
 
 /**
- * Applies the editor's result: the anchor's own fields plus the stack's shape.
- * [index] is the edited anchor, or null for a new chip. Editing a cluster
- * member leaves the stack's count and total to the cluster.
+ * Applies the editor's result: the anchor's own fields plus the stack's shape —
+ * how many copies, the combined level they reach together, and the floor limit
+ * the copies keep to. [index] is the edited anchor, or null for a new chip.
+ * Editing a cluster member leaves the stack's shape to the cluster.
  */
 fun List<ItemRequirement>.applyEdit(
     index: Int?,
     requirement: ItemRequirement,
     count: Int,
     total: Int?,
+    copyDepth: Int? = null,
 ): List<ItemRequirement> {
     val anchorKey: Long
     var next: List<ItemRequirement>
@@ -458,10 +496,9 @@ fun List<ItemRequirement>.applyEdit(
         item = next.boardItems().firstOrNull { anchorIndex in it.members } ?: item
     }
     next = next.setStackCount(item, count)
-    if (total != null) {
-        next.boardItems().firstOrNull { anchorIndex in it.members }?.let {
-            next = next.setStackTotal(it, total)
-        }
+    val refreshed = next.boardItems().firstOrNull { anchorIndex in it.members }
+    if (refreshed != null) {
+        next = if (total != null) next.setStackTotal(refreshed, total) else next.setCopyDepth(refreshed, copyDepth)
     }
     return next
 }
