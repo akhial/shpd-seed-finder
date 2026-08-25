@@ -408,6 +408,36 @@ public sealed class QueryRelationshipsTests
     }
 
     [Fact]
+    public void AWildcardStackLetsItsCopiesGoWhenItsChipJoinsAnotherCategory()
+    {
+        // The copies were bare wands tied to the anchor by a label; a "wand or
+        // spear" cluster is nothing they can be copies of, so they are dropped
+        // rather than left behind as a stack the engine would refuse.
+        var requirements = QueryRelationships.ApplyEdit([], null, new() { Kind = ItemKind.Wand }, 3, null);
+        requirements = [.. requirements, WeaponItem("spear")];
+        var joined = QueryRelationships.JoinAlternatives(requirements, 0, 3);
+        Assert.Equal(["spear", null], joined.Select(requirement => requirement.Item?.Id));
+        Assert.DoesNotContain(joined, requirement => requirement.IdentityGroup is not null);
+        Assert.NotNull(joined[0].AlternativeGroup);
+        Assert.Equal(joined[0].AlternativeGroup, joined[1].AlternativeGroup);
+        Assert.Null(Problem(joined));
+        Assert.Equal(1, QueryRelationships.BoardItems(joined)[0].StackCount);
+    }
+
+    [Fact]
+    public void AClusterSpanningTwoCategoriesCannotGrowAStack()
+    {
+        var requirements = QueryRelationships.JoinAlternatives([new() { Kind = ItemKind.Wand }, WeaponItem("spear")], 0, 1);
+        var cluster = Entry(requirements, 0);
+        Assert.Equal(2, cluster.Members.Count);
+        Assert.False(QueryRelationships.CanStack(requirements, cluster));
+        Assert.Equal(requirements, QueryRelationships.SetStackCount(requirements, cluster, 2));
+        // A cluster of one category is still free to stack.
+        var weapons = QueryRelationships.JoinAlternatives([WeaponItem("mace"), WeaponItem("spear")], 0, 1);
+        Assert.True(QueryRelationships.CanStack(weapons, Entry(weapons, 0)));
+    }
+
+    [Fact]
     public void TheAnchorAndItsCopiesCarryIndependentFloorLimits()
     {
         var armor = new ItemRequirement { Kind = ItemKind.Armor, Item = ItemCatalog.Find("plate_armor"), UpgradeMatch = UpgradeMatch.Exactly, Upgrade = 3, MaximumDepth = 4 };

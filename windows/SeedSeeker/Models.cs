@@ -613,7 +613,9 @@ public static class QueryRelationships
     /// The chip at <paramref name="source"/> becomes an either/or alternative of
     /// the chip at <paramref name="target"/>. A combined level cannot travel into
     /// a cluster and is dropped; a plain-repeat stack keeps its copies by trading
-    /// them for identity labels, which the cluster's members then share.
+    /// them for identity labels, which the cluster's members then share. Across
+    /// categories the stacks let go instead: a cluster of two categories names no
+    /// kind for a copy to name, so the labelled copies are dropped.
     /// </summary>
     public static List<ItemRequirement> JoinAlternatives(IEnumerable<ItemRequirement> requirements, int source, int target)
     {
@@ -627,8 +629,10 @@ public static class QueryRelationships
         var clusterMembers = Enumerable.Range(0, next.Count)
             .Where(index => index == source || index == target || next[index].AlternativeGroup == group).ToList();
         var oneCategory = clusterMembers.Select(index => next[index].Kind.Family()).Distinct().Count() == 1;
-        // Trade plain repeats for identity copies so the stack survives the move.
+        var sourceKey = next[source].Key; var targetKey = next[target].Key;
         if (oneCategory)
+        {
+            // Trade plain repeats for identity copies so the stack survives the move.
             foreach (var index in new[] { source, target })
             {
                 var anchor = next[index];
@@ -639,10 +643,39 @@ public static class QueryRelationships
                 next[index] = With(anchor, copy => copy.IdentityGroup = label);
                 foreach (var other in copies) next[other] = BareCopy(anchor, label, next[other].MaximumDepth, next[other].Key);
             }
+        }
+        else
+        {
+            // The stacks let go: a copy tied to a member by a label is dropped,
+            // and a plain repeat stays the standalone chip it already encodes as.
+            // The chip's badge falls back to one, the visible half of this.
+            var labels = clusterMembers.Select(index => next[index].IdentityGroup).OfType<int>().ToHashSet();
+            var keys = clusterMembers.Select(index => next[index].Key).ToHashSet();
+            bool Labelled(ItemRequirement requirement) => requirement.IdentityGroup is int label && labels.Contains(label);
+            next = next.Where(requirement => keys.Contains(requirement.Key) || !Labelled(requirement)).ToList();
+            for (var index = 0; index < next.Count; index++)
+                if (Labelled(next[index])) next[index] = With(next[index], copy => copy.IdentityGroup = null);
+        }
+        // The dropped copies moved the pair, so both are found again by key.
+        var movedSource = next.FindIndex(requirement => requirement.Key == sourceKey);
+        var movedTarget = next.FindIndex(requirement => requirement.Key == targetKey);
         for (var index = 0; index < next.Count; index++)
-            if (index == source || index == target)
+            if (index == movedSource || index == movedTarget)
                 next[index] = With(next[index], copy => { copy.AlternativeGroup = group; copy.LevelSum = null; });
-        return Normalize(MoveAfter(next, source, requirement => requirement.AlternativeGroup == group));
+        return Normalize(MoveAfter(next, movedSource, requirement => requirement.AlternativeGroup == group));
+    }
+
+    /// <summary>
+    /// Whether the board entry <paramref name="item"/> can carry a stack. A copy
+    /// has to name the kind it copies, and a cluster spanning two categories —
+    /// "spear or wand" — names none, so such a cluster is offered no stack and
+    /// cannot grow one.
+    /// </summary>
+    public static bool CanStack(IEnumerable<ItemRequirement> requirements, BoardItem item)
+    {
+        var next = requirements.ToList();
+        var family = next[item.Anchor].Kind.Family();
+        return item.Members.All(index => next[index].Kind.Family() == family);
     }
 
     /// <summary>Pulls the chip at <paramref name="index"/> out of its cluster; it leaves its stack behind.</summary>
@@ -664,7 +697,10 @@ public static class QueryRelationships
     public static List<ItemRequirement> RemoveMember(IEnumerable<ItemRequirement> requirements, int index) =>
         Normalize(requirements.Where((_, other) => other != index));
 
-    /// <summary>Sets how many items the board entry <paramref name="item"/> asks for.</summary>
+    /// <summary>
+    /// Sets how many items the board entry <paramref name="item"/> asks for. An
+    /// entry that <see cref="CanStack"/> refuses can still shrink, never grow.
+    /// </summary>
     public static List<ItemRequirement> SetStackCount(IEnumerable<ItemRequirement> requirements, BoardItem item, int count)
     {
         var next = requirements.ToList();
@@ -675,6 +711,7 @@ public static class QueryRelationships
             var doomed = item.Extras.Skip(wanted).ToHashSet();
             return Normalize(next.Where((_, index) => !doomed.Contains(index)));
         }
+        if (!CanStack(next, item)) return next;
         var anchor = next[item.Anchor];
         var added = wanted - item.Extras.Count;
         // New copies keep to the floor limit the existing copies already carry.

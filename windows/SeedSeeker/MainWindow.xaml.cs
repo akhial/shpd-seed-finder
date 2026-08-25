@@ -470,9 +470,12 @@ public sealed partial class MainWindow : Window
     {
         var badges = new List<Button>();
         var anchorKey = requirements[item.Anchor].Key;
+        // The same rule as the menu's: an entry that cannot copy its kind may
+        // only shrink. Only a hand-written document brings it a badge at all.
+        var ceiling = QueryRelationships.CanStack(requirements, item) ? SearchLimits.StackMax : item.StackCount;
         if (item.StackCount > 1)
             badges.Add(StackBadge(item.Total is null ? $"\u00d7{item.StackCount}" : $"\u2264{item.StackCount}", SuccessInk, SuccessFill,
-                "How many", item.StackCount, 1, SearchLimits.StackMax,
+                "How many", item.StackCount, 1, ceiling,
                 value => { if (Locate(anchorKey).Item is { } entry) SetRequirements(QueryRelationships.SetStackCount(query.Requirements, entry, value)); }));
         if (item.Total is int total)
         {
@@ -522,16 +525,21 @@ public sealed partial class MainWindow : Window
             join.Items.Add(choice);
         }
         if (join.Items.Count > 0) menu.Items.Add(join);
-        menu.Items.Add(new MenuFlyoutSeparator());
-        var howMany = new MenuFlyoutSubItem { Text = "How many" };
-        for (var wanted = 1; wanted <= SearchLimits.StackMax; wanted++)
+        // A cluster spanning two categories names no kind to copy, so it is
+        // offered no stack at all.
+        if (QueryRelationships.CanStack(requirements, item))
         {
-            var count = wanted;
-            var choice = new RadioMenuFlyoutItem { Text = count.ToString(), GroupName = $"stack:{key}", IsChecked = count == item.StackCount };
-            choice.Click += (_, _) => { if (Locate(key).Item is { } entry) SetRequirements(QueryRelationships.SetStackCount(query.Requirements, entry, count)); };
-            howMany.Items.Add(choice);
+            menu.Items.Add(new MenuFlyoutSeparator());
+            var howMany = new MenuFlyoutSubItem { Text = "How many" };
+            for (var wanted = 1; wanted <= SearchLimits.StackMax; wanted++)
+            {
+                var count = wanted;
+                var choice = new RadioMenuFlyoutItem { Text = count.ToString(), GroupName = $"stack:{key}", IsChecked = count == item.StackCount };
+                choice.Click += (_, _) => { if (Locate(key).Item is { } entry) SetRequirements(QueryRelationships.SetStackCount(query.Requirements, entry, count)); };
+                howMany.Items.Add(choice);
+            }
+            menu.Items.Add(howMany);
         }
-        menu.Items.Add(howMany);
         // Only a lone chip naming one item can count levels: its copies are the
         // same item over again, so their upgrades add up to something.
         if (item.Cluster is null && requirements[item.Anchor].Item is not null && item.StackCount > 1)
