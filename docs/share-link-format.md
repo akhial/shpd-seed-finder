@@ -64,7 +64,7 @@ bits are written.
 | `identity_group` | 1 (+8) | Same-item group. The field is eight bits wide, but like the results-file format only groups 1–4 (the editors' A–D) are accepted; 0 and 5–255 are invalid. |
 | `max_depth` | 1 (+5) | Value is `depth − 1` (floors 1–24). |
 | `alternative_group` (v2 only) | 1 (+6) | Alternative-group label minus one. Records sharing a label form one "any of" slot; labels are renumbered in first-appearance order when encoding. |
-| `upgrade_sum` (v2 only) | 1 (+10) | Combined-upgrade group: two bits of group label minus one (groups 1–4, the editors' A–D), then the eight-bit minimum total (1–255). |
+| `level_sum` (v2 only) | 1 (+10) | Combined-level group: two bits of group label minus one (groups 1–4, the editors' A–D), then the eight-bit minimum total in levels (1–255), where a matched item counts its upgrade plus one. |
 
 ### Code tables
 

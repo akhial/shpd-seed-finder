@@ -13,8 +13,8 @@ public enum SearchLimits {
     public static let boundedTiers = 3...4
     /// Highest same-item group number (groups run 1...this, shown as A..D).
     public static let identityGroupMax = 4
-    /// Highest combined-upgrade group number (groups run 1...this, shown as A..D).
-    public static let upgradeSumGroupMax = 4
+    /// Highest combined-level group number (groups run 1...this, shown as A..D).
+    public static let levelSumGroupMax = 4
     /// Highest upgrade a search may name, for everything but rings.
     public static let maxUpgradeDefault = 3
     /// Highest upgrade a ring requirement may name.
@@ -151,9 +151,11 @@ public func groupLetter(_ group: Int) -> String {
 
 public enum ModelValidationError: Error, Equatable, LocalizedError {
     case itemKind, tier, upgrade, modifier, effect, uncursedCurse, identityGroup, itemMaximumDepth
-    case upgradeSum, upgradeSumInAlternative
-    case upgradeSumMismatch(group: Int)
-    case upgradeSumUnattainable(group: Int, needed: Int, maximum: Int)
+    case identityGroupMixedKinds(group: Int)
+    case identityGroupOverconstrained(group: Int)
+    case levelSum, levelSumInAlternative
+    case levelSumMismatch(group: Int)
+    case levelSumUnattainable(group: Int, needed: Int, maximum: Int)
     case emptyRequirements, maximumDepth, challenges
     public var errorDescription: String? {
         switch self {
@@ -164,13 +166,17 @@ public enum ModelValidationError: Error, Equatable, LocalizedError {
         case .effect: "Effect requirement names an unknown effect"
         case .uncursedCurse: "An uncursed item cannot have a curse"
         case .identityGroup: "Same-item group must be A..D"
+        case .identityGroupMixedKinds(let group):
+            "Same-item group \(groupLetter(group)) mixes different categories"
+        case .identityGroupOverconstrained(let group):
+            "Same-item group \(groupLetter(group)) can describe one item (or one set of alternatives); its other members must be plain"
         case .itemMaximumDepth: "Item floor limit must be 1..\(SearchLimits.maxDepth)"
-        case .upgradeSum: "Combined upgrade group must be A..D with a total of at least +1"
-        case .upgradeSumInAlternative: "An alternative cannot be part of a combined upgrade group"
-        case .upgradeSumMismatch(let group):
-            "Combined upgrade group \(groupLetter(group)) must share one total across its items"
-        case .upgradeSumUnattainable(let group, let needed, let maximum):
-            "Combined upgrade group \(groupLetter(group)) needs +\(needed) but its items can carry at most +\(maximum)"
+        case .levelSum: "Combined level group must be A..D with a total of at least 1"
+        case .levelSumInAlternative: "An alternative cannot be part of a combined level group"
+        case .levelSumMismatch(let group):
+            "Combined level group \(groupLetter(group)) must share one total across its items"
+        case .levelSumUnattainable(let group, let needed, let maximum):
+            "Combined level group \(groupLetter(group)) needs \(needed) levels but its items can reach at most \(maximum)"
         case .emptyRequirements: "At least one requirement is needed"
         case .maximumDepth: "Maximum floor must be 1..\(SearchLimits.maxDepth)"
         case .challenges: "Challenge mask must be 0..\(SearchLimits.challengeMask)"
@@ -231,9 +237,12 @@ public enum EffectFilter: Hashable, Sendable {
     }
 }
 
-/// Membership in a combined-upgrade group: the member's upgrade counts toward
-/// the group's "total at least" value, which every member shares.
-public struct UpgradeSum: Codable, Hashable, Sendable {
+/// Membership in a combined-level group: the members' *levels* must add up to
+/// at least `atLeast`, which every member shares, where a matched item counts
+/// its upgrade plus one. Members are optional, so the group reads "up to N
+/// items reaching `atLeast` levels" — one +2 ring satisfies a total of 3 on
+/// its own, and so does a +0 with a +1.
+public struct LevelSum: Codable, Hashable, Sendable {
     public var group: Int
     public var atLeast: Int
     public init(group: Int, atLeast: Int) { self.group = group; self.atLeast = atLeast }
@@ -255,8 +264,8 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
     /// Requirements sharing a group are alternatives for one slot: any member
     /// satisfies it. The number is session-local; documents renumber.
     public var alternativeGroup: Int?
-    /// Membership in a combined-upgrade group (never on an alternative).
-    public var upgradeSum: UpgradeSum?
+    /// Membership in a combined-level group (never on an alternative).
+    public var levelSum: LevelSum?
     public var id: Int64 { key }
 
     /// The single effect this requirement names, if it names exactly one.
@@ -268,7 +277,7 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
                 upgradeMatch: UpgradeMatch = .exactly,
                 source: ScoutItemSource? = nil, identityGroup: Int? = nil,
                 maximumDepth: Int? = nil, requireUncursed: Bool = false,
-                alternativeGroup: Int? = nil, upgradeSum: UpgradeSum? = nil) throws {
+                alternativeGroup: Int? = nil, levelSum: LevelSum? = nil) throws {
         guard item == nil || item.map(kind.accepts) == true else { throw ModelValidationError.itemKind }
         let tierable = item == nil && (kind.family == .weapon || kind.family == .armor)
         let validTier = switch tierMatch {
@@ -292,11 +301,11 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
         }
         guard identityGroup == nil || (1...SearchLimits.identityGroupMax).contains(identityGroup!) else { throw ModelValidationError.identityGroup }
         guard maximumDepth == nil || (1...SearchLimits.maxDepth).contains(maximumDepth!) else { throw ModelValidationError.itemMaximumDepth }
-        if let upgradeSum {
-            guard (1...SearchLimits.upgradeSumGroupMax).contains(upgradeSum.group), upgradeSum.atLeast >= 1 else {
-                throw ModelValidationError.upgradeSum
+        if let levelSum {
+            guard (1...SearchLimits.levelSumGroupMax).contains(levelSum.group), levelSum.atLeast >= 1 else {
+                throw ModelValidationError.levelSum
             }
-            guard alternativeGroup == nil else { throw ModelValidationError.upgradeSumInAlternative }
+            guard alternativeGroup == nil else { throw ModelValidationError.levelSumInAlternative }
         }
         self.key = key; self.item = item; self.upgrade = upgrade; self.effect = effect
         self.kind = kind; self.tier = tier; self.tierMatch = tierMatch
@@ -305,7 +314,7 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
         self.maximumDepth = maximumDepth
         self.requireUncursed = requireUncursed
         self.alternativeGroup = alternativeGroup
-        self.upgradeSum = upgradeSum
+        self.levelSum = levelSum
     }
 
     /// The most upgrade levels an item matching this requirement can contribute
@@ -315,9 +324,23 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
         upgradeMatch == .exactly ? upgrade : kind.maximumSearchUpgrade
     }
 
+    /// The most *levels* an item matching this requirement can contribute to
+    /// a combined total: its highest upgrade plus one, since every matched
+    /// item counts itself.
+    public var maximumLevel: Int { maximumContributedUpgrade + 1 }
+
+    /// Whether this constrains nothing beyond its category — the shape a
+    /// same-item group's extra copies take. A narrowed weapon kind is a
+    /// constraint; a per-item floor limit is a placement bound, not an item
+    /// property, and does not count.
+    public var isBare: Bool {
+        item == nil && kind == kind.family && tierMatch == .any && upgradeMatch == .any
+            && effect == .any && !requireUncursed && source == nil
+    }
+
     private enum CodingKeys: String, CodingKey {
         case key, item, upgrade, modifier, effect, kind, tier, tierMatch, upgradeMatch, source
-        case identityGroup, maximumDepth, requireUncursed, alternativeGroup, upgradeSum
+        case identityGroup, maximumDepth, requireUncursed, alternativeGroup, levelSum
     }
 
     /// How the saved-query JSON spells the effect filter, beside the classic
@@ -353,7 +376,7 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
             maximumDepth: values.decodeIfPresent(Int.self, forKey: .maximumDepth).map(FloorLimits.normalize),
             requireUncursed: values.decodeIfPresent(Bool.self, forKey: .requireUncursed) ?? false,
             alternativeGroup: values.decodeIfPresent(Int.self, forKey: .alternativeGroup),
-            upgradeSum: values.decodeIfPresent(UpgradeSum.self, forKey: .upgradeSum)
+            levelSum: values.decodeIfPresent(LevelSum.self, forKey: .levelSum)
         )
     }
 
@@ -376,7 +399,7 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
         try values.encodeIfPresent(maximumDepth, forKey: .maximumDepth)
         try values.encode(requireUncursed, forKey: .requireUncursed)
         try values.encodeIfPresent(alternativeGroup, forKey: .alternativeGroup)
-        try values.encodeIfPresent(upgradeSum, forKey: .upgradeSum)
+        try values.encodeIfPresent(levelSum, forKey: .levelSum)
     }
 
     public var title: String {
@@ -398,7 +421,7 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
         if requireUncursed { text += " • uncursed" }
         if let source { text += " • \(source.label)" }
         if let identityGroup { text += " • same item group \(groupLetter(identityGroup))" }
-        if let upgradeSum { text += " • sum group \(groupLetter(upgradeSum.group)) ≥ +\(upgradeSum.atLeast)" }
+        if let levelSum { text += " • level group \(groupLetter(levelSum.group)) ≥ \(levelSum.atLeast)" }
         if let maximumDepth { text += " • by floor \(maximumDepth)" }
         return text
     }
@@ -429,20 +452,36 @@ extension Array where Element == ItemRequirement {
     /// How many slots there are — what the app counts as "requirements".
     public var slotCount: Int { slots.count }
 
-    /// Checks the rules spanning requirements: every combined-upgrade group
-    /// agrees on one total, and that total is attainable.
-    public func validateUpgradeSums() throws {
-        let groups = Dictionary(grouping: self.compactMap { requirement in
-            requirement.upgradeSum.map { ($0, requirement) }
+    /// Checks the rules spanning requirements, as the engine will: a same-item
+    /// group is a stack — one anchor unit (a lone requirement, or the members
+    /// of one alternative group) that may constrain the item, plus plain
+    /// copies of its category — and every combined-level group agrees on one
+    /// total that its members can reach together, counted in levels.
+    public func validateGroups() throws {
+        let stacks = Dictionary(grouping: self.filter { $0.identityGroup != nil }, by: { $0.identityGroup! })
+        for (group, members) in stacks.sorted(by: { $0.key < $1.key }) {
+            guard Set(members.map(\.kind.family)).count == 1 else {
+                throw ModelValidationError.identityGroupMixedKinds(group: group)
+            }
+            // Members of one alternative group form a single unit.
+            let units = Set(members.filter { !$0.isBare }.map { member in
+                member.alternativeGroup.map { "alternative \($0)" } ?? "requirement \(member.key)"
+            })
+            guard units.count <= 1 else {
+                throw ModelValidationError.identityGroupOverconstrained(group: group)
+            }
+        }
+        let sums = Dictionary(grouping: self.compactMap { requirement in
+            requirement.levelSum.map { ($0, requirement) }
         }, by: { $0.0.group })
-        for (group, members) in groups.sorted(by: { $0.key < $1.key }) {
+        for (group, members) in sums.sorted(by: { $0.key < $1.key }) {
             let totals = Set(members.map(\.0.atLeast))
             guard totals.count == 1, let needed = totals.first else {
-                throw ModelValidationError.upgradeSumMismatch(group: group)
+                throw ModelValidationError.levelSumMismatch(group: group)
             }
-            let maximum = members.reduce(0) { $0 + $1.1.maximumContributedUpgrade }
+            let maximum = members.reduce(0) { $0 + $1.1.maximumLevel }
             guard needed <= maximum else {
-                throw ModelValidationError.upgradeSumUnattainable(group: group, needed: needed, maximum: maximum)
+                throw ModelValidationError.levelSumUnattainable(group: group, needed: needed, maximum: maximum)
             }
         }
     }
@@ -493,7 +532,7 @@ public struct SearchRequest: Codable, Sendable {
         guard !requirements.isEmpty else { throw ModelValidationError.emptyRequirements }
         guard (1...SearchLimits.maxDepth).contains(maximumDepth) else { throw ModelValidationError.maximumDepth }
         guard (0...SearchLimits.challengeMask).contains(challenges) else { throw ModelValidationError.challenges }
-        try requirements.validateUpgradeSums()
+        try requirements.validateGroups()
         self.requirements = requirements; self.maximumDepth = maximumDepth
         self.requireBlacksmith = requireBlacksmith
         self.excludeBlacksmithRewards = excludeBlacksmithRewards

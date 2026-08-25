@@ -132,7 +132,7 @@ public static class ResultsExport
         if (requirement.Source is ScoutItemSource source) output["source"] = SourceNames[(int)source];
         if (requirement.IdentityGroup is int group) output["identity_group"] = group;
         if (requirement.MaximumDepth is int depth) output["max_depth"] = depth;
-        if (requirement.UpgradeSum is { } sum) output["upgrade_sum"] = new JsonObject { ["group"] = sum.Group, ["at_least"] = sum.AtLeast };
+        if (requirement.LevelSum is { } sum) output["level_sum"] = new JsonObject { ["group"] = sum.Group, ["at_least"] = sum.AtLeast };
         return output;
     }
 
@@ -222,9 +222,13 @@ public static class ResultsExport
         }
         var (tier, tierMatch) = DecodeTier(entry["tier"]);
         var (upgrade, upgradeMatch) = DecodeUpgrade(entry["upgrade"]);
-        UpgradeSum? upgradeSum = null;
-        if (entry["upgrade_sum"] is JsonObject sum && IntField(sum, "group") is int sumGroup && IntField(sum, "at_least") is int atLeast)
-            upgradeSum = new(sumGroup, atLeast);
+        // The unreleased upgrade_sum key counted upgrades, not levels: refused
+        // rather than silently reinterpreted, as the engine does.
+        if (entry["upgrade_sum"] is not null)
+            throw new ResultsExportException("This query uses upgrade_sum, which is no longer supported; use level_sum.");
+        LevelSum? levelSum = null;
+        if (entry["level_sum"] is JsonObject sum && IntField(sum, "group") is int sumGroup && IntField(sum, "at_least") is int atLeast)
+            levelSum = new(sumGroup, atLeast);
         return new ItemRequirement
         {
             Item = item,
@@ -239,7 +243,7 @@ public static class ResultsExport
             MaximumDepth = IntField(entry, "max_depth"),
             RequireUncursed = BoolField(entry, "uncursed"),
             AlternativeGroup = alternativeGroup,
-            UpgradeSum = upgradeSum,
+            LevelSum = levelSum,
         };
     }
 

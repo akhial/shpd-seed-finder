@@ -52,11 +52,12 @@ public struct SavedQuery: Codable, Sendable {
                 maximumDepth: requirement.maximumDepth,
                 requireUncursed: requirement.requireUncursed,
                 alternativeGroup: requirement.alternativeGroup,
-                upgradeSum: requirement.upgradeSum)) != nil else { return nil }
+                levelSum: requirement.levelSum)) != nil else { return nil }
         }
-        // A combined-upgrade group that no longer adds up still loads — the
-        // editor shows why the search cannot start — but the engine would
-        // refuse it, so the sum check is the request's, not this loader's.
+        // A combined-level group that no longer adds up, or a same-item group
+        // constrained twice, still loads — the editor shows why the search
+        // cannot start — but the engine would refuse it, so the group checks
+        // are the request's, not this loader's.
         return self
     }
 }

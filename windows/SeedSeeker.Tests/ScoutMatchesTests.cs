@@ -115,21 +115,27 @@ public sealed class ScoutMatchesTests
     }
 
     [Fact]
-    public void ACombinedUpgradeGroupIsAllOrNothing()
+    public void ACombinedLevelGroupIsOneConditionAnySubsetMayMeet()
     {
-        static ItemRequirement AnyWand(int atLeast) => new() { Kind = ItemKind.Wand, UpgradeSum = new(1, atLeast) };
-        // The +3 Wandmaker wand plus any other wand reach +3 together.
-        var marks = Matches(Query(AnyWand(3), AnyWand(3)));
-        Assert.Equal(2, marks.TotalRequirements);
-        Assert.Equal(2, marks.MatchedRequirements);
-        Assert.Equal(2, marks.Matched.Count);
+        static ItemRequirement AnyWand(int atLeast) => new() { Kind = ItemKind.Wand, LevelSum = new(1, atLeast) };
+        // The group is one condition however many members it has. The +3
+        // Wandmaker wand alone carries four levels (its upgrade plus one), so
+        // it meets a total of 5 with any other wand, and every contributing
+        // item is marked.
+        var marks = Matches(Query(AnyWand(5), AnyWand(5)));
+        Assert.Equal(1, marks.TotalRequirements);
+        Assert.Equal(1, marks.MatchedRequirements);
         var items = Manifest();
         Assert.Contains(marks.Matched, index => items[index].Item.Id == "wand_corrosion");
-        Assert.True(marks.Matched.Sum(index => items[index].Upgrade) >= 3);
-        // +6 is attainable (two +3 wands) but this world has no such pair:
-        // nothing is marked, not even the +3 that serves the short group.
-        marks = Matches(Query(AnyWand(6), AnyWand(6)));
-        Assert.Equal(2, marks.TotalRequirements);
+        Assert.True(marks.Matched.Sum(index => items[index].Upgrade + 1) >= 5);
+        // Members are optional: the +3 wand meets a total of 4 by itself.
+        marks = Matches(Query(AnyWand(4), AnyWand(4)));
+        Assert.Equal(1, marks.MatchedRequirements);
+        Assert.NotEmpty(marks.Matched);
+        // Eight levels is attainable (two +3 wands) but this world has no such
+        // pair: nothing is marked, not even the +3 that serves the short group.
+        marks = Matches(Query(AnyWand(8), AnyWand(8)));
+        Assert.Equal(1, marks.TotalRequirements);
         Assert.Equal(0, marks.MatchedRequirements);
         Assert.Empty(marks.Matched);
     }

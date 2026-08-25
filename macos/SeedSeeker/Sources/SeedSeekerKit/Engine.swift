@@ -135,9 +135,11 @@ public struct ScoutMatches: Sendable {
     /// Indices into the scouted world's item list, in the order
     /// `scoutSeed(_:challenges:)` returns it.
     public let matched: Set<Int>
-    /// How many slots the marks satisfy, and how many there are. An
-    /// alternative group is one slot however many members it has, and items
-    /// serving a short combined-upgrade group are not marked at all.
+    /// How many conditions the marks satisfy, and how many there are. An
+    /// alternative group is one slot however many members it has; a
+    /// combined-level group counts once, its contributing items are all
+    /// marked when it reaches its total, and items serving a short group are
+    /// not marked at all.
     public let matchedRequirements: Int
     public let totalRequirements: Int
 

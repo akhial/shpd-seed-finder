@@ -257,7 +257,7 @@ public sealed partial class MainWindow : Window
     /// Forks a row into an "any of these" slot, or extends the slot it is
     /// already in: the new member starts as a copy of the row and opens in the
     /// editor; nothing changes until it is accepted. Joining a slot takes the
-    /// row out of any combined-upgrade group, which alternatives may not hold.
+    /// row out of any combined-level group, which alternatives may not hold.
     /// </summary>
     private async void AddAlternative_Click(object sender, RoutedEventArgs e)
     {
@@ -268,10 +268,10 @@ public sealed partial class MainWindow : Window
         CommitRequirement(alternative);
     }
     private void RemoveRequirement_Click(object sender, RoutedEventArgs e) { if ((sender as Button)?.Tag is ItemRequirement r) { QueryRelationships.Remove(query.Requirements, r); RefreshQuery(); SaveSettings(); } }
-    /// <summary>Settles an accepted edit: the combined-upgrade total is shared with the group, then the list and the saved query follow.</summary>
+    /// <summary>Settles an accepted edit: the combined-level total is shared with the group, then the list and the saved query follow.</summary>
     private void CommitRequirement(ItemRequirement r)
     {
-        if (r.UpgradeSum is { } sum) QueryRelationships.PropagateSum(query.Requirements, sum.Group, sum.AtLeast);
+        if (r.LevelSum is { } sum) QueryRelationships.PropagateSum(query.Requirements, sum.Group, sum.AtLeast);
         RefreshQuery(); SaveSettings();
     }
 
@@ -301,13 +301,15 @@ public sealed partial class MainWindow : Window
         var source = Combo(new[] { "Any source" }.Concat(Enum.GetValues<ScoutItemSource>().Select(Labels.Source)), r.Source is null ? 0 : (int)r.Source + 1); source.Header = "Source";
         var groupNames = new[] { "None" }.Concat(Enumerable.Range(1, SearchLimits.IdentityGroupMax).Select(QueryRelationships.GroupLabel)).ToList();
         var group = Combo(groupNames, r.IdentityGroup ?? 0); group.Header = "Same-item group";
-        // Combined-upgrade group: the members' upgrades add up to one shared
-        // total. An alternative may not be a member, so the controls stay
-        // hidden for a row inside an "any of these" slot.
+        var groupHint = new TextBlock { Style = (Style)Application.Current.Resources["Caption"], TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, -8, 0, 0), Text = "Copies of one item. One member (or one set of alternatives) may name the item and its qualities; every other member must be a plain row of the same category." };
+        // Combined-level group: the members' levels (upgrade plus one each)
+        // add up to one shared total, which any subset may reach. An
+        // alternative may not be a member, so the controls stay hidden for a
+        // row inside an "any of these" slot.
         var isAlternative = r.AlternativeGroup is not null;
         var others = query.Requirements.Where(other => other.Key != r.Key).ToList();
-        var sumGroup = Combo(groupNames, isAlternative ? 0 : r.UpgradeSum?.Group ?? 0); sumGroup.Header = "Combined upgrade group"; sumGroup.Visibility = isAlternative ? Visibility.Collapsed : Visibility.Visible;
-        var sumTotal = new Slider { Minimum = 1, Maximum = 1, StepFrequency = 1, TickFrequency = 1, Value = r.UpgradeSum?.AtLeast ?? 1, HorizontalAlignment = HorizontalAlignment.Stretch };
+        var sumGroup = Combo(groupNames, isAlternative ? 0 : r.LevelSum?.Group ?? 0); sumGroup.Header = "Combined level group"; sumGroup.Visibility = isAlternative ? Visibility.Collapsed : Visibility.Visible;
+        var sumTotal = new Slider { Minimum = 1, Maximum = 1, StepFrequency = 1, TickFrequency = 1, Value = r.LevelSum?.AtLeast ?? 1, HorizontalAlignment = HorizontalAlignment.Stretch };
         var sumHint = new TextBlock { Style = (Style)Application.Current.Resources["Caption"], TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, -8, 0, 0) };
         var depthToggle = ToggleRow("Limit this item to a floor", r.MaximumDepth is not null, out var depthRow); var depth = Number("Within first floors", FloorLimits.Normalize(r.MaximumDepth ?? 4), 1, SearchLimits.MaxDepth);
         // Empty boss floors (5, 10, 15) are useless limits: a single upward spin skips to the
@@ -320,7 +322,7 @@ public sealed partial class MainWindow : Window
             var target = FloorLimits.SkipTarget(previous, requested);
             if (target != requested) box.Value = target;
         };
-        var content = new StackPanel { Spacing = 12, Padding = new Thickness(2, 4, 2, 4) }; foreach (var control in new UIElement[] { kind, item, tierMatch, tier, tierBound, upgradeMatch, upgrade, upgradeBound, effectMode, effectGrid, uncursed, source, group, sumGroup, sumTotal, sumHint, depthRow, depth }) content.Children.Add(control);
+        var content = new StackPanel { Spacing = 12, Padding = new Thickness(2, 4, 2, 4) }; foreach (var control in new UIElement[] { kind, item, tierMatch, tier, tierBound, upgradeMatch, upgrade, upgradeBound, effectMode, effectGrid, uncursed, source, group, groupHint, sumGroup, sumTotal, sumHint, depthRow, depth }) content.Children.Add(control);
         void NormalizeTier()
         {
             var predicate = (TierMatch)Math.Max(0, tierMatch.SelectedIndex);
@@ -383,12 +385,12 @@ public sealed partial class MainWindow : Window
             var chosen = sumGroup.SelectedIndex; var visible = !isAlternative && chosen > 0;
             sumTotal.Visibility = visible ? Visibility.Visible : Visibility.Collapsed; sumHint.Visibility = sumTotal.Visibility;
             if (!visible) return;
-            // The slider never offers a total the group cannot reach: 1..the sum of every member's maximum.
-            var capacity = QueryRelationships.SumCapacity(others, chosen) + EditorMaximumUpgrade();
+            // The slider never offers a total the group cannot reach: 1..the sum of every member's maximum level (upgrade plus one).
+            var capacity = QueryRelationships.SumCapacity(others, chosen) + EditorMaximumUpgrade() + 1;
             sumTotal.Maximum = Math.Max(1, capacity); sumTotal.Value = Math.Clamp(double.IsNaN(sumTotal.Value) ? 1 : sumTotal.Value, 1, sumTotal.Maximum);
-            var members = others.Count(member => member.UpgradeSum?.Group == chosen) + 1;
-            sumTotal.Header = $"Total at least +{(int)sumTotal.Value}";
-            sumHint.Text = $"Group {QueryRelationships.GroupLabel(chosen)}: {members} item{(members == 1 ? "" : "s")}, at most +{capacity} together. Every member shares this total.";
+            var members = others.Count(member => member.LevelSum?.Group == chosen) + 1;
+            sumTotal.Header = $"Total at least {(int)sumTotal.Value} level{((int)sumTotal.Value == 1 ? "" : "s")}";
+            sumHint.Text = $"Group {QueryRelationships.GroupLabel(chosen)}: up to {members} item{(members == 1 ? "" : "s")}, {capacity} levels together at most. Each item counts its upgrade plus one, any subset reaching the total satisfies the group, and every member shares this total.";
         }
         void Populate()
         {
@@ -399,8 +401,8 @@ public sealed partial class MainWindow : Window
         }
         kind.SelectionChanged += (_, _) => { r.Item = null; r.Effect = EffectFilter.Any(); effectMode.SelectedIndex = 0; Populate(); }; item.SelectionChanged += (_, _) => SyncVisibility(); tier.ValueChanged += (_, _) => { if (!double.IsNaN(tier.Value)) selectedTier = (int)tier.Value; }; tierBound.SelectionChanged += (_, _) => { if (tierBound.SelectedIndex >= 0) selectedTier = tierBound.SelectedIndex + SearchLimits.BoundedTierMin; }; tierMatch.SelectionChanged += (_, _) => { NormalizeTier(); SyncVisibility(); }; upgradeMatch.SelectionChanged += (_, _) => { NormalizeUpgrade(); SyncVisibility(); SyncSum(); }; upgrade.ValueChanged += (_, _) => SyncSum(); upgradeBound.SelectionChanged += (_, _) => { if (upgradeBound.SelectedIndex >= 0) selectedMinimumUpgrade = upgradeBound.SelectedIndex + 1; }; effectMode.SelectionChanged += (_, _) => SyncEffects(); uncursed.Checked += (_, _) => SyncEffects(); uncursed.Unchecked += (_, _) => SyncEffects(); depthToggle.Toggled += (_, _) => depth.Visibility = depthToggle.IsOn ? Visibility.Visible : Visibility.Collapsed;
         // Joining a group adopts the total its members already share.
-        sumGroup.SelectionChanged += (_, _) => { if (sumGroup.SelectedIndex > 0 && others.FirstOrDefault(member => member.UpgradeSum?.Group == sumGroup.SelectedIndex)?.UpgradeSum is { } shared) sumTotal.Value = shared.AtLeast; SyncSum(); };
-        sumTotal.ValueChanged += (_, _) => sumTotal.Header = $"Total at least +{(int)sumTotal.Value}";
+        sumGroup.SelectionChanged += (_, _) => { if (sumGroup.SelectedIndex > 0 && others.FirstOrDefault(member => member.LevelSum?.Group == sumGroup.SelectedIndex)?.LevelSum is { } shared) sumTotal.Value = shared.AtLeast; SyncSum(); };
+        sumTotal.ValueChanged += (_, _) => sumTotal.Header = $"Total at least {(int)sumTotal.Value} level{((int)sumTotal.Value == 1 ? "" : "s")}";
         Populate(); NormalizeTier(); SyncVisibility(); SyncSum(); depth.Visibility = depthToggle.IsOn ? Visibility.Visible : Visibility.Collapsed;
         var dialog = new ContentDialog { XamlRoot = Content.XamlRoot, Title = title, PrimaryButtonText = accept, CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Primary, Content = VerticalScrollView(content, 510, 430) };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return false;
@@ -415,7 +417,7 @@ public sealed partial class MainWindow : Window
             _ => EffectFilter.Any(),
         };
         r.Source = source.SelectedIndex == 0 ? null : (ScoutItemSource)(source.SelectedIndex - 1); r.IdentityGroup = group.SelectedIndex == 0 ? null : group.SelectedIndex;
-        r.UpgradeSum = !isAlternative && sumGroup.SelectedIndex > 0 ? new UpgradeSum(sumGroup.SelectedIndex, (int)sumTotal.Value) : null;
+        r.LevelSum = !isAlternative && sumGroup.SelectedIndex > 0 ? new LevelSum(sumGroup.SelectedIndex, (int)sumTotal.Value) : null;
         r.MaximumDepth = depthToggle.IsOn ? FloorLimits.Normalize(Math.Clamp((int)depth.Value, 1, SearchLimits.MaxDepth)) : null; return true;
     }
     private static ComboBox Combo(IEnumerable<string> values, int selected) { var c = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch }; foreach (var v in values) c.Items.Add(v); c.SelectedIndex = selected; return c; }

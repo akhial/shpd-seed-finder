@@ -57,8 +57,8 @@ public static class SearchLimits
     public const int BoundedTierMax = 4;
     /// <summary>Highest same-item group number (groups run 1..this, shown as A..D).</summary>
     public const int IdentityGroupMax = 4;
-    /// <summary>Highest combined-upgrade group number (groups run 1..this, shown as A..D).</summary>
-    public const int UpgradeSumGroupMax = 4;
+    /// <summary>Highest combined-level group number (groups run 1..this, shown as A..D).</summary>
+    public const int LevelSumGroupMax = 4;
     /// <summary>Highest upgrade a search may name, for everything but rings.</summary>
     public const int MaxUpgradeDefault = 3;
     /// <summary>Highest upgrade a ring requirement may name.</summary>
@@ -177,11 +177,14 @@ public sealed class EffectFilter
 }
 
 /// <summary>
-/// Membership in a combined-upgrade group: the upgrade levels of every member
-/// of <paramref name="Group"/> (1..UpgradeSumGroupMax, shown as A..D) must add
-/// up to at least <paramref name="AtLeast"/>. Every member carries the same total.
+/// Membership in a combined-level group: the <em>levels</em> of the members of
+/// <paramref name="Group"/> (1..LevelSumGroupMax, shown as A..D) must add up to
+/// at least <paramref name="AtLeast"/>, where a matched item counts its upgrade
+/// plus one. Members are optional, so the group reads "up to N items reaching
+/// <paramref name="AtLeast"/> levels" — one +2 ring satisfies a total of 3 on
+/// its own, and so does a +0 with a +1. Every member carries the same total.
 /// </summary>
-public sealed record UpgradeSum(int Group, int AtLeast);
+public sealed record LevelSum(int Group, int AtLeast);
 
 public sealed partial class ItemRequirement
 {
@@ -214,8 +217,8 @@ public sealed partial class ItemRequirement
     /// by any single member. Null for a requirement that stands alone.
     /// </summary>
     public int? AlternativeGroup { get; set; }
-    /// <summary>Combined-upgrade group membership; never set on an alternative.</summary>
-    public UpgradeSum? UpgradeSum { get; set; }
+    /// <summary>Combined-level group membership; never set on an alternative.</summary>
+    public LevelSum? LevelSum { get; set; }
     [JsonIgnore] public string Glyph => KindStyle.Glyph(Kind);
     /// <summary>Row-major index into the upstream item atlas, or -1 for a wildcard.</summary>
     [JsonIgnore] public int SpriteIndex => Item?.SpriteIndex ?? -1;
@@ -227,17 +230,31 @@ public sealed partial class ItemRequirement
             var parts = new List<string> { UpgradeMatch switch { UpgradeMatch.Exactly => $"+{Upgrade} exactly", UpgradeMatch.AtLeast => $"+{Upgrade} or higher", _ => "Any upgrade" } };
             if (Effect.Describe() is string effect) parts.Add(effect); if (RequireUncursed) parts.Add("uncursed"); if (Source is not null) parts.Add(Labels.Source(Source.Value));
             if (IdentityGroup is int g) parts.Add($"same item group {QueryRelationships.GroupLabel(g)}");
-            if (UpgradeSum is { } sum) parts.Add($"sum group {QueryRelationships.GroupLabel(sum.Group)} \u2265 +{sum.AtLeast}");
+            if (LevelSum is { } sum) parts.Add($"level group {QueryRelationships.GroupLabel(sum.Group)} \u2265 {sum.AtLeast}");
             if (MaximumDepth is int d) parts.Add($"by floor {d}");
             return string.Join(" \u2022 ", parts);
         }
     }
     /// <summary>
-    /// The highest upgrade an item satisfying this requirement can carry —
-    /// what it can contribute to a combined-upgrade total. The engine's own
-    /// rule: an exact upgrade counts as itself, anything else as the family cap.
+    /// The highest upgrade an item satisfying this requirement can carry. The
+    /// engine's own rule: an exact upgrade counts as itself, anything else as
+    /// the family cap.
     /// </summary>
     [JsonIgnore] public int MaximumUpgrade => UpgradeMatch == UpgradeMatch.Exactly ? Upgrade : Kind.MaximumSearchUpgrade();
+    /// <summary>
+    /// The most <em>levels</em> this requirement can contribute to a combined
+    /// total: its highest upgrade plus one, since every matched item counts itself.
+    /// </summary>
+    [JsonIgnore] public int MaximumLevel => MaximumUpgrade + 1;
+    /// <summary>
+    /// Whether this constrains nothing beyond its category — the shape a
+    /// same-item group's extra copies take. A narrowed weapon kind is a
+    /// constraint; a per-item floor limit is a placement bound, not an item
+    /// property, and does not count.
+    /// </summary>
+    [JsonIgnore] public bool IsBare =>
+        Item is null && Kind == Kind.Family() && TierMatch == TierMatch.Any && UpgradeMatch == UpgradeMatch.Any
+        && Effect.IsAny && !RequireUncursed && Source is null;
     public ItemRequirement Clone()
     {
         var copy = (ItemRequirement)MemberwiseClone();
@@ -247,8 +264,8 @@ public sealed partial class ItemRequirement
 }
 
 /// <summary>
-/// The structure between requirements — "any of these" slots and
-/// combined-upgrade groups — and the edits that keep it consistent. Pure
+/// The structure between requirements — "any of these" slots, same-item
+/// stacks and combined-level groups — and the edits that keep it consistent. Pure
 /// list manipulation, so SeedSeeker.Tests covers it; the window only wires
 /// it to buttons. The slot rule mirrors the engine's <c>SearchQuery::slots</c>:
 /// a slot sits at its first member's position and holds every member in
@@ -278,24 +295,24 @@ public static class QueryRelationships
     /// <summary>How many slots the query has — what "N requirements" counts once alternatives collapse.</summary>
     public static int SlotCount(IEnumerable<ItemRequirement> requirements) => Slots(requirements).Count;
 
-    /// <summary>The members of combined-upgrade group <paramref name="group"/>.</summary>
+    /// <summary>The members of combined-level group <paramref name="group"/>.</summary>
     public static IEnumerable<ItemRequirement> SumMembers(IEnumerable<ItemRequirement> requirements, int group) =>
-        requirements.Where(requirement => requirement.UpgradeSum?.Group == group);
+        requirements.Where(requirement => requirement.LevelSum?.Group == group);
 
-    /// <summary>The highest total the members of <paramref name="group"/> can reach together.</summary>
+    /// <summary>The highest level total the members of <paramref name="group"/> can reach together.</summary>
     public static int SumCapacity(IEnumerable<ItemRequirement> requirements, int group) =>
-        SumMembers(requirements, group).Sum(member => member.MaximumUpgrade);
+        SumMembers(requirements, group).Sum(member => member.MaximumLevel);
 
     /// <summary>Gives every member of <paramref name="group"/> the same total, as the engine demands.</summary>
     public static void PropagateSum(IEnumerable<ItemRequirement> requirements, int group, int atLeast)
     {
-        foreach (var member in SumMembers(requirements, group)) member.UpgradeSum = new(group, atLeast);
+        foreach (var member in SumMembers(requirements, group)) member.LevelSum = new(group, atLeast);
     }
 
     /// <summary>
     /// A fresh member for the "any of these" slot of <paramref name="original"/>:
     /// its copy, keyed anew, in the original's alternative group (or a new one
-    /// when it stands alone) and without a combined-upgrade sum, which an
+    /// when it stands alone) and without a combined-level sum, which an
     /// alternative may not carry. Nothing in the list changes until
     /// <see cref="CommitAlternative"/>.
     /// </summary>
@@ -304,20 +321,20 @@ public static class QueryRelationships
         var copy = original.Clone();
         copy.Key = Random.Shared.NextInt64(1, long.MaxValue);
         copy.AlternativeGroup = original.AlternativeGroup ?? requirements.Max(requirement => requirement.AlternativeGroup ?? 0) + 1;
-        copy.UpgradeSum = null;
+        copy.LevelSum = null;
         return copy;
     }
 
     /// <summary>
     /// Adds <paramref name="alternative"/> (from <see cref="PrepareAlternative"/>)
     /// after the last member of the slot of <paramref name="original"/>, moving
-    /// the original into that slot — and out of any combined-upgrade group,
+    /// the original into that slot — and out of any combined-level group,
     /// since the two relationships cannot mix.
     /// </summary>
     public static void CommitAlternative(IList<ItemRequirement> requirements, ItemRequirement original, ItemRequirement alternative)
     {
         var group = alternative.AlternativeGroup ?? throw new ArgumentException("An alternative needs a group.", nameof(alternative));
-        original.AlternativeGroup = group; original.UpgradeSum = null;
+        original.AlternativeGroup = group; original.LevelSum = null;
         var last = requirements.Select((requirement, index) => (requirement, index))
             .Where(entry => entry.requirement.AlternativeGroup == group).Max(entry => entry.index);
         requirements.Insert(last + 1, alternative);
@@ -347,21 +364,37 @@ public static class QueryRelationships
                 return $"{requirement.Title} cannot require an effect: {Labels.Kind(requirement.Kind).ToLowerInvariant()} carry none.";
             if (requirement.RequireUncursed && requirement.Effect.IsCursesOnly(requirement.Kind))
                 return $"{requirement.Title} requires uncursed but only lists curses.";
-            if (requirement.UpgradeSum is { } sum)
+            if (requirement.LevelSum is { } sum)
             {
                 if (requirement.AlternativeGroup is not null)
-                    return $"{requirement.Title} is an alternative, so it cannot be in combined upgrade group {GroupLabel(sum.Group)}.";
-                if (sum.Group < 1 || sum.Group > SearchLimits.UpgradeSumGroupMax || sum.AtLeast < 1)
-                    return $"{requirement.Title} has an invalid combined upgrade group.";
+                    return $"{requirement.Title} is an alternative, so it cannot be in combined level group {GroupLabel(sum.Group)}.";
+                if (sum.Group < 1 || sum.Group > SearchLimits.LevelSumGroupMax || sum.AtLeast < 1)
+                    return $"{requirement.Title} has an invalid combined level group.";
             }
         }
-        foreach (var group in requirements.Select(requirement => requirement.UpgradeSum?.Group).OfType<int>().Distinct().Order())
+        // A same-item group is a stack: one anchor unit — a lone requirement, or
+        // the members of one alternative group — may constrain the item it binds
+        // to; every other member is a plain copy of the same category.
+        foreach (var group in requirements.Select(requirement => requirement.IdentityGroup).OfType<int>().Distinct().Order())
         {
-            var totals = SumMembers(requirements, group).Select(member => member.UpgradeSum!.AtLeast).Distinct().ToList();
-            if (totals.Count > 1) return $"Combined upgrade group {GroupLabel(group)} has members that disagree on the total.";
+            var members = requirements.Where(requirement => requirement.IdentityGroup == group).ToList();
+            if (members.Select(member => member.Kind.Family()).Distinct().Count() > 1)
+                return $"Same-item group {GroupLabel(group)} mixes different categories.";
+            var units = members.Where(member => !member.IsBare)
+                .Select(member => member.AlternativeGroup is int alternative ? $"alternative {alternative}" : $"requirement {member.Key}")
+                .Distinct().Count();
+            if (units > 1)
+                return $"Same-item group {GroupLabel(group)} can describe one item (or one set of alternatives); its other members must be plain.";
+        }
+        // Combined-level groups: one shared, reachable total, counted in levels
+        // (upgrade plus one per item).
+        foreach (var group in requirements.Select(requirement => requirement.LevelSum?.Group).OfType<int>().Distinct().Order())
+        {
+            var totals = SumMembers(requirements, group).Select(member => member.LevelSum!.AtLeast).Distinct().ToList();
+            if (totals.Count > 1) return $"Combined level group {GroupLabel(group)} has members that disagree on the total.";
             var capacity = SumCapacity(requirements, group);
             if (totals[0] > capacity)
-                return $"Combined upgrade group {GroupLabel(group)} needs +{totals[0]} but its items can carry at most +{capacity}.";
+                return $"Combined level group {GroupLabel(group)} needs {totals[0]} levels but its items can reach at most {capacity}.";
         }
         return null;
     }

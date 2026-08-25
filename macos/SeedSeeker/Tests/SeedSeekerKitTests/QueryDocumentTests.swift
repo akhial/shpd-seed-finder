@@ -139,20 +139,33 @@ final class QueryDocumentTests: XCTestCase {
         XCTAssertEqual(plain["item"] as? String, "spear")
     }
 
-    func testCombinedUpgradeGroupsWriteUpgradeSum() throws {
+    func testCombinedLevelGroupsWriteLevelSum() throws {
         let might = try XCTUnwrap(ItemCatalog.findById("ring_might"))
         let first = try ItemRequirement(key: 1, item: might, upgrade: 0, kind: .ring, upgradeMatch: .any,
-                                        identityGroup: 1, maximumDepth: 4,
-                                        upgradeSum: UpgradeSum(group: 1, atLeast: 4))
+                                        maximumDepth: 4, levelSum: LevelSum(group: 1, atLeast: 4))
         let second = try ItemRequirement(key: 2, item: might, upgrade: 0, kind: .ring, upgradeMatch: .any,
-                                         identityGroup: 1, maximumDepth: 4,
-                                         upgradeSum: UpgradeSum(group: 1, atLeast: 4))
+                                         maximumDepth: 4, levelSum: LevelSum(group: 1, atLeast: 4))
         let entries = try XCTUnwrap(
             try object(SearchRequest(requirements: [first, second]))["requirements"] as? [[String: Any]])
-        XCTAssertEqual(entries[0]["upgrade_sum"] as? [String: Int], ["group": 1, "at_least": 4])
-        XCTAssertEqual(entries[1]["upgrade_sum"] as? [String: Int], ["group": 1, "at_least": 4])
-        XCTAssertEqual(first.description, "Any upgrade • same item group A • sum group A ≥ +4 • by floor 4")
+        XCTAssertEqual(entries[0]["level_sum"] as? [String: Int], ["group": 1, "at_least": 4])
+        XCTAssertEqual(entries[1]["level_sum"] as? [String: Int], ["group": 1, "at_least": 4])
+        XCTAssertNil(entries[0]["upgrade_sum"])
+        XCTAssertEqual(first.description, "Any upgrade • level group A ≥ 4 • by floor 4")
         try assertEngineAgrees(SavedQuery(requirements: [first, second]))
+
+        // A same-item group is a stack: the anchor may be constrained, the copies are plain.
+        let anchor = try ItemRequirement(key: 3, item: might, upgrade: 2, kind: .ring, identityGroup: 2)
+        let copy = try ItemRequirement(key: 4, item: nil, upgrade: 0, kind: .ring, upgradeMatch: .any, identityGroup: 2)
+        try assertEngineAgrees(SavedQuery(requirements: [anchor, copy]))
+    }
+
+    func testTheUnreleasedUpgradeSumKeyIsRefused() throws {
+        let document: [String: Any] = ["requirements": [["kind": "ring", "upgrade_sum": ["group": 1, "at_least": 2]]]]
+        XCTAssertThrowsError(try ResultsExport.decodeQuery(document)) { error in
+            XCTAssertTrue("\(error)".contains("upgrade_sum"), "\(error)")
+        }
+        let renamed: [String: Any] = ["requirements": [["kind": "ring", "level_sum": ["group": 1, "at_least": 2]]]]
+        XCTAssertEqual(try ResultsExport.decodeQuery(renamed).requirements.first?.levelSum, LevelSum(group: 1, atLeast: 2))
     }
 
     /// The document decodes back to the models it came from, alternative
@@ -166,9 +179,9 @@ final class QueryDocumentTests: XCTestCase {
             try ItemRequirement(key: 3, item: nil, upgrade: 0, effect: .anyEnchantment,
                                 kind: .armor, upgradeMatch: .any, requireUncursed: true),
             try ItemRequirement(key: 4, item: ItemCatalog.findById("ring_might"), upgrade: 0, kind: .ring,
-                                upgradeMatch: .any, identityGroup: 1, upgradeSum: UpgradeSum(group: 2, atLeast: 4)),
+                                upgradeMatch: .any, levelSum: LevelSum(group: 2, atLeast: 4)),
             try ItemRequirement(key: 5, item: ItemCatalog.findById("ring_might"), upgrade: 0, kind: .ring,
-                                upgradeMatch: .any, identityGroup: 1, upgradeSum: UpgradeSum(group: 2, atLeast: 4)),
+                                upgradeMatch: .any, levelSum: LevelSum(group: 2, atLeast: 4)),
         ]
         let query = SavedQuery(requirements: requirements, maximumDepth: 20)
         let link = try DeepLink.encodeLink(for: query)
@@ -177,8 +190,8 @@ final class QueryDocumentTests: XCTestCase {
         XCTAssertEqual(decoded.requirements.map(\.alternativeGroup), [1, 1, nil, nil, nil])
         XCTAssertEqual(decoded.requirements.map(\.effect),
                        [.any, .oneOf(["Blocking", "Projecting"]), .anyEnchantment, .any, .any])
-        XCTAssertEqual(decoded.requirements.map(\.upgradeSum),
-                       [nil, nil, nil, UpgradeSum(group: 2, atLeast: 4), UpgradeSum(group: 2, atLeast: 4)])
+        XCTAssertEqual(decoded.requirements.map(\.levelSum),
+                       [nil, nil, nil, LevelSum(group: 2, atLeast: 4), LevelSum(group: 2, atLeast: 4)])
         XCTAssertEqual(decoded.requirements.slotCount, 4)
         XCTAssertNotNil(decoded.validated())
         XCTAssertNoThrow(try SearchRequest(requirements: decoded.requirements))
@@ -256,25 +269,31 @@ final class QueryDocumentTests: XCTestCase {
         XCTAssertTrue(neither.matched.isEmpty)
     }
 
-    func testScoutMarksACombinedUpgradeGroupAllOrNothing() async throws {
+    func testScoutMarksACombinedLevelGroupAsOneCondition() async throws {
         let world = try await ProductionSeedFinderEngine().scoutSeed(Self.pinnedSeed, challenges: 0)
         let scale = try XCTUnwrap(ItemCatalog.findById("scale_armor"))
         func pair(total: Int) throws -> [ItemRequirement] {
             try [1, 2].map { key in
                 try ItemRequirement(key: Int64(key), item: scale, upgrade: 0, kind: .armor, upgradeMatch: .any,
-                                    requireUncursed: true, upgradeSum: UpgradeSum(group: 1, atLeast: total))
+                                    requireUncursed: true, levelSum: LevelSum(group: 1, atLeast: total))
             }
         }
-        // The world's scale armors carry +1 and +2 between them.
-        let reached = try marks(try pair(total: 3))
-        XCTAssertEqual(reached.totalRequirements, 2)
-        XCTAssertEqual(reached.matchedRequirements, 2)
+        // The world's scale armors carry +1 and +2 between them: five levels.
+        // The group is one condition, and every contributing item is marked.
+        let reached = try marks(try pair(total: 5))
+        XCTAssertEqual(reached.totalRequirements, 1, "a combined-level group is one condition")
+        XCTAssertEqual(reached.matchedRequirements, 1)
         XCTAssertEqual(Set(reached.matched.map { world.items[$0].upgrade }), [1, 2])
 
-        let short = try marks(try pair(total: 4))
-        XCTAssertEqual(short.totalRequirements, 2)
+        // Members are optional: the +2 armor's three levels satisfy a total of 3 alone.
+        let single = try marks(try pair(total: 3))
+        XCTAssertEqual(single.matchedRequirements, 1)
+        XCTAssertFalse(single.matched.isEmpty)
+
+        let short = try marks(try pair(total: 6))
+        XCTAssertEqual(short.totalRequirements, 1)
         XCTAssertEqual(short.matchedRequirements, 0)
-        XCTAssertTrue(short.matched.isEmpty, "a short sum group marks nothing")
+        XCTAssertTrue(short.matched.isEmpty, "a short level group marks nothing")
     }
 
     func testScoutMatchesEffectSetsAndAnyEnchantment() async throws {
@@ -306,37 +325,76 @@ final class QueryDocumentTests: XCTestCase {
 
     // MARK: Local validation and summaries
 
-    func testCombinedUpgradeGroupsAreValidatedAcrossTheQuery() throws {
+    func testCombinedLevelGroupsAreValidatedAcrossTheQuery() throws {
         let might = try XCTUnwrap(ItemCatalog.findById("ring_might"))
         func ring(_ key: Int64, upgrade: Int = 0, match: UpgradeMatch = .any, total: Int, group: Int = 1) throws -> ItemRequirement {
             try ItemRequirement(key: key, item: might, upgrade: upgrade, kind: .ring, upgradeMatch: match,
-                                upgradeSum: UpgradeSum(group: group, atLeast: total))
+                                levelSum: LevelSum(group: group, atLeast: total))
         }
-        XCTAssertNoThrow(try SearchRequest(requirements: [ring(1, total: 8), ring(2, total: 8)]))
+        // Two rings of any upgrade reach ten levels: +4 plus one each.
+        XCTAssertNoThrow(try SearchRequest(requirements: [ring(1, total: 10), ring(2, total: 10)]))
         XCTAssertThrowsError(try SearchRequest(requirements: [ring(1, total: 3), ring(2, total: 4)])) { error in
-            XCTAssertEqual(error as? ModelValidationError, .upgradeSumMismatch(group: 1))
+            XCTAssertEqual(error as? ModelValidationError, .levelSumMismatch(group: 1))
             XCTAssertEqual(error.localizedDescription,
-                           "Combined upgrade group A must share one total across its items")
+                           "Combined level group A must share one total across its items")
         }
-        // An exact upgrade counts as itself, anything else as the family cap.
+        // An exact upgrade counts as itself, anything else as the family cap —
+        // plus one level each for the item itself.
         XCTAssertThrowsError(try SearchRequest(requirements: [
-            ring(1, upgrade: 1, match: .exactly, total: 6, group: 2), ring(2, total: 6, group: 2),
+            ring(1, upgrade: 1, match: .exactly, total: 8, group: 2), ring(2, total: 8, group: 2),
         ])) { error in
             XCTAssertEqual(error as? ModelValidationError,
-                           .upgradeSumUnattainable(group: 2, needed: 6, maximum: 5))
+                           .levelSumUnattainable(group: 2, needed: 8, maximum: 7))
             XCTAssertEqual(error.localizedDescription,
-                           "Combined upgrade group B needs +6 but its items can carry at most +5")
+                           "Combined level group B needs 8 levels but its items can reach at most 7")
         }
         XCTAssertNoThrow(try SearchRequest(requirements: [
-            ring(1, upgrade: 1, match: .exactly, total: 5, group: 2), ring(2, total: 5, group: 2),
+            ring(1, upgrade: 1, match: .exactly, total: 7, group: 2), ring(2, total: 7, group: 2),
         ]))
         let wand = try ItemRequirement(key: 3, item: nil, upgrade: 0, kind: .wand, upgradeMatch: .any,
-                                       upgradeSum: UpgradeSum(group: 3, atLeast: 4))
+                                       levelSum: LevelSum(group: 3, atLeast: 5))
         XCTAssertThrowsError(try SearchRequest(requirements: [wand])) { error in
             XCTAssertEqual(error as? ModelValidationError,
-                           .upgradeSumUnattainable(group: 3, needed: 4, maximum: 3))
+                           .levelSumUnattainable(group: 3, needed: 5, maximum: 4))
         }
         XCTAssertNoThrow(try SearchRequest(requirements: [ring(1, total: 4), ring(2, total: 3, group: 2)]))
+    }
+
+    func testSameItemGroupsAreStacksWithOneAnchor() throws {
+        let might = try XCTUnwrap(ItemCatalog.findById("ring_might"))
+        func named(_ key: Int64, group: Int = 1, alternative: Int? = nil) throws -> ItemRequirement {
+            try ItemRequirement(key: key, item: might, upgrade: 2, kind: .ring,
+                                identityGroup: group, alternativeGroup: alternative)
+        }
+        func plain(_ key: Int64, kind: ItemKind = .ring, group: Int = 1, maximumDepth: Int? = nil) throws -> ItemRequirement {
+            try ItemRequirement(key: key, item: nil, upgrade: 0, kind: kind, upgradeMatch: .any,
+                                identityGroup: group, maximumDepth: maximumDepth)
+        }
+        // One anchor with plain copies is the intended shape; a floor limit on a copy is fine.
+        XCTAssertNoThrow(try SearchRequest(requirements: [named(1), plain(2), plain(3, maximumDepth: 6)]))
+        XCTAssertNoThrow(try SearchRequest(requirements: [plain(1), plain(2)]))
+        // Two constrained members would force two described items to be one.
+        XCTAssertThrowsError(try SearchRequest(requirements: [named(1), named(2)])) { error in
+            XCTAssertEqual(error as? ModelValidationError, .identityGroupOverconstrained(group: 1))
+            XCTAssertEqual(error.localizedDescription,
+                           "Same-item group A can describe one item (or one set of alternatives); its other members must be plain")
+        }
+        let uncursed = try ItemRequirement(key: 2, item: nil, upgrade: 0, kind: .ring, upgradeMatch: .any,
+                                           identityGroup: 1, requireUncursed: true)
+        XCTAssertThrowsError(try SearchRequest(requirements: [named(1), uncursed]))
+        // The members of one alternative group form a single anchor unit.
+        XCTAssertNoThrow(try SearchRequest(requirements: [named(1, alternative: 1), named(2, alternative: 1), plain(3)]))
+        XCTAssertThrowsError(try SearchRequest(requirements: [named(1, alternative: 1), named(2, alternative: 1), named(3)]))
+        // Members of different categories never describe one item; a narrowed kind is a constraint.
+        XCTAssertThrowsError(try SearchRequest(requirements: [named(1), plain(2, kind: .wand)])) { error in
+            XCTAssertEqual(error as? ModelValidationError, .identityGroupMixedKinds(group: 1))
+        }
+        let thrown = try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .thrownWeapon, upgradeMatch: .any, identityGroup: 2)
+        let weapon = try ItemRequirement(key: 2, item: nil, upgrade: 0, kind: .weapon, upgradeMatch: .any, identityGroup: 2)
+        XCTAssertFalse(thrown.isBare); XCTAssertTrue(weapon.isBare)
+        XCTAssertNoThrow(try SearchRequest(requirements: [thrown, weapon]))
+        // Separate groups are separate stacks.
+        XCTAssertNoThrow(try SearchRequest(requirements: [named(1), named(2, group: 2)]))
     }
 
     func testSummaryTextDescribesTheNewState() throws {
@@ -350,11 +408,13 @@ final class QueryDocumentTests: XCTestCase {
                                           kind: .armor, upgradeMatch: .atLeast)
         XCTAssertEqual(glyphed.description, "+1 or higher • any glyph")
         let summed = try ItemRequirement(key: 4, item: nil, upgrade: 0, kind: .ring, upgradeMatch: .any,
-                                         upgradeSum: UpgradeSum(group: 2, atLeast: 4))
-        XCTAssertEqual(summed.description, "Any upgrade • sum group B ≥ +4")
+                                         levelSum: LevelSum(group: 2, atLeast: 4))
+        XCTAssertEqual(summed.description, "Any upgrade • level group B ≥ 4")
         XCTAssertEqual(summed.maximumContributedUpgrade, 4)
+        XCTAssertEqual(summed.maximumLevel, 5)
         let exact = try ItemRequirement(key: 5, item: nil, upgrade: 2, kind: .wand)
         XCTAssertEqual(exact.maximumContributedUpgrade, 2)
+        XCTAssertEqual(exact.maximumLevel, 3)
         XCTAssertEqual(groupLetter(1), "A"); XCTAssertEqual(groupLetter(4), "D")
     }
 
@@ -373,7 +433,7 @@ final class QueryDocumentTests: XCTestCase {
         XCTAssertEqual(decoded.requirements[0].effect, .oneOf(["Lucky"]))
         XCTAssertEqual(decoded.requirements[0].modifier, "Lucky")
         XCTAssertEqual(decoded.requirements.map(\.alternativeGroup), [nil, nil])
-        XCTAssertEqual(decoded.requirements.map(\.upgradeSum), [nil, nil])
+        XCTAssertEqual(decoded.requirements.map(\.levelSum), [nil, nil])
         XCTAssertEqual(decoded.maximumDepth, 12)
     }
 
@@ -386,7 +446,7 @@ final class QueryDocumentTests: XCTestCase {
             try ItemRequirement(key: 3, item: nil, upgrade: 0, effect: .anyEnchantment,
                                 kind: .armor, upgradeMatch: .any),
             try ItemRequirement(key: 4, item: nil, upgrade: 0, kind: .ring, upgradeMatch: .any,
-                                upgradeSum: UpgradeSum(group: 1, atLeast: 5)),
+                                levelSum: LevelSum(group: 1, atLeast: 5)),
         ])
         let text = try XCTUnwrap(QueryPersistence.encode(query))
         let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
@@ -396,7 +456,7 @@ final class QueryDocumentTests: XCTestCase {
         XCTAssertNil(saved[0]["effect"])
         XCTAssertEqual(saved[1]["effect"] as? [String], ["Blazing", "Chilling"])
         XCTAssertEqual(saved[2]["effect"] as? String, "any_enchantment")
-        XCTAssertEqual(saved[3]["upgradeSum"] as? [String: Int], ["group": 1, "atLeast": 5])
+        XCTAssertEqual(saved[3]["levelSum"] as? [String: Int], ["group": 1, "atLeast": 5])
         XCTAssertEqual(QueryPersistence.decode(text), query)
 
         let presets = try XCTUnwrap(PresetPersistence.encode([QueryPreset(name: "Complex", query: query)]))
@@ -409,7 +469,7 @@ final class QueryDocumentTests: XCTestCase {
     func testBuiltInPresetsAreUnchangedAndStillEncode() throws {
         for preset in BuiltInPresets.all {
             XCTAssertEqual(preset.query.requirements.slotCount, preset.query.requirements.count, preset.name)
-            XCTAssertTrue(preset.query.requirements.allSatisfy { $0.effect == .any && $0.upgradeSum == nil }, preset.name)
+            XCTAssertTrue(preset.query.requirements.allSatisfy { $0.effect == .any && $0.levelSum == nil }, preset.name)
             try assertEngineAgrees(preset.query)
         }
     }

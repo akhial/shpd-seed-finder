@@ -37,9 +37,11 @@ only action that discards results is the explicit **Clear** button.
   of its kind, a tightened upgrade/tier bound, a demanded source, a narrowed
   effect set, curse state, per-item floor limit, or a dropped alternative.
   (A plain requirement multiset superset is the special case where the
-  covering requirements are equal.) A combined-upgrade group of A must be
+  covering requirements are equal.) A combined-level group of A must be
   carried over intact: the slots covering its members must form exactly one
-  group of B, of the same size, with at least A's total. Only then is
+  group of B, of the same size, with at least A's total — and since a
+  combined-level member is optional (any subset of its group may carry the
+  total), it can never cover a plain slot of A. Only then is
   every B-match inside A's covered region already in A's matches, which is
   what makes filter-and-resume sound; loosening any requirement, adding an
   alternative, or lowering a total breaks the containment and B must rescan.

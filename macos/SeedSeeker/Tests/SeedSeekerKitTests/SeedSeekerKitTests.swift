@@ -400,13 +400,13 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertNoThrow(try ItemRequirement(key: 1, item: nil, upgrade: 1,
             effect: .oneOf(["Annoying", "Blazing"]), kind: .weapon, requireUncursed: true), "a mixed set is fine")
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 1, kind: .ring,
-            upgradeSum: UpgradeSum(group: 5, atLeast: 2)))
+            levelSum: LevelSum(group: 5, atLeast: 2)))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 1, kind: .ring,
-            upgradeSum: UpgradeSum(group: 1, atLeast: 0)))
+            levelSum: LevelSum(group: 1, atLeast: 0)))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 1, kind: .ring,
-            alternativeGroup: 1, upgradeSum: UpgradeSum(group: 1, atLeast: 2)))
+            alternativeGroup: 1, levelSum: LevelSum(group: 1, atLeast: 2)))
         XCTAssertNoThrow(try ItemRequirement(key: 1, item: nil, upgrade: 1, kind: .ring,
-            upgradeSum: UpgradeSum(group: 4, atLeast: 1)))
+            levelSum: LevelSum(group: 4, atLeast: 1)))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 1, kind: .weapon, identityGroup: 5))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 1, kind: .weapon, maximumDepth: 25))
         XCTAssertNoThrow(try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .weapon,

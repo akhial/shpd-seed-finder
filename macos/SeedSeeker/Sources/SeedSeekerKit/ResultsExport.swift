@@ -152,7 +152,7 @@ public enum ResultsExport {
         if let source = requirement.source { output["source"] = sourceNames[source.rawValue] }
         if let group = requirement.identityGroup { output["identity_group"] = group }
         if let depth = requirement.maximumDepth { output["max_depth"] = depth }
-        if let sum = requirement.upgradeSum { output["upgrade_sum"] = ["group": sum.group, "at_least": sum.atLeast] }
+        if let sum = requirement.levelSum { output["level_sum"] = ["group": sum.group, "at_least": sum.atLeast] }
         return output
     }
 
@@ -268,10 +268,15 @@ public enum ResultsExport {
         } else if let names = entry["effect"] as? [String] {
             effect = .oneOf(try names.map(effectName))
         }
-        var upgradeSum: UpgradeSum?
-        if let object = entry["upgrade_sum"] as? [String: Any],
+        // The unreleased upgrade_sum key counted upgrades, not levels: refused
+        // rather than silently reinterpreted, as the engine does.
+        guard entry["upgrade_sum"] == nil else {
+            throw ResultsExportError("upgrade_sum is no longer supported; use level_sum")
+        }
+        var levelSum: LevelSum?
+        if let object = entry["level_sum"] as? [String: Any],
            let group = intField(object, "group"), let atLeast = intField(object, "at_least") {
-            upgradeSum = UpgradeSum(group: group, atLeast: atLeast)
+            levelSum = LevelSum(group: group, atLeast: atLeast)
         }
         var source: ScoutItemSource?
         if let name = entry["source"] as? String {
@@ -295,7 +300,7 @@ public enum ResultsExport {
             maximumDepth: intField(entry, "max_depth"),
             requireUncursed: boolField(entry, "uncursed"),
             alternativeGroup: alternativeGroup,
-            upgradeSum: upgradeSum)
+            levelSum: levelSum)
     }
 }
 

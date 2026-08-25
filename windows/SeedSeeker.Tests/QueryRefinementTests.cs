@@ -178,8 +178,8 @@ public sealed class QueryRefinementTests
 
         // A higher combined total strengthens the group; a lower one loosens it.
         static QuerySettings Sum(int atLeast) => Query(
-            new ItemRequirement { Kind = ItemKind.Wand, UpgradeSum = new(1, atLeast) },
-            new ItemRequirement { Kind = ItemKind.Wand, UpgradeSum = new(1, atLeast) });
+            new ItemRequirement { Kind = ItemKind.Wand, LevelSum = new(1, atLeast) },
+            new ItemRequirement { Kind = ItemKind.Wand, LevelSum = new(1, atLeast) });
         Assert.True(QueryRefinement.CanRefine(Sum(4), Sum(3)));
         Assert.False(QueryRefinement.CanRefine(Sum(3), Sum(4)));
 

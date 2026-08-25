@@ -91,7 +91,7 @@ int32_t seedfinder_share_decode(const uint8_t *text, size_t text_len, uint8_t **
 // Returns the engine's own constants as UTF-8 JSON: {"shpdVersion", "shpdCommit",
 // "totalSeeds", "maxResults", "limits": {"maxDepth", "exactTierMin",
 // "exactTierMax", "boundedTierMin", "boundedTierMax", "identityGroupMax",
-// "maxUpgradeDefault", "maxUpgradeRing", "resultsFileMaxBytes"},
+// "levelSumGroupMax", "maxUpgradeDefault", "maxUpgradeRing", "resultsFileMaxBytes"},
 // "emptyBossFloors": [5,10,15], "questWindows": {"ghost", "wandmaker",
 // "blacksmith", "imp"} each [first, last], "challenges": [{"name", "mask",
 // "changesLevelGeneration"}, ...] in mask order, "searchStartStride"}. Every

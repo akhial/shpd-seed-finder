@@ -668,7 +668,7 @@ private struct QueryView: View {
 
     private var builtRequest: SearchRequest? { try? buildRequest() }
 
-    /// Why the query cannot be searched as it stands (a combined-upgrade
+    /// Why the query cannot be searched as it stands (a combined-level
     /// group that no longer adds up, say), or nil when it can.
     private var requestError: String? {
         guard !requirements.isEmpty else { return nil }
@@ -734,14 +734,14 @@ private struct QueryView: View {
 
     /// Forks a row into an "any of these" group: the editor opens on a copy,
     /// and only saving it commits the group (an alternative carries no
-    /// combined-upgrade membership).
+    /// combined-level membership).
     private func addAlternative(to requirement: ItemRequirement) {
         let group = requirement.alternativeGroup
             ?? (requirements.compactMap(\.alternativeGroup).max() ?? 0) + 1
         var copy = requirement
         copy.key = Int64.random(in: 1...Int64.max)
         copy.alternativeGroup = group
-        copy.upgradeSum = nil
+        copy.levelSum = nil
         editor = EditorSession(requirement: copy, isNew: true, forkedFromKey: requirement.key)
     }
 
@@ -755,24 +755,24 @@ private struct QueryView: View {
     }
 
     /// Applies an editor result: inserts or replaces the row, joins a forked
-    /// source to the new group, and shares the combined-upgrade total with
+    /// source to the new group, and shares the combined-level total with
     /// the rest of its group.
     private func commit(_ result: ItemRequirement, from session: EditorSession) {
         var updated = requirements
         if let sourceKey = session.forkedFromKey,
            let index = updated.firstIndex(where: { $0.key == sourceKey }) {
             updated[index].alternativeGroup = result.alternativeGroup
-            updated[index].upgradeSum = nil
+            updated[index].levelSum = nil
             updated.insert(result, at: index + 1)
         } else if session.isNew {
             updated.append(result)
         } else if let index = updated.firstIndex(where: { $0.key == result.key }) {
             updated[index] = result
         }
-        if let sum = result.upgradeSum {
+        if let sum = result.levelSum {
             for index in updated.indices
-            where updated[index].key != result.key && updated[index].upgradeSum?.group == sum.group {
-                updated[index].upgradeSum = sum
+            where updated[index].key != result.key && updated[index].levelSum?.group == sum.group {
+                updated[index].levelSum = sum
             }
         }
         requirements = updated
@@ -854,7 +854,7 @@ private enum EffectMode: Hashable {
 private struct RequirementEditor: View {
     let original: ItemRequirement
     let isNew: Bool
-    /// The rest of the query, for the combined-upgrade group's shared total
+    /// The rest of the query, for the combined-level group's shared total
     /// and attainable range.
     let others: [ItemRequirement]
     let onFinish: (ItemRequirement?) -> Void
@@ -897,8 +897,8 @@ private struct RequirementEditor: View {
         _selectedEffects = State(initialValue: Set(requirement.effect.names))
         _sourceRaw = State(initialValue: requirement.source.map { $0.rawValue + 1 } ?? 0)
         _group = State(initialValue: requirement.identityGroup ?? 0)
-        _sumGroup = State(initialValue: requirement.upgradeSum?.group ?? 0)
-        _sumTotal = State(initialValue: requirement.upgradeSum?.atLeast ?? 1)
+        _sumGroup = State(initialValue: requirement.levelSum?.group ?? 0)
+        _sumTotal = State(initialValue: requirement.levelSum?.atLeast ?? 1)
         _maximumDepth = State(initialValue: requirement.maximumDepth ?? 0)
         _requireUncursed = State(initialValue: requirement.requireUncursed)
     }
@@ -1044,35 +1044,39 @@ private struct RequirementEditor: View {
                         Text("Any").tag(0)
                         ForEach(ScoutItemSource.allCases, id: \.rawValue) { Text($0.label).tag($0.rawValue + 1) }
                     }
-                    Picker("Same-item group", selection: $group) {
-                        Text("None").tag(0)
-                        ForEach(1...SearchLimits.identityGroupMax, id: \.self) { Text(groupLetter($0)).tag($0) }
-                    }.pickerStyle(.segmented)
                     VStack(alignment: .leading, spacing: 2) {
-                        Picker("Combined upgrade group", selection: $sumGroup) {
+                        Picker("Same-item group", selection: $group) {
                             Text("None").tag(0)
-                            ForEach(1...SearchLimits.upgradeSumGroupMax, id: \.self) { Text(groupLetter($0)).tag($0) }
+                            ForEach(1...SearchLimits.identityGroupMax, id: \.self) { Text(groupLetter($0)).tag($0) }
+                        }.pickerStyle(.segmented)
+                        Text("Copies of one item. One member (or one set of alternatives) may name the item and its qualities; every other member must be a plain row of the same category.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Picker("Combined level group", selection: $sumGroup) {
+                            Text("None").tag(0)
+                            ForEach(1...SearchLimits.levelSumGroupMax, id: \.self) { Text(groupLetter($0)).tag($0) }
                         }
                         .pickerStyle(.segmented)
                         .disabled(isAlternative)
                         .onChange(of: sumGroup) { _, value in
                             // Joining a group adopts the total its members already share.
-                            if value != 0, let shared = sumMembers.first?.upgradeSum?.atLeast { sumTotal = shared }
+                            if value != 0, let shared = sumMembers.first?.levelSum?.atLeast { sumTotal = shared }
                         }
                         Text(isAlternative
                              ? "Not available for an alternative: only one of them is ever found."
-                             : "Distinct items whose upgrades add up to a total, such as +4 worth of Rings of Might.")
+                             : "Distinct items whose levels add up to a total, each counting its upgrade plus one: a +1 and a +2 Ring of Might reach 5.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     if sumGroup != 0 && !isAlternative {
                         VStack(alignment: .leading, spacing: 2) {
                             LabeledContent("Total at least") {
-                                Text("+\(sumTotal)").monospacedDigit().foregroundStyle(.secondary)
+                                Text("\(sumTotal) level\(sumTotal == 1 ? "" : "s")").monospacedDigit().foregroundStyle(.secondary)
                             }
                             Slider(value: intBinding($sumTotal), in: 1...Double(max(1, sumMaximum)), step: 1)
                                 .disabled(sumMaximum <= 1)
                             let count = sumMembers.count + 1
-                            Text("\(count) item\(count == 1 ? "" : "s") in group \(groupLetter(sumGroup)) can carry at most +\(sumMaximum) together.")
+                            Text("Up to \(count) item\(count == 1 ? "" : "s") in group \(groupLetter(sumGroup)) can reach \(sumMaximum) levels together; each item counts its upgrade plus one, and any subset that reaches the total satisfies the group.")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
@@ -1106,16 +1110,17 @@ private struct RequirementEditor: View {
         .frame(width: 480, height: kind.modifierLabel == nil ? 540 : 620)
     }
 
-    /// An alternative can never be part of a combined-upgrade group.
+    /// An alternative can never be part of a combined-level group.
     private var isAlternative: Bool { original.alternativeGroup != nil }
-    /// The other members of the chosen combined-upgrade group.
+    /// The other members of the chosen combined-level group.
     private var sumMembers: [ItemRequirement] {
-        sumGroup == 0 ? [] : others.filter { $0.upgradeSum?.group == sumGroup }
+        sumGroup == 0 ? [] : others.filter { $0.levelSum?.group == sumGroup }
     }
-    /// The most the group could add up to with this row as edited.
+    /// The most levels the group could add up to with this row as edited:
+    /// each member's highest upgrade plus one.
     private var sumMaximum: Int {
-        let own = match == .exactly ? upgrade : kind.maximumSearchUpgrade
-        return own + sumMembers.reduce(0) { $0 + $1.maximumContributedUpgrade }
+        let own = (match == .exactly ? upgrade : kind.maximumSearchUpgrade) + 1
+        return own + sumMembers.reduce(0) { $0 + $1.maximumLevel }
     }
 
     private func effectGrid(_ title: String, names: [String]) -> some View {
@@ -1154,7 +1159,7 @@ private struct RequirementEditor: View {
             validationMessage = "Choose at least one \((kind.modifierLabel ?? "effect").lowercased())"
             return
         }
-        let sum = sumGroup == 0 || isAlternative ? nil : UpgradeSum(group: sumGroup, atLeast: sumTotal)
+        let sum = sumGroup == 0 || isAlternative ? nil : LevelSum(group: sumGroup, atLeast: sumTotal)
         do {
             let value = try ItemRequirement(key: original.key, item: item, upgrade: upgrade,
                 effect: effect, kind: kind,
@@ -1163,15 +1168,15 @@ private struct RequirementEditor: View {
                 identityGroup: group == 0 ? nil : group,
                 maximumDepth: maximumDepth == 0 ? nil : maximumDepth,
                 requireUncursed: requireUncursed,
-                alternativeGroup: original.alternativeGroup, upgradeSum: sum)
+                alternativeGroup: original.alternativeGroup, levelSum: sum)
             // The group's other members will take this row's total on save,
             // so check the group as it will be, not as it was.
             let groupAsSaved = others.map { other in
                 var copy = other
-                if let sum, copy.upgradeSum?.group == sum.group { copy.upgradeSum = sum }
+                if let sum, copy.levelSum?.group == sum.group { copy.levelSum = sum }
                 return copy
             }
-            try (groupAsSaved + [value]).validateUpgradeSums()
+            try (groupAsSaved + [value]).validateGroups()
             onFinish(value)
         } catch {
             validationMessage = (error as? LocalizedError)?.errorDescription ?? "The requirement is invalid"

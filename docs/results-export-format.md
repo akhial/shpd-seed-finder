@@ -58,14 +58,14 @@ It is decoded by `crates/seedfinder-core/src/json_query.rs`:
 - `requirements` — non-empty array of entries. Each entry is either a
   requirement object, or an alternative group `{"any_of": [<requirement>,
   ...]}` satisfied by any single member (groups may not nest, and members may
-  not carry `upgrade_sum`). Requirement objects have the optional fields:
+  not carry `level_sum`). Requirement objects have the optional fields:
   - `kind` — `"weapon" | "melee_weapon" | "thrown_weapon" | "armor" | "wand"
     | "ring"` (required when `item` is absent). `"weapon"` matches melee and
     thrown weapons alike; the two narrowed kinds were added alongside the
     melee/thrown search filters — a file that uses them simply fails to
     import on builds older than that feature, with the codec's
     unknown-category message. The `any_of`, effect-list/`"any_enchantment"`,
-    and `upgrade_sum` forms below are additive in the same way,
+    and `level_sum` forms below are additive in the same way,
   - `item` — catalog stable id such as `"ring_wealth"`,
   - `tier` — `"any"` (the default) or exactly one of `{"exact": n}`,
     `{"at_least": n}`, `{"at_most": n}`,
@@ -78,12 +78,20 @@ It is decoded by `crates/seedfinder-core/src/json_query.rs`:
   - `uncursed` — boolean,
   - `source` — snake_case source name such as `"imp_reward"`,
   - `identity_group` — integer 1–4 (groups A–D; the engine allows more, but
-    no app's editor can express them, so the file format caps at 4),
+    no app's editor can express them, so the file format caps at 4). A group
+    is a *stack* of copies of one item: one member — or the members of one
+    `any_of` group — may name the item and its qualities, and every other
+    member must be a plain entry of the same kind (a `max_depth` is allowed,
+    being a placement bound rather than an item property),
   - `max_depth` — integer 1–24,
-  - `upgrade_sum` — `{"group": n, "at_least": n}`: requirements sharing a
-    group must be matched by distinct items whose upgrade levels add up to
-    at least the total; members of one group agree on the total. Groups are
-    capped at 1–4 (A–D) like `identity_group`.
+  - `level_sum` — `{"group": n, "at_least": n}`: requirements sharing a
+    group are matched by distinct items whose *levels* — each item's upgrade
+    plus one — add up to at least the total; members of one group agree on
+    the total. Members are optional: any subset reaching the total satisfies
+    the group, so a lone +2 ring meets a two-member group asking for 3.
+    Groups are capped at 1–4 (A–D) like `identity_group`. The unreleased
+    `upgrade_sum` spelling, which counted upgrades, is refused with an error
+    naming the field rather than reinterpreted.
 - `max_depth` (integer 1–24, default 24), `require_blacksmith`,
   `exclude_blacksmith_rewards`, `fast_mode` (booleans) — top-level scope
   flags.
