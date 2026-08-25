@@ -5,7 +5,10 @@ import dev.seedseeker.app.catalog.ItemCatalog
 import org.json.JSONObject
 import dev.seedseeker.app.catalog.PackagedCatalog
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -151,6 +154,18 @@ class RelationsTest {
         assertNull(joined.validationProblem())
         assertNull(joined.firstOrNull { it.identityGroup != null })
         assertEquals(2, joined.boardCount())
+    }
+
+    @Test
+    fun aClusterSpanningTwoCategoriesCannotGrowAStack() {
+        val mixed = listOf(anyWand(1), ItemRequirement(2, sword, 3)).joinAlternatives(0, 1)
+        val cluster = mixed.boardItems().single()
+        assertEquals(2, cluster.members.size)
+        assertFalse(mixed.canStack(cluster))
+        assertSame(mixed, mixed.setStackCount(cluster, count = 2))
+        // A cluster of one category is still free to stack.
+        val wands = listOf(anyWand(1), ItemRequirement(2, fireblast, 3)).joinAlternatives(0, 1)
+        assertTrue(wands.canStack(wands.boardItems().single()))
     }
 
     @Test

@@ -358,6 +358,16 @@ fun List<ItemRequirement>.removeItem(item: BoardItem): List<ItemRequirement> {
 fun List<ItemRequirement>.removeMember(index: Int): List<ItemRequirement> =
     filterIndexed { i, _ -> i != index }.normalizeRelations()
 
+/**
+ * Whether the board item can carry a stack. A copy has to name the kind it
+ * copies, and a cluster spanning two categories — "spear or wand" — names
+ * none, so such a cluster is offered no stack and cannot grow one.
+ */
+fun List<ItemRequirement>.canStack(item: BoardItem): Boolean {
+    val family = this[item.anchor].kind.family
+    return item.members.all { this[it].kind.family == family }
+}
+
 /** Sets how many items the board item anchored at [item] asks for. */
 fun List<ItemRequirement>.setStackCount(item: BoardItem, count: Int): List<ItemRequirement> {
     val wanted = count.coerceIn(1, SearchLimits.STACK_MAX) - 1
@@ -366,6 +376,8 @@ fun List<ItemRequirement>.setStackCount(item: BoardItem, count: Int): List<ItemR
         val doomed = item.extras.drop(wanted).toSet()
         return filterIndexed { index, _ -> index !in doomed }.normalizeRelations()
     }
+    // Shrinking a cluster that spans categories is fine; growing one is not.
+    if (!canStack(item)) return this
     val anchor = this[item.anchor]
     val added = wanted - item.extras.size
     // New copies keep to the floor limit the existing copies already carry.
