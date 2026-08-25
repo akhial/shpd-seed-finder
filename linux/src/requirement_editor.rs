@@ -13,13 +13,13 @@ use shpd_seedfinder_core::main_world::normalize_floor_limit;
 use shpd_seedfinder_core::model::ItemSource;
 use shpd_seedfinder_core::query::{
     BOUNDED_TIER_MAX, BOUNDED_TIER_MIN, EXACT_TIER_MAX, EXACT_TIER_MIN, EffectRequirement,
-    EffectSet, LevelSum, MAX_IDENTITY_GROUP, MAX_LEVEL_SUM_GROUP, MAX_SEARCH_DEPTH, RESERVED_GROUP,
-    RESERVED_IDENTITY_GROUP, TierRequirement, UpgradeRequirement,
+    EffectSet, MAX_SEARCH_DEPTH, TierRequirement, UpgradeRequirement,
 };
 
 use crate::query_pane::skip_empty_boss_floors;
+use crate::relations::STACK_MAX;
 use crate::state::{
-    ALL_KIND_CHOICES, AppState, KindChoice, UiRequirement, group_letter, kind_choice_label,
+    ALL_KIND_CHOICES, AppState, KindChoice, StackShape, UiRequirement, kind_choice_label,
     kind_choice_singular, source_label,
 };
 
@@ -48,8 +48,13 @@ struct Editor {
     exact_upgrade: adw::SpinRow,
     minimum_upgrade: adw::ComboRow,
     ring_minimum_upgrade: adw::SpinRow,
-    sum_group_row: adw::ComboRow,
-    sum_total: adw::SpinRow,
+    upgrade_group: adw::PreferencesGroup,
+    count_group: adw::PreferencesGroup,
+    count_row: adw::SpinRow,
+    copy_floor_switch: adw::SwitchRow,
+    copy_floor_value: adw::SpinRow,
+    levels_switch: adw::SwitchRow,
+    levels_value: adw::SpinRow,
     effect_mode_group: adw::PreferencesGroup,
     effect_mode: adw::ComboRow,
     effect_group: adw::PreferencesGroup,
@@ -57,32 +62,36 @@ struct Editor {
     effect_checks: RefCell<Vec<EffectCheck>>,
     uncursed: adw::SwitchRow,
     source_row: adw::ComboRow,
-    group_row: adw::ComboRow,
     floor_switch: adw::SwitchRow,
     floor_value: adw::SpinRow,
     updating: Cell<bool>,
     key: u64,
-    /// The alternative group the row belongs to; members cannot join a
-    /// combined-level group, so the editor hides that picker.
+    /// The alternative group the row belongs to, kept so a saved member stays
+    /// in its cluster.
     alternative_group: Option<u8>,
-    /// The query the row is edited within, for cross-row validation and the
-    /// combined-level ranges.
+    /// A cluster member's stack belongs to the cluster, so that section is
+    /// hidden for one.
+    in_cluster: bool,
+    /// The query the row is edited within, for cross-row validation.
     context: AppState,
 }
 
-/// Presents the editor over `parent`. `context` is the query the row lives in;
-/// `on_finish` receives the edited requirement when the user confirms, and
-/// cancelling never calls it.
+/// Presents the editor over `parent`. `context` is the query the row lives in
+/// and `stack` the shape of the board entry it anchors; `on_finish` receives
+/// the edited requirement with the stack it asked for — how many items, their
+/// combined level, and the floor limit of the extra copies — when the user
+/// confirms, and cancelling never calls it.
 pub fn present(
     parent: &adw::ApplicationWindow,
     context: &AppState,
     requirement: &UiRequirement,
+    stack: StackShape,
     is_new: bool,
-    on_finish: impl Fn(UiRequirement) + 'static,
+    on_finish: impl Fn(UiRequirement, usize, Option<u8>, Option<u8>) + 'static,
 ) {
-    let editor = Rc::new(build(context.clone(), requirement));
+    let editor = Rc::new(build(context.clone(), requirement, stack));
     connect(&editor);
-    restore(&editor, requirement);
+    restore(&editor, requirement, stack);
 
     let header = adw::HeaderBar::builder()
         .show_start_title_buttons(false)
@@ -103,13 +112,11 @@ pub fn present(
     toolbar_view.add_top_bar(&editor.banner);
     toolbar_view.set_content(Some(&page));
 
-    editor
-        .dialog
-        .set_title(match (is_new, requirement.alternative_group) {
-            (true, Some(_)) => "New Alternative",
-            (true, None) => "New Requirement",
-            (false, _) => "Edit Requirement",
-        });
+    editor.dialog.set_title(if is_new {
+        "New Requirement"
+    } else {
+        "Edit Requirement"
+    });
     editor.dialog.set_child(Some(&toolbar_view));
     editor.dialog.set_default_widget(Some(&confirm));
 
@@ -122,11 +129,11 @@ pub fn present(
     confirm.connect_clicked({
         let editor = Rc::clone(&editor);
         move |_| {
-            let result = collect(&editor);
-            match check(&editor, &result) {
+            let (result, count, total, copy_depth) = collect(&editor);
+            match check(&editor, &result, count, total, copy_depth) {
                 Ok(()) => {
                     editor.dialog.close();
-                    on_finish(result);
+                    on_finish(result, count, total, copy_depth);
                 }
                 Err(message) => {
                     editor.banner.set_title(&message);
@@ -138,7 +145,7 @@ pub fn present(
     editor.dialog.present(Some(parent));
 }
 
-fn build(context: AppState, requirement: &UiRequirement) -> Editor {
+fn build(context: AppState, requirement: &UiRequirement, stack: StackShape) -> Editor {
     let effect_list = gtk::ListBox::builder()
         .css_classes(["boxed-list"])
         .selection_mode(gtk::SelectionMode::None)
@@ -175,11 +182,31 @@ fn build(context: AppState, requirement: &UiRequirement) -> Editor {
         exact_upgrade: spin_row("Exactly", 1.0, 1.0, 4.0),
         minimum_upgrade: combo_row("Minimum upgrade", &["+1 or higher", "+2 or higher"]),
         ring_minimum_upgrade: spin_row("Minimum upgrade", 1.0, 1.0, 3.0),
-        sum_group_row: combo_row(
-            "Combined upgrade group",
-            &borrowed(&group_labels(MAX_LEVEL_SUM_GROUP)),
+        upgrade_group: adw::PreferencesGroup::builder()
+            .title("Upgrade Level")
+            .build(),
+        count_group: adw::PreferencesGroup::builder()
+            .title("Total Item Count")
+            .description(
+                "Ask for more than one item of this kind — reforge fodder for the \
+                 blacksmith. The extra copies carry no constraints of their own.",
+            )
+            .build(),
+        count_row: spin_row("How many", 1.0, 1.0, stack_maximum()),
+        copy_floor_switch: adw::SwitchRow::builder()
+            .title("Limit the extra copies to a floor")
+            .build(),
+        copy_floor_value: spin_row(
+            "Copies within first … floors",
+            4.0,
+            1.0,
+            f64::from(MAX_SEARCH_DEPTH),
         ),
-        sum_total: spin_row("Total at least", 1.0, 1.0, 4.0),
+        levels_switch: adw::SwitchRow::builder()
+            .title("Count levels together")
+            .subtitle("Any upgrade on each, as long as they add up")
+            .build(),
+        levels_value: spin_row("Levels reach", 1.0, 1.0, 4.0),
         effect_mode_group: adw::PreferencesGroup::builder()
             .title("Enchantment")
             .build(),
@@ -194,10 +221,6 @@ fn build(context: AppState, requirement: &UiRequirement) -> Editor {
                 .chain(ItemSource::ALL.iter().map(|source| source_label(*source)))
                 .collect::<Vec<_>>(),
         ),
-        group_row: combo_row(
-            "Same-item group",
-            &borrowed(&group_labels(MAX_IDENTITY_GROUP)),
-        ),
         floor_switch: adw::SwitchRow::builder()
             .title("Limit to a floor")
             .subtitle("Require this item within the first floors only")
@@ -211,8 +234,15 @@ fn build(context: AppState, requirement: &UiRequirement) -> Editor {
         updating: Cell::new(false),
         key: requirement.key,
         alternative_group: requirement.alternative_group,
+        in_cluster: stack.in_cluster,
         context,
     }
+}
+
+/// The stack spinner's upper bound as the adjustment wants it.
+#[allow(clippy::cast_precision_loss)] // STACK_MAX is 3.
+fn stack_maximum() -> f64 {
+    STACK_MAX as f64
 }
 
 fn groups(editor: &Rc<Editor>) -> Vec<adw::PreferencesGroup> {
@@ -223,37 +253,29 @@ fn groups(editor: &Rc<Editor>) -> Vec<adw::PreferencesGroup> {
     item_group.add(&editor.exact_tier);
     item_group.add(&editor.bounded_tier);
 
-    let upgrade_group = adw::PreferencesGroup::builder()
-        .title("Upgrade Level")
-        .description(if editor.alternative_group.is_some() {
-            "Alternatives cannot join a combined level group."
-        } else {
-            "Combined upgrade group members are distinct items whose upgrade levels \
-             add up to at least the shared total."
-        })
-        .build();
-    upgrade_group.add(&editor.upgrade_row);
-    upgrade_group.add(&editor.exact_upgrade);
-    upgrade_group.add(&editor.minimum_upgrade);
-    upgrade_group.add(&editor.ring_minimum_upgrade);
-    upgrade_group.add(&editor.sum_group_row);
-    upgrade_group.add(&editor.sum_total);
+    editor.upgrade_group.add(&editor.upgrade_row);
+    editor.upgrade_group.add(&editor.exact_upgrade);
+    editor.upgrade_group.add(&editor.minimum_upgrade);
+    editor.upgrade_group.add(&editor.ring_minimum_upgrade);
+
+    editor.count_group.add(&editor.count_row);
+    editor.count_group.add(&editor.copy_floor_switch);
+    editor.count_group.add(&editor.copy_floor_value);
+    editor.count_group.add(&editor.levels_switch);
+    editor.count_group.add(&editor.levels_value);
 
     editor.effect_mode_group.add(&editor.effect_mode);
 
-    let details_group = adw::PreferencesGroup::builder()
-        .title("Details")
-        .description("Same-item group members must resolve to the same item.")
-        .build();
+    let details_group = adw::PreferencesGroup::builder().title("Details").build();
     details_group.add(&editor.uncursed);
     details_group.add(&editor.source_row);
-    details_group.add(&editor.group_row);
     details_group.add(&editor.floor_switch);
     details_group.add(&editor.floor_value);
 
     vec![
         item_group,
-        upgrade_group,
+        editor.upgrade_group.clone(),
+        editor.count_group.clone(),
         editor.effect_mode_group.clone(),
         editor.effect_group.clone(),
         details_group,
@@ -271,7 +293,7 @@ fn connect(editor: &Rc<Editor>) {
             populate_effects(editor, selected_effect(editor));
             editor.tier_row.set_selected(0);
             normalize_upgrades(editor);
-            refresh_sum_range(editor);
+            refresh_levels_range(editor);
             refresh_visibility(editor);
         }));
     editor
@@ -279,6 +301,9 @@ fn connect(editor: &Rc<Editor>) {
         .connect_selected_notify(hook(Rc::clone(editor), |editor| {
             if selected_item(editor).is_some() {
                 editor.tier_row.set_selected(0);
+            } else {
+                // Only a named item can count its levels together.
+                editor.levels_switch.set_active(false);
             }
             refresh_visibility(editor);
         }));
@@ -305,25 +330,28 @@ fn connect(editor: &Rc<Editor>) {
         .upgrade_row
         .connect_selected_notify(hook(Rc::clone(editor), |editor| {
             normalize_upgrades(editor);
-            refresh_sum_range(editor);
+            refresh_levels_range(editor);
             refresh_visibility(editor);
         }));
     editor
-        .exact_upgrade
-        .connect_value_notify(hook(Rc::clone(editor), refresh_sum_range));
-    editor
-        .sum_group_row
-        .connect_selected_notify(hook(Rc::clone(editor), |editor| {
-            // Every member of a group shares one total, so joining a group
-            // picks up what the other members already ask for.
-            if let Some(group) = selected_sum_group(editor)
-                && let Some(total) = editor.context.level_sum_total(group, editor.key)
-            {
-                editor.sum_total.set_value(f64::from(total));
+        .count_row
+        .connect_value_notify(hook(Rc::clone(editor), |editor| {
+            if selected_count(editor) < 2 {
+                editor.levels_switch.set_active(false);
+                editor.copy_floor_switch.set_active(false);
             }
-            refresh_sum_range(editor);
+            refresh_levels_range(editor);
             refresh_visibility(editor);
         }));
+    for row in [&editor.levels_switch, &editor.copy_floor_switch] {
+        row.connect_active_notify(hook(Rc::clone(editor), |editor| {
+            refresh_levels_range(editor);
+            refresh_visibility(editor);
+        }));
+    }
+    editor
+        .levels_value
+        .connect_value_notify(hook(Rc::clone(editor), refresh_levels_range));
     editor
         .effect_mode
         .connect_selected_notify(hook(Rc::clone(editor), refresh_visibility));
@@ -334,6 +362,7 @@ fn connect(editor: &Rc<Editor>) {
         .floor_switch
         .connect_active_notify(hook(Rc::clone(editor), refresh_visibility));
     skip_empty_boss_floors(&editor.floor_value);
+    skip_empty_boss_floors(&editor.copy_floor_value);
 }
 
 /// Wraps a handler so programmatic updates never re-enter it. Any edit also
@@ -350,7 +379,7 @@ fn hook<W>(editor: Rc<Editor>, handler: fn(&Rc<Editor>)) -> impl Fn(&W) {
     }
 }
 
-fn restore(editor: &Rc<Editor>, requirement: &UiRequirement) {
+fn restore(editor: &Rc<Editor>, requirement: &UiRequirement, stack: StackShape) {
     editor.updating.set(true);
     let kind_index = ALL_KIND_CHOICES
         .iter()
@@ -399,25 +428,20 @@ fn restore(editor: &Rc<Editor>, requirement: &UiRequirement) {
     editor
         .source_row
         .set_selected(u32::try_from(source_index).unwrap_or(0));
-    // The combos offer None plus groups A..D; clamp instead of passing an
-    // out-of-range position, which GTK would treat as "no selection" and the
-    // next collect() would then silently drop the group constraint.
-    editor.group_row.set_selected(u32::from(
-        requirement
-            .identity_group
-            .unwrap_or(RESERVED_IDENTITY_GROUP)
-            .min(MAX_IDENTITY_GROUP),
-    ));
-    editor.sum_group_row.set_selected(u32::from(
-        requirement
-            .level_sum
-            .map_or(RESERVED_GROUP, |sum| sum.group)
-            .min(MAX_LEVEL_SUM_GROUP),
-    ));
-    if let Some(sum) = requirement.level_sum {
-        editor.sum_total.set_value(f64::from(sum.minimum_total));
+    #[allow(clippy::cast_precision_loss)] // The count is 1..=STACK_MAX.
+    let count = stack.count.clamp(1, STACK_MAX) as f64;
+    editor.count_row.set_value(count);
+    if let Some(total) = stack.total {
+        editor.levels_switch.set_active(true);
+        editor.levels_value.set_value(f64::from(total));
     }
-    refresh_sum_range(editor);
+    if let Some(depth) = stack.copy_depth {
+        editor.copy_floor_switch.set_active(true);
+        editor
+            .copy_floor_value
+            .set_value(f64::from(normalize_floor_limit(depth)));
+    }
+    refresh_levels_range(editor);
     if let Some(depth) = requirement.max_depth {
         editor.floor_switch.set_active(true);
         editor
@@ -428,7 +452,9 @@ fn restore(editor: &Rc<Editor>, requirement: &UiRequirement) {
     editor.updating.set(false);
 }
 
-fn collect(editor: &Rc<Editor>) -> UiRequirement {
+/// The editor's result: the row itself, then the stack it asks for — how
+/// many items, their combined level, and the floor limit of the extra copies.
+fn collect(editor: &Rc<Editor>) -> (UiRequirement, usize, Option<u8>, Option<u8>) {
     let (kind, weapon_category) = selected_choice(editor);
     let item = selected_item(editor);
     let tier_eligible = item.is_none() && matches!(kind, ItemKind::Weapon | ItemKind::Armor);
@@ -449,21 +475,12 @@ fn collect(editor: &Rc<Editor>) -> UiRequirement {
         0 => None,
         index => ItemSource::ALL.get(index as usize - 1).copied(),
     };
-    let identity_group = match editor.group_row.selected() {
-        0 => None,
-        group => u8::try_from(group).ok(),
-    };
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let level_sum = selected_sum_group(editor).map(|group| LevelSum {
-        group,
-        minimum_total: editor.sum_total.value().round().max(1.0) as u8,
-    });
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let max_depth = editor
         .floor_switch
         .is_active()
         .then(|| normalize_floor_limit(editor.floor_value.value().round() as u8));
-    UiRequirement {
+    let requirement = UiRequirement {
         key: editor.key,
         kind,
         weapon_category,
@@ -473,17 +490,31 @@ fn collect(editor: &Rc<Editor>) -> UiRequirement {
         effect: selected_effect(editor),
         require_uncursed: editor.uncursed.is_active(),
         source,
-        identity_group,
+        // The stack's own encoding carries these; the board rebuilds them
+        // from the count and total this returns.
+        identity_group: None,
         max_depth,
         alternative_group: editor.alternative_group,
-        level_sum,
-    }
+        level_sum: None,
+    };
+    let count = selected_count(editor);
+    let total = countable_levels(editor).then(|| selected_total(editor));
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let copy_depth = (count > 1 && total.is_none() && editor.copy_floor_switch.is_active())
+        .then(|| normalize_floor_limit(editor.copy_floor_value.value().round() as u8));
+    (requirement, count, total, copy_depth)
 }
 
 /// The editor's own checks before the engine's: the specific-effect list
 /// needs a selection, and the whole query must stay valid with `result`
 /// stored.
-fn check(editor: &Rc<Editor>, result: &UiRequirement) -> Result<(), String> {
+fn check(
+    editor: &Rc<Editor>,
+    result: &UiRequirement,
+    count: usize,
+    total: Option<u8>,
+    copy_depth: Option<u8>,
+) -> Result<(), String> {
     if enchantable(selected_kind(editor))
         && editor.effect_mode.selected() == EFFECT_SPECIFIC
         && checked_effects(editor).is_empty()
@@ -494,7 +525,9 @@ fn check(editor: &Rc<Editor>, result: &UiRequirement) -> Result<(), String> {
             "Choose at least one enchantment or curse".to_owned()
         });
     }
-    editor.context.validate_draft(result)
+    editor
+        .context
+        .validate_draft(result, count, total, copy_depth)
 }
 
 fn selected_choice(editor: &Rc<Editor>) -> KindChoice {
@@ -573,16 +606,39 @@ fn checked_effects(editor: &Rc<Editor>) -> Vec<Effect> {
         .collect()
 }
 
-/// The combined-level group chosen, or `None` for no group and for
-/// alternatives, which cannot have one.
-fn selected_sum_group(editor: &Rc<Editor>) -> Option<u8> {
-    if editor.alternative_group.is_some() {
-        return None;
+/// How many items the row asks for; a cluster member leaves its stack to the
+/// cluster and always speaks for one.
+fn selected_count(editor: &Rc<Editor>) -> usize {
+    if editor.in_cluster {
+        return 1;
     }
-    match editor.sum_group_row.selected() {
-        0 => None,
-        group => u8::try_from(group).ok(),
-    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let count = editor.count_row.value().round().max(1.0) as usize;
+    count.clamp(1, STACK_MAX)
+}
+
+/// Whether the row is a stack of a named item whose levels count together —
+/// the only shape a combined level can describe.
+fn countable_levels(editor: &Rc<Editor>) -> bool {
+    !editor.in_cluster
+        && selected_item(editor).is_some()
+        && selected_count(editor) > 1
+        && editor.levels_switch.is_active()
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn selected_total(editor: &Rc<Editor>) -> u8 {
+    editor.levels_value.value().round().max(1.0) as u8
+}
+
+/// The most levels the stack could reach: every item counts its upgrade plus
+/// one, and a member of a combined-level stack may carry any upgrade.
+fn levels_capacity(editor: &Rc<Editor>) -> u8 {
+    let per_item = selected_kind(editor).maximum_search_upgrade() + 1;
+    u8::try_from(selected_count(editor))
+        .unwrap_or(1)
+        .saturating_mul(per_item)
+        .max(1)
 }
 
 fn set_tier_value(editor: &Rc<Editor>, tier: u8) {
@@ -739,27 +795,20 @@ fn normalize_upgrades(editor: &Rc<Editor>) {
     );
 }
 
-/// Bounds the combined total by what the group's items — the other members
-/// plus this row as currently edited — can carry together.
-fn refresh_sum_range(editor: &Rc<Editor>) {
-    let Some(group) = selected_sum_group(editor) else {
-        return;
-    };
-    let draft = UiRequirement {
-        kind: selected_kind(editor),
-        upgrade: selected_upgrade(editor),
-        ..UiRequirement::new(editor.key)
-    };
-    let capacity = editor.context.level_sum_capacity(group, &draft).max(1);
-    let adjustment = editor.sum_total.adjustment();
+/// Bounds the combined level by what the stack could carry together, and
+/// spells the value out the way the chip's badge reads it.
+fn refresh_levels_range(editor: &Rc<Editor>) {
+    let capacity = levels_capacity(editor);
+    let adjustment = editor.levels_value.adjustment();
     adjustment.set_lower(1.0);
     adjustment.set_upper(f64::from(capacity));
     editor
-        .sum_total
-        .set_value(editor.sum_total.value().clamp(1.0, f64::from(capacity)));
-    editor.sum_total.set_subtitle(&format!(
-        "Group {} can reach +{capacity} at most",
-        group_letter(group)
+        .levels_value
+        .set_value(editor.levels_value.value().clamp(1.0, f64::from(capacity)));
+    editor.levels_value.set_subtitle(&format!(
+        "\u{2265} {} across up to {}",
+        selected_total(editor),
+        selected_count(editor)
     ));
 }
 
@@ -810,11 +859,23 @@ fn refresh_visibility(editor: &Rc<Editor>) {
     editor
         .ring_minimum_upgrade
         .set_visible(editor.upgrade_row.selected() == 2 && kind == ItemKind::Ring);
-    let sum_allowed = editor.alternative_group.is_none();
-    editor.sum_group_row.set_visible(sum_allowed);
+    // A stack of two or more may bound its extra copies, or count their
+    // levels together when they are copies of one named item. A combined
+    // level speaks for the whole stack, so the per-item upgrade steps aside.
+    let counting_levels = countable_levels(editor);
+    let stacked = !editor.in_cluster && selected_count(editor) > 1;
+    editor.upgrade_group.set_visible(!counting_levels);
+    editor.count_group.set_visible(!editor.in_cluster);
     editor
-        .sum_total
-        .set_visible(sum_allowed && selected_sum_group(editor).is_some());
+        .copy_floor_switch
+        .set_visible(stacked && !counting_levels);
+    editor
+        .copy_floor_value
+        .set_visible(stacked && !counting_levels && editor.copy_floor_switch.is_active());
+    editor
+        .levels_switch
+        .set_visible(stacked && selected_item(editor).is_some());
+    editor.levels_value.set_visible(counting_levels);
     editor.effect_mode_group.set_visible(enchantable(kind));
     editor
         .effect_group
@@ -829,14 +890,6 @@ fn refresh_visibility(editor: &Rc<Editor>) {
 fn bounded_tier_labels() -> Vec<String> {
     (BOUNDED_TIER_MIN..=BOUNDED_TIER_MAX)
         .map(|tier| format!("Tier {tier}"))
-        .collect()
-}
-
-/// A group picker's labels: "no group" followed by every group label up to
-/// `maximum` that the portable formats can express.
-fn group_labels(maximum: u8) -> Vec<String> {
-    std::iter::once("None".to_owned())
-        .chain((1..=maximum).map(|group| group_letter(group).to_string()))
         .collect()
 }
 

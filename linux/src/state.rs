@@ -17,6 +17,8 @@ use shpd_seedfinder_core::quests::{
     BlacksmithQuestType, GhostQuestType, ImpTarget, QuestSummary, WandmakerQuestType,
 };
 
+use crate::relations::{self, BoardItem};
+
 /// Where a floor-limit control lands when the user moves it onto an empty
 /// boss floor. A single upward step (spin button, arrow key, scroll)
 /// continues to the next real floor; every other move — single steps down
@@ -146,36 +148,36 @@ impl UiRequirement {
         }
     }
 
-    /// Secondary row label listing the remaining predicates.
+    /// The short name a board chip shows: the item, or its wildcard family.
+    /// The tier rides beside it as a tag, so it stays out of the name.
+    #[must_use]
+    pub fn chip_name(&self) -> String {
+        match self.item {
+            Some(item_id) => item(item_id).name.to_owned(),
+            None => format!("Any {}", chip_family(self.kind_choice())),
+        }
+    }
+
+    /// The line under a chip's name: everything it asks of one item, in the
+    /// order the editor lays the controls out.
     #[must_use]
     pub fn subtitle(&self) -> String {
         let mut text = match self.upgrade {
-            UpgradeRequirement::Any => "Any upgrade".to_owned(),
-            UpgradeRequirement::Exact(upgrade) => format!("+{upgrade} exactly"),
+            UpgradeRequirement::Any => "any upgrade".to_owned(),
+            UpgradeRequirement::Exact(upgrade) => format!("exactly +{upgrade}"),
             UpgradeRequirement::AtLeast(upgrade) => format!("+{upgrade} or higher"),
         };
         if let Some(effect) = effect_label(self.effect) {
-            let _ = write!(text, " · {effect}");
+            let _ = write!(text, " \u{b7} {effect}");
         }
         if self.require_uncursed {
-            text.push_str(" · uncursed");
+            text.push_str(" \u{b7} uncursed");
         }
         if let Some(source) = self.source {
-            let _ = write!(text, " · {}", source_label(source));
-        }
-        if let Some(group) = self.identity_group {
-            let _ = write!(text, " · same item group {}", group_letter(group));
-        }
-        if let Some(sum) = self.level_sum {
-            let _ = write!(
-                text,
-                " · combined +{} group {}",
-                sum.minimum_total,
-                group_letter(sum.group)
-            );
+            let _ = write!(text, " \u{b7} {}", source_label(source));
         }
         if let Some(depth) = self.max_depth {
-            let _ = write!(text, " · by floor {depth}");
+            let _ = write!(text, " \u{b7} floors 1\u{2013}{depth}");
         }
         text
     }
@@ -264,7 +266,6 @@ impl AppState {
                 level_sum: requirement.level_sum,
             });
         }
-        state.normalize();
         state
     }
 
@@ -299,162 +300,173 @@ impl AppState {
         Ok(query)
     }
 
-    /// The requirement rows grouped into slots: every alternative group is
-    /// one slot, in first-appearance order; every other row is its own.
-    #[must_use]
-    pub fn slots(&self) -> Vec<Vec<usize>> {
-        self.unvalidated_query().slots()
-    }
-
-    /// How many slots the query has — what the interface counts as
-    /// requirements once alternatives collapse.
-    #[must_use]
-    pub fn slot_count(&self) -> usize {
-        self.unvalidated_query().slot_count()
-    }
-
     #[must_use]
     pub fn requirement(&self, key: u64) -> Option<&UiRequirement> {
         self.requirements.iter().find(|r| r.key == key)
     }
 
-    /// Drafts an alternative to the row `key`: a copy under a new key that
-    /// belongs to the row's alternative group, or to a fresh one if the row
-    /// has none. Nothing else changes until [`Self::add_alternative`] stores
-    /// the draft, so cancelling the editor leaves the query exactly as it was.
-    pub fn begin_alternative(&mut self, key: u64) -> Option<UiRequirement> {
-        let row = *self.requirement(key)?;
-        let group = match row.alternative_group {
-            Some(group) => group,
-            None => self
-                .requirements
-                .iter()
-                .filter_map(|r| r.alternative_group)
-                .max()
-                .unwrap_or(0)
-                .checked_add(1)?,
+    /// The board's collapsed view of the requirement list: one entry per
+    /// chip or either/or cluster, with a stack's copies folded away.
+    #[must_use]
+    pub fn board(&self) -> Vec<BoardItem> {
+        relations::board_items(&self.requirements)
+    }
+
+    /// How many entries the board shows — what the pane counts as
+    /// requirements once alternatives and stacks collapse.
+    #[must_use]
+    pub fn board_count(&self) -> usize {
+        relations::board_count(&self.requirements)
+    }
+
+    #[must_use]
+    pub fn row_index(&self, key: u64) -> Option<usize> {
+        self.requirements.iter().position(|row| row.key == key)
+    }
+
+    /// The board entry the row `key` belongs to.
+    #[must_use]
+    pub fn board_item(&self, key: u64) -> Option<BoardItem> {
+        relations::item_of_key(&self.requirements, key)
+    }
+
+    /// The stack shape the editor needs for the row `key`.
+    #[must_use]
+    pub fn stack_shape(&self, key: u64) -> StackShape {
+        self.board_item(key)
+            .map_or_else(StackShape::lone, |item| StackShape {
+                count: item.stack_count(),
+                total: item.total,
+                copy_depth: relations::copy_depth_of(&self.requirements, &item),
+                in_cluster: item.cluster.is_some(),
+            })
+    }
+
+    /// Stores the editor's result: the row's own fields plus the stack shape
+    /// it asked for. A row whose key is not on the board is a new chip.
+    pub fn apply_edit(
+        &mut self,
+        result: UiRequirement,
+        count: usize,
+        total: Option<u8>,
+        copy_depth: Option<u8>,
+    ) {
+        let index = self.row_index(result.key);
+        self.requirements = relations::apply_edit(
+            &self.requirements,
+            index,
+            result,
+            count,
+            total,
+            copy_depth,
+            &mut self.next_key,
+        );
+    }
+
+    /// Makes the row `source` an either/or alternative of the row `target`.
+    pub fn join(&mut self, source: u64, target: u64) {
+        let (Some(source), Some(target)) = (self.row_index(source), self.row_index(target)) else {
+            return;
         };
-        let draft_key = self.claim_key();
-        Some(UiRequirement {
-            key: draft_key,
-            alternative_group: Some(group),
-            level_sum: None,
-            ..row
-        })
+        self.requirements = relations::join_alternatives(&self.requirements, source, target);
     }
 
-    /// Stores a confirmed alternative drafted from the row `source`, which
-    /// joins the draft's group now; a combined-level membership cannot
-    /// survive inside an alternative, so the source sheds it.
-    pub fn add_alternative(&mut self, source: u64, result: UiRequirement) {
-        if let Some(row) = self.requirements.iter_mut().find(|r| r.key == source) {
-            row.alternative_group = result.alternative_group;
-            row.level_sum = None;
-        }
-        self.upsert(result);
+    /// Pulls the row `key` out of its cluster, back onto the board alone.
+    pub fn detach(&mut self, key: u64) {
+        let Some(index) = self.row_index(key) else {
+            return;
+        };
+        self.requirements = relations::detach(&self.requirements, index);
     }
 
-    /// Stores an edited or new row. A new alternative lands right after the
-    /// other members of its group so the document keeps them together; a
-    /// combined-level total set here propagates to the whole group.
-    pub fn upsert(&mut self, mut result: UiRequirement) {
-        if result.alternative_group.is_some() {
-            result.level_sum = None;
-        }
-        if let Some(slot) = self.requirements.iter_mut().find(|r| r.key == result.key) {
-            *slot = result;
-        } else {
-            let position = result
-                .alternative_group
-                .and_then(|group| {
-                    self.requirements
-                        .iter()
-                        .rposition(|r| r.alternative_group == Some(group))
-                })
-                .map_or(self.requirements.len(), |last| last + 1);
-            self.requirements.insert(position, result);
-        }
-        if let Some(sum) = result.level_sum {
-            for other in &mut self.requirements {
-                if let Some(existing) = &mut other.level_sum
-                    && existing.group == sum.group
-                {
-                    existing.minimum_total = sum.minimum_total;
-                }
-            }
-        }
-        self.normalize();
-    }
-
+    /// Deletes what the row `key` stands for: a cluster member on its own, a
+    /// lone chip together with the hidden copies of its stack.
     pub fn remove(&mut self, key: u64) {
-        self.requirements.retain(|r| r.key != key);
-        self.normalize();
+        let Some(index) = self.row_index(key) else {
+            return;
+        };
+        let Some(item) = self.board_item(key) else {
+            return;
+        };
+        self.requirements = if item.cluster.is_some() {
+            relations::remove_member(&self.requirements, index)
+        } else {
+            relations::remove_item(&self.requirements, &item)
+        };
     }
 
-    /// Collapses alternative groups left with a single member back into
-    /// plain rows.
-    pub fn normalize(&mut self) {
-        let mut members = [0_usize; 256];
-        for group in self.requirements.iter().filter_map(|r| r.alternative_group) {
-            members[usize::from(group)] += 1;
-        }
-        for row in &mut self.requirements {
-            if let Some(group) = row.alternative_group
-                && members[usize::from(group)] < 2
-            {
-                row.alternative_group = None;
-            }
-        }
-    }
-
-    /// The total the other members of combined-level group `group` share,
-    /// ignoring the row `key` (which may be about to change it).
+    /// Whether the entry holding the row `key` can ask for more than one
+    /// item; a cluster spanning two categories cannot.
     #[must_use]
-    pub fn level_sum_total(&self, group: u8, key: u64) -> Option<u8> {
-        self.requirements
-            .iter()
-            .filter(|r| r.key != key)
-            .filter_map(|r| r.level_sum)
-            .find(|sum| sum.group == group)
-            .map(|sum| sum.minimum_total)
+    pub fn can_stack(&self, key: u64) -> bool {
+        self.board_item(key)
+            .is_some_and(|item| relations::can_stack(&self.requirements, &item))
     }
 
-    /// The highest total combined-level group `group` could reach with
-    /// `draft` stored as a member (replacing the row with its key).
-    #[must_use]
-    pub fn level_sum_capacity(&self, group: u8, draft: &UiRequirement) -> u8 {
-        let mut preview = self.clone();
-        preview.upsert(UiRequirement {
-            level_sum: Some(LevelSum {
-                group,
-                minimum_total: 1,
-            }),
-            ..*draft
-        });
-        preview
-            .unvalidated_query()
-            .level_sum_groups()
-            .get(&group)
-            .map_or(0, |sum| u8::try_from(sum.capacity).unwrap_or(u8::MAX))
+    /// Sets how many items the entry holding the row `key` asks for.
+    pub fn set_stack_count(&mut self, key: u64, count: usize) {
+        let Some(item) = self.board_item(key) else {
+            return;
+        };
+        self.requirements =
+            relations::set_stack_count(&self.requirements, &item, count, &mut self.next_key);
+    }
+
+    /// Sets or clears the combined level of the entry holding the row `key`.
+    pub fn set_stack_total(&mut self, key: u64, total: Option<u8>) {
+        let Some(item) = self.board_item(key) else {
+            return;
+        };
+        self.requirements = relations::set_stack_total(&self.requirements, &item, total);
     }
 
     /// Checks that `draft` would leave the whole query valid once stored
-    /// with [`Self::upsert`], for the editor to report before saving.
+    /// with [`Self::apply_edit`], for the editor to report before saving.
     ///
     /// # Errors
     ///
     /// Returns the human-readable message.
-    pub fn validate_draft(&self, draft: &UiRequirement) -> Result<(), String> {
+    pub fn validate_draft(
+        &self,
+        draft: &UiRequirement,
+        count: usize,
+        total: Option<u8>,
+        copy_depth: Option<u8>,
+    ) -> Result<(), String> {
         draft
             .to_core()
             .validate()
             .map_err(|error| error.to_string())?;
         let mut preview = self.clone();
-        preview.upsert(*draft);
+        preview.apply_edit(*draft, count, total, copy_depth);
         preview
             .unvalidated_query()
             .validate()
             .map_err(|error| error.to_string())
+    }
+}
+
+/// What the editor needs to know about the chip's stack.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StackShape {
+    pub count: usize,
+    pub total: Option<u8>,
+    /// The floor limit the extra copies share, when they carry one.
+    pub copy_depth: Option<u8>,
+    /// A cluster member's stack belongs to the cluster, not the editor.
+    pub in_cluster: bool,
+}
+
+impl StackShape {
+    /// The shape of a chip that is not on the board yet: one item, no stack.
+    #[must_use]
+    pub const fn lone() -> Self {
+        Self {
+            count: 1,
+            total: None,
+            copy_depth: None,
+            in_cluster: false,
+        }
     }
 }
 
@@ -474,6 +486,19 @@ pub const fn kind_choice_singular(choice: KindChoice) -> &'static str {
         (ItemKind::Weapon, None) => "weapon",
         (ItemKind::Weapon, Some(WeaponCategory::Melee)) => "melee weapon",
         (ItemKind::Weapon, Some(WeaponCategory::Thrown)) => "thrown weapon",
+        (ItemKind::Armor, _) => "armor",
+        (ItemKind::Wand, _) => "wand",
+        (ItemKind::Ring, _) => "ring",
+    }
+}
+
+/// The board chip's wildcard name: shorter than the editor's, because the
+/// chip already shows the family's icon beside it.
+pub const fn chip_family(choice: KindChoice) -> &'static str {
+    match choice {
+        (ItemKind::Weapon, None) => "weapon",
+        (ItemKind::Weapon, Some(WeaponCategory::Melee)) => "melee",
+        (ItemKind::Weapon, Some(WeaponCategory::Thrown)) => "thrown",
         (ItemKind::Armor, _) => "armor",
         (ItemKind::Wand, _) => "wand",
         (ItemKind::Ring, _) => "ring",
@@ -511,15 +536,6 @@ pub const fn source_label(source: ItemSource) -> &'static str {
         ItemSource::WandmakerReward => "Wandmaker reward",
         ItemSource::BlacksmithReward => "Blacksmith reward",
         ItemSource::ImpReward => "Imp reward",
-    }
-}
-
-pub const fn group_letter(group: u8) -> char {
-    match group {
-        1 => 'A',
-        2 => 'B',
-        3 => 'C',
-        _ => 'D',
     }
 }
 
@@ -747,7 +763,8 @@ mod tests {
     fn labels_describe_wildcards_and_predicates() {
         let mut requirement = UiRequirement::new(1);
         assert_eq!(requirement.title(), "Any weapon");
-        assert_eq!(requirement.subtitle(), "Any upgrade");
+        assert_eq!(requirement.chip_name(), "Any weapon");
+        assert_eq!(requirement.subtitle(), "any upgrade");
 
         requirement.tier = TierRequirement::AtLeast(4);
         requirement.upgrade = UpgradeRequirement::Exact(2);
@@ -755,16 +772,16 @@ mod tests {
         requirement.max_depth = Some(9);
         requirement.require_uncursed = true;
         assert_eq!(requirement.title(), "Any Tier 4+ weapon");
-        assert_eq!(
-            requirement.subtitle(),
-            "+2 exactly · uncursed · same item group B · by floor 9"
-        );
+        // The chip keeps the tier out of the name: it rides beside it as a tag.
+        assert_eq!(requirement.chip_name(), "Any weapon");
+        assert_eq!(requirement.subtitle(), "exactly +2 · uncursed · floors 1–9");
 
         requirement.tier = TierRequirement::AtMost(3);
         assert_eq!(requirement.title(), "Any Tier 3 or lower weapon");
 
         requirement.item = Some(ItemId::Greatsword);
         assert_eq!(requirement.title(), "Greatsword");
+        assert_eq!(requirement.chip_name(), "Greatsword");
     }
 
     #[test]
@@ -960,13 +977,13 @@ mod tests {
     }
 
     #[test]
-    fn labels_describe_effect_sets_and_combined_upgrades() {
+    fn labels_describe_effect_sets_and_predicates() {
         use shpd_seedfinder_core::catalog::{ArmorEffect, Effect, WeaponEffect};
-        use shpd_seedfinder_core::query::{EffectRequirement, EffectSet, LevelSum};
+        use shpd_seedfinder_core::query::{EffectRequirement, EffectSet};
 
         let mut requirement = UiRequirement::new(1);
         requirement.effect = EffectRequirement::exactly(Effect::Weapon(WeaponEffect::Blazing));
-        assert_eq!(requirement.subtitle(), "Any upgrade · Blazing");
+        assert_eq!(requirement.subtitle(), "any upgrade · Blazing");
         assert_eq!(
             requirement.pinned_effect(),
             Some(Effect::Weapon(WeaponEffect::Blazing))
@@ -982,7 +999,7 @@ mod tests {
         // Catalog order, not selection order.
         assert_eq!(
             requirement.subtitle(),
-            "Any upgrade · Blocking or Projecting"
+            "any upgrade · Blocking or Projecting"
         );
         assert_eq!(requirement.pinned_effect(), None);
 
@@ -992,154 +1009,129 @@ mod tests {
         requirement.require_uncursed = true;
         assert_eq!(
             requirement.subtitle(),
-            "Any upgrade · any enchantment · uncursed"
+            "any upgrade · any enchantment · uncursed"
         );
 
         requirement.effect = EffectRequirement::exactly(Effect::Armor(ArmorEffect::Stone));
         requirement.require_uncursed = false;
         requirement.upgrade = UpgradeRequirement::AtLeast(1);
-        requirement.identity_group = Some(1);
-        requirement.level_sum = Some(LevelSum {
-            group: 1,
-            minimum_total: 4,
-        });
         requirement.max_depth = Some(4);
-        assert_eq!(
-            requirement.subtitle(),
-            "+1 or higher · Stone · same item group A · combined +4 group A · by floor 4"
-        );
+        assert_eq!(requirement.subtitle(), "+1 or higher · Stone · floors 1–4");
     }
 
     #[test]
-    fn alternatives_share_one_slot_and_collapse_when_alone() {
+    fn the_board_collapses_alternatives_and_stacks_into_one_entry_each() {
         let mut state = AppState::default();
-        let key = state.claim_key();
+        let spear = state.claim_key();
         state.requirements.push(UiRequirement {
             item: Some(ItemId::Spear),
             upgrade: UpgradeRequirement::Exact(3),
-            ..UiRequirement::new(key)
+            ..UiRequirement::new(spear)
         });
-        let key = state.claim_key();
+        let ring = state.claim_key();
         state.requirements.push(UiRequirement {
             kind: ItemKind::Ring,
-            ..UiRequirement::new(key)
+            ..UiRequirement::new(ring)
         });
-        assert_eq!(state.slot_count(), 2);
+        assert_eq!(state.board_count(), 2);
 
-        // Forking the spear row opens a group on it and drafts a copy.
-        let mut draft = state.begin_alternative(1).unwrap();
-        assert_eq!(draft.alternative_group, Some(1));
-        assert_eq!(draft.item, Some(ItemId::Spear));
-        assert_ne!(draft.key, 1);
-        // Until the draft is stored nothing has changed.
-        assert_eq!(state.requirements[0].alternative_group, None);
-        assert_eq!(state.slots(), vec![vec![0], vec![1]]);
+        // Dropping the ring on the spear makes one either/or entry, and one
+        // slot for the engine.
+        state.join(ring, spear);
+        assert_eq!(state.board_count(), 1);
+        let item = state.board_item(spear).unwrap();
+        assert_eq!(item.members.len(), 2);
+        assert!(item.cluster.is_some());
+        assert_eq!(state.unvalidated_query().slot_count(), 1);
 
-        draft.item = Some(ItemId::Shuriken);
-        draft.weapon_category = None;
-        draft.upgrade = UpgradeRequirement::Exact(2);
-        state.add_alternative(1, draft);
-        assert_eq!(state.requirements[0].alternative_group, Some(1));
-        // The alternative lands next to its group, ahead of the ring.
-        assert_eq!(state.requirements[1].item, Some(ItemId::Shuriken));
-        assert_eq!(state.requirements[1].alternative_group, Some(1));
-        assert_eq!(state.slot_count(), 2);
-        assert_eq!(state.slots(), vec![vec![0, 1], vec![2]]);
-        let query = state.to_query().unwrap();
-        assert_eq!(query.slot_count(), 2);
+        // A cluster spanning two categories cannot anchor a stack: a copy
+        // would have to name a kind, and "spear or ring" names none.
+        state.set_stack_count(spear, 2);
+        assert_eq!(state.requirements.len(), 2);
+        assert_eq!(state.board_count(), 1);
+        assert_eq!(state.board_item(spear).unwrap().stack_count(), 1);
+        assert!(!state.can_stack(spear));
 
-        // A second fork on a member extends the same group.
-        let third = state.begin_alternative(draft.key).unwrap();
-        assert_eq!(third.alternative_group, Some(1));
-        state.add_alternative(draft.key, third);
-        assert_eq!(state.slots(), vec![vec![0, 1, 2], vec![3]]);
-
-        // Removing down to one member collapses the card to a plain row.
-        state.remove(third.key);
-        state.remove(draft.key);
-        assert_eq!(state.requirements[0].alternative_group, None);
-        assert_eq!(state.slots(), vec![vec![0], vec![1]]);
-    }
-
-    #[test]
-    fn combined_upgrade_totals_propagate_and_are_checked_locally() {
-        use shpd_seedfinder_core::query::LevelSum;
-
-        let mut state = AppState::default();
-        for _ in 0..2 {
-            let key = state.claim_key();
-            state.requirements.push(UiRequirement {
-                kind: ItemKind::Ring,
-                item: Some(ItemId::RingMight),
-                level_sum: Some(LevelSum {
-                    group: 1,
-                    minimum_total: 4,
-                }),
-                ..UiRequirement::new(key)
-            });
-        }
-        assert_eq!(state.level_sum_total(1, 1), Some(4));
-        assert_eq!(state.level_sum_total(1, 99), Some(4));
-        assert_eq!(state.level_sum_total(2, 1), None);
-
-        // Capacity counts levels (upgrade plus one) of the other members
-        // plus the draft as edited.
-        let mut draft = state.requirements[0];
-        assert_eq!(state.level_sum_capacity(1, &draft), 10);
-        draft.upgrade = UpgradeRequirement::Exact(1);
-        assert_eq!(state.level_sum_capacity(1, &draft), 7);
-        assert!(state.validate_draft(&draft).is_ok());
-
-        // An unattainable total is refused with a message naming the group.
-        draft.level_sum = Some(LevelSum {
-            group: 1,
-            minimum_total: 8,
-        });
-        assert_eq!(
-            state.validate_draft(&draft).unwrap_err(),
-            "combined level group A needs 8 levels but its items can reach at most 7"
-        );
-        assert_eq!(state.level_sum_capacity(1, &draft), 7);
-
-        // Saving a member's total updates the whole group.
-        draft.upgrade = UpgradeRequirement::Any;
-        draft.level_sum = Some(LevelSum {
-            group: 1,
-            minimum_total: 9,
-        });
-        assert!(state.validate_draft(&draft).is_ok());
-        state.upsert(draft);
+        // Pulling the ring back out leaves a plain spear chip, which can.
+        state.detach(ring);
+        assert_eq!(state.board_count(), 2);
+        assert!(state.can_stack(spear));
+        state.set_stack_count(spear, 2);
+        assert_eq!(state.requirements.len(), 3);
+        assert_eq!(state.board_item(spear).unwrap().stack_count(), 2);
+        assert_eq!(state.board_item(ring).unwrap().stack_count(), 1);
         assert!(
             state
                 .requirements
                 .iter()
-                .all(|r| r.level_sum.map(|sum| sum.minimum_total) == Some(9))
+                .all(|r| r.identity_group.is_none())
         );
         assert!(state.to_query().is_ok());
 
-        // The same rule guards the search itself.
-        state.requirements[1].upgrade = UpgradeRequirement::Exact(1);
+        // Removing the spear takes its hidden copy with it.
+        state.remove(spear);
+        assert_eq!(state.requirements.len(), 1);
+        assert_eq!(state.requirements[0].key, ring);
+    }
+
+    #[test]
+    fn a_combined_level_stack_is_built_and_checked_through_the_editor() {
+        let mut state = AppState::default();
+        let key = state.claim_key();
+        let ring = UiRequirement {
+            kind: ItemKind::Ring,
+            item: Some(ItemId::RingMight),
+            ..UiRequirement::new(key)
+        };
+        state.apply_edit(ring, 2, Some(4), None);
+        assert_eq!(state.requirements.len(), 2);
+        assert!(
+            state
+                .requirements
+                .iter()
+                .all(|r| r.level_sum.map(|sum| sum.minimum_total) == Some(4))
+        );
+        assert_eq!(state.board_count(), 1);
+        let shape = state.stack_shape(key);
+        assert_eq!(shape.count, 2);
+        assert_eq!(shape.total, Some(4));
+        assert!(!shape.in_cluster);
+        assert!(state.to_query().is_ok());
+
+        // Two rings reach ten levels between them, and no more.
         assert_eq!(
-            state.to_query().unwrap_err(),
-            "combined level group A needs 9 levels but its items can reach at most 7"
+            state.validate_draft(&ring, 2, Some(11), None).unwrap_err(),
+            "combined level group A needs 11 levels but its items can reach at most 10"
         );
 
-        // Drafting an alternative from a sum member changes nothing until
-        // it is confirmed: cancelling the editor keeps the membership.
-        let before = state.requirements.clone();
-        let mut alternative = state.begin_alternative(1).unwrap();
-        assert_eq!(alternative.level_sum, None);
-        assert_eq!(state.requirements, before);
+        // The badge lowers the total without going through the editor.
+        state.set_stack_total(key, Some(3));
+        assert_eq!(state.board_item(key).unwrap().total, Some(3));
 
-        // Confirming sheds the source's sum, and a stored alternative never
-        // carries one.
-        alternative.level_sum = Some(LevelSum {
-            group: 2,
-            minimum_total: 1,
-        });
-        state.add_alternative(1, alternative);
-        assert_eq!(state.requirements[0].level_sum, None);
-        assert_eq!(state.requirements[1].level_sum, None);
-        assert_eq!(state.requirements[1].alternative_group, Some(1));
+        // Giving up on counting levels returns the stack to plain repeats.
+        state.set_stack_total(key, None);
+        assert!(state.requirements.iter().all(|r| r.level_sum.is_none()));
+        assert_eq!(state.board_item(key).unwrap().stack_count(), 2);
+        assert!(state.to_query().is_ok());
+    }
+
+    #[test]
+    fn a_stack_of_copies_carries_its_own_floor_limit() {
+        let mut state = AppState::default();
+        let key = state.claim_key();
+        let armor = UiRequirement {
+            kind: ItemKind::Armor,
+            upgrade: UpgradeRequirement::Exact(3),
+            max_depth: Some(4),
+            ..UiRequirement::new(key)
+        };
+        state.apply_edit(armor, 2, None, Some(9));
+        let shape = state.stack_shape(key);
+        assert_eq!(shape.count, 2);
+        assert_eq!(shape.copy_depth, Some(9));
+        // The named +3 armor keeps its own floor; the copy keeps the other.
+        assert_eq!(state.requirements[0].max_depth, Some(4));
+        assert_eq!(state.requirements[1].max_depth, Some(9));
+        assert!(state.to_query().is_ok());
     }
 }

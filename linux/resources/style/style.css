@@ -35,3 +35,148 @@ entry.seed-entry {
 .tag.warning {
   color: var(--warning-color);
 }
+
+/* ---------- Requirement board ---------- */
+
+/*
+ * Every requirement is a chip: a 30px capsule holding the item's sprite, its
+ * name, and the tiny tags that qualify it. Colours come from libadwaita's
+ * named palette, so the board follows the light and dark themes rather than
+ * carrying a palette of its own.
+ */
+.chip {
+  min-height: 30px;
+  padding: 2px 8px;
+  border: 1px solid var(--borders);
+  border-radius: 15px;
+  background-color: var(--card-bg-color);
+  font-weight: bold;
+}
+
+.chip:hover {
+  border-color: alpha(currentColor, 0.35);
+}
+
+.chip:focus-visible,
+.chip:focus-within {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 1px;
+}
+
+.chip.chip-error {
+  border-color: var(--error-color);
+}
+
+/* The chip in flight fades where it came from, the way a dragged thing does. */
+.chip.chip-dragging {
+  opacity: 0.35;
+}
+
+/* The board's "+ Add": a chip-shaped outline, not yet a requirement. */
+button.chip.chip-add {
+  padding: 2px 10px;
+  background-image: none;
+  background-color: transparent;
+  border-style: dashed;
+  box-shadow: none;
+  color: var(--window-fg-color);
+}
+
+button.chip.chip-add:hover {
+  background-color: alpha(currentColor, 0.06);
+}
+
+/* Where a dropped chip would land. */
+.chip.drop-target,
+.cluster.drop-target {
+  border-style: solid;
+  border-color: var(--warning-color);
+  background-color: alpha(var(--warning-color), 0.12);
+}
+
+/* The tiny monospace qualifiers beside a chip's name. */
+.chip-tag {
+  padding: 0 4px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.75em;
+  font-weight: bold;
+  color: var(--warning-color);
+  background-color: alpha(currentColor, 0.15);
+}
+
+/* An upgrade is the one number a reforge changes, so it is tinted apart. */
+.chip-tag.chip-tag-up,
+.chip-tag.chip-tag-soft {
+  color: var(--success-color);
+}
+
+/* Several effects at once: one pill counting them, since no single colour
+   could stand for them all. */
+.effect-count {
+  min-width: 10px;
+  padding: 0 4px;
+  border-radius: 999px;
+  font-family: monospace;
+  font-size: 0.7em;
+  font-weight: bold;
+  color: var(--accent-fg-color);
+  background-color: var(--accent-bg-color);
+}
+
+/* Stack badges: how many items the entry asks for (×N, or ≤N once their
+   levels count together), and the total those levels reach (Σ ≥ T). */
+button.stack-badge {
+  min-height: 18px;
+  min-width: 0;
+  padding: 0 6px;
+  border: none;
+  border-radius: 9px;
+  box-shadow: none;
+  background-image: none;
+  font-family: monospace;
+  font-size: 0.75em;
+  font-weight: bold;
+  color: var(--success-fg-color);
+  background-color: var(--success-bg-color);
+}
+
+button.stack-badge.stack-badge-total {
+  color: var(--warning-fg-color);
+  background-color: var(--warning-bg-color);
+}
+
+button.stack-badge:hover {
+  background-image: image(alpha(currentColor, 0.1));
+}
+
+/* An either/or cluster: its chips share one dashed capsule, one slot. */
+.cluster {
+  padding: 3px 4px;
+  border: 1px dashed var(--warning-color);
+  border-radius: 20px;
+  background-color: alpha(var(--warning-color), 0.06);
+}
+
+.cluster-or {
+  padding: 0 4px;
+  font-family: monospace;
+  font-size: 0.7em;
+  font-weight: bold;
+  color: var(--warning-color);
+}
+
+/* The bin: only shown while a chip is in flight, and the only way a drag can
+   delete one. */
+.remove-zone {
+  padding: 6px 10px;
+  border: 1px dashed var(--error-color);
+  border-radius: 10px;
+  color: var(--error-color);
+}
+
+.remove-zone.drop-target {
+  border-style: solid;
+  color: var(--error-fg-color);
+  background-color: var(--error-bg-color);
+}
