@@ -245,6 +245,28 @@ final class RelationsTests: XCTestCase {
         XCTAssertNil(requirements[0].levelSum)
     }
 
+    /// What the editor actually hands back is a plain row: the relationships
+    /// are `applyEdit`'s to write. So re-saving a combined-level stack from a
+    /// row carrying no `levelSum` of its own must still land on one.
+    func testTheEditorsPlainRowRebuildsACombinedLevelStack() throws {
+        var requirements = [ItemRequirement]()
+            .applyEdit(index: nil, requirement: try req(1, item: "ring_might"), count: 2, total: 4)
+        XCTAssertEqual(requirements.map { $0.levelSum?.atLeast }, [4, 4])
+        let plain = try req(requirements[0].key, item: "ring_might")
+        requirements = requirements.applyEdit(index: 0, requirement: plain, count: 3, total: 6)
+        XCTAssertEqual(requirements.count, 3)
+        XCTAssertTrue(requirements.allSatisfy { $0.levelSum == LevelSum(group: 1, atLeast: 6) })
+        assertSearchable(requirements)
+        // Saving again with the box unticked returns plain repeats, and the
+        // copies take the floor limit the editor gave them.
+        requirements = requirements.applyEdit(index: 0, requirement: plain, count: 3,
+                                              total: nil, copyDepth: 4)
+        XCTAssertTrue(requirements.allSatisfy { $0.levelSum == nil })
+        XCTAssertEqual(requirements.map(\.maximumDepth), [nil, 4, 4])
+        XCTAssertEqual(requirements.boardItems().map(\.stackCount), [3])
+        assertSearchable(requirements)
+    }
+
     // MARK: - Categories
 
     func testAStackDoesNotFollowItsChipIntoAClusterOfAnotherCategory() throws {
