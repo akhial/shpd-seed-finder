@@ -9,6 +9,7 @@ import type { RequirementState } from '../../lib/wasm/types'
 import { Sprite } from './parts'
 import {
   boardItems,
+  canStack,
   copyDepthOf,
   detach,
   joinAlternatives,
@@ -629,20 +630,27 @@ function ChipMenu({
   const anchor = requirements[item.members[0]]
   const inCluster = item.cluster !== undefined
   const canPick = requirements.length > 1
+  // A cluster spanning two categories cannot anchor a stack, so it is not
+  // offered one.
+  const canCount = canStack(requirements, item)
   const canTotal = !inCluster && anchor.item !== undefined && count > 1
   return (
     <div ref={ref} className="d1-chip-menu" role="menu" style={{ left, top }}>
       <button type="button" role="menuitem" onClick={onEdit}>Edit…</button>
       {canPick && <button type="button" role="menuitem" onClick={onPick}><b>or</b>Either/or with…</button>}
-      <span className="d1-chip-menu-rule" />
-      <div className="d1-chip-menu-stepper" role="group" aria-label="How many">
-        <span><b>×</b>How many</span>
-        <span className="d1-chip-menu-count">
-          <button type="button" aria-label="One fewer" disabled={count <= 1} onClick={() => onCount(count - 1)}>−</button>
-          <span className="d1-mono">{count}</span>
-          <button type="button" aria-label="One more" disabled={count >= STACK_MAX} onClick={() => onCount(count + 1)}>+</button>
-        </span>
-      </div>
+      {canCount && (
+        <>
+          <span className="d1-chip-menu-rule" />
+          <div className="d1-chip-menu-stepper" role="group" aria-label="How many">
+            <span><b>×</b>How many</span>
+            <span className="d1-chip-menu-count">
+              <button type="button" aria-label="One fewer" disabled={count <= 1} onClick={() => onCount(count - 1)}>−</button>
+              <span className="d1-mono">{count}</span>
+              <button type="button" aria-label="One more" disabled={count >= STACK_MAX} onClick={() => onCount(count + 1)}>+</button>
+            </span>
+          </div>
+        </>
+      )}
       {canTotal && (
         <button type="button" role="menuitem" onClick={onTotal}>
           <b>Σ</b>{item.total === undefined ? 'Count levels together' : 'Stop counting levels'}

@@ -283,26 +283,53 @@ export function joinAlternatives(requirements: RequirementState[], source: numbe
     .map((requirement, index) => ({ requirement, index }))
     .filter(({ requirement, index }) => index === source || index === target || requirement.alternativeGroup === group)
   const oneCategory = new Set(clusterMembers.map(({ requirement }) => requirementFamily(requirement))).size === 1
-  // Trade plain repeats for identity copies so the stack survives the move.
-  for (const index of oneCategory ? [source, target] : []) {
-    const anchor = next[index]
-    if (anchor.item === undefined || anchor.identityGroup !== undefined) continue
-    const copies = next
-      .map((requirement, i) => ({ requirement, i }))
-      .filter(({ requirement, i }) => i !== index && anchor.item !== undefined && isPlainItemCopy(requirement, anchor.item))
-      .map(({ i }) => i)
-    if (copies.length === 0) continue
-    const label = freeGroup(next.map((requirement) => requirement.identityGroup), IDENTITY_GROUP_MAX)
-    if (label === undefined) continue
-    next[index] = { ...anchor, identityGroup: label }
-    for (const i of copies) next[i] = bareCopy(anchor, label, next[i].maxDepth)
+  let movedSource = source
+  let movedTarget = target
+  if (oneCategory) {
+    // Trade plain repeats for identity copies so the stack survives the move.
+    for (const index of [source, target]) {
+      const anchor = next[index]
+      if (anchor.item === undefined || anchor.identityGroup !== undefined) continue
+      const copies = next
+        .map((requirement, i) => ({ requirement, i }))
+        .filter(({ requirement, i }) => i !== index && anchor.item !== undefined && isPlainItemCopy(requirement, anchor.item))
+        .map(({ i }) => i)
+      if (copies.length === 0) continue
+      const label = freeGroup(next.map((requirement) => requirement.identityGroup), IDENTITY_GROUP_MAX)
+      if (label === undefined) continue
+      next[index] = { ...anchor, identityGroup: label }
+      for (const i of copies) next[i] = bareCopy(anchor, label, next[i].maxDepth)
+    }
+  } else {
+    // The stacks let go: labelled copies are dropped and plain repeats stay
+    // the standalone chips they already encode as. The chip's badge falls
+    // back to ×1, which is the visible half of this.
+    const labels = new Set(clusterMembers.map(({ requirement }) => requirement.identityGroup))
+    const members = new Set(clusterMembers.map(({ index }) => index))
+    const labelled = (requirement: RequirementState) => requirement.identityGroup !== undefined && labels.has(requirement.identityGroup)
+    const kept = next
+      .map((requirement, index) => ({ requirement, index }))
+      .filter(({ requirement, index }) => members.has(index) || !labelled(requirement))
+    movedSource = kept.findIndex(({ index }) => index === source)
+    movedTarget = kept.findIndex(({ index }) => index === target)
+    next = kept.map(({ requirement }) => (labelled(requirement) ? { ...requirement, identityGroup: undefined } : requirement))
   }
   next = next.map((requirement, index) => (
-    index === source || index === target
+    index === movedSource || index === movedTarget
       ? { ...requirement, alternativeGroup: group, levelSum: undefined }
       : requirement
   ))
-  return normalize(moveAfter(next, source, (requirement) => requirement.alternativeGroup === group))
+  return normalize(moveAfter(next, movedSource, (requirement) => requirement.alternativeGroup === group))
+}
+
+/**
+ * Whether the board item can carry a stack. A copy has to name the kind it
+ * copies, and a cluster spanning two categories — "spear or wand" — names
+ * none, so such a cluster is offered no stack and cannot grow one.
+ */
+export const canStack = (requirements: readonly RequirementState[], item: BoardItem): boolean => {
+  const family = requirementFamily(requirements[item.members[0]])
+  return item.members.every((index) => requirementFamily(requirements[index]) === family)
 }
 
 /** Pulls the chip at `index` out of its cluster; it leaves its stack behind. */
@@ -330,6 +357,7 @@ export function setStackCount(requirements: RequirementState[], item: BoardItem,
     const doomed = new Set(item.extras.slice(wanted))
     return normalize(requirements.filter((_, index) => !doomed.has(index)))
   }
+  if (!canStack(requirements, item)) return requirements
   const anchorIndex = item.members[0]
   const anchor = requirements[anchorIndex]
   const added = wanted - item.extras.length

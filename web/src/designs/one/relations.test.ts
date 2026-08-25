@@ -4,6 +4,7 @@ import type { QueryState, RequirementState } from '../../lib/wasm/types'
 import {
   applyEdit,
   boardItems,
+  canStack,
   copyDepthOf,
   detach,
   joinAlternatives,
@@ -217,6 +218,31 @@ describe('categories', () => {
     expect(joined.some((r) => r.identityGroup !== undefined)).toBe(false)
     expect(validateQuery(asState(joined)).valid).toBe(true)
     expect(boardItems(joined)).toHaveLength(2)
+  })
+
+  it('a wildcard stack lets its copies go when its chip joins another category', () => {
+    // The copies were bare wands tied to the anchor by a label; a "wand or
+    // spear" cluster is nothing they can be copies of, so they are dropped
+    // rather than left behind as a stack the engine would refuse.
+    let requirements = applyEdit([], null, req({ kind: 'wand' }), 3, undefined)
+    requirements = [...requirements, req({ item: 'spear' })]
+    const joined = joinAlternatives(requirements, 0, 3)
+    expect(names(joined)).toEqual(['spear', 'wand'])
+    expect(joined.some((r) => r.identityGroup !== undefined)).toBe(false)
+    expect(joined[0].alternativeGroup).toBe(joined[1].alternativeGroup)
+    expect(validateQuery(asState(joined)).valid).toBe(true)
+    expect(stackCount(item(joined, 0))).toBe(1)
+  })
+
+  it('a cluster spanning two categories cannot grow a stack', () => {
+    const requirements = joinAlternatives([req({ kind: 'wand' }), req({ item: 'spear' })], 0, 1)
+    const cluster = item(requirements, 0)
+    expect(cluster.members).toHaveLength(2)
+    expect(canStack(requirements, cluster)).toBe(false)
+    expect(setStackCount(requirements, cluster, 2)).toBe(requirements)
+    // A cluster of one category is still free to stack.
+    const weapons = joinAlternatives([req({ item: 'mace' }), req({ item: 'spear' })], 0, 1)
+    expect(canStack(weapons, item(weapons, 0))).toBe(true)
   })
 })
 
