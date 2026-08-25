@@ -924,7 +924,11 @@ private fun RequirementPreview(draft: Result<ItemRequirement>) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             val requirement = draft.getOrNull()
-            SpriteTile(item = requirement?.item, glow = ItemGlows.forEffect(requirement?.singleEffect), tileSize = 44)
+            SpriteTile(
+                item = requirement?.item,
+                glows = requirement?.effect?.let(ItemGlows::forFilter).orEmpty(),
+                tileSize = 44,
+            )
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 if (requirement == null) {

@@ -102,15 +102,17 @@ private const val ADAPTIVE_ICON_VISIBLE = 72f
  * time (see `centerSpriteCells`), keeping small items like rings and darts
  * centred at the same pixel scale the web front-end renders them at.
  *
- * A [glow] paints the sprite's own opaque pixels with the enchantment or curse
+ * A glow paints the sprite's own opaque pixels with the enchantment or curse
  * colour at the shared pulse clock's current blend factor — the same masked
  * tint the web uses, reproducing upstream's `texel*(1-v) + glow*v` shader with
- * no bloom or halo outside the silhouette.
+ * no bloom or halo outside the silhouette. Several [glows] take the sprite in
+ * turn, a pulse each, so an item asked for by more than one effect shows every
+ * colour it may arrive in.
  */
 @Composable
 fun ItemSprite(
     item: CatalogItem,
-    glow: Glow? = null,
+    glows: List<Glow> = emptyList(),
     modifier: Modifier = Modifier,
 ) {
     val atlas = LocalItemAtlas.current
@@ -135,9 +137,10 @@ fun ItemSprite(
                 dstSize = dstSize,
                 filterQuality = FilterQuality.None,
             )
-            if (glow != null) {
-                // Reading the clock here keeps the pulse in the draw phase, so a
-                // frame never recomposes a scout row.
+            // Reading the clock here keeps the pulse in the draw phase, so a
+            // frame never recomposes a scout row.
+            val blend = pulse.blendFor(glows)
+            if (blend != null) {
                 drawImage(
                     image = atlas,
                     srcOffset = srcOffset,
@@ -145,7 +148,7 @@ fun ItemSprite(
                     dstOffset = IntOffset.Zero,
                     dstSize = dstSize,
                     colorFilter = ColorFilter.tint(
-                        color = glow.color.copy(alpha = pulse.alphaFor(glow.period)),
+                        color = blend.color.copy(alpha = blend.alpha),
                         blendMode = BlendMode.SrcIn,
                     ),
                     filterQuality = FilterQuality.None,
@@ -189,7 +192,7 @@ fun ItemSprite(
 @Composable
 fun SpriteTile(
     item: CatalogItem?,
-    glow: Glow? = null,
+    glows: List<Glow> = emptyList(),
     tileSize: Int = 60,
     modifier: Modifier = Modifier,
 ) {
@@ -208,7 +211,7 @@ fun SpriteTile(
             } else {
                 ItemSprite(
                     item = item,
-                    glow = glow,
+                    glows = glows,
                     modifier = Modifier.size((tileSize * 3 / 4).dp),
                 )
             }

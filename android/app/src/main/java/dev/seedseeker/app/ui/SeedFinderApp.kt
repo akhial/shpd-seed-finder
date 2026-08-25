@@ -681,8 +681,10 @@ fun SeedFinderApp(
                     editingTotal = null
                     showRequirementSheet = true
                 },
-                onEdit = { item ->
-                    editingIndex = item.anchor
+                // The tapped chip is what the editor opens on, but the stack it
+                // shows belongs to the whole board item behind it.
+                onEdit = { item, index ->
+                    editingIndex = index
                     editingCount = item.stackCount
                     editingTotal = item.total
                     showRequirementSheet = true

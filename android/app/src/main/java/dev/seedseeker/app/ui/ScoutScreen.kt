@@ -528,7 +528,7 @@ private fun ScoutItemCard(
             // pulsing masked tint is the only modifier cue, no tile, no halo.
             ItemSprite(
                 item = scoutItem.item,
-                glow = ItemGlows.forItem(effect = scoutItem.effect, cursed = scoutItem.cursed),
+                glows = listOfNotNull(ItemGlows.forItem(effect = scoutItem.effect, cursed = scoutItem.cursed)),
                 modifier = Modifier.size(40.dp),
             )
             Spacer(Modifier.width(14.dp))

@@ -14,6 +14,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import dev.seedseeker.app.catalog.ItemCatalog
+import dev.seedseeker.app.model.EffectFilter
 import dev.seedseeker.app.model.ItemKind
 import kotlin.math.abs
 
@@ -93,6 +94,17 @@ object ItemGlows {
         if (effect == null) return null
         return enchantments[effect] ?: curse.takeIf { effect in curses }
     }
+
+    /**
+     * The glows a requirement's effect filter pulses through, in the filter's
+     * own order — one per named effect. "Any effect" and "any enchantment"
+     * settle on no colour of their own and so glow with none.
+     */
+    fun forFilter(filter: EffectFilter): List<Glow> = when (filter) {
+        EffectFilter.Any, EffectFilter.AnyEnchantment -> emptyList()
+        is EffectFilter.OneOf -> filter.names.map { enchantments[it] ?: curse }
+    }
+
 }
 
 /** Peak blend toward the glow colour, matching the web's `d1-ench-pulse`. */
@@ -100,6 +112,9 @@ private const val GLOW_PEAK_ALPHA = 0.6f
 
 /** Frozen blend used when the system asks for reduced motion. */
 private const val GLOW_STATIC_ALPHA = 0.3f
+
+/** The colour a sprite is tinted with right now, and how far toward it. */
+data class GlowBlend(val color: Color, val alpha: Float)
 
 /**
  * One shared pulse clock for every glowing sprite on screen. Sprites read the
@@ -119,11 +134,37 @@ class GlowPulse internal constructor(
      */
     fun alphaFor(period: Float): Float {
         if (!animated) return GLOW_STATIC_ALPHA
-        val cycleMillis = (2_000f * period).toLong().coerceAtLeast(1L)
+        val cycleMillis = cycleOf(period)
         val phase = (elapsedMillis.longValue % cycleMillis) / cycleMillis.toFloat()
         return GLOW_PEAK_ALPHA * (1f - abs(2f * phase - 1f))
     }
+
+    /**
+     * What a stack of glows shows now. Each takes the sprite for one whole
+     * cycle of its own before handing it on, so an item asking for three
+     * effects pulses all three in a round, and the round lasts the sum of
+     * their cycles — the same round the board's effect badge wipes through.
+     * Frozen on the first glow under reduced motion, where a hand-over the
+     * user cannot see would only leave one colour picked arbitrarily.
+     */
+    fun blendFor(glows: List<Glow>): GlowBlend? {
+        val first = glows.firstOrNull() ?: return null
+        if (!animated) return GlowBlend(first.color, GLOW_STATIC_ALPHA)
+        var position = elapsedMillis.longValue % glows.sumOf { cycleOf(it.period) }
+        for (glow in glows) {
+            val cycle = cycleOf(glow.period)
+            if (position < cycle) {
+                val phase = position / cycle.toFloat()
+                return GlowBlend(glow.color, GLOW_PEAK_ALPHA * (1f - abs(2f * phase - 1f)))
+            }
+            position -= cycle
+        }
+        return GlowBlend(first.color, 0f)
+    }
 }
+
+/** One full pulse of a glow: up to the peak and back, in milliseconds. */
+private fun cycleOf(period: Float): Long = (2_000f * period).toLong().coerceAtLeast(1L)
 
 private val StaticGlowPulse = GlowPulse(mutableLongStateOf(0L), animated = false)
 
