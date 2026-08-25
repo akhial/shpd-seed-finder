@@ -67,7 +67,7 @@
                               <TextBlock Text="OR" Visibility="{Binding OrVisibility}" Style="{StaticResource Caption}" HorizontalAlignment="Center" FontWeight="SemiBold"/>
                               <Button Style="{StaticResource CardButton}" Click="Requirement_Click">
                                 <Grid ColumnSpacing="12">
-                                  <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                  <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                                   <!-- The real item sprite when one is pinned; the generic
                                        Fluent glyph only for wildcard requirements. -->
                                   <Grid Width="24" Height="24" VerticalAlignment="Center">
@@ -81,11 +81,7 @@
                                     <TextBlock Text="{Binding Requirement.Title}" TextWrapping="Wrap"/>
                                     <TextBlock Text="{Binding Requirement.Description}" Style="{StaticResource Caption}" TextWrapping="Wrap"/>
                                   </StackPanel>
-                                  <!-- Forks the row into an "any of these" slot (or extends one). -->
-                                  <Button Grid.Column="2" Style="{StaticResource SubtleIconButton}" Tag="{Binding Requirement}" Click="AddAlternative_Click" ToolTipService.ToolTip="Add an alternative (any of these)" VerticalAlignment="Center">
-                                    <FontIcon Glyph="&#xE8AB;" FontSize="12"/>
-                                  </Button>
-                                  <Button Grid.Column="3" Style="{StaticResource SubtleIconButton}" Tag="{Binding Requirement}" Click="RemoveRequirement_Click" ToolTipService.ToolTip="Remove requirement" VerticalAlignment="Center" Margin="0,0,-6,0">
+                                  <Button Grid.Column="2" Style="{StaticResource SubtleIconButton}" Tag="{Binding Requirement}" Click="RemoveRequirement_Click" ToolTipService.ToolTip="Remove requirement" VerticalAlignment="Center" Margin="0,0,-6,0">
                                     <FontIcon Glyph="&#xE711;" FontSize="12"/>
                                   </Button>
                                 </Grid>

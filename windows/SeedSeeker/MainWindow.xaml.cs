@@ -247,36 +247,46 @@ public sealed partial class MainWindow : Window
         SaveSettings();
     }
 
-    private async void AddRequirement_Click(object sender, RoutedEventArgs e) { var r = new ItemRequirement { Kind = ItemKind.Weapon, UpgradeMatch = UpgradeMatch.Any }; if (await EditRequirement(r, "New Requirement", "Add")) { query.Requirements.Add(r); CommitRequirement(r); } }
-    private async void Requirement_Click(object sender, RoutedEventArgs e)
+    private async void AddRequirement_Click(object sender, RoutedEventArgs e)
     {
-        if ((sender as FrameworkElement)?.DataContext is not RequirementRowView row) return; var original = row.Requirement; var copy = original.Clone();
-        if (await EditRequirement(copy, "Edit Requirement", "Save")) { var index = query.Requirements.IndexOf(original); query.Requirements[index] = copy; CommitRequirement(copy); }
+        var requirement = new ItemRequirement { Kind = ItemKind.Weapon, UpgradeMatch = UpgradeMatch.Any };
+        if (await EditRequirement(requirement, StackShape.Lone, "New Requirement", "Add") is not { } stack) return;
+        SetRequirements(QueryRelationships.ApplyEdit(query.Requirements, null, requirement, stack.Count, stack.Total, stack.CopyDepth));
     }
-    /// <summary>
-    /// Forks a row into an "any of these" slot, or extends the slot it is
-    /// already in: the new member starts as a copy of the row and opens in the
-    /// editor; nothing changes until it is accepted. Joining a slot takes the
-    /// row out of any combined-level group, which alternatives may not hold.
-    /// </summary>
-    private async void AddAlternative_Click(object sender, RoutedEventArgs e)
+    /// <summary>Opens the chip at <paramref name="index"/> in the editor; the stack it reports comes back through <see cref="QueryRelationships.ApplyEdit"/>.</summary>
+    private async Task EditChip(int index)
     {
-        if ((sender as Button)?.Tag is not ItemRequirement original) return;
-        var alternative = QueryRelationships.PrepareAlternative(query.Requirements, original);
-        if (!await EditRequirement(alternative, "New Alternative", "Add")) return;
-        QueryRelationships.CommitAlternative(query.Requirements, original, alternative);
-        CommitRequirement(alternative);
+        if (index < 0 || index >= query.Requirements.Count) return;
+        var shape = QueryRelationships.ItemOf(query.Requirements, index) is { } item ? StackShape.Of(query.Requirements, item) : StackShape.Lone;
+        var copy = query.Requirements[index].Clone();
+        if (await EditRequirement(copy, shape, "Edit Requirement", "Save") is not { } stack) return;
+        SetRequirements(QueryRelationships.ApplyEdit(query.Requirements, index, copy, stack.Count, stack.Total, stack.CopyDepth));
     }
-    private void RemoveRequirement_Click(object sender, RoutedEventArgs e) { if ((sender as Button)?.Tag is ItemRequirement r) { QueryRelationships.Remove(query.Requirements, r); RefreshQuery(); SaveSettings(); } }
-    /// <summary>Settles an accepted edit: the combined-level total is shared with the group, then the list and the saved query follow.</summary>
-    private void CommitRequirement(ItemRequirement r)
+    /// <summary>Deletes the chip at <paramref name="index"/>: a whole board entry with its hidden copies, or one member of a cluster.</summary>
+    private void RemoveChip(int index)
     {
-        if (r.LevelSum is { } sum) QueryRelationships.PropagateSum(query.Requirements, sum.Group, sum.AtLeast);
+        if (QueryRelationships.ItemOf(query.Requirements, index) is not { } item) return;
+        SetRequirements(item.Cluster is null
+            ? QueryRelationships.RemoveItem(query.Requirements, item)
+            : QueryRelationships.RemoveMember(query.Requirements, index));
+    }
+    /// <summary>Adopts an edited requirement list, then redraws and saves.</summary>
+    private void SetRequirements(IEnumerable<ItemRequirement> requirements)
+    {
+        query.Requirements = new ObservableCollection<ItemRequirement>(requirements);
         RefreshQuery(); SaveSettings();
     }
+    private async void Requirement_Click(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not RequirementRowView row) return;
+        await EditChip(query.Requirements.IndexOf(row.Requirement));
+    }
+    private void RemoveRequirement_Click(object sender, RoutedEventArgs e) { if ((sender as Button)?.Tag is ItemRequirement r) RemoveChip(query.Requirements.IndexOf(r)); }
 
     /// <param name="r">The requirement edited in place; left as it was when the dialog is cancelled.</param>
-    private async Task<bool> EditRequirement(ItemRequirement r, string title, string accept)
+    /// <param name="stack">The chip's stack as it stands; a cluster member's belongs to the cluster, so its section stays hidden.</param>
+    /// <returns>The stack the editor settled on, or null when the dialog was cancelled.</returns>
+    private async Task<StackShape?> EditRequirement(ItemRequirement r, StackShape stack, string title, string accept)
     {
         var kind = Combo(Enum.GetValues<ItemKind>().Select(Labels.Kind), (int)r.Kind); kind.Header = "Category";
         var item = new ComboBox { Header = "Item", HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -299,18 +309,21 @@ public sealed partial class MainWindow : Window
         var effectGrid = new StackPanel { Spacing = 4 }; effectGrid.Children.Add(enchantmentLabel); effectGrid.Children.Add(enchantmentPanel); effectGrid.Children.Add(curseSection);
         var uncursed = new CheckBox { Content = "Require uncursed", IsChecked = r.RequireUncursed };
         var source = Combo(new[] { "Any source" }.Concat(Enum.GetValues<ScoutItemSource>().Select(Labels.Source)), r.Source is null ? 0 : (int)r.Source + 1); source.Header = "Source";
-        var groupNames = new[] { "None" }.Concat(Enumerable.Range(1, SearchLimits.IdentityGroupMax).Select(QueryRelationships.GroupLabel)).ToList();
-        var group = Combo(groupNames, r.IdentityGroup ?? 0); group.Header = "Same-item group";
-        var groupHint = new TextBlock { Style = (Style)Application.Current.Resources["Caption"], TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, -8, 0, 0), Text = "Copies of one item. One member (or one set of alternatives) may name the item and its qualities; every other member must be a plain row of the same category." };
-        // Combined-level group: the members' levels (upgrade plus one each)
-        // add up to one shared total, which any subset may reach. An
-        // alternative may not be a member, so the controls stay hidden for a
-        // row inside an "any of these" slot.
-        var isAlternative = r.AlternativeGroup is not null;
-        var others = query.Requirements.Where(other => other.Key != r.Key).ToList();
-        var sumGroup = Combo(groupNames, isAlternative ? 0 : r.LevelSum?.Group ?? 0); sumGroup.Header = "Combined level group"; sumGroup.Visibility = isAlternative ? Visibility.Collapsed : Visibility.Visible;
-        var sumTotal = new Slider { Minimum = 1, Maximum = 1, StepFrequency = 1, TickFrequency = 1, Value = r.LevelSum?.AtLeast ?? 1, HorizontalAlignment = HorizontalAlignment.Stretch };
-        var sumHint = new TextBlock { Style = (Style)Application.Current.Resources["Caption"], TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, -8, 0, 0) };
+        // How many items of this kind the chip asks for. The relationships
+        // themselves — the either/or clusters and the identity labels behind a
+        // stack — belong to the board, which writes them through
+        // QueryRelationships; the editor only names the shape.
+        var count = Number("Total item count", Math.Clamp(stack.Count, 1, SearchLimits.StackMax), 1, SearchLimits.StackMax);
+        count.SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline; count.Visibility = stack.InCluster ? Visibility.Collapsed : Visibility.Visible;
+        // A stack's extra copies constrain nothing of their own, but a floor
+        // limit is a placement bound rather than an item property, so they may
+        // carry one of those.
+        var copyDepthToggle = new CheckBox { Content = "Limit the extra copies to a floor", IsChecked = stack.CopyDepth is not null };
+        var copyDepth = FloorChoice(stack.CopyDepth ?? 4);
+        // A combined level: the stack's items count their levels (upgrade plus
+        // one each) towards one total, which any subset of them may reach.
+        var totalToggle = new CheckBox { Content = "Count levels together", IsChecked = stack.Total is not null };
+        var total = new Slider { Minimum = 1, Maximum = 1, StepFrequency = 1, TickFrequency = 1, Value = stack.Total ?? 1, HorizontalAlignment = HorizontalAlignment.Stretch };
         var depthToggle = ToggleRow("Limit this item to a floor", r.MaximumDepth is not null, out var depthRow); var depth = Number("Within first floors", FloorLimits.Normalize(r.MaximumDepth ?? 4), 1, SearchLimits.MaxDepth);
         // Empty boss floors (5, 10, 15) are useless limits: a single upward spin skips to the
         // next real floor, while typed values snap down (10 means the first 10 floors, ≡ 9).
@@ -322,7 +335,7 @@ public sealed partial class MainWindow : Window
             var target = FloorLimits.SkipTarget(previous, requested);
             if (target != requested) box.Value = target;
         };
-        var content = new StackPanel { Spacing = 12, Padding = new Thickness(2, 4, 2, 4) }; foreach (var control in new UIElement[] { kind, item, tierMatch, tier, tierBound, upgradeMatch, upgrade, upgradeBound, effectMode, effectGrid, uncursed, source, group, groupHint, sumGroup, sumTotal, sumHint, depthRow, depth }) content.Children.Add(control);
+        var content = new StackPanel { Spacing = 12, Padding = new Thickness(2, 4, 2, 4) }; foreach (var control in new UIElement[] { kind, item, tierMatch, tier, tierBound, upgradeMatch, upgrade, upgradeBound, effectMode, effectGrid, uncursed, source, count, copyDepthToggle, copyDepth, totalToggle, total, depthRow, depth }) content.Children.Add(control);
         void NormalizeTier()
         {
             var predicate = (TierMatch)Math.Max(0, tierMatch.SelectedIndex);
@@ -337,10 +350,39 @@ public sealed partial class MainWindow : Window
             tier.Visibility = generic && predicate == TierMatch.Exactly ? Visibility.Visible : Visibility.Collapsed;
             tierBound.Visibility = generic && ranged ? Visibility.Visible : Visibility.Collapsed;
             tierBound.Header = predicate == TierMatch.AtLeast ? "Minimum tier" : "Maximum tier";
+            // A stack that counts its levels together has identical any-upgrade
+            // members, so the upgrade predicate has nothing left to say.
+            var counting = CountingLevels();
             var upgradePredicate = (UpgradeMatch)Math.Max(0, upgradeMatch.SelectedIndex); var ringMinimum = k == ItemKind.Ring && upgradePredicate == UpgradeMatch.AtLeast;
-            upgrade.Visibility = upgradePredicate == UpgradeMatch.Exactly || ringMinimum ? Visibility.Visible : Visibility.Collapsed;
+            upgradeMatch.Visibility = counting ? Visibility.Collapsed : Visibility.Visible;
+            upgrade.Visibility = !counting && (upgradePredicate == UpgradeMatch.Exactly || ringMinimum) ? Visibility.Visible : Visibility.Collapsed;
             upgrade.Header = ringMinimum ? "Minimum upgrade" : "Upgrade level";
-            upgradeBound.Visibility = upgradePredicate == UpgradeMatch.AtLeast && !ringMinimum ? Visibility.Visible : Visibility.Collapsed;
+            upgradeBound.Visibility = !counting && upgradePredicate == UpgradeMatch.AtLeast && !ringMinimum ? Visibility.Visible : Visibility.Collapsed;
+        }
+        // How many items the stack asks for; a half-typed box reads as one.
+        int Counted() => double.IsNaN(count.Value) ? 1 : Math.Clamp((int)count.Value, 1, SearchLimits.StackMax);
+        bool CountingLevels() => totalToggle.Visibility == Visibility.Visible && totalToggle.IsChecked == true;
+        // The stack section: "how many" is a property of every lone chip, while
+        // a floor limit for the extra copies and a combined level are the two
+        // shapes a stack of more than one can take — the second only for a
+        // concrete item, whose copies are the same item over again.
+        void SyncStack()
+        {
+            var many = !stack.InCluster && Counted() > 1;
+            totalToggle.Visibility = many && item.SelectedIndex > 0 ? Visibility.Visible : Visibility.Collapsed;
+            var counting = CountingLevels();
+            total.Visibility = counting ? Visibility.Visible : Visibility.Collapsed;
+            copyDepthToggle.Visibility = many && !counting ? Visibility.Visible : Visibility.Collapsed;
+            copyDepth.Visibility = copyDepthToggle.Visibility == Visibility.Visible && copyDepthToggle.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+            // Never a total the stack cannot reach: each item counts its upgrade plus one.
+            if (counting)
+            {
+                total.Maximum = Math.Max(1, QueryRelationships.StackCapacity((ItemKind)Math.Max(0, kind.SelectedIndex), Counted()));
+                total.Value = Math.Clamp(double.IsNaN(total.Value) ? 1 : total.Value, 1, total.Maximum);
+            }
+            total.Header = $"Levels reach \u2265 {(int)total.Value} across up to {Counted()}";
+            copyDepth.Header = $"Copies within first {FloorOf(copyDepth)} floor{(FloorOf(copyDepth) == 1 ? "" : "s")}";
+            SyncVisibility();
         }
         void NormalizeUpgrade()
         {
@@ -372,40 +414,20 @@ public sealed partial class MainWindow : Window
             effectMode.Visibility = k.Family() is ItemKind.Weapon or ItemKind.Armor ? Visibility.Visible : Visibility.Collapsed;
             SyncEffects();
         }
-        // What this row can contribute to a combined total, read from the
-        // editor's live state: an exact upgrade counts as itself, anything
-        // else as the family cap (the engine's own rule).
-        int EditorMaximumUpgrade()
-        {
-            var k = (ItemKind)Math.Max(0, kind.SelectedIndex);
-            return upgradeMatch.SelectedIndex == (int)UpgradeMatch.Exactly && !double.IsNaN(upgrade.Value) ? (int)upgrade.Value : k.MaximumSearchUpgrade();
-        }
-        void SyncSum()
-        {
-            var chosen = sumGroup.SelectedIndex; var visible = !isAlternative && chosen > 0;
-            sumTotal.Visibility = visible ? Visibility.Visible : Visibility.Collapsed; sumHint.Visibility = sumTotal.Visibility;
-            if (!visible) return;
-            // The slider never offers a total the group cannot reach: 1..the sum of every member's maximum level (upgrade plus one).
-            var capacity = QueryRelationships.SumCapacity(others, chosen) + EditorMaximumUpgrade() + 1;
-            sumTotal.Maximum = Math.Max(1, capacity); sumTotal.Value = Math.Clamp(double.IsNaN(sumTotal.Value) ? 1 : sumTotal.Value, 1, sumTotal.Maximum);
-            var members = others.Count(member => member.LevelSum?.Group == chosen) + 1;
-            sumTotal.Header = $"Total at least {(int)sumTotal.Value} level{((int)sumTotal.Value == 1 ? "" : "s")}";
-            sumHint.Text = $"Group {QueryRelationships.GroupLabel(chosen)}: up to {members} item{(members == 1 ? "" : "s")}, {capacity} levels together at most. Each item counts its upgrade plus one, any subset reaching the total satisfies the group, and every member shares this total.";
-        }
         void Populate()
         {
             var k = (ItemKind)Math.Max(0, kind.SelectedIndex); var oldId = r.Item?.Id; itemChoices.Clear(); itemChoices.AddRange(ItemCatalog.EditorItems(k, r.Item)); item.Items.Clear(); item.Items.Add($"Any {Labels.Singular(k)}"); foreach (var value in itemChoices) item.Items.Add(value.Name); item.SelectedIndex = Math.Max(0, itemChoices.FindIndex(x => x.Id == oldId) + 1);
             PopulateEffects(r.Effect.Effects);
             maximumUpgrade = k.MaximumSearchUpgrade(); NormalizeUpgrade();
-            selectedMinimumUpgrade = Math.Clamp(selectedMinimumUpgrade, 1, maximumUpgrade - 1); upgradeBound.Items.Clear(); foreach (var value in Enumerable.Range(1, maximumUpgrade - 1)) upgradeBound.Items.Add($"+{value} or higher"); upgradeBound.SelectedIndex = selectedMinimumUpgrade - 1; SyncVisibility(); SyncSum();
+            selectedMinimumUpgrade = Math.Clamp(selectedMinimumUpgrade, 1, maximumUpgrade - 1); upgradeBound.Items.Clear(); foreach (var value in Enumerable.Range(1, maximumUpgrade - 1)) upgradeBound.Items.Add($"+{value} or higher"); upgradeBound.SelectedIndex = selectedMinimumUpgrade - 1; SyncStack();
         }
-        kind.SelectionChanged += (_, _) => { r.Item = null; r.Effect = EffectFilter.Any(); effectMode.SelectedIndex = 0; Populate(); }; item.SelectionChanged += (_, _) => SyncVisibility(); tier.ValueChanged += (_, _) => { if (!double.IsNaN(tier.Value)) selectedTier = (int)tier.Value; }; tierBound.SelectionChanged += (_, _) => { if (tierBound.SelectedIndex >= 0) selectedTier = tierBound.SelectedIndex + SearchLimits.BoundedTierMin; }; tierMatch.SelectionChanged += (_, _) => { NormalizeTier(); SyncVisibility(); }; upgradeMatch.SelectionChanged += (_, _) => { NormalizeUpgrade(); SyncVisibility(); SyncSum(); }; upgrade.ValueChanged += (_, _) => SyncSum(); upgradeBound.SelectionChanged += (_, _) => { if (upgradeBound.SelectedIndex >= 0) selectedMinimumUpgrade = upgradeBound.SelectedIndex + 1; }; effectMode.SelectionChanged += (_, _) => SyncEffects(); uncursed.Checked += (_, _) => SyncEffects(); uncursed.Unchecked += (_, _) => SyncEffects(); depthToggle.Toggled += (_, _) => depth.Visibility = depthToggle.IsOn ? Visibility.Visible : Visibility.Collapsed;
-        // Joining a group adopts the total its members already share.
-        sumGroup.SelectionChanged += (_, _) => { if (sumGroup.SelectedIndex > 0 && others.FirstOrDefault(member => member.LevelSum?.Group == sumGroup.SelectedIndex)?.LevelSum is { } shared) sumTotal.Value = shared.AtLeast; SyncSum(); };
-        sumTotal.ValueChanged += (_, _) => sumTotal.Header = $"Total at least {(int)sumTotal.Value} level{((int)sumTotal.Value == 1 ? "" : "s")}";
-        Populate(); NormalizeTier(); SyncVisibility(); SyncSum(); depth.Visibility = depthToggle.IsOn ? Visibility.Visible : Visibility.Collapsed;
+        kind.SelectionChanged += (_, _) => { r.Item = null; r.Effect = EffectFilter.Any(); effectMode.SelectedIndex = 0; Populate(); }; item.SelectionChanged += (_, _) => SyncStack(); tier.ValueChanged += (_, _) => { if (!double.IsNaN(tier.Value)) selectedTier = (int)tier.Value; }; tierBound.SelectionChanged += (_, _) => { if (tierBound.SelectedIndex >= 0) selectedTier = tierBound.SelectedIndex + SearchLimits.BoundedTierMin; }; tierMatch.SelectionChanged += (_, _) => { NormalizeTier(); SyncVisibility(); }; upgradeMatch.SelectionChanged += (_, _) => { NormalizeUpgrade(); SyncVisibility(); }; upgradeBound.SelectionChanged += (_, _) => { if (upgradeBound.SelectedIndex >= 0) selectedMinimumUpgrade = upgradeBound.SelectedIndex + 1; }; effectMode.SelectionChanged += (_, _) => SyncEffects(); uncursed.Checked += (_, _) => SyncEffects(); uncursed.Unchecked += (_, _) => SyncEffects(); depthToggle.Toggled += (_, _) => depth.Visibility = depthToggle.IsOn ? Visibility.Visible : Visibility.Collapsed;
+        count.ValueChanged += (_, _) => SyncStack(); totalToggle.Checked += (_, _) => SyncStack(); totalToggle.Unchecked += (_, _) => SyncStack(); copyDepthToggle.Checked += (_, _) => SyncStack(); copyDepthToggle.Unchecked += (_, _) => SyncStack();
+        total.ValueChanged += (_, _) => total.Header = $"Levels reach \u2265 {(int)total.Value} across up to {Counted()}";
+        copyDepth.ValueChanged += (_, _) => copyDepth.Header = $"Copies within first {FloorOf(copyDepth)} floor{(FloorOf(copyDepth) == 1 ? "" : "s")}";
+        Populate(); NormalizeTier(); SyncStack(); depth.Visibility = depthToggle.IsOn ? Visibility.Visible : Visibility.Collapsed;
         var dialog = new ContentDialog { XamlRoot = Content.XamlRoot, Title = title, PrimaryButtonText = accept, CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Primary, Content = VerticalScrollView(content, 510, 430) };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return false;
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary) return null;
         r.Kind = (ItemKind)kind.SelectedIndex; r.Item = item.SelectedIndex > 0 ? itemChoices[item.SelectedIndex - 1] : null; r.TierMatch = r.Item is null && r.Kind.Family() is ItemKind.Weapon or ItemKind.Armor ? (TierMatch)tierMatch.SelectedIndex : TierMatch.Any; r.Tier = r.TierMatch == TierMatch.Any ? 0 : selectedTier;
         r.UpgradeMatch = (UpgradeMatch)upgradeMatch.SelectedIndex; r.Upgrade = r.UpgradeMatch switch { UpgradeMatch.Any => 0, UpgradeMatch.Exactly => (int)upgrade.Value, UpgradeMatch.AtLeast when r.Kind == ItemKind.Ring => (int)upgrade.Value, UpgradeMatch.AtLeast => selectedMinimumUpgrade, _ => 0 };
         r.RequireUncursed = uncursed.IsChecked == true;
@@ -416,10 +438,27 @@ public sealed partial class MainWindow : Window
             2 => EffectFilter.OneOf(effectBoxes.Where(entry => entry.Box.IsChecked == true && (!entry.Curse || !r.RequireUncursed)).Select(entry => entry.Name)),
             _ => EffectFilter.Any(),
         };
-        r.Source = source.SelectedIndex == 0 ? null : (ScoutItemSource)(source.SelectedIndex - 1); r.IdentityGroup = group.SelectedIndex == 0 ? null : group.SelectedIndex;
-        r.LevelSum = !isAlternative && sumGroup.SelectedIndex > 0 ? new LevelSum(sumGroup.SelectedIndex, (int)sumTotal.Value) : null;
-        r.MaximumDepth = depthToggle.IsOn ? FloorLimits.Normalize(Math.Clamp((int)depth.Value, 1, SearchLimits.MaxDepth)) : null; return true;
+        r.Source = source.SelectedIndex == 0 ? null : (ScoutItemSource)(source.SelectedIndex - 1);
+        r.MaximumDepth = depthToggle.IsOn ? FloorLimits.Normalize(Math.Clamp((int)depth.Value, 1, SearchLimits.MaxDepth)) : null;
+        // The identity label and the combined level themselves are the stack's
+        // encoding, which ApplyEdit writes from the shape returned here.
+        var settled = CountingLevels();
+        return new StackShape(
+            stack.InCluster ? 1 : Counted(),
+            settled ? (int)total.Value : null,
+            !stack.InCluster && !settled && Counted() > 1 && copyDepthToggle.IsChecked == true ? FloorOf(copyDepth) : null,
+            stack.InCluster);
     }
+    /// <summary>A floor picker indexing <see cref="FloorLimits.Options"/>, like the sidebar's own slider.</summary>
+    private static Slider FloorChoice(int floor) => new()
+    {
+        Minimum = 0, Maximum = FloorLimits.Options.Length - 1, StepFrequency = 1, TickFrequency = 1,
+        Value = FloorLimits.IndexOf(floor), HorizontalAlignment = HorizontalAlignment.Stretch,
+        ThumbToolTipValueConverter = new FloorLimitIndexConverter(),
+    };
+    /// <summary>The floor a <see cref="FloorChoice"/> slider currently names.</summary>
+    private static int FloorOf(Slider slider) =>
+        FloorLimits.Options[Math.Clamp((int)Math.Round(slider.Value), 0, FloorLimits.Options.Length - 1)];
     private static ComboBox Combo(IEnumerable<string> values, int selected) { var c = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch }; foreach (var v in values) c.Items.Add(v); c.SelectedIndex = selected; return c; }
     private static NumberBox Number(string header, double value, double min, double max) => new() { Header = header, Value = value, Minimum = min, Maximum = max, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact };
     private static ToggleSwitch ToggleRow(string label, bool isOn, out Grid row)

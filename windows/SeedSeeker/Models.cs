@@ -285,6 +285,22 @@ public sealed class BoardItem
 }
 
 /// <summary>
+/// What the editor needs to know — and hands back — about a chip's stack: how
+/// many items it asks for, the combined level across them when one is set, and
+/// the floor limit its extra copies share. A cluster member's stack belongs to
+/// the cluster, so its editor shows none of this.
+/// </summary>
+public sealed record StackShape(int Count, int? Total, int? CopyDepth, bool InCluster)
+{
+    /// <summary>The stack of a chip that asks for a single item.</summary>
+    public static StackShape Lone { get; } = new(1, null, null, false);
+
+    /// <summary>The stack of the board entry <paramref name="item"/>.</summary>
+    public static StackShape Of(IEnumerable<ItemRequirement> requirements, BoardItem item) =>
+        new(item.StackCount, item.Total, QueryRelationships.CopyDepthOf(requirements, item), item.Cluster is not null);
+}
+
+/// <summary>
 /// The structure between requirements — either/or clusters, same-item stacks
 /// and combined-level groups — and the edits that keep it consistent. Ported
 /// from the web design's <c>relations.ts</c> so every platform writes the same
