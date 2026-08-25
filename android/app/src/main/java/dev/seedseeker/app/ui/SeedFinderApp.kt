@@ -61,6 +61,7 @@ import dev.seedseeker.app.model.SearchState
 import dev.seedseeker.app.model.SearchStatus
 import dev.seedseeker.app.model.SeedResult
 import dev.seedseeker.app.model.applyEdit
+import dev.seedseeker.app.model.copyDepthOf
 import dev.seedseeker.app.model.removeItem
 import dev.seedseeker.app.model.slotCount
 import dev.seedseeker.app.model.toPresetQuery
@@ -169,6 +170,7 @@ fun SeedFinderApp(
     var editingIndex by remember { mutableStateOf<Int?>(null) }
     var editingCount by remember { mutableStateOf(1) }
     var editingTotal by remember { mutableStateOf<Int?>(null) }
+    var editingCopyDepth by remember { mutableStateOf<Int?>(null) }
     var showRequirementSheet by remember { mutableStateOf(false) }
     var results by remember { mutableStateOf(emptyList<SeedResult>()) }
     // The run's full collection size: the listed `results` stop at RESULT_CAP
@@ -679,6 +681,7 @@ fun SeedFinderApp(
                     editingIndex = null
                     editingCount = 1
                     editingTotal = null
+                    editingCopyDepth = null
                     showRequirementSheet = true
                 },
                 // The tapped chip is what the editor opens on, but the stack it
@@ -687,6 +690,7 @@ fun SeedFinderApp(
                     editingIndex = index
                     editingCount = item.stackCount
                     editingTotal = item.total
+                    editingCopyDepth = requirements.copyDepthOf(item)
                     showRequirementSheet = true
                 },
                 onRequirementsChange = { requirements = it },
@@ -846,9 +850,10 @@ fun SeedFinderApp(
                 editing = editingIndex?.let(requirements::get),
                 editingCount = editingCount,
                 editingTotal = editingTotal,
+                editingCopyDepth = editingCopyDepth,
                 onDismiss = { showRequirementSheet = false },
-                onSave = { saved, count, total ->
-                    requirements = requirements.applyEdit(editingIndex, saved, count, total)
+                onSave = { saved, count, total, copyDepth ->
+                    requirements = requirements.applyEdit(editingIndex, saved, count, total, copyDepth)
                     showRequirementSheet = false
                 },
             )

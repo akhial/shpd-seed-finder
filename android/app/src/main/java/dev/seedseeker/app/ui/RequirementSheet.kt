@@ -86,10 +86,10 @@ private enum class EffectMode(val label: String) {
 /**
  * The requirement editor. It edits one chip — the anchor of its stack — plus
  * the shape of that stack: [editingCount] items of the same kind, reaching
- * [editingTotal] combined levels when a total is set. [onSave] hands the
- * finished chip and stack shape back — with [editing]'s key and alternative
- * group, or key 0 for a new chip — for the caller to place through
- * `applyEdit`.
+ * [editingTotal] combined levels when a total is set, its extra copies kept to
+ * [editingCopyDepth]'s floor. [onSave] hands the finished chip and stack shape
+ * back — with [editing]'s key and alternative group, or key 0 for a new chip —
+ * for the caller to place through `applyEdit`.
  *
  * [startWithItemPicker] opens an existing chip on the item step, which is what
  * a freshly forked alternative wants: the copy is meant to become a different
@@ -101,9 +101,10 @@ fun RequirementSheet(
     editing: ItemRequirement?,
     editingCount: Int = 1,
     editingTotal: Int? = null,
+    editingCopyDepth: Int? = null,
     startWithItemPicker: Boolean = false,
     onDismiss: () -> Unit,
-    onSave: (requirement: ItemRequirement, count: Int, total: Int?) -> Unit,
+    onSave: (requirement: ItemRequirement, count: Int, total: Int?, copyDepth: Int?) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val identity = editing?.key ?: -1L
@@ -150,6 +151,9 @@ fun RequirementSheet(
     // combined level they must reach together (null when it just wants copies).
     var stackCount by remember(identity) { mutableStateOf(editingCount.coerceIn(1, SearchLimits.STACK_MAX)) }
     var stackTotal by remember(identity) { mutableStateOf(editingTotal) }
+    // The chip's own floor limit bounds the one item it describes; this one
+    // bounds the copies behind it, which carry no constraints of their own.
+    var copyDepth by remember(identity) { mutableStateOf(editingCopyDepth) }
 
     // A member of an either/or cluster leaves the stack to the cluster itself.
     val inAlternativeGroup = editing?.alternativeGroup != null
@@ -697,6 +701,59 @@ fun RequirementSheet(
                                     },
                                 )
                             }
+                            if (stackCount > 1 && stackTotal == null) {
+                                Spacer(Modifier.height(12.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            "Limit the extra copies to a floor",
+                                            style = MaterialTheme.typography.titleSmall,
+                                        )
+                                        Text(
+                                            "A floor limit is where an item lies, not what it is, " +
+                                                "so the copies keep their own.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Switch(
+                                        checked = copyDepth != null,
+                                        onCheckedChange = { on -> copyDepth = if (on) 4 else null },
+                                    )
+                                }
+                                copyDepth?.let { depth ->
+                                    Spacer(Modifier.height(6.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Text(
+                                            "Copies within first",
+                                            style = MaterialTheme.typography.labelLarge,
+                                        )
+                                        Text(
+                                            "$depth floor${if (depth == 1) "" else "s"}",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = MaterialTheme.colorScheme.primary,
+                                        )
+                                    }
+                                    Slider(
+                                        value = floorLimitIndex(depth).toFloat(),
+                                        onValueChange = {
+                                            val index = it.roundToInt().coerceIn(0, FLOOR_LIMIT_OPTIONS.size - 1)
+                                            copyDepth = FLOOR_LIMIT_OPTIONS[index]
+                                        },
+                                        valueRange = 0f..(FLOOR_LIMIT_OPTIONS.size - 1).toFloat(),
+                                        steps = FLOOR_LIMIT_OPTIONS.size - 2,
+                                        modifier = Modifier.semantics {
+                                            stateDescription = "Copies within floor $depth"
+                                        },
+                                    )
+                                }
+                            }
                             if (stackCount > 1 && selectedItem != null) {
                                 val total = stackTotal
                                 Spacer(Modifier.height(12.dp))
@@ -763,7 +820,15 @@ fun RequirementSheet(
                             Button(
                                 onClick = {
                                     draft.getOrNull()?.let {
-                                        onSave(it, stackCount, if (inAlternativeGroup) null else stackTotal)
+                                        val total = if (inAlternativeGroup) null else stackTotal
+                                        // A cluster's stack is the cluster's, and
+                                        // a combined level leaves no lone copies.
+                                        val copies = if (inAlternativeGroup || stackCount < 2 || total != null) {
+                                            null
+                                        } else {
+                                            copyDepth
+                                        }
+                                        onSave(it, stackCount, total, copies)
                                     }
                                 },
                                 enabled = draft.isSuccess,
