@@ -170,11 +170,16 @@ body {
 
 /* ---------- Layout ---------- */
 
+/* The three minimums have to sum to no more than the 1000px floor this layout
+   is used down to, or the tracks outgrow the grid and the panes render past
+   the topbar and footer — which stay at the viewport width — leaving a strip
+   of bare background down the right edge once the page scrolls to reach them.
+   Anything wider belongs above the breakpoint, where the tabs take over. */
 .d1-main {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(330px, 1fr) minmax(320px, 0.8fr) minmax(380px, 0.8fr);
+  grid-template-columns: minmax(318px, 1fr) minmax(320px, 0.8fr) minmax(360px, 0.8fr);
 }
 
 .d1-pane {
@@ -1456,9 +1461,16 @@ input[type='range']::-moz-range-thumb {
   .d1-progress-sweep { animation: d1-pulse 1.4s ease-in-out infinite; width: 100%; }
 }
 
+/* The tracks are weighted by what each stat is actually asked to render, so the
+   slack lands where it is needed instead of pooling under "Tested". Tested is
+   the narrowest real column — compactNumber drops to no decimals past 100, so
+   it never exceeds "99.99 K" and usually reads shorter than that. Rate carries
+   that same number plus "/s", and Elapsed has to clear "ELAPSED" itself, which
+   is one word: too tight a column spills it into its neighbour rather than
+   wrapping it. */
 .d1-stat-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 0.8fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.45fr) minmax(0, 1.15fr) minmax(0, 1.1fr);
   gap: 8px;
 }
 
@@ -1467,6 +1479,10 @@ input[type='range']::-moz-range-thumb {
   flex-direction: column;
   gap: 1px;
   min-width: 0;
+  /* Each stat is its own container so a label can shorten from the column it
+     actually got, rather than from the pane or the viewport — the tracks are
+     all minmax(0, …), so their widths never depend on this content. */
+  container: d1-stat / inline-size;
 }
 
 .d1-stat-label {
@@ -1475,6 +1491,18 @@ input[type='range']::-moz-range-thumb {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--d1-text-3);
+}
+
+.d1-stat-label-short { display: none; }
+
+/* "FIRST SEED ≈" measures 85px and is the widest label in the row, so it wraps
+   to a second line and shoves its value down as soon as its column is tighter
+   than that — which the three-column desktop layout does below roughly a
+   1350px viewport. Swap in the acronym a couple of pixels before the wrap;
+   the label keeps a title tooltip spelling it out. */
+@container d1-stat (max-width: 88px) {
+  .d1-stat-label-wide { display: none; }
+  .d1-stat-label-short { display: inline; }
 }
 
 .d1-stat-value {
