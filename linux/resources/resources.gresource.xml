@@ -16,8 +16,6 @@
       so "Clear Results" ships its own.
     -->
     <file preprocess="xml-stripblanks">icons/scalable/actions/clear-results-symbolic.svg</file>
-    <!-- A fork glyph for "add alternative"; GTK bundles nothing similar. -->
-    <file preprocess="xml-stripblanks">icons/scalable/actions/add-alternative-symbolic.svg</file>
     <file>style/style.css</file>
 
     <!--

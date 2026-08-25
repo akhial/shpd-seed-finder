@@ -12,10 +12,12 @@ The window is an adaptive triple-pane layout built from two nested `AdwNavigatio
 the libadwaita pattern for triple-pane navigation. Breakpoints collapse the panes into
 push/pop navigation as the window narrows, down to a fully single-pane phone-sized layout.
 
-- **Query** (sidebar) builds the search declaratively: item requirements as editable rows,
-  plus floor limit, Wandmaker quest, blacksmith, and fast-search scope controls. Requirements open in a dialog
-  with category, item, tier, upgrade, enchantment/glyph, source, same-item group, and
-  per-item floor limit predicates. Included and user-saved presets are available from the
+- **Query** (sidebar) builds the search declaratively: a board of requirement chips, plus
+  floor limit, Wandmaker quest, blacksmith, and fast-search scope controls. Dropping one chip
+  on another makes an either/or cluster; dragging a member back onto the board pulls it out
+  again; a chip's badges say how many items of its kind it asks for and what combined upgrade
+  level they reach. A chip opens in a dialog with category, item, tier, upgrade,
+  enchantment/glyph, source, total item count, and per-item floor limit predicates. Included and user-saved presets are available from the
   sidebar and main menu; user presets can be updated or deleted. Challenges live in a
   preferences dialog, and the whole query persists across sessions in the user configuration
   directory.
