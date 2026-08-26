@@ -29,6 +29,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
@@ -56,6 +58,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -94,12 +97,16 @@ import dev.seedseeker.app.ui.theme.SpdYellow
  *
  * Removal is a drop rather than a target to hit — the board opens a zone under
  * itself while a chip is held — with the editor a tap opens as the other way.
+ *
+ * [compact] draws every chip at its smaller size ([ChipMetrics.Compact]): a
+ * shorter capsule, a smaller sprite, and smaller text, so a line holds more.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun RequirementBoard(
     requirements: List<ItemRequirement>,
     enabled: Boolean,
+    compact: Boolean = false,
     onChange: (List<ItemRequirement>) -> Unit,
     onEdit: (BoardItem, Int) -> Unit,
     onRemove: (BoardItem) -> Unit,
@@ -146,82 +153,156 @@ fun RequirementBoard(
 
     val target = dragging?.let { targetAt(dragPosition, it) }
     val hovered = (target as? DropTarget.Join)?.index
+    val metrics = if (compact) ChipMetrics.Compact else ChipMetrics.Regular
 
-    Box(modifier = modifier.onGloballyPositioned { board = it }) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                items.forEach { item ->
-                    key(itemKey(item)) {
-                        BoardEntry(
-                            requirements = requirements,
-                            item = item,
-                            enabled = enabled,
-                            draggingIndex = dragging,
-                            hoveredIndex = hovered,
-                            onPlaced = { index, coordinates -> placements[index] = coordinates },
-                            onCapsulePlaced = { capsules[itemKey(item)] = it },
-                            onEdit = { index -> onEdit(item, index) },
-                            onDragStart = { index, offset ->
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                dragging = index
-                                dragPosition = (rectOf(placements[index])?.topLeft ?: Offset.Zero) + offset
-                            },
-                            onDrag = { delta -> dragPosition += delta },
-                            onDragEnd = {
-                                val source = dragging
-                                dragging = null
-                                if (source == null) return@BoardEntry
-                                when (val drop = targetAt(dragPosition, source)) {
-                                    is DropTarget.Join -> {
-                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        onChange(requirements.joinAlternatives(source, drop.index))
-                                    }
-                                    // A lone chip goes with its copies; a member
-                                    // leaves the cluster and its stack behind.
-                                    DropTarget.Remove -> {
-                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        if (item.cluster != null) {
-                                            onChange(requirements.removeMember(source))
-                                        } else {
-                                            onRemove(item)
+    CompositionLocalProvider(LocalChipMetrics provides metrics) {
+        Box(modifier = modifier.onGloballyPositioned { board = it }) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(metrics.spacing),
+                    verticalArrangement = Arrangement.spacedBy(metrics.spacing),
+                ) {
+                    items.forEach { item ->
+                        key(itemKey(item)) {
+                            BoardEntry(
+                                requirements = requirements,
+                                item = item,
+                                enabled = enabled,
+                                draggingIndex = dragging,
+                                hoveredIndex = hovered,
+                                onPlaced = { index, coordinates -> placements[index] = coordinates },
+                                onCapsulePlaced = { capsules[itemKey(item)] = it },
+                                onEdit = { index -> onEdit(item, index) },
+                                onDragStart = { index, offset ->
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    dragging = index
+                                    dragPosition = (rectOf(placements[index])?.topLeft ?: Offset.Zero) + offset
+                                },
+                                onDrag = { delta -> dragPosition += delta },
+                                onDragEnd = {
+                                    val source = dragging
+                                    dragging = null
+                                    if (source == null) return@BoardEntry
+                                    when (val drop = targetAt(dragPosition, source)) {
+                                        is DropTarget.Join -> {
+                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            onChange(requirements.joinAlternatives(source, drop.index))
+                                        }
+                                        // A lone chip goes with its copies; a member
+                                        // leaves the cluster and its stack behind.
+                                        DropTarget.Remove -> {
+                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            if (item.cluster != null) {
+                                                onChange(requirements.removeMember(source))
+                                            } else {
+                                                onRemove(item)
+                                            }
+                                        }
+                                        // Let go anywhere else: leave the capsule.
+                                        null -> if (requirements[source].alternativeGroup != null) {
+                                            onChange(requirements.detach(source))
                                         }
                                     }
-                                    // Let go anywhere else: leave the capsule.
-                                    null -> if (requirements[source].alternativeGroup != null) {
-                                        onChange(requirements.detach(source))
-                                    }
-                                }
-                            },
-                            onDragCancel = { dragging = null },
-                        )
+                                },
+                                onDragCancel = { dragging = null },
+                            )
+                        }
                     }
+                    AddChip(enabled = enabled, onClick = onAdd)
                 }
-                AddChip(enabled = enabled, onClick = onAdd)
-            }
-            if (dragging != null) {
-                RemoveZone(
-                    over = target == DropTarget.Remove,
-                    modifier = Modifier.onGloballyPositioned { deleteZone = it },
-                )
+                if (dragging != null) {
+                    RemoveZone(
+                        over = target == DropTarget.Remove,
+                        modifier = Modifier.onGloballyPositioned { deleteZone = it },
+                    )
+                }
             }
         }
     }
 }
 
-/** The sprite tile's side in dp; a chip is this plus its padding tall. */
-private const val CHIP_TILE = 34
-
-/** A chip's height: its tile plus the 5dp of padding above and below it. */
-private val CHIP_HEIGHT = (CHIP_TILE + 10).dp
-
 /**
- * Half a chip's height, so a chip's ends are half circles rather than rounded
- * corners, and so the capsule a cluster wears stays concentric with them.
+ * The sizes a chip and everything on it are drawn at. [Regular] is the
+ * default; [Compact] is the "Compact chips" setting, which trades a little
+ * legibility for more chips on a line.
  */
-private val CHIP_RADIUS = CHIP_HEIGHT / 2
+private class ChipMetrics(
+    /** Whether the chip's name and its badges use the smaller text styles. */
+    val compact: Boolean,
+    /** The sprite tile's side in dp; a chip is this plus its padding tall. */
+    val tile: Int,
+    /** Padding above and below the tile. */
+    val verticalPadding: Dp,
+    val startPadding: Dp,
+    val endPadding: Dp,
+    /** Between the tile and the name. */
+    val spriteGap: Dp,
+    /** Between one chip and the next on a line, and between lines. */
+    val spacing: Dp,
+    /** A tag's padding around its text; stack badges wear a little more. */
+    val tagPadding: Dp,
+    /** The effect-count badge's height, and the "any enchantment" dot's side. */
+    val badgeHeight: Dp,
+    val dotSize: Dp,
+    val addIconSize: Dp,
+) {
+    /** A chip's height: its tile plus the padding above and below it. */
+    val height: Dp = tile.dp + verticalPadding * 2
+
+    /**
+     * Half a chip's height, so a chip's ends are half circles rather than
+     * rounded corners, and so the capsule a cluster wears stays concentric
+     * with them.
+     */
+    val radius: Dp = height / 2
+
+    companion object {
+        val Regular = ChipMetrics(
+            compact = false,
+            tile = 34,
+            verticalPadding = 5.dp,
+            startPadding = 6.dp,
+            endPadding = 10.dp,
+            spriteGap = 8.dp,
+            spacing = 6.dp,
+            tagPadding = 5.dp,
+            badgeHeight = 19.dp,
+            dotSize = 13.dp,
+            addIconSize = 20.dp,
+        )
+        val Compact = ChipMetrics(
+            compact = true,
+            tile = 24,
+            verticalPadding = 3.dp,
+            startPadding = 4.dp,
+            endPadding = 8.dp,
+            spriteGap = 6.dp,
+            spacing = 5.dp,
+            tagPadding = 4.dp,
+            badgeHeight = 16.dp,
+            dotSize = 11.dp,
+            addIconSize = 16.dp,
+        )
+    }
+}
+
+private val LocalChipMetrics = compositionLocalOf { ChipMetrics.Regular }
+
+/** The style a chip's name is set in. */
+private val chipTitleStyle: TextStyle
+    @Composable get() = if (LocalChipMetrics.current.compact) {
+        MaterialTheme.typography.bodyMedium
+    } else {
+        MaterialTheme.typography.bodyLarge
+    }
+
+/** The style a chip's tags, badges, and the "or" between alternatives are set in. */
+private val chipLabelStyle: TextStyle
+    @Composable get() = if (LocalChipMetrics.current.compact) {
+        MaterialTheme.typography.labelSmall
+    } else {
+        MaterialTheme.typography.labelMedium
+    }
 
 /** How far a capsule's dashed edge stands off the chips inside it. */
 private val CAPSULE_INSET = 5.dp
@@ -273,6 +354,7 @@ private fun BoardEntry(
     }
     val highlighted = hoveredIndex != null && hoveredIndex in item.members
     val edge = MaterialTheme.colorScheme.tertiary
+    val metrics = LocalChipMetrics.current
     // The capsule is exactly as wide as what it holds, and what it holds flows
     // too: a member that will not fit beside the last drops to the next line
     // *inside* the dashed edge, its "or" going with it, so the capsule still
@@ -283,7 +365,7 @@ private fun BoardEntry(
             .dashedOutline(
                 color = if (highlighted) edge else edge.copy(alpha = 0.55f),
                 fill = edge.copy(alpha = 0.05f),
-                radius = CHIP_RADIUS + CAPSULE_INSET,
+                radius = metrics.radius + CAPSULE_INSET,
                 width = if (highlighted) 2.dp else 1.dp,
             )
             .padding(CAPSULE_INSET),
@@ -295,7 +377,7 @@ private fun BoardEntry(
                     Text(
                         "or",
                         modifier = Modifier.padding(horizontal = 5.dp),
-                        style = MaterialTheme.typography.labelMedium,
+                        style = chipLabelStyle,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.tertiary,
@@ -320,7 +402,7 @@ private fun BoardEntry(
         }
         if (item.stackCount > 1 || item.total != null) {
             Row(
-                modifier = Modifier.height(CHIP_HEIGHT),
+                modifier = Modifier.height(metrics.height),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 StackBadges(
@@ -361,6 +443,7 @@ private fun RequirementChip(
     } else {
         MaterialTheme.colorScheme.outlineVariant
     }
+    val metrics = LocalChipMetrics.current
     Surface(
         // A capsule, not a rounded rectangle: the ends stay half circles
         // however tall the chip grows at a larger font scale.
@@ -386,19 +469,24 @@ private fun RequirementChip(
             .semantics { contentDescription = chipDescription(requirement, stackCount, total) },
     ) {
         Row(
-            modifier = Modifier.padding(start = 6.dp, top = 5.dp, end = 10.dp, bottom = 5.dp),
+            modifier = Modifier.padding(
+                start = metrics.startPadding,
+                top = metrics.verticalPadding,
+                end = metrics.endPadding,
+                bottom = metrics.verticalPadding,
+            ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             SpriteTile(
                 item = requirement.item,
                 glows = ItemGlows.forFilter(requirement.effect),
-                tileSize = CHIP_TILE,
+                tileSize = metrics.tile,
             )
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(metrics.spriteGap))
             Text(
                 chipTitle(requirement),
                 modifier = Modifier.weight(1f, fill = false),
-                style = MaterialTheme.typography.bodyLarge,
+                style = chipTitleStyle,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -462,10 +550,11 @@ private fun StackBadge(
             .clickable(enabled = enabled, onClick = onClick)
             .semantics { contentDescription = description },
     ) {
+        val padding = LocalChipMetrics.current.tagPadding
         Text(
             text,
-            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
-            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = padding + 2.dp, vertical = padding - 3.dp),
+            style = chipLabelStyle,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
             color = content,
@@ -498,10 +587,11 @@ private fun EffectBadge(requirement: ItemRequirement) {
 private fun EffectCountBadge(glows: List<Glow>, description: String) {
     val middle = MaterialTheme.colorScheme.surfaceContainerHigh
     val ring = remember(glows) { effectRing(glows) }
+    val badgeHeight = LocalChipMetrics.current.badgeHeight
     Box(
         modifier = Modifier
-            .height(19.dp)
-            .widthIn(min = 19.dp)
+            .height(badgeHeight)
+            .widthIn(min = badgeHeight)
             .drawBehind {
                 val radius = CornerRadius(size.height / 2f)
                 drawRoundRect(brush = Brush.sweepGradient(*ring), cornerRadius = radius)
@@ -519,7 +609,7 @@ private fun EffectCountBadge(glows: List<Glow>, description: String) {
         Text(
             "${glows.size}",
             modifier = Modifier.padding(horizontal = 5.dp),
-            style = MaterialTheme.typography.labelMedium,
+            style = chipLabelStyle,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
         )
@@ -531,7 +621,7 @@ private fun EffectCountBadge(glows: List<Glow>, description: String) {
 private fun AnyEnchantmentDot(description: String) {
     Box(
         Modifier
-            .size(13.dp)
+            .size(LocalChipMetrics.current.dotSize)
             .clip(CircleShape)
             .background(Brush.sweepGradient(*RAINBOW))
             .semantics { contentDescription = description },
@@ -568,26 +658,27 @@ private val RAINBOW = arrayOf(
  */
 @Composable
 private fun AddChip(enabled: Boolean, onClick: () -> Unit) {
+    val metrics = LocalChipMetrics.current
     Row(
         modifier = Modifier
             .clip(CircleShape)
-            .dashedOutline(MaterialTheme.colorScheme.outline, radius = CHIP_RADIUS)
+            .dashedOutline(MaterialTheme.colorScheme.outline, radius = metrics.radius)
             .clickable(enabled = enabled, onClick = onClick)
             .semantics { contentDescription = "Add requirement" }
-            .height(CHIP_HEIGHT)
-            .padding(start = 12.dp, end = 16.dp),
+            .height(metrics.height)
+            .padding(start = metrics.startPadding + 6.dp, end = metrics.endPadding + 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             Icons.Filled.Add,
             contentDescription = null,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(metrics.addIconSize),
             tint = MaterialTheme.colorScheme.primary,
         )
         Spacer(Modifier.width(5.dp))
         Text(
             "Add",
-            style = MaterialTheme.typography.bodyLarge,
+            style = chipTitleStyle,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -612,7 +703,7 @@ private fun RemoveZone(over: Boolean, modifier: Modifier = Modifier) {
                     Modifier.dashedOutline(danger.copy(alpha = 0.6f), radius = 10.dp)
                 },
             )
-            .height(CHIP_HEIGHT),
+            .height(LocalChipMetrics.current.height),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -672,11 +763,12 @@ private fun ChipTag(text: String, tone: TagTone) {
         TagTone.UPGRADE -> SpdUpgrade
         TagTone.SOFT -> SpdGreen
     }
+    val padding = LocalChipMetrics.current.tagPadding
     Surface(shape = RoundedCornerShape(6.dp), color = container) {
         Text(
             text,
-            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
-            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = padding, vertical = padding - 4.dp),
+            style = chipLabelStyle,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.SemiBold,
             color = content,

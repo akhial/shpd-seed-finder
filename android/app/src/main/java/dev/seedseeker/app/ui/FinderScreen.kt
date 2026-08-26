@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package dev.seedseeker.app.ui
 
+import android.content.ClipData
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -58,14 +59,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.toClipEntry
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -85,6 +87,7 @@ import dev.seedseeker.app.model.BoardItem
 import dev.seedseeker.app.model.boardCount
 import dev.seedseeker.app.model.boardItems
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -97,6 +100,8 @@ fun FinderScreen(
     fastMode: Boolean,
     challenges: Int,
     presets: List<QueryPreset>,
+    /** Draw the board's chips at their smaller size. */
+    compactChips: Boolean,
     results: List<SeedResult>,
     /** The run's full collection size; `results` lists at most the display cap. */
     foundCount: Int,
@@ -108,7 +113,7 @@ fun FinderScreen(
     error: String?,
     snackbarHostState: SnackbarHostState,
     onAbout: () -> Unit,
-    onChallenges: () -> Unit,
+    onSettings: () -> Unit,
     onApplyPreset: (QueryPreset) -> Unit,
     onSavePreset: (String) -> Unit,
     onDeletePreset: (QueryPreset) -> Unit,
@@ -171,8 +176,8 @@ fun FinderScreen(
                     TextButton(onClick = { showPresets = true }, enabled = !isSearching) {
                         Text("Presets")
                     }
-                    IconButton(onClick = onChallenges) {
-                        Icon(Icons.Filled.Settings, contentDescription = "Challenges")
+                    IconButton(onClick = onSettings) {
+                        Icon(Icons.Filled.Settings, contentDescription = "Settings")
                     }
                     IconButton(onClick = onAbout) {
                         Icon(Icons.Filled.Info, contentDescription = "About and licenses")
@@ -274,6 +279,7 @@ fun FinderScreen(
                         challenges = challenges,
                         isSearching = isSearching,
                         validationMessage = validationMessage,
+                        compactChips = compactChips,
                         onAdd = onAdd,
                         onEdit = onEdit,
                         onRequirementsChange = onRequirementsChange,
@@ -283,7 +289,7 @@ fun FinderScreen(
                         onExcludeBlacksmithRewardsChange = onExcludeBlacksmithRewardsChange,
                         onWandmakerQuestChange = onWandmakerQuestChange,
                         onFastModeChange = onFastModeChange,
-                        onChallenges = onChallenges,
+                        onSettings = onSettings,
                         // Takes every line down to the closed page's header,
                         // which waits at the bottom edge above the search bar
                         // that fills it; a query taller than that scrolls.
@@ -434,6 +440,7 @@ private fun QueryPage(
     challenges: Int,
     isSearching: Boolean,
     validationMessage: String?,
+    compactChips: Boolean,
     onAdd: () -> Unit,
     onEdit: (BoardItem, Int) -> Unit,
     onRequirementsChange: (List<ItemRequirement>) -> Unit,
@@ -443,7 +450,7 @@ private fun QueryPage(
     onExcludeBlacksmithRewardsChange: (Boolean) -> Unit,
     onWandmakerQuestChange: (WandmakerQuest?) -> Unit,
     onFastModeChange: (Boolean) -> Unit,
-    onChallenges: () -> Unit,
+    onSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -454,6 +461,7 @@ private fun QueryPage(
         RequirementBoard(
             requirements = requirements,
             enabled = !isSearching,
+            compact = compactChips,
             onChange = onRequirementsChange,
             onEdit = onEdit,
             onRemove = onRemove,
@@ -482,7 +490,7 @@ private fun QueryPage(
             onExcludeBlacksmithRewardsChange = onExcludeBlacksmithRewardsChange,
             onWandmakerQuestChange = onWandmakerQuestChange,
             onFastModeChange = onFastModeChange,
-            onChallenges = onChallenges,
+            onSettings = onSettings,
         )
         Spacer(Modifier.height(6.dp))
     }
@@ -507,7 +515,7 @@ private fun ScopeSection(
     onExcludeBlacksmithRewardsChange: (Boolean) -> Unit,
     onWandmakerQuestChange: (WandmakerQuest?) -> Unit,
     onFastModeChange: (Boolean) -> Unit,
-    onChallenges: () -> Unit,
+    onSettings: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Column {
@@ -598,7 +606,7 @@ private fun ScopeSection(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable(onClick = onChallenges)
+                        .clickable(onClick = onSettings)
                         .padding(vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -679,7 +687,8 @@ private fun WandmakerQuestRow(
 
 @Composable
 private fun ResultRow(result: SeedResult, onScout: () -> Unit) {
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
     Surface(
         onClick = onScout,
         shape = MaterialTheme.shapes.medium,
@@ -699,7 +708,13 @@ private fun ResultRow(result: SeedResult, onScout: () -> Unit) {
                 color = MaterialTheme.colorScheme.tertiary,
                 modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = { clipboard.setText(AnnotatedString(result.seed)) }) {
+            TextButton(
+                onClick = {
+                    scope.launch {
+                        clipboard.setClipEntry(ClipData.newPlainText("Seed", result.seed).toClipEntry())
+                    }
+                },
+            ) {
                 Text("Copy")
             }
             Icon(

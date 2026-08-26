@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package dev.seedseeker.app.ui
 
+import android.content.ClipData
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -51,13 +52,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.toClipEntry
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
@@ -82,6 +84,7 @@ import dev.seedseeker.app.ui.theme.SpdSecret
 import dev.seedseeker.app.ui.theme.SpdTeal
 import dev.seedseeker.app.ui.theme.SpdUpgrade
 import kotlin.math.abs
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -96,7 +99,7 @@ fun ScoutScreen(
     onScoutSeed: (String) -> Unit,
     onSeedChange: (String) -> Unit,
     onScout: () -> Unit,
-    onChallenges: () -> Unit,
+    onSettings: () -> Unit,
     onAbout: () -> Unit,
     bottomBar: @Composable () -> Unit,
 ) {
@@ -116,8 +119,8 @@ fun ScoutScreen(
             TopAppBar(
                 title = { Text("Scout") },
                 actions = {
-                    IconButton(onClick = onChallenges) {
-                        Icon(Icons.Filled.Settings, contentDescription = "Challenges")
+                    IconButton(onClick = onSettings) {
+                        Icon(Icons.Filled.Settings, contentDescription = "Settings")
                     }
                     IconButton(onClick = onAbout) {
                         Icon(Icons.Filled.Info, contentDescription = "About and licenses")
@@ -397,7 +400,8 @@ private fun ScoutSummaryCard(
     matches: ScoutMatches?,
     modifier: Modifier = Modifier,
 ) {
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
     val floors = world.items.map(ScoutItem::depth).distinct().size
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -413,7 +417,13 @@ private fun ScoutSummaryCard(
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.tertiary,
                 )
-                TextButton(onClick = { clipboard.setText(AnnotatedString(world.seed)) }) {
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            clipboard.setClipEntry(ClipData.newPlainText("Seed", world.seed).toClipEntry())
+                        }
+                    },
+                ) {
                     Text("Copy")
                 }
             }

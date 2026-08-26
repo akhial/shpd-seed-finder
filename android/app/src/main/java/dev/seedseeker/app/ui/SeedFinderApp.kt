@@ -83,6 +83,7 @@ private const val ATLAS_PATH = "third_party/shattered-pixel-dungeon/items.png"
 private const val ITEM_ICONS_PATH = "third_party/shattered-pixel-dungeon/item_icons.png"
 private const val SETTINGS_PREFERENCES = "seed_seeker_settings"
 private const val CHALLENGES_KEY = "challenges_mask"
+private const val COMPACT_CHIPS_KEY = "compact_chips"
 private const val UPDATE_LAST_CHECK_KEY = "update_last_check"
 private const val UPDATE_SKIPPED_KEY = "update_skipped_version"
 private const val UPDATE_CHECK_INTERVAL_MILLIS = 24L * 60 * 60 * 1000
@@ -103,7 +104,7 @@ private fun readForImport(stream: java.io.InputStream): String {
     return String(buffer, 0, total, Charsets.UTF_8)
 }
 
-private enum class Destination { FINDER, SCOUT, CHALLENGES, ABOUT }
+private enum class Destination { FINDER, SCOUT, SETTINGS, ABOUT }
 private data class SearchRun(
     val id: Long,
     val request: SearchRequest,
@@ -147,7 +148,7 @@ fun SeedFinderApp(
 
     var destination by remember { mutableStateOf(Destination.FINDER) }
     var aboutReturnDestination by remember { mutableStateOf(Destination.FINDER) }
-    var challengesReturnDestination by remember { mutableStateOf(Destination.FINDER) }
+    var settingsReturnDestination by remember { mutableStateOf(Destination.FINDER) }
     var requirements by remember {
         mutableStateOf(
             listOf(
@@ -167,6 +168,7 @@ fun SeedFinderApp(
             preferences.getInt(CHALLENGES_KEY, 0).takeIf { it in 0..Challenge.ALL_MASK } ?: 0,
         )
     }
+    var compactChips by remember { mutableStateOf(preferences.getBoolean(COMPACT_CHIPS_KEY, false)) }
     // The board anchor the editor is open on, plus the stack shape it showed;
     // null means the sheet is building a new chip.
     var editingIndex by remember { mutableStateOf<Int?>(null) }
@@ -359,7 +361,7 @@ fun SeedFinderApp(
         progress.collect { }
         destination = when (destination) {
             Destination.ABOUT -> aboutReturnDestination
-            Destination.CHALLENGES -> challengesReturnDestination
+            Destination.SETTINGS -> settingsReturnDestination
             else -> Destination.FINDER
         }
     }
@@ -627,6 +629,7 @@ fun SeedFinderApp(
                 fastMode = fastMode,
                 challenges = challenges,
                 presets = BuiltInPresets.all + userPresets,
+                compactChips = compactChips,
                 results = results,
                 foundCount = foundCount,
                 status = searchStatus,
@@ -640,9 +643,9 @@ fun SeedFinderApp(
                     aboutReturnDestination = Destination.FINDER
                     destination = Destination.ABOUT
                 },
-                onChallenges = {
-                    challengesReturnDestination = Destination.FINDER
-                    destination = Destination.CHALLENGES
+                onSettings = {
+                    settingsReturnDestination = Destination.FINDER
+                    destination = Destination.SETTINGS
                 },
                 onApplyPreset = { preset ->
                     requirements = preset.query.requirements.map { it.copy(key = nextRequirementKey++) }
@@ -817,9 +820,9 @@ fun SeedFinderApp(
                         scoutRun = ScoutRun(nextScoutRunId++, scoutInput, challenges)
                     }
                 },
-                onChallenges = {
-                    challengesReturnDestination = Destination.SCOUT
-                    destination = Destination.CHALLENGES
+                onSettings = {
+                    settingsReturnDestination = Destination.SCOUT
+                    destination = Destination.SETTINGS
                 },
                 onAbout = {
                     aboutReturnDestination = Destination.SCOUT
@@ -828,9 +831,14 @@ fun SeedFinderApp(
                 bottomBar = navBar,
             )
 
-            Destination.CHALLENGES -> ChallengesScreen(
+            Destination.SETTINGS -> SettingsScreen(
+                compactChips = compactChips,
+                onCompactChipsChange = { checked ->
+                    compactChips = checked
+                    preferences.edit().putBoolean(COMPACT_CHIPS_KEY, checked).apply()
+                },
                 challenges = challenges,
-                enabled = !isSearching && !isScouting,
+                challengesEnabled = !isSearching && !isScouting,
                 onChallengeChange = { challenge, checked ->
                     val updatedChallenges = if (checked) {
                         challenges or challenge.bit
@@ -841,7 +849,7 @@ fun SeedFinderApp(
                     scoutResult = null
                     preferences.edit().putInt(CHALLENGES_KEY, updatedChallenges).apply()
                 },
-                onBack = { destination = challengesReturnDestination },
+                onBack = { destination = settingsReturnDestination },
             )
 
             Destination.ABOUT -> AboutScreen(onBack = { destination = aboutReturnDestination })
