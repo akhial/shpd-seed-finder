@@ -703,7 +703,7 @@ final class RefineSearchTests: XCTestCase {
 
     // MARK: - The continuation predicate, as the engine answers it
 
-    /// `isRefinement(of:)` is the engine's own predicate reached over SSF8, so
+    /// `isRefinement(of:)` is the engine's own predicate reached over the query document, so
     /// these are conformance assertions for the whole encode → bridge → decode
     /// path rather than for a rule this module owns.
     func testEngineDecidesContinuationOverTheEncodedQuery() throws {
@@ -804,17 +804,19 @@ final class RefineSearchTests: XCTestCase {
         }
     }
 
-    /// The bridge itself, on raw packets: the verdict comes from the native
-    /// decode, and a packet it cannot read is never a continuation — resuming
-    /// coverage on a verdict we failed to obtain is the unsound direction.
-    func testQueryContinuationBridgeAnswersFromRawPackets() throws {
-        let base = try QueryCodec.encode(wandRequest(count: 1))
-        let narrowed = try QueryCodec.encode(wandRequest(count: 2))
+    /// The bridge itself, on raw documents: the verdict comes from the native
+    /// decode, and a document it cannot read is never a continuation —
+    /// resuming coverage on a verdict we failed to obtain is the unsound direction.
+    func testQueryContinuationBridgeAnswersFromRawDocuments() throws {
+        let base = try QueryDocument.encode(wandRequest(count: 1))
+        let narrowed = try QueryDocument.encode(wandRequest(count: 2))
         XCTAssertTrue(QueryContinuation.continues(narrowed, base: base))
         XCTAssertTrue(QueryContinuation.continues(base, base: base))
         XCTAssertFalse(QueryContinuation.continues(base, base: narrowed))
-        XCTAssertFalse(QueryContinuation.continues(Data("SSF8".utf8), base: base),
-                       "a truncated packet decodes to nothing")
+        XCTAssertFalse(QueryContinuation.continues(Data("{\"requirements\":".utf8), base: base),
+                       "a truncated document decodes to nothing")
+        XCTAssertFalse(QueryContinuation.continues(Data("{\"requirements\":[]}".utf8), base: base),
+                       "an empty query is refused by the codec")
         XCTAssertFalse(QueryContinuation.continues(Data(), base: base))
         XCTAssertFalse(QueryContinuation.continues(narrowed, base: Data("SSF0nonsense".utf8)))
     }

@@ -54,6 +54,14 @@ const weaponish = (category: string): boolean =>
 export const effectNamesForCategory = (category: string): string[] => weaponish(category)
   ? [...weaponEnchantments, ...weaponCurses]
   : category === 'armor' ? [...armorGlyphs, ...armorCurses] : []
+/** The non-curse effects (enchantments or glyphs) of a category, in catalog order. */
+export const enchantmentNamesForCategory = (category: string): string[] => weaponish(category)
+  ? [...weaponEnchantments]
+  : category === 'armor' ? [...armorGlyphs] : []
+/** The curses of a category, in catalog order. */
+export const curseNamesForCategory = (category: string): string[] => weaponish(category)
+  ? [...weaponCurses]
+  : category === 'armor' ? [...armorCurses] : []
 export const isCurseForCategory = (category: string, effect: string): boolean =>
   weaponish(category) ? weaponCurses.includes(effect) : category === 'armor' ? armorCurses.includes(effect) : false
 

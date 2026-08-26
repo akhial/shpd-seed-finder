@@ -14,12 +14,17 @@ import {
   EXACT_TIER_MAX,
   EXACT_TIER_MIN,
   FLOOR_LIMIT_OPTIONS,
-  IDENTITY_GROUP_MAX,
+  STACK_MAX,
+  canonicalEffect,
+  effectNamesOf,
+  isAnyEnchantment,
   maxUpgradeFor,
   validateRequirement,
 } from '../../lib/query'
+import { ANY_ENCHANTMENT } from '../../lib/wasm/types'
 import type { ItemCategory, ItemSource, RequirementKind, RequirementState } from '../../lib/wasm/types'
-import { Field, Segmented, SliderRow, Sprite } from './parts'
+import type { StackShape } from './RequirementBoard'
+import { Field, Segmented, SliderRow, Sprite, Stepper } from './parts'
 import { requirementSprite, requirementTitle } from './summary'
 
 const CATEGORY_OPTIONS: { value: ItemCategory; label: string }[] = [
@@ -57,10 +62,11 @@ const UPGRADE_OPTIONS = [
   { value: 'at_least', label: 'At least' },
 ] as const
 
-/** "None" then one letter per same-item group, A onwards. */
-const GROUP_OPTIONS = [
-  { value: 0, label: 'None' },
-  ...Array.from({ length: IDENTITY_GROUP_MAX }, (_, index) => ({ value: index + 1, label: String.fromCharCode(65 + index) })),
+type EffectMode = 'any' | 'any_enchantment' | 'specific'
+const EFFECT_MODE_OPTIONS: { value: EffectMode; label: string }[] = [
+  { value: 'any', label: 'Any' },
+  { value: 'any_enchantment', label: 'Any enchantment' },
+  { value: 'specific', label: 'Specific…' },
 ]
 
 /** Every integer from `first` through `last`. */
@@ -71,12 +77,15 @@ const clamp = (value: number, min: number, max: number) => Math.min(Math.max(val
 export function RequirementEditor({
   requirement,
   isNew,
+  stack,
   onSave,
   onCancel,
 }: {
   requirement: RequirementState
   isNew: boolean
-  onSave: (requirement: RequirementState) => void
+  /** The chip's stack shape; a cluster member's belongs to the cluster. */
+  stack: StackShape
+  onSave: (requirement: RequirementState, count: number, total: number | undefined, copyDepth: number | undefined) => void
   onCancel: () => void
 }) {
   const [draft, setDraft] = useState<RequirementState>(() => ({
@@ -84,6 +93,12 @@ export function RequirementEditor({
     tier: { ...requirement.tier },
     upgrade: { ...requirement.upgrade },
   }))
+  const [count, setCount] = useState(stack.count)
+  const [total, setTotal] = useState(stack.total)
+  const [copyDepth, setCopyDepth] = useState(stack.copyDepth)
+  // "Specific…" with nothing ticked yet is a transient editor state, not a
+  // filter, so it lives outside the draft; saving it means "any".
+  const [choosingEffects, setChoosingEffects] = useState(false)
 
   const kind = draft.kind ?? 'weapon'
   const family = kindFamily(kind)
@@ -92,6 +107,30 @@ export function RequirementEditor({
   const enchantments = family === 'weapon' ? weaponEnchantments : armorGlyphs
   const curses = family === 'weapon' ? weaponCurses : armorCurses
   const errors = validateRequirement(draft)
+  // A combined level is a property of a concrete stack of two or more.
+  const totalable = stack.inCluster ? false : draft.item !== undefined && count > 1
+  const effectiveTotal = totalable ? total : undefined
+  const totalCapacity = count * (maxUpgrade + 1)
+  const effectMode: EffectMode = isAnyEnchantment(draft.effect) ? 'any_enchantment'
+    : draft.effect !== undefined || choosingEffects ? 'specific' : 'any'
+  const chosenEffects = effectMode === 'specific' ? effectNamesOf(draft.effect, kind) : []
+
+  const setEffectMode = (mode: EffectMode) => {
+    setChoosingEffects(mode === 'specific')
+    setDraft((current) => ({
+      ...current,
+      effect: mode === 'any' ? undefined : mode === 'any_enchantment' ? ANY_ENCHANTMENT
+        : isAnyEnchantment(current.effect) ? undefined : current.effect,
+    }))
+  }
+
+  const toggleEffect = (name: string) => {
+    setDraft((current) => {
+      const names = effectNamesOf(isAnyEnchantment(current.effect) ? undefined : current.effect, kind)
+      const next = names.includes(name) ? names.filter((entry) => entry !== name) : [...names, name]
+      return { ...current, effect: canonicalEffect(next, kind) }
+    })
+  }
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -119,6 +158,7 @@ export function RequirementEditor({
         upgrade,
       }
     })
+    setChoosingEffects(false)
   }
 
   const setTierMode = (mode: (typeof TIER_OPTIONS)[number]['value']) => {
@@ -182,6 +222,7 @@ export function RequirementEditor({
                 value={draft.item ?? ''}
                 onChange={(event) => {
                   const id = event.currentTarget.value || undefined
+                  if (!id) setTotal(undefined)
                   setDraft((current) => ({
                     ...current,
                     item: id,
@@ -244,6 +285,7 @@ export function RequirementEditor({
             )}
           </section>
 
+          {effectiveTotal === undefined && (
           <section className="d1-modal-section">
             <h3>Upgrade level</h3>
             <Segmented value={draft.upgrade.mode} options={[...UPGRADE_OPTIONS]} onChange={setUpgradeMode} ariaLabel="Upgrade predicate" fill />
@@ -286,34 +328,114 @@ export function RequirementEditor({
                 </Field>
               ))}
           </section>
+          )}
+
+          {!stack.inCluster && (
+            <section className="d1-modal-section">
+              <div className="d1-modal-section-head">
+                <h3>Total item count</h3>
+                <Stepper
+                  value={count}
+                  min={1}
+                  max={STACK_MAX}
+                  format={(value) => `×${value}`}
+                  onChange={(value) => {
+                    setCount(value)
+                    if (value < 2) setTotal(undefined)
+                    else if (total !== undefined) setTotal(clamp(total, 1, value * (maxUpgrade + 1)))
+                  }}
+                  ariaLabel="How many of this"
+                />
+              </div>
+              {count > 1 && effectiveTotal === undefined && (
+                <>
+                  <label className="d1-check">
+                    <input
+                      type="checkbox"
+                      checked={copyDepth !== undefined}
+                      onChange={(event) => setCopyDepth(event.currentTarget.checked ? 4 : undefined)}
+                    />
+                    <span>Limit the extra copies to a floor</span>
+                  </label>
+                  {copyDepth !== undefined && (
+                    <SliderRow
+                      label="Copies within first"
+                      valueLabel={`${copyDepth} floor${copyDepth === 1 ? '' : 's'}`}
+                      values={FLOOR_LIMIT_OPTIONS}
+                      value={copyDepth}
+                      fill
+                      onChange={setCopyDepth}
+                    />
+                  )}
+                </>
+              )}
+              {totalable && (
+                <>
+                  <label className="d1-check">
+                    <input
+                      type="checkbox"
+                      checked={total !== undefined}
+                      onChange={(event) => setTotal(event.currentTarget.checked ? clamp(count, 1, totalCapacity) : undefined)}
+                    />
+                    <span>Count levels together</span>
+                  </label>
+                  {total !== undefined && (
+                    <SliderRow
+                      label="Levels reach"
+                      valueLabel={`≥ ${total} across up to ${count}`}
+                      min={1}
+                      max={totalCapacity}
+                      value={clamp(total, 1, totalCapacity)}
+                      fill
+                      onChange={setTotal}
+                    />
+                  )}
+                </>
+              )}
+            </section>
+          )}
 
           <section className="d1-modal-section">
             <h3>Details</h3>
             {(family === 'weapon' || family === 'armor') && (
-              <Field label={family === 'weapon' ? 'Enchantment' : 'Glyph'}>
-                <select
-                  className="d1-select"
-                  value={draft.effect ?? ''}
-                  onChange={(event) => {
-                    const effect = event.currentTarget.value || undefined
-                    setDraft((current) => ({ ...current, effect }))
-                  }}
-                >
-                  <option value="">None</option>
-                  <optgroup label={family === 'weapon' ? 'Enchantments' : 'Glyphs'}>
-                    {enchantments.map((name) => (
-                      <option key={name} value={name}>{name}</option>
+              <>
+                <Field label={family === 'weapon' ? 'Enchantment' : 'Glyph'} stack>
+                  <Segmented
+                    value={effectMode}
+                    options={family === 'weapon' ? EFFECT_MODE_OPTIONS : EFFECT_MODE_OPTIONS.map((option) => (
+                      option.value === 'any_enchantment' ? { ...option, label: 'Any glyph' } : option
                     ))}
-                  </optgroup>
-                  {!draft.uncursed && (
-                    <optgroup label="Curses">
-                      {curses.map((name) => (
-                        <option key={name} value={name}>{name}</option>
-                      ))}
-                    </optgroup>
-                  )}
-                </select>
-              </Field>
+                    onChange={setEffectMode}
+                    ariaLabel={family === 'weapon' ? 'Enchantment filter' : 'Glyph filter'}
+                  />
+                </Field>
+                {effectMode === 'specific' && (
+                  <div className="d1-effect-grid" role="group" aria-label="Effects">
+                    <span className="d1-effect-grid-head">{family === 'weapon' ? 'Enchantments' : 'Glyphs'}</span>
+                    {enchantments.map((name) => (
+                      <label className="d1-check" key={name}>
+                        <input type="checkbox" checked={chosenEffects.includes(name)} onChange={() => toggleEffect(name)} />
+                        <span>{name}</span>
+                      </label>
+                    ))}
+                    {!draft.uncursed && (
+                      <>
+                        <span className="d1-effect-grid-head">Curses</span>
+                        {curses.map((name) => (
+                          <label className="d1-check" key={name}>
+                            <input type="checkbox" checked={chosenEffects.includes(name)} onChange={() => toggleEffect(name)} />
+                            <span>{name}</span>
+                          </label>
+                        ))}
+                      </>
+                    )}
+                    <p className="d1-caption d1-effect-grid-note">
+                      {chosenEffects.length === 0 ? 'Tick the effects the item may carry; none ticked means any.'
+                        : `Matches any one of ${chosenEffects.length} effect${chosenEffects.length === 1 ? '' : 's'}.`}
+                    </p>
+                  </div>
+                )}
+              </>
             )}
             <label className="d1-check">
               <input
@@ -321,11 +443,12 @@ export function RequirementEditor({
                 checked={draft.uncursed}
                 onChange={(event) => {
                   const uncursed = event.currentTarget.checked
-                  setDraft((current) => ({
-                    ...current,
-                    uncursed,
-                    effect: uncursed && current.effect && curses.includes(current.effect) ? undefined : current.effect,
-                  }))
+                  // Curses leave the selection as they leave the grid.
+                  setDraft((current) => {
+                    if (!uncursed || current.effect === undefined || isAnyEnchantment(current.effect)) return { ...current, uncursed }
+                    const kept = effectNamesOf(current.effect, kind).filter((name) => !curses.includes(name))
+                    return { ...current, uncursed, effect: canonicalEffect(kept, kind) }
+                  })
                 }}
               />
               <span>Require uncursed</span>
@@ -344,14 +467,6 @@ export function RequirementEditor({
                   <option key={source.value} value={source.value}>{source.label}</option>
                 ))}
               </select>
-            </Field>
-            <Field label="Same-item group">
-              <Segmented
-                value={draft.identityGroup ?? 0}
-                options={GROUP_OPTIONS}
-                onChange={(group) => setDraft((current) => ({ ...current, identityGroup: group === 0 ? undefined : group }))}
-                ariaLabel="Same-item group"
-              />
             </Field>
             <label className="d1-check">
               <input
@@ -387,7 +502,7 @@ export function RequirementEditor({
 
         <footer className="d1-modal-foot">
           <button type="button" className="d1-btn" onClick={onCancel}>Cancel</button>
-          <button type="button" className="d1-btn d1-btn-primary" disabled={errors.length > 0} onClick={() => onSave(draft)}>
+          <button type="button" className="d1-btn d1-btn-primary" disabled={errors.length > 0} onClick={() => onSave(draft, stack.inCluster ? 1 : count, effectiveTotal, stack.inCluster || count < 2 || effectiveTotal !== undefined ? undefined : copyDepth)}>
             {isNew ? 'Add Requirement' : 'Save Changes'}
           </button>
         </footer>

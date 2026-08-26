@@ -107,10 +107,16 @@ public enum ResultsExport {
         (entry[key] as? NSNumber)?.boolValue ?? false
     }
 
-    // Internal, not private: the share-link codec (`DeepLink`) exchanges the
-    // same canonical query document with the Rust core.
+    // Internal, not private: the share-link codec (`DeepLink`) and the engine
+    // transport (`QueryDocument`) exchange the same canonical query document
+    // with the Rust core.
     static func encodeQuery(_ query: SavedQuery) -> [String: Any] {
-        var output: [String: Any] = ["requirements": query.requirements.map(encodeRequirement)]
+        // An alternative group is one `any_of` entry at its first member's
+        // position, members in requirement order; a lone requirement is written plain.
+        let entries: [Any] = query.requirements.slots.map { slot in
+            slot.count == 1 ? encodeRequirement(slot[0]) : ["any_of": slot.map(encodeRequirement)]
+        }
+        var output: [String: Any] = ["requirements": entries]
         if query.maximumDepth != 24 { output["max_depth"] = query.maximumDepth }
         if query.requireBlacksmith { output["require_blacksmith"] = true }
         if query.excludeBlacksmithRewards { output["exclude_blacksmith_rewards"] = true }
@@ -137,32 +143,54 @@ public enum ResultsExport {
         case .exactly: output["upgrade"] = requirement.upgrade
         case .atLeast: output["upgrade"] = ["at_least": requirement.upgrade]
         }
-        if let modifier = requirement.modifier { output["effect"] = modifier }
+        switch requirement.effect {
+        case .any: break
+        case .anyEnchantment: output["effect"] = anyEnchantmentName
+        case .oneOf(let names): output["effect"] = names.count == 1 ? names[0] : names
+        }
         if requirement.requireUncursed { output["uncursed"] = true }
         if let source = requirement.source { output["source"] = sourceNames[source.rawValue] }
         if let group = requirement.identityGroup { output["identity_group"] = group }
         if let depth = requirement.maximumDepth { output["max_depth"] = depth }
+        if let sum = requirement.levelSum { output["level_sum"] = ["group": sum.group, "at_least": sum.atLeast] }
         return output
     }
+
+    /// The document's shorthand for the family's whole non-curse effect set.
+    private static let anyEnchantmentName = "any_enchantment"
 
     /// Maps a canonical query document onto the Swift models. Only a name this
     /// build has no model for fails — the document itself is the engine's, so
     /// its shape and bounds are already guaranteed.
     static func decodeQuery(_ value: [String: Any]) throws -> SavedQuery {
-        let requirements = try (value["requirements"] as? [Any] ?? []).enumerated()
-            .map { index, entry -> ItemRequirement in
-                guard let entry = entry as? [String: Any] else {
-                    throw ResultsExportError("Requirement \(index + 1) is not a JSON object.")
-                }
-                do {
-                    return try decodeRequirement(entry, key: Int64(index + 1))
-                } catch let failure as ResultsExportError {
-                    throw ResultsExportError("Requirement \(index + 1): \(failure.message)")
-                } catch {
-                    let reason = (error as? LocalizedError)?.errorDescription ?? "\(error)"
-                    throw ResultsExportError("Requirement \(index + 1): \(reason)")
-                }
+        var requirements: [ItemRequirement] = []
+        // Alternative groups get fresh sequential ids in document order.
+        var nextGroup = 1
+        for (index, entry) in (value["requirements"] as? [Any] ?? []).enumerated() {
+            guard let entry = entry as? [String: Any] else {
+                throw ResultsExportError("Requirement \(index + 1) is not a JSON object.")
             }
+            do {
+                if let members = entry["any_of"] as? [Any] {
+                    let group = nextGroup
+                    nextGroup += 1
+                    for member in members {
+                        guard let member = member as? [String: Any] else {
+                            throw ResultsExportError("an alternative is not a JSON object")
+                        }
+                        requirements.append(try decodeRequirement(
+                            member, key: Int64(requirements.count + 1), alternativeGroup: group))
+                    }
+                } else {
+                    requirements.append(try decodeRequirement(entry, key: Int64(requirements.count + 1)))
+                }
+            } catch let failure as ResultsExportError {
+                throw ResultsExportError("Requirement \(index + 1): \(failure.message)")
+            } catch {
+                let reason = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+                throw ResultsExportError("Requirement \(index + 1): \(reason)")
+            }
+        }
         var challenges = 0
         for name in value["challenges"] as? [String] ?? [] {
             guard let match = challengeNames.first(where: { $0.name == name }) else {
@@ -187,7 +215,8 @@ public enum ResultsExport {
             challenges: challenges)
     }
 
-    private static func decodeRequirement(_ entry: [String: Any], key: Int64) throws -> ItemRequirement {
+    private static func decodeRequirement(_ entry: [String: Any], key: Int64,
+                                          alternativeGroup: Int? = nil) throws -> ItemRequirement {
         var item: CatalogItem?
         if let id = entry["item"] as? String {
             guard let found = ItemCatalog.findById(id) else {
@@ -223,15 +252,31 @@ public enum ResultsExport {
             upgrade = exact
             upgradeMatch = .exactly
         }
-        var modifier: String?
-        if let name = entry["effect"] as? String {
-            // Effect names match case-insensitively and canonicalize to the
-            // catalog's own spelling.
+        // Effect names match case-insensitively and canonicalize to the
+        // catalog's own spelling.
+        func effectName(_ name: String) throws -> String {
             guard let match = ItemCatalog.modifiersFor(kind)
                 .first(where: { $0.caseInsensitiveCompare(name) == .orderedSame }) else {
                 throw ResultsExportError("unknown effect \"\(name)\"")
             }
-            modifier = match
+            return match
+        }
+        var effect = EffectFilter.any
+        if let name = entry["effect"] as? String {
+            effect = name.caseInsensitiveCompare(anyEnchantmentName) == .orderedSame
+                ? .anyEnchantment : .oneOf([try effectName(name)])
+        } else if let names = entry["effect"] as? [String] {
+            effect = .oneOf(try names.map(effectName))
+        }
+        // The unreleased upgrade_sum key counted upgrades, not levels: refused
+        // rather than silently reinterpreted, as the engine does.
+        guard entry["upgrade_sum"] == nil else {
+            throw ResultsExportError("upgrade_sum is no longer supported; use level_sum")
+        }
+        var levelSum: LevelSum?
+        if let object = entry["level_sum"] as? [String: Any],
+           let group = intField(object, "group"), let atLeast = intField(object, "at_least") {
+            levelSum = LevelSum(group: group, atLeast: atLeast)
         }
         var source: ScoutItemSource?
         if let name = entry["source"] as? String {
@@ -245,7 +290,7 @@ public enum ResultsExport {
             key: key,
             item: item,
             upgrade: upgrade,
-            modifier: modifier,
+            effect: effect,
             kind: kind,
             tier: tier,
             tierMatch: tierMatch,
@@ -253,6 +298,30 @@ public enum ResultsExport {
             source: source,
             identityGroup: intField(entry, "identity_group"),
             maximumDepth: intField(entry, "max_depth"),
-            requireUncursed: boolField(entry, "uncursed"))
+            requireUncursed: boolField(entry, "uncursed"),
+            alternativeGroup: alternativeGroup,
+            levelSum: levelSum)
+    }
+}
+
+/// The canonical JSON query document as the bytes every query-taking engine
+/// entry point accepts: the search, the resumed search, the seed filter, the
+/// continuation and start decisions and the scout marks all read the same
+/// document the share links and results files carry.
+public enum QueryDocument {
+    /// The document as a JSON object, before serialization.
+    public static func object(_ request: SearchRequest) -> [String: Any] {
+        ResultsExport.encodeQuery(SavedQuery(
+            requirements: request.requirements, maximumDepth: request.maximumDepth,
+            requireBlacksmith: request.requireBlacksmith,
+            excludeBlacksmithRewards: request.excludeBlacksmithRewards,
+            wandmakerQuest: request.wandmakerQuest, fastMode: request.fastMode,
+            challenges: request.challenges))
+    }
+
+    /// UTF-8 JSON bytes of the document, keys sorted so equal queries encode
+    /// to equal bytes.
+    public static func encode(_ request: SearchRequest) throws -> Data {
+        try JSONSerialization.data(withJSONObject: object(request), options: [.sortedKeys])
     }
 }

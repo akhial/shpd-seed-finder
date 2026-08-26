@@ -1,4 +1,5 @@
-import type { ScoutItem } from './wasm/types'
+import { ANY_ENCHANTMENT } from './wasm/types'
+import type { EffectFilter, ScoutItem } from './wasm/types'
 
 /**
  * Enchantment / glyph glow colours and pulse periods, mirrored 1:1 from
@@ -68,11 +69,21 @@ export function itemGlow(item: Pick<ScoutItem, 'cursed' | 'effect'>): Glow | nul
 }
 
 /**
- * The pulse glow for a bare effect name (as carried by a requirement), or null
- * when there is none. Known enchantments/glyphs pulse their colour; any other
- * effect name is a curse and pulses black.
+ * One glow per name a requirement's effect filter accepts, in the filter's own
+ * order — what a badge showing several effects cycles through. Any unknown name
+ * is a curse and glows black; the "any enchantment" shorthand stands for no
+ * fixed set of its own and yields nothing.
  */
-export function effectGlow(effect: string | undefined): Glow | null {
-  if (!effect) return null
-  return ENCHANT_GLOW[effect] ?? CURSE_GLOW
+export function effectGlows(effect: EffectFilter | undefined): Glow[] {
+  if (!effect || effect === ANY_ENCHANTMENT) return []
+  const names = typeof effect === 'string' ? [effect] : effect
+  return names.map((name) => ENCHANT_GLOW[name] ?? CURSE_GLOW)
+}
+
+/**
+ * The pulse glow for a requirement's effect filter, or null when there is
+ * none. A set pulses its first member's colour.
+ */
+export function effectGlow(effect: EffectFilter | undefined): Glow | null {
+  return effectGlows(effect)[0] ?? null
 }

@@ -2,8 +2,8 @@
 package dev.seedseeker.app.engine
 
 import dev.seedseeker.app.BuildConfig
-import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.Challenge
+import dev.seedseeker.app.model.ResultsExport
 import dev.seedseeker.app.model.ResumeHint
 import dev.seedseeker.app.model.SearchBatch
 import dev.seedseeker.app.model.SearchLimits
@@ -21,9 +21,7 @@ import dev.seedseeker.app.model.SeedResult
 import dev.seedseeker.app.catalog.ItemCatalog
 import org.json.JSONObject
 import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
-import java.io.DataOutputStream
 import java.nio.charset.StandardCharsets
 import kotlin.math.min
 
@@ -39,13 +37,14 @@ interface NativeSeedFinder {
 
     /**
      * Which items of the world [scoutSeed] returns for the same seed and challenge mask explain
-     * [request]'s requirements, as indices into that world's item list, or null when this engine's
-     * scouted world is not the engine's own (the demo engine's is fabricated, so engine marks
-     * would index a different list). Requirements claim distinct items and the marks are a largest
-     * satisfiable selection, so a partially matching query marks only the items it could explain.
-     * The selection is the engine's `scout_matches`; frontends never re-derive it.
+     * [request]'s requirements — indices into that world's item list plus the satisfied and total
+     * slot counts — or null when this engine's scouted world is not the engine's own (the demo
+     * engine's is fabricated, so engine marks would index a different list). Slots claim distinct
+     * items and the marks are a largest satisfiable selection, so a partially matching query marks
+     * only the items it could explain. The selection is the engine's `scout_matches`; frontends
+     * never re-derive it.
      */
-    fun scoutMatches(seed: String, challenges: Int, request: SearchRequest): Set<Int>?
+    fun scoutMatches(seed: String, challenges: Int, request: SearchRequest): ScoutMatches?
 
     /**
      * Whether [candidate] never widens [base]: an identical floor limit, challenge set and fast
@@ -81,6 +80,18 @@ interface NativeSeedFinder {
         detachedBase: SearchRequest?,
     ): String
 }
+
+/**
+ * The engine's marks over a scouted world: [items] indexes the world's item
+ * list; [matchedSlots] of [totalSlots] engine-level requirements (an "any of
+ * these" group is one slot) are satisfied. Items serving an incomplete
+ * combined-upgrade group are not marked.
+ */
+data class ScoutMatches(
+    val items: Set<Int>,
+    val matchedSlots: Int,
+    val totalSlots: Int,
+)
 
 interface NativeSearchSession : AutoCloseable {
     fun poll(maxResults: Int = 32): SearchBatch
@@ -130,7 +141,7 @@ class DemoNativeSeedFinder : NativeSeedFinder {
     // demo never stands in for: the engine owns the rule
     // (docs/search-semantics.md), and every APK packages its library.
     override fun queryContinues(candidate: SearchRequest, base: SearchRequest): Boolean =
-        JniBindings.queryContinues(QueryCodec.encode(candidate), QueryCodec.encode(base))
+        JniBindings.queryContinues(QueryDocument.encode(candidate), QueryDocument.encode(base))
 
     // Same reasoning for the whole start decision the predicate is part of.
     override fun decideStart(
@@ -141,11 +152,11 @@ class DemoNativeSeedFinder : NativeSeedFinder {
         detachedBase: SearchRequest?,
     ): String = String(
         JniBindings.decideStart(
-            QueryCodec.encode(candidate),
-            target?.let(QueryCodec::encode),
+            QueryDocument.encode(candidate),
+            target?.let(QueryDocument::encode),
             targetSetEmpty,
             targetHasUncoveredSeeds,
-            detachedBase?.let(QueryCodec::encode),
+            detachedBase?.let(QueryDocument::encode),
         ),
         StandardCharsets.UTF_8,
     )
@@ -155,7 +166,7 @@ class DemoNativeSeedFinder : NativeSeedFinder {
     // generates — would point at other items entirely. Demo APKs therefore show
     // no marks at all; a Kotlin stand-in matcher would be a second
     // implementation of `scout_matches`, which is what this app no longer has.
-    override fun scoutMatches(seed: String, challenges: Int, request: SearchRequest): Set<Int>? = null
+    override fun scoutMatches(seed: String, challenges: Int, request: SearchRequest): ScoutMatches? = null
 
     override fun scoutSeed(seed: String, challenges: Int): ScoutWorld {
         require(SeedCode.isCanonical(seed)) { "Seed must use XXX-XXX-XXX format" }
@@ -237,7 +248,7 @@ class DemoNativeSeedFinder : NativeSeedFinder {
             val available = min(seeds.size, (elapsedMillis() / 620L).toInt())
             val end = min(available, emitted + maxResults)
             val newResults = seeds.subList(emitted, end).map { seed ->
-                SeedResult(seed, request.requirements.size)
+                SeedResult(seed, request.slotCount)
             }
             emitted = end
             SearchBatch(newResults)
@@ -317,16 +328,10 @@ class DemoNativeSeedFinder : NativeSeedFinder {
  * 10. `queryContinues(candidateBytes, baseBytes) -> boolean` reports whether the candidate query
  *    may reuse a run of the base query, throwing for an undecodable packet.
  *
- * Search requests always use `SSF8`: magic, maxDepth:u8, flags:u8, challenges:u16 little-endian,
- * wandmakerQuest:u8 (0 any, else the 1-based variant), requirementCount:u16 big-endian,
- * followed by repeated
- * kind:u8, optionalItemId:utf8_u16, tierMode:u8, tierValue:u8, upgradeMode:u8,
- * upgradeValue:u8, modifier:utf8_u16,
- * optionalSource:u8, sameItemGroup:u8, requirementMaxDepth:u8 (0 uses the request limit),
- * requirementFlags:u8 (bit 0 requires an uncursed item).
- * Flag bit 0 requires an accessible blacksmith; bit 1 enables the lossy fast search mode
- * (quest-only +3 weapon/armor sources); flag bit 2
- * prevents Blacksmith "Smith" rewards from satisfying item requirements.
+ * Every query-taking call receives the canonical UTF-8 JSON query document
+ * (docs/results-export-format.md) that [QueryDocument] writes; an invalid document fails the
+ * call exactly like a malformed packet (a zero handle or an IllegalArgumentException carrying
+ * the engine's message), so queries are pre-validated locally for friendlier messages.
  * Result packet `SSR1`: magic[4], count:u16, then
  * repeated seedLength:u8, seed:ASCII. State codes are 0 running, 1 complete, 2 cancelled,
  * 3 failed. A non-zero handle is required. Scout requests use `SSQ2`, a little-endian challenge
@@ -351,18 +356,18 @@ class JniNativeSeedFinder(
     }
 
     /** Asks the engine, which scouts the same world again and marks it. */
-    override fun scoutMatches(seed: String, challenges: Int, request: SearchRequest): Set<Int> =
+    override fun scoutMatches(seed: String, challenges: Int, request: SearchRequest): ScoutMatches =
         ScoutMatchCodec.decode(
             bindings.scoutMatches(
                 ScoutRequestCodec.encode(seed, challenges),
-                QueryCodec.encode(request),
+                QueryDocument.encode(request),
             ),
         )
 
     override fun startSearch(request: SearchRequest): NativeSearchSession {
-        val handle = bindings.startSearch(QueryCodec.encode(request))
+        val handle = bindings.startSearch(QueryDocument.encode(request))
         check(handle != 0L) { "Native seed finder returned an invalid handle" }
-        return JniSession(handle, request.requirements.size, bindings)
+        return JniSession(handle, request.slotCount, bindings)
     }
 
     override fun startResumedSearch(
@@ -370,20 +375,20 @@ class JniNativeSeedFinder(
         resumeFrom: Long,
         scanLen: Long,
     ): NativeSearchSession {
-        val handle = bindings.startResumedSearch(QueryCodec.encode(request), resumeFrom, scanLen)
+        val handle = bindings.startResumedSearch(QueryDocument.encode(request), resumeFrom, scanLen)
         check(handle != 0L) { "Native seed finder returned an invalid handle" }
-        return JniSession(handle, request.requirements.size, bindings)
+        return JniSession(handle, request.slotCount, bindings)
     }
 
     override fun filterSeeds(request: SearchRequest, seeds: List<String>): List<String> {
         val values = LongArray(seeds.size) { SeedCode.value(seeds[it]) }
-        val packet = bindings.filterSeeds(QueryCodec.encode(request), values)
-        return ResultCodec.decode(packet, request.requirements.size).map { it.seed }
+        val packet = bindings.filterSeeds(QueryDocument.encode(request), values)
+        return ResultCodec.decode(packet, request.slotCount).map { it.seed }
     }
 
     /** Asks the engine, so the refine soundness rule has exactly one implementation. */
     override fun queryContinues(candidate: SearchRequest, base: SearchRequest): Boolean =
-        bindings.queryContinues(QueryCodec.encode(candidate), QueryCodec.encode(base))
+        bindings.queryContinues(QueryDocument.encode(candidate), QueryDocument.encode(base))
 
     /** Asks the engine, so docs/search-semantics.md has exactly one implementation. */
     override fun decideStart(
@@ -394,11 +399,11 @@ class JniNativeSeedFinder(
         detachedBase: SearchRequest?,
     ): String = String(
         bindings.decideStart(
-            QueryCodec.encode(candidate),
-            target?.let(QueryCodec::encode),
+            QueryDocument.encode(candidate),
+            target?.let(QueryDocument::encode),
             targetSetEmpty,
             targetHasUncoveredSeeds,
-            detachedBase?.let(QueryCodec::encode),
+            detachedBase?.let(QueryDocument::encode),
         ),
         StandardCharsets.UTF_8,
     )
@@ -585,45 +590,14 @@ object SeedCode {
     }.getOrNull()?.let { Parsed(it.getString("code"), it.getLong("value")) }
 }
 
-object QueryCodec {
-    fun encode(request: SearchRequest): ByteArray = ByteArrayOutputStream().use { bytes ->
-        DataOutputStream(bytes).use { output ->
-            output.write("SSF8".toByteArray(StandardCharsets.US_ASCII))
-            output.writeByte(request.maximumDepth)
-            output.writeByte(
-                (if (request.requireBlacksmith) 1 else 0) or
-                    (if (request.fastMode) 2 else 0) or
-                    (if (request.excludeBlacksmithRewards) 4 else 0),
-            )
-            output.writeByte(request.challenges and 0xff)
-            output.writeByte(request.challenges ushr 8)
-            output.writeByte(request.wandmakerQuest?.wireId ?: 0)
-            output.writeShort(request.requirements.size)
-            request.requirements.forEach { requirement -> writeRequirement(output, requirement) }
-        }
-        bytes.toByteArray()
-    }
-
-    private fun writeRequirement(output: DataOutputStream, requirement: ItemRequirement) {
-        output.writeByte(requirement.kind.ordinal)
-        writeUtf8(output, requirement.item?.id.orEmpty())
-        output.writeByte(requirement.tierMatch.ordinal)
-        output.writeByte(requirement.tier)
-        output.writeByte(requirement.upgradeMatch.ordinal)
-        output.writeByte(requirement.upgrade)
-        writeUtf8(output, requirement.modifier.orEmpty())
-        output.writeByte(requirement.source?.let { it.ordinal + 1 } ?: 0)
-        output.writeByte(requirement.identityGroup ?: 0)
-        output.writeByte(requirement.maximumDepth ?: 0)
-        output.writeByte(if (requirement.requireUncursed) 1 else 0)
-    }
-
-    private fun writeUtf8(output: DataOutputStream, text: String) {
-        val encoded = text.toByteArray(StandardCharsets.UTF_8)
-        require(encoded.size <= 65_535) { "Wire string is too long" }
-        output.writeShort(encoded.size)
-        output.write(encoded)
-    }
+/**
+ * The query every query-taking engine entry point receives: the canonical
+ * JSON query document (docs/results-export-format.md), the same bytes share
+ * links and results files carry, so the app has exactly one query writer.
+ */
+object QueryDocument {
+    fun encode(request: SearchRequest): ByteArray =
+        ResultsExport.encodeQuery(request).toString().toByteArray(StandardCharsets.UTF_8)
 }
 
 object ScoutRequestCodec {
@@ -661,11 +635,16 @@ private object ResultCodec {
         }
 }
 
-/** Reads the scout-match envelope `scoutMatches` returns: indices into the `SSC2` item order. */
+/** Reads the scout-match envelope `scoutMatches` returns: indices into the `SSC2` item order plus slot counts. */
 private object ScoutMatchCodec {
-    fun decode(document: ByteArray): Set<Int> {
-        val matched = JSONObject(String(document, StandardCharsets.UTF_8)).getJSONArray("matched")
-        return buildSet { for (index in 0 until matched.length()) add(matched.getInt(index)) }
+    fun decode(document: ByteArray): ScoutMatches {
+        val envelope = JSONObject(String(document, StandardCharsets.UTF_8))
+        val matched = envelope.getJSONArray("matched")
+        return ScoutMatches(
+            items = buildSet { for (index in 0 until matched.length()) add(matched.getInt(index)) },
+            matchedSlots = envelope.getInt("matchedRequirements"),
+            totalSlots = envelope.getInt("totalRequirements"),
+        )
     }
 }
 

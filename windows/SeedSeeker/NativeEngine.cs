@@ -134,8 +134,8 @@ public sealed class NativeEngine
     /// candidate requirement at least as strict (equal or strengthened).
     /// The engine owns this predicate — the same
     /// <c>SearchQuery::continues</c> that decides which seeds a resumed pass may
-    /// skip — so the decision is made on the encoded SSF8 packets rather than
-    /// re-derived here, and the two can never drift.
+    /// skip — so the decision is made on the encoded query documents rather
+    /// than re-derived here, and the two can never drift.
     /// </summary>
     public static bool QueryContinues(QuerySettings candidate, QuerySettings baseline)
     {
@@ -148,19 +148,13 @@ public sealed class NativeEngine
         return Native.seedfinder_query_continues(left, (nuint)left.Length, right, (nuint)right.Length) == 1;
     }
 
-    private static byte[] EncodeQuery(QuerySettings query)
-    {
-        var w = new Writer(); w.Bytes("SSF8"u8.ToArray()); w.U8(query.MaximumDepth);
-        w.U8((query.RequireBlacksmith ? 1 : 0) | (query.FastMode ? 2 : 0) | (query.ExcludeBlacksmithRewards ? 4 : 0));
-        w.U16Le(query.Challenges); w.U8((int)query.WandmakerQuest); w.U16(query.Requirements.Count);
-        foreach (var r in query.Requirements)
-        {
-            w.U8((int)r.Kind); w.Text(r.Item?.Id ?? ""); w.U8((int)r.TierMatch); w.U8(r.Tier);
-            w.U8((int)r.UpgradeMatch); w.U8(r.Upgrade); w.Text(r.Modifier ?? "");
-            w.U8(r.Source is null ? 0 : (int)r.Source + 1); w.U8(r.IdentityGroup ?? 0); w.U8(r.MaximumDepth ?? 0); w.U8(r.RequireUncursed ? 1 : 0);
-        }
-        return w.Finish();
-    }
+    /// <summary>
+    /// The query as the engine takes it: the canonical JSON query document
+    /// (the very bytes share links and results files carry), UTF-8. Every
+    /// query-taking entry point accepts it, so there is one encoder here and
+    /// the wire can never disagree with the documents.
+    /// </summary>
+    private static byte[] EncodeQuery(QuerySettings query) => Encoding.UTF8.GetBytes(ResultsExport.EncodeQueryDocument(query));
 
     /// <summary>
     /// What pressing Start Search must do with <paramref name="query"/>, per
@@ -245,8 +239,10 @@ public sealed class NativeEngine
         var request = EncodeScoutRequest(seed, challenges); var packet = EncodeQuery(query);
         var code = Native.seedfinder_scout_matches(request, (nuint)request.Length, packet, (nuint)packet.Length, out var ptr, out var len);
         // A query the engine cannot decode — one with no requirements, which
-        // the scout pane shows a manifest for anyway — marks nothing.
-        if (code == -1) return new(new HashSet<int>(), 0, query.Requirements.Count);
+        // the scout pane shows a manifest for anyway — marks nothing. Counts
+        // are slots: an "any of these" group is one requirement.
+        var slots = QueryRelationships.SlotCount(query.Requirements);
+        if (code == -1) return new(new HashSet<int>(), 0, slots);
         if (code != 0) throw new InvalidOperationException($"Native scout matches failed ({code}).");
         var document = JsonNode.Parse(Encoding.UTF8.GetString(CopyAndFree(ptr, len))) as JsonObject
             ?? throw new InvalidDataException("Unreadable scout match document");
@@ -254,7 +250,7 @@ public sealed class NativeEngine
         foreach (var index in document["matched"] as JsonArray ?? [])
             if (index is JsonValue value && value.TryGetValue(out int number)) matched.Add(number);
         return new(matched, (int?)document["matchedRequirements"] ?? matched.Count,
-            (int?)document["totalRequirements"] ?? query.Requirements.Count);
+            (int?)document["totalRequirements"] ?? slots);
     }
 
     /// <summary>The full web share link for a canonical JSON query document, or null when the engine rejects the query.</summary>

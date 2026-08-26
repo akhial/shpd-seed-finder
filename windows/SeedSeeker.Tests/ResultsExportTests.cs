@@ -153,4 +153,101 @@ public sealed class ResultsExportTests
         Assert.Equal(1 | 32, decoded.Challenges);
         Assert.Equal("Brimstone", decoded.Requirements[1].Modifier);
     }
+
+    [Fact]
+    public void AlternativesEffectSetsAndSumsRoundTripThroughTheEngine()
+    {
+        var query = new QuerySettings
+        {
+            Requirements = new ObservableCollection<ItemRequirement>([
+                new() { Kind = ItemKind.MeleeWeapon, Item = ItemCatalog.Find("spear"), UpgradeMatch = UpgradeMatch.Exactly, Upgrade = 3, AlternativeGroup = 1 },
+                new() { Kind = ItemKind.ThrownWeapon, Item = ItemCatalog.Find("shuriken"), UpgradeMatch = UpgradeMatch.Exactly, Upgrade = 2, AlternativeGroup = 1, Effect = EffectFilter.OneOf(["Blocking", "Projecting"]) },
+                new() { Kind = ItemKind.Armor, Effect = EffectFilter.Enchantment(), RequireUncursed = true },
+                new() { Kind = ItemKind.Ring, Item = ItemCatalog.Find("ring_might"), LevelSum = new(2, 4) },
+                new() { Kind = ItemKind.Ring, Item = ItemCatalog.Find("ring_might"), LevelSum = new(2, 4), MaximumDepth = 4 },
+                // A same-item stack: a named anchor and a plain copy of its category.
+                new() { Kind = ItemKind.Wand, Item = ItemCatalog.Find("wand_frost"), UpgradeMatch = UpgradeMatch.AtLeast, Upgrade = 1, IdentityGroup = 1 },
+                new() { Kind = ItemKind.Wand, UpgradeMatch = UpgradeMatch.Any, IdentityGroup = 1 },
+            ]),
+        };
+        const string expected = """{"requirements":[{"any_of":[{"kind":"melee_weapon","item":"spear","upgrade":3},{"kind":"thrown_weapon","item":"shuriken","upgrade":2,"effect":["Blocking","Projecting"]}]},{"kind":"armor","effect":"any_enchantment","uncursed":true},{"kind":"ring","item":"ring_might","level_sum":{"group":2,"at_least":4}},{"kind":"ring","item":"ring_might","max_depth":4,"level_sum":{"group":2,"at_least":4}},{"kind":"wand","item":"wand_frost","upgrade":{"at_least":1},"identity_group":1},{"kind":"wand","identity_group":1}]}""";
+        var document = ResultsExport.EncodeQueryDocument(query);
+        Assert.Equal(expected, document);
+
+        // Through the real codec and back: the engine validates and re-encodes it.
+        var imported = ResultsExport.Decode(ResultsExport.Encode(query, ["AAA-AAA-BUH"], "test")).Query;
+        Assert.Equal(document, ResultsExport.EncodeQueryDocument(imported));
+        Assert.Equal([1, 1, null, null, null, null, null], imported.Requirements.Select(r => r.AlternativeGroup));
+        Assert.Equal(["Blocking", "Projecting"], imported.Requirements[1].Effect.Effects);
+        Assert.True(imported.Requirements[2].Effect.AnyEnchantment);
+        Assert.Equal(new LevelSum(2, 4), imported.Requirements[3].LevelSum);
+        Assert.Equal(new LevelSum(2, 4), imported.Requirements[4].LevelSum);
+        Assert.Equal([null, null, null, null, null, 1, 1], imported.Requirements.Select(r => r.IdentityGroup));
+        // The share-link codec carries the same structures (a v2 link).
+        var link = NativeEngine.TryEncodeShareLink(document);
+        Assert.NotNull(link);
+        var shared = ResultsExport.DecodeQueryDocument(NativeEngine.TryDecodeShareText(link!)!);
+        Assert.Equal(document, ResultsExport.EncodeQueryDocument(shared));
+    }
+
+    [Fact]
+    public void TheUnreleasedUpgradeSumKeyIsRefused()
+    {
+        // upgrade_sum counted upgrades, not levels: a document carrying it is
+        // refused rather than silently reinterpreted, as the engine does.
+        var error = Assert.Throws<ResultsExportException>(() =>
+            ResultsExport.DecodeQueryDocument("""{"requirements":[{"kind":"ring","upgrade_sum":{"group":1,"at_least":2}}]}"""));
+        Assert.Contains("upgrade_sum", error.Message);
+        var renamed = ResultsExport.DecodeQueryDocument("""{"requirements":[{"kind":"ring","level_sum":{"group":1,"at_least":2}}]}""");
+        Assert.Equal(new LevelSum(1, 2), Assert.Single(renamed.Requirements).LevelSum);
+    }
+
+    [Fact]
+    public void TheWriterFollowsTheEffectRules()
+    {
+        static string Effect(EffectFilter filter, ItemKind kind = ItemKind.Weapon) =>
+            ResultsExport.EncodeQueryDocument(new QuerySettings
+            {
+                Requirements = new ObservableCollection<ItemRequirement>([new() { Kind = kind, Effect = filter }]),
+            });
+        Assert.Equal("""{"requirements":[{"kind":"weapon","effect":"Blazing"}]}""", Effect(EffectFilter.OneOf(["Blazing"])));
+        // Catalog order, whatever order the set was picked in.
+        Assert.Equal("""{"requirements":[{"kind":"weapon","effect":["Blazing","Vampiric"]}]}""", Effect(EffectFilter.OneOf(["Vampiric", "Blazing"])));
+        // The whole non-curse family set is the shorthand, however it was expressed.
+        Assert.Equal("""{"requirements":[{"kind":"weapon","effect":"any_enchantment"}]}""", Effect(EffectFilter.Enchantment()));
+        Assert.Equal("""{"requirements":[{"kind":"armor","effect":"any_enchantment"}]}""", Effect(EffectFilter.OneOf(ItemCatalog.Glyphs), ItemKind.Armor));
+        Assert.Equal("""{"requirements":[{"kind":"weapon"}]}""", Effect(EffectFilter.Any()));
+        // A single-member alternative group is written plain.
+        var lone = new QuerySettings { Requirements = new ObservableCollection<ItemRequirement>([new() { Kind = ItemKind.Wand, AlternativeGroup = 3 }]) };
+        Assert.Equal("""{"requirements":[{"kind":"wand"}]}""", ResultsExport.EncodeQueryDocument(lone));
+    }
+
+    [Fact]
+    public void ReadingAssignsFreshSequentialAlternativeGroups()
+    {
+        var decoded = ResultsExport.DecodeQueryDocument("""
+            {"requirements":[
+              {"any_of":[{"kind":"wand"},{"kind":"ring"}]},
+              {"kind":"armor","effect":["thorns","stench"]},
+              {"any_of":[{"kind":"melee_weapon","effect":"any_enchantment"},{"kind":"thrown_weapon"}]}]}
+            """);
+        Assert.Equal([1, 1, null, 2, 2], decoded.Requirements.Select(r => r.AlternativeGroup));
+        // Effect names resolve case-insensitively to the catalog's spelling.
+        Assert.Equal(["Thorns", "Stench"], decoded.Requirements[2].Effect.Effects);
+        Assert.True(decoded.Requirements[3].Effect.AnyEnchantment);
+        Assert.Throws<ResultsExportException>(() => ResultsExport.DecodeQueryDocument("""{"requirements":[{"kind":"weapon","effect":["Blazing","Nope"]}]}"""));
+    }
+
+    [Theory]
+    // The engine's own relationship rules, reached through the results codec.
+    [InlineData("""{"kind":"wand","upgrade_sum":{"group":1,"at_least":7}},{"kind":"wand","upgrade_sum":{"group":1,"at_least":7}}""")]
+    [InlineData("""{"kind":"wand","upgrade_sum":{"group":1,"at_least":2}},{"kind":"wand","upgrade_sum":{"group":1,"at_least":3}}""")]
+    [InlineData("""{"any_of":[{"kind":"wand","upgrade_sum":{"group":1,"at_least":1}},{"kind":"ring"}]}""")]
+    [InlineData("""{"kind":"ring","effect":"any_enchantment"}""")]
+    [InlineData("""{"kind":"weapon","effect":["Blazing","Thorns"]}""")]
+    [InlineData("""{"kind":"weapon","uncursed":true,"effect":["Annoying","Sacrificial"]}""")]
+    [InlineData("""{"any_of":[]}""")]
+    public void TheEngineRefusesInvalidRelationships(string requirements) =>
+        Assert.Throws<ResultsExportException>(() => ResultsExport.Decode(
+            $$"""{ "format": "seed-seeker-results", "query": { "requirements": [{{requirements}}] }, "results": [] }"""));
 }

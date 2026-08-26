@@ -12,18 +12,32 @@ use shpd_seedfinder_core::catalog::{
 use shpd_seedfinder_core::main_world::normalize_floor_limit;
 use shpd_seedfinder_core::model::ItemSource;
 use shpd_seedfinder_core::query::{
-    BOUNDED_TIER_MAX, BOUNDED_TIER_MIN, EXACT_TIER_MAX, EXACT_TIER_MIN, MAX_IDENTITY_GROUP,
-    MAX_SEARCH_DEPTH, RESERVED_IDENTITY_GROUP, TierRequirement, UpgradeRequirement,
+    BOUNDED_TIER_MAX, BOUNDED_TIER_MIN, EXACT_TIER_MAX, EXACT_TIER_MIN, EffectRequirement,
+    EffectSet, LevelSum, MAX_IDENTITY_GROUP, MAX_LEVEL_SUM_GROUP, MAX_SEARCH_DEPTH, RESERVED_GROUP,
+    RESERVED_IDENTITY_GROUP, TierRequirement, UpgradeRequirement,
 };
 
 use crate::query_pane::skip_empty_boss_floors;
 use crate::state::{
-    ALL_KIND_CHOICES, KindChoice, UiRequirement, group_letter, kind_choice_label,
+    ALL_KIND_CHOICES, AppState, KindChoice, UiRequirement, group_letter, kind_choice_label,
     kind_choice_singular, source_label,
 };
 
+/// Positions of the effect picker's modes.
+const EFFECT_ANY: u32 = 0;
+const EFFECT_ANY_ENCHANTMENT: u32 = 1;
+const EFFECT_SPECIFIC: u32 = 2;
+
+/// One checkbox of the specific-effect list.
+struct EffectCheck {
+    effect: Effect,
+    row: adw::ActionRow,
+    check: gtk::CheckButton,
+}
+
 struct Editor {
     dialog: adw::Dialog,
+    banner: adw::Banner,
     category: adw::ComboRow,
     item_row: adw::ComboRow,
     items: RefCell<Vec<Option<ItemId>>>,
@@ -34,8 +48,13 @@ struct Editor {
     exact_upgrade: adw::SpinRow,
     minimum_upgrade: adw::ComboRow,
     ring_minimum_upgrade: adw::SpinRow,
-    effect_row: adw::ComboRow,
-    effects: RefCell<Vec<Option<Effect>>>,
+    sum_group_row: adw::ComboRow,
+    sum_total: adw::SpinRow,
+    effect_mode_group: adw::PreferencesGroup,
+    effect_mode: adw::ComboRow,
+    effect_group: adw::PreferencesGroup,
+    effect_list: gtk::ListBox,
+    effect_checks: RefCell<Vec<EffectCheck>>,
     uncursed: adw::SwitchRow,
     source_row: adw::ComboRow,
     group_row: adw::ComboRow,
@@ -43,17 +62,25 @@ struct Editor {
     floor_value: adw::SpinRow,
     updating: Cell<bool>,
     key: u64,
+    /// The alternative group the row belongs to; members cannot join a
+    /// combined-level group, so the editor hides that picker.
+    alternative_group: Option<u8>,
+    /// The query the row is edited within, for cross-row validation and the
+    /// combined-level ranges.
+    context: AppState,
 }
 
-/// Presents the editor over `parent`. `on_finish` receives the edited
-/// requirement when the user confirms; cancelling never calls it.
+/// Presents the editor over `parent`. `context` is the query the row lives in;
+/// `on_finish` receives the edited requirement when the user confirms, and
+/// cancelling never calls it.
 pub fn present(
     parent: &adw::ApplicationWindow,
+    context: &AppState,
     requirement: &UiRequirement,
     is_new: bool,
     on_finish: impl Fn(UiRequirement) + 'static,
 ) {
-    let editor = Rc::new(build(requirement));
+    let editor = Rc::new(build(context.clone(), requirement));
     connect(&editor);
     restore(&editor, requirement);
 
@@ -73,13 +100,16 @@ pub fn present(
     }
     let toolbar_view = adw::ToolbarView::new();
     toolbar_view.add_top_bar(&header);
+    toolbar_view.add_top_bar(&editor.banner);
     toolbar_view.set_content(Some(&page));
 
-    editor.dialog.set_title(if is_new {
-        "New Requirement"
-    } else {
-        "Edit Requirement"
-    });
+    editor
+        .dialog
+        .set_title(match (is_new, requirement.alternative_group) {
+            (true, Some(_)) => "New Alternative",
+            (true, None) => "New Requirement",
+            (false, _) => "Edit Requirement",
+        });
     editor.dialog.set_child(Some(&toolbar_view));
     editor.dialog.set_default_widget(Some(&confirm));
 
@@ -93,21 +123,37 @@ pub fn present(
         let editor = Rc::clone(&editor);
         move |_| {
             let result = collect(&editor);
-            if result.to_core().validate().is_ok() {
-                editor.dialog.close();
-                on_finish(result);
+            match check(&editor, &result) {
+                Ok(()) => {
+                    editor.dialog.close();
+                    on_finish(result);
+                }
+                Err(message) => {
+                    editor.banner.set_title(&message);
+                    editor.banner.set_revealed(true);
+                }
             }
         }
     });
     editor.dialog.present(Some(parent));
 }
 
-fn build(requirement: &UiRequirement) -> Editor {
+fn build(context: AppState, requirement: &UiRequirement) -> Editor {
+    let effect_list = gtk::ListBox::builder()
+        .css_classes(["boxed-list"])
+        .selection_mode(gtk::SelectionMode::None)
+        .build();
+    let effect_group = adw::PreferencesGroup::builder()
+        .title("Enchantments")
+        .description("The item must carry one of the checked effects.")
+        .build();
+    effect_group.add(&effect_list);
     Editor {
         dialog: adw::Dialog::builder()
             .content_width(460)
-            .content_height(640)
+            .content_height(700)
             .build(),
+        banner: adw::Banner::new(""),
         category: combo_row(
             "Category",
             &ALL_KIND_CHOICES
@@ -129,8 +175,18 @@ fn build(requirement: &UiRequirement) -> Editor {
         exact_upgrade: spin_row("Exactly", 1.0, 1.0, 4.0),
         minimum_upgrade: combo_row("Minimum upgrade", &["+1 or higher", "+2 or higher"]),
         ring_minimum_upgrade: spin_row("Minimum upgrade", 1.0, 1.0, 3.0),
-        effect_row: searchable_combo_row("Enchantment"),
-        effects: RefCell::new(vec![None]),
+        sum_group_row: combo_row(
+            "Combined upgrade group",
+            &borrowed(&group_labels(MAX_LEVEL_SUM_GROUP)),
+        ),
+        sum_total: spin_row("Total at least", 1.0, 1.0, 4.0),
+        effect_mode_group: adw::PreferencesGroup::builder()
+            .title("Enchantment")
+            .build(),
+        effect_mode: combo_row("Enchantment", &["Any", "Any enchantment", "Specific…"]),
+        effect_group,
+        effect_list,
+        effect_checks: RefCell::new(Vec::new()),
         uncursed: adw::SwitchRow::builder().title("Require uncursed").build(),
         source_row: combo_row(
             "Source",
@@ -138,7 +194,10 @@ fn build(requirement: &UiRequirement) -> Editor {
                 .chain(ItemSource::ALL.iter().map(|source| source_label(*source)))
                 .collect::<Vec<_>>(),
         ),
-        group_row: combo_row("Same-item group", &borrowed(&group_labels())),
+        group_row: combo_row(
+            "Same-item group",
+            &borrowed(&group_labels(MAX_IDENTITY_GROUP)),
+        ),
         floor_switch: adw::SwitchRow::builder()
             .title("Limit to a floor")
             .subtitle("Require this item within the first floors only")
@@ -151,6 +210,8 @@ fn build(requirement: &UiRequirement) -> Editor {
         ),
         updating: Cell::new(false),
         key: requirement.key,
+        alternative_group: requirement.alternative_group,
+        context,
     }
 }
 
@@ -164,24 +225,39 @@ fn groups(editor: &Rc<Editor>) -> Vec<adw::PreferencesGroup> {
 
     let upgrade_group = adw::PreferencesGroup::builder()
         .title("Upgrade Level")
+        .description(if editor.alternative_group.is_some() {
+            "Alternatives cannot join a combined level group."
+        } else {
+            "Combined upgrade group members are distinct items whose upgrade levels \
+             add up to at least the shared total."
+        })
         .build();
     upgrade_group.add(&editor.upgrade_row);
     upgrade_group.add(&editor.exact_upgrade);
     upgrade_group.add(&editor.minimum_upgrade);
     upgrade_group.add(&editor.ring_minimum_upgrade);
+    upgrade_group.add(&editor.sum_group_row);
+    upgrade_group.add(&editor.sum_total);
+
+    editor.effect_mode_group.add(&editor.effect_mode);
 
     let details_group = adw::PreferencesGroup::builder()
         .title("Details")
         .description("Same-item group members must resolve to the same item.")
         .build();
-    details_group.add(&editor.effect_row);
     details_group.add(&editor.uncursed);
     details_group.add(&editor.source_row);
     details_group.add(&editor.group_row);
     details_group.add(&editor.floor_switch);
     details_group.add(&editor.floor_value);
 
-    vec![item_group, upgrade_group, details_group]
+    vec![
+        item_group,
+        upgrade_group,
+        editor.effect_mode_group.clone(),
+        editor.effect_group.clone(),
+        details_group,
+    ]
 }
 
 fn connect(editor: &Rc<Editor>) {
@@ -195,6 +271,7 @@ fn connect(editor: &Rc<Editor>) {
             populate_effects(editor, selected_effect(editor));
             editor.tier_row.set_selected(0);
             normalize_upgrades(editor);
+            refresh_sum_range(editor);
             refresh_visibility(editor);
         }));
     editor
@@ -228,31 +305,46 @@ fn connect(editor: &Rc<Editor>) {
         .upgrade_row
         .connect_selected_notify(hook(Rc::clone(editor), |editor| {
             normalize_upgrades(editor);
+            refresh_sum_range(editor);
             refresh_visibility(editor);
         }));
     editor
-        .effect_row
+        .exact_upgrade
+        .connect_value_notify(hook(Rc::clone(editor), refresh_sum_range));
+    editor
+        .sum_group_row
+        .connect_selected_notify(hook(Rc::clone(editor), |editor| {
+            // Every member of a group shares one total, so joining a group
+            // picks up what the other members already ask for.
+            if let Some(group) = selected_sum_group(editor)
+                && let Some(total) = editor.context.level_sum_total(group, editor.key)
+            {
+                editor.sum_total.set_value(f64::from(total));
+            }
+            refresh_sum_range(editor);
+            refresh_visibility(editor);
+        }));
+    editor
+        .effect_mode
         .connect_selected_notify(hook(Rc::clone(editor), refresh_visibility));
     editor
         .uncursed
-        .connect_active_notify(hook(Rc::clone(editor), |editor| {
-            let selection = selected_effect(editor)
-                .filter(|effect| !editor.uncursed.is_active() || !effect.is_curse());
-            populate_effects(editor, selection);
-        }));
+        .connect_active_notify(hook(Rc::clone(editor), apply_curse_visibility));
     editor
         .floor_switch
         .connect_active_notify(hook(Rc::clone(editor), refresh_visibility));
     skip_empty_boss_floors(&editor.floor_value);
 }
 
-/// Wraps a handler so programmatic updates never re-enter it.
+/// Wraps a handler so programmatic updates never re-enter it. Any edit also
+/// retires the validation message of the previous save attempt.
 fn hook<W>(editor: Rc<Editor>, handler: fn(&Rc<Editor>)) -> impl Fn(&W) {
     move |_| {
         if editor.updating.get() {
             return;
         }
         editor.updating.set(true);
+        editor.banner.set_revealed(false);
         handler(&editor);
         editor.updating.set(false);
     }
@@ -307,7 +399,7 @@ fn restore(editor: &Rc<Editor>, requirement: &UiRequirement) {
     editor
         .source_row
         .set_selected(u32::try_from(source_index).unwrap_or(0));
-    // The combo offers None plus groups A..D; clamp instead of passing an
+    // The combos offer None plus groups A..D; clamp instead of passing an
     // out-of-range position, which GTK would treat as "no selection" and the
     // next collect() would then silently drop the group constraint.
     editor.group_row.set_selected(u32::from(
@@ -316,6 +408,16 @@ fn restore(editor: &Rc<Editor>, requirement: &UiRequirement) {
             .unwrap_or(RESERVED_IDENTITY_GROUP)
             .min(MAX_IDENTITY_GROUP),
     ));
+    editor.sum_group_row.set_selected(u32::from(
+        requirement
+            .level_sum
+            .map_or(RESERVED_GROUP, |sum| sum.group)
+            .min(MAX_LEVEL_SUM_GROUP),
+    ));
+    if let Some(sum) = requirement.level_sum {
+        editor.sum_total.set_value(f64::from(sum.minimum_total));
+    }
+    refresh_sum_range(editor);
     if let Some(depth) = requirement.max_depth {
         editor.floor_switch.set_active(true);
         editor
@@ -342,7 +444,86 @@ fn collect(editor: &Rc<Editor>) -> UiRequirement {
         3 if tier_eligible => TierRequirement::AtMost(bounded_tier),
         _ => TierRequirement::Any,
     };
-    let upgrade = match editor.upgrade_row.selected() {
+    let upgrade = selected_upgrade(editor);
+    let source = match editor.source_row.selected() {
+        0 => None,
+        index => ItemSource::ALL.get(index as usize - 1).copied(),
+    };
+    let identity_group = match editor.group_row.selected() {
+        0 => None,
+        group => u8::try_from(group).ok(),
+    };
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let level_sum = selected_sum_group(editor).map(|group| LevelSum {
+        group,
+        minimum_total: editor.sum_total.value().round().max(1.0) as u8,
+    });
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let max_depth = editor
+        .floor_switch
+        .is_active()
+        .then(|| normalize_floor_limit(editor.floor_value.value().round() as u8));
+    UiRequirement {
+        key: editor.key,
+        kind,
+        weapon_category,
+        item,
+        tier,
+        upgrade,
+        effect: selected_effect(editor),
+        require_uncursed: editor.uncursed.is_active(),
+        source,
+        identity_group,
+        max_depth,
+        alternative_group: editor.alternative_group,
+        level_sum,
+    }
+}
+
+/// The editor's own checks before the engine's: the specific-effect list
+/// needs a selection, and the whole query must stay valid with `result`
+/// stored.
+fn check(editor: &Rc<Editor>, result: &UiRequirement) -> Result<(), String> {
+    if enchantable(selected_kind(editor))
+        && editor.effect_mode.selected() == EFFECT_SPECIFIC
+        && checked_effects(editor).is_empty()
+    {
+        return Err(if selected_kind(editor) == ItemKind::Armor {
+            "Choose at least one glyph or curse".to_owned()
+        } else {
+            "Choose at least one enchantment or curse".to_owned()
+        });
+    }
+    editor.context.validate_draft(result)
+}
+
+fn selected_choice(editor: &Rc<Editor>) -> KindChoice {
+    ALL_KIND_CHOICES
+        .get(editor.category.selected() as usize)
+        .copied()
+        .unwrap_or((ItemKind::Weapon, None))
+}
+
+fn selected_kind(editor: &Rc<Editor>) -> ItemKind {
+    selected_choice(editor).0
+}
+
+const fn enchantable(kind: ItemKind) -> bool {
+    matches!(kind, ItemKind::Weapon | ItemKind::Armor)
+}
+
+fn selected_item(editor: &Rc<Editor>) -> Option<ItemId> {
+    editor
+        .items
+        .borrow()
+        .get(editor.item_row.selected() as usize)
+        .copied()
+        .flatten()
+}
+
+fn selected_upgrade(editor: &Rc<Editor>) -> UpgradeRequirement {
+    let kind = selected_kind(editor);
+    match editor.upgrade_row.selected() {
         1 => {
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             let value = editor.exact_upgrade.value().round() as u8;
@@ -359,72 +540,49 @@ fn collect(editor: &Rc<Editor>) -> UiRequirement {
             UpgradeRequirement::AtLeast(value)
         }
         _ => UpgradeRequirement::Any,
-    };
-    let effect = if matches!(kind, ItemKind::Weapon | ItemKind::Armor) {
-        editor
-            .effects
-            .borrow()
-            .get(editor.effect_row.selected() as usize)
-            .copied()
-            .flatten()
-    } else {
-        None
-    };
-    let source = match editor.source_row.selected() {
-        0 => None,
-        index => ItemSource::ALL.get(index as usize - 1).copied(),
-    };
-    let identity_group = match editor.group_row.selected() {
-        0 => None,
-        group => u8::try_from(group).ok(),
-    };
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let max_depth = editor
-        .floor_switch
-        .is_active()
-        .then(|| normalize_floor_limit(editor.floor_value.value().round() as u8));
-    UiRequirement {
-        key: editor.key,
-        kind,
-        weapon_category,
-        item,
-        tier,
-        upgrade,
-        effect,
-        require_uncursed: editor.uncursed.is_active(),
-        source,
-        identity_group,
-        max_depth,
     }
 }
 
-fn selected_choice(editor: &Rc<Editor>) -> KindChoice {
-    ALL_KIND_CHOICES
-        .get(editor.category.selected() as usize)
-        .copied()
-        .unwrap_or((ItemKind::Weapon, None))
+/// The effect predicate the picker currently describes. Wands and rings
+/// carry no effects; an empty specific selection reads as the wildcard and
+/// is refused by [`check`] instead.
+fn selected_effect(editor: &Rc<Editor>) -> EffectRequirement {
+    let kind = selected_kind(editor);
+    if !enchantable(kind) {
+        return EffectRequirement::Any;
+    }
+    match editor.effect_mode.selected() {
+        EFFECT_ANY_ENCHANTMENT => {
+            EffectSet::enchantments(kind).map_or(EffectRequirement::Any, EffectRequirement::OneOf)
+        }
+        EFFECT_SPECIFIC => EffectSet::from_effects(checked_effects(editor))
+            .map_or(EffectRequirement::Any, EffectRequirement::OneOf),
+        _ => EffectRequirement::Any,
+    }
 }
 
-fn selected_kind(editor: &Rc<Editor>) -> ItemKind {
-    selected_choice(editor).0
-}
-
-fn selected_item(editor: &Rc<Editor>) -> Option<ItemId> {
+/// The checked effects of the specific list, skipping curses hidden by the
+/// uncursed switch.
+fn checked_effects(editor: &Rc<Editor>) -> Vec<Effect> {
     editor
-        .items
+        .effect_checks
         .borrow()
-        .get(editor.item_row.selected() as usize)
-        .copied()
-        .flatten()
+        .iter()
+        .filter(|entry| entry.row.is_visible() && entry.check.is_active())
+        .map(|entry| entry.effect)
+        .collect()
 }
 
-fn selected_effect(editor: &Rc<Editor>) -> Option<Effect> {
-    editor
-        .effects
-        .borrow()
-        .get(editor.effect_row.selected() as usize)
-        .copied()
-        .flatten()
+/// The combined-level group chosen, or `None` for no group and for
+/// alternatives, which cannot have one.
+fn selected_sum_group(editor: &Rc<Editor>) -> Option<u8> {
+    if editor.alternative_group.is_some() {
+        return None;
+    }
+    match editor.sum_group_row.selected() {
+        0 => None,
+        group => u8::try_from(group).ok(),
+    }
 }
 
 fn set_tier_value(editor: &Rc<Editor>, tier: u8) {
@@ -477,48 +635,78 @@ fn populate_items(editor: &Rc<Editor>, selection: Option<ItemId>) {
         .set_selected(u32::try_from(selected).unwrap_or(0));
 }
 
-fn populate_effects(editor: &Rc<Editor>, selection: Option<Effect>) {
+/// Rebuilds the effect picker for the selected category and restores
+/// `selection` onto it: a set of another family falls back to Any.
+fn populate_effects(editor: &Rc<Editor>, selection: EffectRequirement) {
     let kind = selected_kind(editor);
-    let hide_curses = editor.uncursed.is_active();
-    editor.effect_row.set_title(if kind == ItemKind::Armor {
-        "Glyph"
+    let (mode_title, list_title) = if kind == ItemKind::Armor {
+        ("Glyph", "Glyphs")
     } else {
-        "Enchantment"
-    });
-    let mut effects = vec![None];
-    let mut labels = vec!["Any".to_owned()];
-    match kind {
-        ItemKind::Weapon => {
-            for effect in ALL_WEAPON_EFFECTS {
-                if hide_curses && effect.is_curse() {
-                    continue;
-                }
-                effects.push(Some(Effect::Weapon(*effect)));
-                labels.push(effect_label(effect.wire_name(), effect.is_curse()));
-            }
+        ("Enchantment", "Enchantments")
+    };
+    editor.effect_mode_group.set_title(mode_title);
+    editor.effect_mode.set_title(mode_title);
+    editor.effect_group.set_title(list_title);
+    editor.effect_list.remove_all();
+
+    let family: Vec<Effect> = match kind {
+        ItemKind::Weapon => ALL_WEAPON_EFFECTS
+            .iter()
+            .map(|effect| Effect::Weapon(*effect))
+            .collect(),
+        ItemKind::Armor => ALL_ARMOR_EFFECTS
+            .iter()
+            .map(|effect| Effect::Armor(*effect))
+            .collect(),
+        ItemKind::Wand | ItemKind::Ring => Vec::new(),
+    };
+    let selected_set = match selection {
+        EffectRequirement::OneOf(set) if set.family() == kind => Some(set),
+        _ => None,
+    };
+    let checks: Vec<EffectCheck> = family
+        .into_iter()
+        .map(|effect| {
+            let check = gtk::CheckButton::builder()
+                .active(selected_set.is_some_and(|set| set.contains(effect)))
+                .valign(gtk::Align::Center)
+                .build();
+            let row = adw::ActionRow::builder()
+                .title(effect_label(effect.wire_name(), effect.is_curse()))
+                .activatable_widget(&check)
+                .build();
+            row.add_prefix(&check);
+            check.connect_toggled({
+                let banner = editor.banner.clone();
+                move |_| banner.set_revealed(false)
+            });
+            editor.effect_list.append(&row);
+            EffectCheck { effect, row, check }
+        })
+        .collect();
+    editor.effect_checks.replace(checks);
+    apply_curse_visibility(editor);
+
+    let mode = match selected_set {
+        None => EFFECT_ANY,
+        Some(set) if EffectSet::enchantments(kind) == Some(set) => EFFECT_ANY_ENCHANTMENT,
+        Some(_) => EFFECT_SPECIFIC,
+    };
+    editor.effect_mode.set_selected(mode);
+}
+
+/// Hides (and unchecks) the curse rows while the item must be uncursed.
+fn apply_curse_visibility(editor: &Rc<Editor>) {
+    let hide_curses = editor.uncursed.is_active();
+    for entry in editor.effect_checks.borrow().iter() {
+        if !entry.effect.is_curse() {
+            continue;
         }
-        ItemKind::Armor => {
-            for effect in ALL_ARMOR_EFFECTS {
-                if hide_curses && effect.is_curse() {
-                    continue;
-                }
-                effects.push(Some(Effect::Armor(*effect)));
-                labels.push(effect_label(effect.wire_name(), effect.is_curse()));
-            }
+        entry.row.set_visible(!hide_curses);
+        if hide_curses {
+            entry.check.set_active(false);
         }
-        ItemKind::Wand | ItemKind::Ring => {}
     }
-    let selected = selection
-        .and_then(|wanted| effects.iter().position(|effect| *effect == Some(wanted)))
-        .unwrap_or(0);
-    editor.effects.replace(effects);
-    let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
-    editor
-        .effect_row
-        .set_model(Some(&gtk::StringList::new(&labels)));
-    editor
-        .effect_row
-        .set_selected(u32::try_from(selected).unwrap_or(0));
 }
 
 fn effect_label(name: &str, is_curse: bool) -> String {
@@ -551,6 +739,30 @@ fn normalize_upgrades(editor: &Rc<Editor>) {
     );
 }
 
+/// Bounds the combined total by what the group's items — the other members
+/// plus this row as currently edited — can carry together.
+fn refresh_sum_range(editor: &Rc<Editor>) {
+    let Some(group) = selected_sum_group(editor) else {
+        return;
+    };
+    let draft = UiRequirement {
+        kind: selected_kind(editor),
+        upgrade: selected_upgrade(editor),
+        ..UiRequirement::new(editor.key)
+    };
+    let capacity = editor.context.level_sum_capacity(group, &draft).max(1);
+    let adjustment = editor.sum_total.adjustment();
+    adjustment.set_lower(1.0);
+    adjustment.set_upper(f64::from(capacity));
+    editor
+        .sum_total
+        .set_value(editor.sum_total.value().clamp(1.0, f64::from(capacity)));
+    editor.sum_total.set_subtitle(&format!(
+        "Group {} can reach +{capacity} at most",
+        group_letter(group)
+    ));
+}
+
 fn populate_minimum_upgrades(editor: &Rc<Editor>, selection: u8) {
     let maximum = selected_kind(editor).maximum_search_upgrade();
     let labels: Vec<_> = (1..maximum)
@@ -575,8 +787,7 @@ fn set_minimum_upgrade(editor: &Rc<Editor>, upgrade: u8) {
 
 fn refresh_visibility(editor: &Rc<Editor>) {
     let kind = selected_kind(editor);
-    let wildcard_equipment =
-        selected_item(editor).is_none() && matches!(kind, ItemKind::Weapon | ItemKind::Armor);
+    let wildcard_equipment = selected_item(editor).is_none() && enchantable(kind);
     let tier_mode = editor.tier_row.selected();
     editor.tier_row.set_visible(wildcard_equipment);
     editor
@@ -599,9 +810,15 @@ fn refresh_visibility(editor: &Rc<Editor>) {
     editor
         .ring_minimum_upgrade
         .set_visible(editor.upgrade_row.selected() == 2 && kind == ItemKind::Ring);
+    let sum_allowed = editor.alternative_group.is_none();
+    editor.sum_group_row.set_visible(sum_allowed);
     editor
-        .effect_row
-        .set_visible(matches!(kind, ItemKind::Weapon | ItemKind::Armor));
+        .sum_total
+        .set_visible(sum_allowed && selected_sum_group(editor).is_some());
+    editor.effect_mode_group.set_visible(enchantable(kind));
+    editor
+        .effect_group
+        .set_visible(enchantable(kind) && editor.effect_mode.selected() == EFFECT_SPECIFIC);
     editor
         .floor_value
         .set_visible(editor.floor_switch.is_active());
@@ -615,14 +832,11 @@ fn bounded_tier_labels() -> Vec<String> {
         .collect()
 }
 
-/// The identity-group picker's labels: "no group" followed by every group
-/// label the portable formats can express.
-fn group_labels() -> Vec<String> {
+/// A group picker's labels: "no group" followed by every group label up to
+/// `maximum` that the portable formats can express.
+fn group_labels(maximum: u8) -> Vec<String> {
     std::iter::once("None".to_owned())
-        .chain(
-            (RESERVED_IDENTITY_GROUP + 1..=MAX_IDENTITY_GROUP)
-                .map(|group| group_letter(group).to_string()),
-        )
+        .chain((1..=maximum).map(|group| group_letter(group).to_string()))
         .collect()
 }
 

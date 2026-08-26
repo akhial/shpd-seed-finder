@@ -281,6 +281,7 @@ impl DetailPane {
 
         let marks = scout_matches(world, &manifest_query(state));
         let matched = marks.matched_requirements;
+        let total = marks.total_requirements;
         let mut by_depth: BTreeMap<u8, Vec<usize>> = BTreeMap::new();
         for (index, world_item) in world.items.iter().enumerate() {
             by_depth.entry(world_item.depth).or_default().push(index);
@@ -294,11 +295,8 @@ impl DetailPane {
         if state.requirements.is_empty() {
             self.summary_matches.set_label("");
         } else {
-            self.summary_matches.set_label(&format!(
-                "· {} requirement match{}",
-                matched,
-                if matched == 1 { "" } else { "es" }
-            ));
+            self.summary_matches
+                .set_label(&match_summary(matched, total));
         }
         if matched == 0 {
             self.summary_matches.remove_css_class("success");
@@ -338,14 +336,20 @@ impl DetailPane {
 /// or half-edited.
 fn manifest_query(state: &AppState) -> SearchQuery {
     SearchQuery {
-        requirements: state.requirements.iter().map(|r| r.to_core()).collect(),
-        max_depth: state.max_depth,
-        challenges: state.challenges,
         require_blacksmith: false,
-        exclude_blacksmith_rewards: state.exclude_blacksmith_rewards,
         wandmaker_quest: None,
         fast_mode: false,
+        ..state.unvalidated_query()
     }
+}
+
+/// The header's match count, in slots: an "any of these" group is one
+/// requirement however many alternatives it lists.
+fn match_summary(matched: usize, total: usize) -> String {
+    format!(
+        "· {matched} of {total} requirement{} matched",
+        if total == 1 { "" } else { "s" }
+    )
 }
 
 /// The whole quest schedule on one line, e.g. "Sad ghost: Great crab ·
@@ -437,7 +441,13 @@ fn tag(label: &str, color: &str) -> gtk::Label {
 
 #[cfg(test)]
 mod tests {
-    use super::{QuestRow, quest_summary_line};
+    use super::{QuestRow, match_summary, quest_summary_line};
+
+    #[test]
+    fn match_summary_counts_slots() {
+        assert_eq!(match_summary(0, 1), "· 0 of 1 requirement matched");
+        assert_eq!(match_summary(2, 3), "· 2 of 3 requirements matched");
+    }
 
     #[test]
     fn quest_summary_names_every_giver_on_one_line() {

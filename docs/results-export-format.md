@@ -55,26 +55,43 @@ The query reuses the existing JSON query-document format shared by the CLI
 (`seed-seeker --query`), the web frontend, and the presets on every platform.
 It is decoded by `crates/seedfinder-core/src/json_query.rs`:
 
-- `requirements` — non-empty array of requirement objects with the optional
-  fields:
+- `requirements` — non-empty array of entries. Each entry is either a
+  requirement object, or an alternative group `{"any_of": [<requirement>,
+  ...]}` satisfied by any single member (groups may not nest, and members may
+  not carry `level_sum`). Requirement objects have the optional fields:
   - `kind` — `"weapon" | "melee_weapon" | "thrown_weapon" | "armor" | "wand"
     | "ring"` (required when `item` is absent). `"weapon"` matches melee and
     thrown weapons alike; the two narrowed kinds were added alongside the
     melee/thrown search filters — a file that uses them simply fails to
     import on builds older than that feature, with the codec's
-    unknown-category message,
+    unknown-category message. The `any_of`, effect-list/`"any_enchantment"`,
+    and `level_sum` forms below are additive in the same way,
   - `item` — catalog stable id such as `"ring_wealth"`,
   - `tier` — `"any"` (the default) or exactly one of `{"exact": n}`,
     `{"at_least": n}`, `{"at_most": n}`,
   - `upgrade` — `"any"` (the default), a bare number `n` (shorthand for
     exact), or exactly one of `{"exact": n}`, `{"at_least": n}`,
-  - `effect` — enchantment/glyph wire name such as `"Blazing"` or
-    `"Anti-Magic"` (matched case-insensitively),
+  - `effect` — an enchantment/glyph wire name such as `"Blazing"` or
+    `"Anti-Magic"`, an array of same-family names (any one satisfies), or
+    the keyword `"any_enchantment"` (every non-curse effect of the item's
+    family); names are matched case-insensitively,
   - `uncursed` — boolean,
   - `source` — snake_case source name such as `"imp_reward"`,
   - `identity_group` — integer 1–4 (groups A–D; the engine allows more, but
-    no app's editor can express them, so the file format caps at 4),
-  - `max_depth` — integer 1–24.
+    no app's editor can express them, so the file format caps at 4). A group
+    is a *stack* of copies of one item: one member — or the members of one
+    `any_of` group — may name the item and its qualities, and every other
+    member must be a plain entry of the same kind (a `max_depth` is allowed,
+    being a placement bound rather than an item property),
+  - `max_depth` — integer 1–24,
+  - `level_sum` — `{"group": n, "at_least": n}`: requirements sharing a
+    group are matched by distinct items whose *levels* — each item's upgrade
+    plus one — add up to at least the total; members of one group agree on
+    the total. Members are optional: any subset reaching the total satisfies
+    the group, so a lone +2 ring meets a two-member group asking for 3.
+    Groups are capped at 1–4 (A–D) like `identity_group`. The unreleased
+    `upgrade_sum` spelling, which counted upgrades, is refused with an error
+    naming the field rather than reinterpreted.
 - `max_depth` (integer 1–24, default 24), `require_blacksmith`,
   `exclude_blacksmith_rewards`, `fast_mode` (booleans) — top-level scope
   flags.
@@ -92,7 +109,13 @@ case-insensitively, mirroring the core decoder.
 Writers omit defaults (`"tier": "any"`, `"upgrade": "any"`, `false` flags,
 `"max_depth": 24`, an empty `challenges` list) and write `upgrade` exact
 filters as the bare-number shorthand, so exported documents stay minimal and
-identical across platforms.
+identical across platforms. Alternative groups are written as one `any_of`
+entry at the first member's position with the members in requirement order;
+readers assign the groups fresh sequential ids. Effect sets are written as a
+bare name when one effect is chosen, as `"any_enchantment"` when the set is
+the full non-curse family, and otherwise as a list in the shared catalog
+asset's order: enchantments (glyphs) alphabetically, then curses
+alphabetically.
 
 ## Compatibility direction
 

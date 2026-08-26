@@ -1,9 +1,11 @@
-import { getItem, isCurseForCategory, kindFamily, kindWeaponClass } from './catalog'
-import { WANDMAKER_QUESTS } from './wasm/types'
+import { effectNamesForCategory, enchantmentNamesForCategory, getItem, isCurseForCategory, kindFamily, kindWeaponClass } from './catalog'
+import { ANY_ENCHANTMENT, WANDMAKER_QUESTS } from './wasm/types'
 import type {
+  EffectFilter,
   QueryDocument,
   QueryState,
   RequirementDocument,
+  RequirementEntryDocument,
   RequirementState,
   TierFilter,
   UpgradeFilter,
@@ -30,11 +32,104 @@ export const BOUNDED_TIER_MAX = 4
 /** Highest same-item group number (groups run 1..this, shown as A..D). */
 export const IDENTITY_GROUP_MAX = 4
 
+/** Highest combined-level group number (groups run 1..this). */
+export const LEVEL_SUM_GROUP_MAX = 4
+
+/** The most items a stack may ask for, its anchor included. */
+export const STACK_MAX = 3
+
 /** The highest upgrade a search may name for an item family. */
 export const MAX_UPGRADE_DEFAULT = 3
 export const MAX_UPGRADE_RING = 4
 export const maxUpgradeFor = (family: string | undefined): number =>
   (family === 'ring' ? MAX_UPGRADE_RING : MAX_UPGRADE_DEFAULT)
+
+/** The broad family a requirement belongs to, from its kind or its item. */
+export const requirementFamily = (requirement: Pick<RequirementState, 'kind' | 'item'>): string | undefined =>
+  (requirement.kind ? kindFamily(requirement.kind) : requirement.item ? getItem(requirement.item)?.type : undefined)
+
+/**
+ * The most *levels* — upgrade plus one — one requirement can contribute to a
+ * combined-level total: an exact upgrade counts as itself, anything else as
+ * the family cap.
+ */
+export const maxLevelOf = (requirement: RequirementState): number =>
+  (requirement.upgrade.mode === 'exact' ? requirement.upgrade.value : maxUpgradeFor(requirementFamily(requirement))) + 1
+
+/** The highest combined level a group's members can reach together. */
+export const levelSumCapacity = (members: RequirementState[]): number =>
+  members.reduce((total, member) => total + maxLevelOf(member), 0)
+
+/**
+ * Whether a requirement constrains anything beyond its category: a stack's
+ * extra copies are exactly the unconstrained requirements. A per-item floor
+ * limit is a placement bound, not an item property, and does not count.
+ */
+export const isBareRequirement = (requirement: RequirementState): boolean =>
+  requirement.item === undefined
+  && requirement.tier.mode === 'any'
+  && requirement.upgrade.mode === 'any'
+  && requirement.effect === undefined
+  && !requirement.uncursed
+  && requirement.source === undefined
+
+/** True when the effect filter is the "some non-curse effect" shorthand. */
+export const isAnyEnchantment = (effect: EffectFilter | undefined): boolean => effect === ANY_ENCHANTMENT
+
+/** The explicit effect names a filter accepts (the shorthand expands to the family's enchantments). */
+export const effectNamesOf = (effect: EffectFilter | undefined, kind: string | undefined): string[] => {
+  if (effect === undefined) return []
+  if (effect === ANY_ENCHANTMENT) return kind ? enchantmentNamesForCategory(kind) : []
+  return typeof effect === 'string' ? [effect] : effect
+}
+
+/**
+ * The canonical form of an effect selection: names in catalog order, one name
+ * as a bare string, the full non-curse family set as the shorthand, and an
+ * empty selection as no filter. This is the writer rule every platform shares.
+ */
+export function canonicalEffect(names: readonly string[], kind: string | undefined): EffectFilter | undefined {
+  if (!kind) return names.length === 0 ? undefined : names.length === 1 ? names[0] : [...names]
+  const order = effectNamesForCategory(kind)
+  const known = order.filter((name) => names.includes(name))
+  const unknown = names.filter((name) => !order.includes(name))
+  const ordered = [...known, ...unknown]
+  if (ordered.length === 0) return undefined
+  const enchantments = enchantmentNamesForCategory(kind)
+  if (enchantments.length > 0 && ordered.length === enchantments.length && enchantments.every((name) => ordered.includes(name))) return ANY_ENCHANTMENT
+  return ordered.length === 1 ? ordered[0] : ordered
+}
+
+/** One "any of these" slot: the indices of its members in requirement order. */
+export interface QuerySlot { key: string; members: number[] }
+
+/**
+ * Groups requirements into slots: an alternative group is one slot at its
+ * first member's position; every other requirement is a slot of its own.
+ */
+export function querySlots(requirements: readonly RequirementState[]): QuerySlot[] {
+  const slots: QuerySlot[] = []
+  const byGroup = new Map<number, QuerySlot>()
+  requirements.forEach((requirement, index) => {
+    const group = requirement.alternativeGroup
+    if (group !== undefined) {
+      const existing = byGroup.get(group)
+      if (existing) {
+        existing.members.push(index)
+        return
+      }
+      const slot = { key: `alt:${group}`, members: [index] }
+      byGroup.set(group, slot)
+      slots.push(slot)
+      return
+    }
+    slots.push({ key: `req:${index}`, members: [index] })
+  })
+  return slots
+}
+
+/** The number of slots a requirement list fills, counting each alternative group once. */
+export const slotCount = (requirements: readonly RequirementState[]): number => querySlots(requirements).length
 
 /** The last floor the Blacksmith's quest can sit on: a run whose floor limit
  * reaches it always meets him, so "require Blacksmith" only matters below it. */
@@ -99,16 +194,26 @@ function requirementToDocument(requirement: RequirementState): RequirementDocume
   }
   if (requirement.upgrade.mode === 'exact') output.upgrade = requirement.upgrade.value
   if (requirement.upgrade.mode === 'at_least') output.upgrade = { at_least: requirement.upgrade.value }
-  if (requirement.effect) output.effect = requirement.effect
+  if (requirement.effect !== undefined) {
+    const effect = canonicalEffect(effectNamesOf(requirement.effect, kind), kind)
+    if (effect !== undefined) output.effect = effect
+  }
   if (requirement.uncursed) output.uncursed = true
   if (requirement.source) output.source = requirement.source
   if (requirement.identityGroup) output.identity_group = requirement.identityGroup
   if (requirement.maxDepth !== undefined) output.max_depth = requirement.maxDepth
+  if (requirement.levelSum) output.level_sum = { group: requirement.levelSum.group, at_least: requirement.levelSum.atLeast }
   return output
 }
 
 export function toQueryDocument(state: QueryState): QueryDocument {
-  const output: QueryDocument = { requirements: state.requirements.map(requirementToDocument) }
+  // An alternative group is one any_of entry at its first member's position;
+  // a group of one is a plain requirement.
+  const entries: RequirementEntryDocument[] = querySlots(state.requirements).map((slot) => {
+    const members = slot.members.map((index) => requirementToDocument(state.requirements[index]))
+    return members.length === 1 ? members[0] : { any_of: members }
+  })
+  const output: QueryDocument = { requirements: entries }
   if (state.maxDepth !== MAX_DEPTH) output.max_depth = state.maxDepth
   if (state.requireBlacksmith) output.require_blacksmith = true
   if (state.excludeBlacksmithRewards) output.exclude_blacksmith_rewards = true
@@ -162,22 +267,68 @@ function wandmakerQuestFromDocument(value: unknown): WandmakerQuest | undefined 
   throw new Error(`unknown Wandmaker quest "${String(value)}"`)
 }
 
-function requirementFromDocument(value: RequirementDocument): RequirementState {
+/** Decodes the wire effect forms: absent, a bare name, or a list of names; anything else is an error. */
+function effectFromDocument(value: unknown, kind: string | undefined): EffectFilter | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value === 'string') return value
+  if (Array.isArray(value) && value.every((name) => typeof name === 'string')) {
+    // Lists are stored canonically so a round trip is the identity.
+    return canonicalEffect(value as string[], kind)
+  }
+  throw new Error('unrecognized effect filter')
+}
+
+function levelSumFromDocument(value: unknown): RequirementState['levelSum'] {
+  if (value === undefined || value === null) return undefined
+  if (isRecord(value) && typeof value.group === 'number' && typeof value.at_least === 'number') {
+    return { group: value.group, atLeast: value.at_least }
+  }
+  throw new Error('unrecognized level_sum')
+}
+
+function requirementFromDocument(value: RequirementDocument, alternativeGroup?: number): RequirementState {
   const raw = value as Record<string, unknown>
-  return {
-    // Same rule as the encoder: an item-only requirement gets its item's
-    // category, so the state a share link or a results file restores carries
-    // the kind the start decision needs.
-    kind: value.kind ?? (value.item ? getItem(value.item)?.type : undefined),
+  // Same rule as the encoder: an item-only requirement gets its item's
+  // category, so the state a share link or a results file restores carries
+  // the kind the start decision needs.
+  const kind = value.kind ?? (value.item ? getItem(value.item)?.type : undefined)
+  const requirement: RequirementState = {
+    kind,
     item: value.item,
     tier: tierFromDocument(raw.tier),
     upgrade: upgradeFromDocument(raw.upgrade),
-    effect: value.effect,
+    effect: effectFromDocument(raw.effect, kind),
     uncursed: value.uncursed ?? false,
     source: value.source,
     identityGroup: value.identity_group,
     maxDepth: value.max_depth === undefined ? undefined : normalizeFloorLimit(value.max_depth),
   }
+  if (alternativeGroup !== undefined) requirement.alternativeGroup = alternativeGroup
+  // The unreleased upgrade_sum key is refused rather than reinterpreted.
+  if (raw.upgrade_sum !== undefined) throw new Error('upgrade_sum is no longer supported; use level_sum')
+  const levelSum = levelSumFromDocument(raw.level_sum)
+  if (levelSum) requirement.levelSum = levelSum
+  return requirement
+}
+
+/** Flattens the entries: any_of groups get fresh sequential group ids in document order. */
+function requirementsFromDocument(entries: RequirementEntryDocument[]): RequirementState[] {
+  const requirements: RequirementState[] = []
+  let nextGroup = 0
+  for (const entry of entries) {
+    if (isRecord(entry) && 'any_of' in entry) {
+      const members = (entry as { any_of: unknown }).any_of
+      if (!Array.isArray(members) || members.length === 0) throw new Error('any_of needs at least one alternative')
+      nextGroup += 1
+      for (const member of members) {
+        if (!isRecord(member) || 'any_of' in member) throw new Error('any_of groups cannot nest')
+        requirements.push(requirementFromDocument(member as RequirementDocument, nextGroup))
+      }
+      continue
+    }
+    requirements.push(requirementFromDocument(entry as RequirementDocument))
+  }
+  return requirements
 }
 
 export function fromQueryJson(json: string): QueryState {
@@ -185,7 +336,7 @@ export function fromQueryJson(json: string): QueryState {
   if (!isRecord(document) || !Array.isArray(document.requirements)) throw new Error('a query needs a requirements list')
   if (document.challenges !== undefined && !Array.isArray(document.challenges)) throw new Error('challenges must be a list of challenge names')
   return {
-    requirements: document.requirements.map(requirementFromDocument),
+    requirements: requirementsFromDocument(document.requirements),
     maxDepth: normalizeFloorLimit(document.max_depth ?? MAX_DEPTH),
     requireBlacksmith: document.require_blacksmith ?? false,
     excludeBlacksmithRewards: document.exclude_blacksmith_rewards ?? false,
@@ -218,20 +369,30 @@ export function validateRequirement(requirement: RequirementState): string[] {
     if (requirement.upgrade.value < minimum || requirement.upgrade.value > maximum) errors.push(`Upgrade must be ${minimum} through +${maximum}.`)
   }
   if (requirement.maxDepth !== undefined && (requirement.maxDepth < 1 || requirement.maxDepth > MAX_DEPTH)) errors.push(`Requirement floor must be 1 through ${MAX_DEPTH}.`)
-  if (requirement.effect && family !== 'weapon' && family !== 'armor') errors.push('Effects require a weapon or armor category.')
-  if (requirement.effect && kind && !isCurseForCategory(kind, requirement.effect) && !getEffectNames(kind).includes(requirement.effect)) errors.push('The effect does not belong to this category.')
-  if (requirement.uncursed && requirement.effect && kind && isCurseForCategory(kind, requirement.effect)) errors.push('An uncursed item cannot have a curse effect.')
+  if (requirement.effect !== undefined) {
+    if (family !== 'weapon' && family !== 'armor') errors.push('Effects require a weapon or armor category.')
+    else if (kind) {
+      const names = effectNamesOf(requirement.effect, kind)
+      const known = effectNamesForCategory(kind)
+      const unknown = names.filter((name) => !known.includes(name))
+      if (unknown.length > 0) errors.push(`The effect ${unknown.join(', ')} does not belong to this category.`)
+      else if (names.length === 0) errors.push('Choose at least one effect.')
+      else if (requirement.uncursed && names.every((name) => isCurseForCategory(kind, name))) {
+        errors.push(names.length === 1 ? 'An uncursed item cannot have a curse effect.' : 'An uncursed item cannot have only curse effects.')
+      }
+    }
+  }
+  if (requirement.levelSum) {
+    const { group, atLeast } = requirement.levelSum
+    if (group < 1 || group > LEVEL_SUM_GROUP_MAX) errors.push(`A combined-level group must be 1 through ${LEVEL_SUM_GROUP_MAX}.`)
+    if (atLeast < 1) errors.push('A combined level must be at least 1.')
+    if (requirement.alternativeGroup !== undefined) errors.push('An either/or alternative cannot count a combined level.')
+  }
+  if (requirement.identityGroup !== undefined && (requirement.identityGroup < 1 || requirement.identityGroup > IDENTITY_GROUP_MAX)) {
+    errors.push(`A stack group must be 1 through ${IDENTITY_GROUP_MAX}.`)
+  }
   return errors
 }
-
-function getEffectNames(kind: string): string[] {
-  const { effectNamesForCategory } = catalogHelpers
-  return effectNamesForCategory(kind)
-}
-
-// Kept indirect so validation remains straightforward to mock in component tests.
-import { effectNamesForCategory } from './catalog'
-const catalogHelpers = { effectNamesForCategory }
 
 export function validateQuery(state: QueryState): ValidationResult {
   const errors: string[] = []
@@ -240,19 +401,46 @@ export function validateQuery(state: QueryState): ValidationResult {
   state.requirements.forEach((requirement, index) => {
     for (const error of validateRequirement(requirement)) errors.push(`Requirement ${index + 1}: ${error}`)
   })
-  const groups = new Map<number, { kind?: string; item?: string }>()
-  state.requirements.forEach((requirement) => {
+  // A stack (identity group) has one anchor unit — a lone requirement or
+  // one alternative group — that may constrain the item it binds to; every
+  // other member is a bare copy of the same category.
+  const identityMembers = new Map<number, number[]>()
+  state.requirements.forEach((requirement, index) => {
     if (!requirement.identityGroup) return
-    const current = {
-      kind: requirement.kind ? kindFamily(requirement.kind) : getItem(requirement.item ?? '')?.type,
-      item: requirement.item,
-    }
-    const previous = groups.get(requirement.identityGroup)
-    if (previous && (previous.kind !== current.kind || (previous.item && current.item && previous.item !== current.item))) {
-      errors.push(`Identity group ${requirement.identityGroup} has incompatible category or item requirements.`)
-    } else if (!previous || (!previous.item && current.item)) {
-      groups.set(requirement.identityGroup, current)
-    }
+    identityMembers.set(requirement.identityGroup, [...(identityMembers.get(requirement.identityGroup) ?? []), index])
   })
+  for (const members of identityMembers.values()) {
+    const families = new Set(members.map((index) => requirementFamily(state.requirements[index])))
+    if (families.size > 1) {
+      errors.push('The copies of a stack must share its category.')
+      continue
+    }
+    // The constrained members must all live in one unit.
+    const units = new Set(
+      members
+        .filter((index) => !isBareRequirement(state.requirements[index]))
+        .map((index) => state.requirements[index].alternativeGroup === undefined
+          ? `req:${index}`
+          : `alt:${state.requirements[index].alternativeGroup}`),
+    )
+    if (units.size > 1) errors.push('Only one item of a stack can carry constraints; the extra copies are plain.')
+  }
+  // Combined-level groups: one shared, reachable total, counted in levels
+  // (upgrade plus one per item).
+  const sumMembers = new Map<number, RequirementState[]>()
+  for (const requirement of state.requirements) {
+    if (!requirement.levelSum) continue
+    sumMembers.set(requirement.levelSum.group, [...(sumMembers.get(requirement.levelSum.group) ?? []), requirement])
+  }
+  for (const members of sumMembers.values()) {
+    const totals = new Set(members.map((member) => member.levelSum?.atLeast))
+    if (totals.size > 1) {
+      errors.push('A stack must share one combined level.')
+      continue
+    }
+    const needed = members[0].levelSum?.atLeast ?? 0
+    const capacity = levelSumCapacity(members)
+    if (needed > capacity) errors.push(`A combined level of ${needed} needs more items: these ${members.length} can reach ${capacity}.`)
+  }
   return { valid: errors.length === 0, errors }
 }

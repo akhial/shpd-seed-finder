@@ -44,7 +44,9 @@ import dev.seedseeker.app.catalog.ItemCatalog
 import dev.seedseeker.app.engine.EngineInfo
 import dev.seedseeker.app.engine.NativeSearchSession
 import dev.seedseeker.app.engine.NativeSeedFinder
+import dev.seedseeker.app.engine.ScoutMatches
 import dev.seedseeker.app.engine.SeedCode
+import dev.seedseeker.app.model.BoardItem
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.Challenge
 import dev.seedseeker.app.model.DeepLink
@@ -58,6 +60,14 @@ import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.SearchState
 import dev.seedseeker.app.model.SearchStatus
 import dev.seedseeker.app.model.SeedResult
+import dev.seedseeker.app.model.applyEdit
+import dev.seedseeker.app.model.boardItems
+import dev.seedseeker.app.model.copyDepthOf
+import dev.seedseeker.app.model.removeItem
+import dev.seedseeker.app.model.removeMember
+import dev.seedseeker.app.model.slotCount
+import dev.seedseeker.app.model.toPresetQuery
+import dev.seedseeker.app.model.validationProblem
 import dev.seedseeker.app.model.WandmakerQuest
 import dev.seedseeker.app.update.UpdateChecker
 import dev.seedseeker.app.update.UpdateInfo
@@ -73,6 +83,7 @@ private const val ATLAS_PATH = "third_party/shattered-pixel-dungeon/items.png"
 private const val ITEM_ICONS_PATH = "third_party/shattered-pixel-dungeon/item_icons.png"
 private const val SETTINGS_PREFERENCES = "seed_seeker_settings"
 private const val CHALLENGES_KEY = "challenges_mask"
+private const val COMPACT_CHIPS_KEY = "compact_chips"
 private const val UPDATE_LAST_CHECK_KEY = "update_last_check"
 private const val UPDATE_SKIPPED_KEY = "update_skipped_version"
 private const val UPDATE_CHECK_INTERVAL_MILLIS = 24L * 60 * 60 * 1000
@@ -93,7 +104,7 @@ private fun readForImport(stream: java.io.InputStream): String {
     return String(buffer, 0, total, Charsets.UTF_8)
 }
 
-private enum class Destination { FINDER, SCOUT, CHALLENGES, ABOUT }
+private enum class Destination { FINDER, SCOUT, SETTINGS, ABOUT }
 private data class SearchRun(
     val id: Long,
     val request: SearchRequest,
@@ -137,7 +148,7 @@ fun SeedFinderApp(
 
     var destination by remember { mutableStateOf(Destination.FINDER) }
     var aboutReturnDestination by remember { mutableStateOf(Destination.FINDER) }
-    var challengesReturnDestination by remember { mutableStateOf(Destination.FINDER) }
+    var settingsReturnDestination by remember { mutableStateOf(Destination.FINDER) }
     var requirements by remember {
         mutableStateOf(
             listOf(
@@ -157,7 +168,13 @@ fun SeedFinderApp(
             preferences.getInt(CHALLENGES_KEY, 0).takeIf { it in 0..Challenge.ALL_MASK } ?: 0,
         )
     }
-    var editingRequirement by remember { mutableStateOf<ItemRequirement?>(null) }
+    var compactChips by remember { mutableStateOf(preferences.getBoolean(COMPACT_CHIPS_KEY, false)) }
+    // The board anchor the editor is open on, plus the stack shape it showed;
+    // null means the sheet is building a new chip.
+    var editingIndex by remember { mutableStateOf<Int?>(null) }
+    var editingCount by remember { mutableStateOf(1) }
+    var editingTotal by remember { mutableStateOf<Int?>(null) }
+    var editingCopyDepth by remember { mutableStateOf<Int?>(null) }
     var showRequirementSheet by remember { mutableStateOf(false) }
     var results by remember { mutableStateOf(emptyList<SeedResult>()) }
     // The run's full collection size: the listed `results` stop at RESULT_CAP
@@ -249,7 +266,7 @@ fun SeedFinderApp(
                 // reported what that removed.
                 val kept = imported.seeds
                 val dropped = imported.dropped
-                val importedResults = kept.map { SeedResult(it, imported.query.requirements.size) }
+                val importedResults = kept.map { SeedResult(it, imported.query.requirements.slotCount()) }
                 results = importedResults
                 foundCount = importedResults.size
                 searchedQuery = imported.query
@@ -344,7 +361,7 @@ fun SeedFinderApp(
         progress.collect { }
         destination = when (destination) {
             Destination.ABOUT -> aboutReturnDestination
-            Destination.CHALLENGES -> challengesReturnDestination
+            Destination.SETTINGS -> settingsReturnDestination
             else -> Destination.FINDER
         }
     }
@@ -399,21 +416,13 @@ fun SeedFinderApp(
                     engine.filterSeeds(currentRun.request, refine.keepSeeds.map { it.seed })
                 }
                 // Every survivor stays collected; the screen lists at most RESULT_CAP of them.
-                collected = kept.map { SeedResult(it, currentRun.request.requirements.size) }
+                collected = kept.map { SeedResult(it, currentRun.request.slotCount) }
                 results = displayedResults(collected)
                 foundCount = collected.size
                 // From here on the listed results match the refined request, so
                 // that is what an export must claim. A cancelled filter phase
                 // leaves the previous results — and their snapshot — untouched.
-                searchedQuery = PresetQuery(
-                    requirements = currentRun.request.requirements,
-                    maximumDepth = currentRun.request.maximumDepth,
-                    requireBlacksmith = currentRun.request.requireBlacksmith,
-                    excludeBlacksmithRewards = currentRun.request.excludeBlacksmithRewards,
-                    wandmakerQuest = currentRun.request.wandmakerQuest,
-                    fastMode = currentRun.request.fastMode,
-                    challenges = currentRun.request.challenges,
-                )
+                searchedQuery = currentRun.request.toPresetQuery()
                 scope.launch {
                     // The denominator is the filtered base: the full Target Set, or a
                     // continued detached run's own results.
@@ -552,7 +561,10 @@ fun SeedFinderApp(
         }
     }
 
-    // Null while the query is not runnable (for example, no requirements yet).
+    // Why the query cannot run yet — no requirements, an unattainable combined
+    // upgrade total, … — shown in the header instead of silently disabling Search.
+    val validationMessage = requirements.validationProblem()
+    // Null while the query is not runnable.
     val currentRequest = runCatching {
         SearchRequest(
             requirements = requirements,
@@ -586,7 +598,7 @@ fun SeedFinderApp(
     // scouts that same world again and marks it (its `scout_matches`), so the
     // app never re-derives the selection; null means there is nothing to mark
     // — no runnable query, or an engine that did not produce this world.
-    val scoutMatchIndices by produceState<Set<Int>?>(null, scoutResult, currentRequest) {
+    val scoutMatches by produceState<ScoutMatches?>(null, scoutResult, currentRequest) {
         val world = scoutResult
         val request = currentRequest
         val scoutedChallenges = scoutRun?.challenges
@@ -617,6 +629,7 @@ fun SeedFinderApp(
                 fastMode = fastMode,
                 challenges = challenges,
                 presets = BuiltInPresets.all + userPresets,
+                compactChips = compactChips,
                 results = results,
                 foundCount = foundCount,
                 status = searchStatus,
@@ -630,9 +643,9 @@ fun SeedFinderApp(
                     aboutReturnDestination = Destination.FINDER
                     destination = Destination.ABOUT
                 },
-                onChallenges = {
-                    challengesReturnDestination = Destination.FINDER
-                    destination = Destination.CHALLENGES
+                onSettings = {
+                    settingsReturnDestination = Destination.FINDER
+                    destination = Destination.SETTINGS
                 },
                 onApplyPreset = { preset ->
                     requirements = preset.query.requirements.map { it.copy(key = nextRequirementKey++) }
@@ -670,24 +683,33 @@ fun SeedFinderApp(
                     presetStorage.save(userPresets)
                 },
                 onAdd = {
-                    editingRequirement = null
+                    editingIndex = null
+                    editingCount = 1
+                    editingTotal = null
+                    editingCopyDepth = null
                     showRequirementSheet = true
                 },
-                onEdit = {
-                    editingRequirement = it
+                // The tapped chip is what the editor opens on, but the stack it
+                // shows belongs to the whole board item behind it.
+                onEdit = { item, index ->
+                    editingIndex = index
+                    editingCount = item.stackCount
+                    editingTotal = item.total
+                    editingCopyDepth = requirements.copyDepthOf(item)
                     showRequirementSheet = true
                 },
-                onRemove = { requirement ->
-                    requirements = requirements.filterNot { it.key == requirement.key }
-                },
+                onRequirementsChange = { requirements = it },
+                onRemove = { item -> requirements = requirements.removeItem(item) },
                 onMaximumDepthChange = { maximumDepth = it },
                 onRequireBlacksmithChange = { requireBlacksmith = it },
                 onExcludeBlacksmithRewardsChange = { excludeBlacksmithRewards = it },
                 onWandmakerQuestChange = { wandmakerQuest = it },
                 onFastModeChange = { fastMode = it },
+                validationMessage = validationMessage,
                 onSearch = {
                     if (currentRequest != null) {
                         importNotice = null
+                        searchError = null
                         // Start dispatch per docs/search-semantics.md: a query continuing
                         // the Target refines its full set and resumes its coverage, one
                         // sharing an item filters that set, and anything else scans
@@ -695,17 +717,7 @@ fun SeedFinderApp(
                         val plan = startPlanFor(
                             currentRequest, target, lastFinishedRun, lastRunKind, engine::decideStart,
                         )
-                        if (plan.refine == null) {
-                            searchedQuery = PresetQuery(
-                                requirements = requirements,
-                                maximumDepth = maximumDepth,
-                                requireBlacksmith = requireBlacksmith,
-                                excludeBlacksmithRewards = excludeBlacksmithRewards,
-                                wandmakerQuest = wandmakerQuest,
-                                fastMode = fastMode,
-                                challenges = challenges,
-                            )
-                        }
+                        if (plan.refine == null) searchedQuery = currentRequest.toPresetQuery()
                         // A refine only claims the new query once its filter phase has
                         // actually rewritten the results, so the snapshot is set there.
                         run = SearchRun(nextRunId++, currentRequest, plan.mode, plan.refine)
@@ -793,7 +805,7 @@ fun SeedFinderApp(
                 result = scoutResult,
                 isScouting = isScouting,
                 error = scoutError,
-                matchIndices = scoutMatchIndices,
+                matches = scoutMatches,
                 resultSeeds = resultSeeds,
                 scoutedSeed = scoutedSeed,
                 onScoutSeed = ::scoutSeed,
@@ -808,9 +820,9 @@ fun SeedFinderApp(
                         scoutRun = ScoutRun(nextScoutRunId++, scoutInput, challenges)
                     }
                 },
-                onChallenges = {
-                    challengesReturnDestination = Destination.SCOUT
-                    destination = Destination.CHALLENGES
+                onSettings = {
+                    settingsReturnDestination = Destination.SCOUT
+                    destination = Destination.SETTINGS
                 },
                 onAbout = {
                     aboutReturnDestination = Destination.SCOUT
@@ -819,9 +831,14 @@ fun SeedFinderApp(
                 bottomBar = navBar,
             )
 
-            Destination.CHALLENGES -> ChallengesScreen(
+            Destination.SETTINGS -> SettingsScreen(
+                compactChips = compactChips,
+                onCompactChipsChange = { checked ->
+                    compactChips = checked
+                    preferences.edit().putBoolean(COMPACT_CHIPS_KEY, checked).apply()
+                },
                 challenges = challenges,
-                enabled = !isSearching && !isScouting,
+                challengesEnabled = !isSearching && !isScouting,
                 onChallengeChange = { challenge, checked ->
                     val updatedChallenges = if (checked) {
                         challenges or challenge.bit
@@ -832,7 +849,7 @@ fun SeedFinderApp(
                     scoutResult = null
                     preferences.edit().putInt(CHALLENGES_KEY, updatedChallenges).apply()
                 },
-                onBack = { destination = challengesReturnDestination },
+                onBack = { destination = settingsReturnDestination },
             )
 
             Destination.ABOUT -> AboutScreen(onBack = { destination = aboutReturnDestination })
@@ -840,47 +857,27 @@ fun SeedFinderApp(
 
         if (showRequirementSheet) {
             RequirementSheet(
-                editing = editingRequirement,
+                editing = editingIndex?.let(requirements::get),
+                editingCount = editingCount,
+                editingTotal = editingTotal,
+                editingCopyDepth = editingCopyDepth,
                 onDismiss = { showRequirementSheet = false },
-                onSave = { item, kind, tierMatch, tier, upgradeMatch, upgrade, modifier, source, identityGroup, itemMaximumDepth, requireUncursed ->
-                    val existing = editingRequirement
-                    if (existing == null) {
-                        requirements = requirements + ItemRequirement(
-                            key = nextRequirementKey++,
-                            item = item,
-                            upgrade = upgrade,
-                            modifier = modifier,
-                            kind = kind,
-                            tier = tier,
-                            tierMatch = tierMatch,
-                            upgradeMatch = upgradeMatch,
-                            source = source,
-                            identityGroup = identityGroup,
-                            maximumDepth = itemMaximumDepth,
-                            requireUncursed = requireUncursed,
-                        )
-                    } else {
-                        requirements = requirements.map {
-                            if (it.key == existing.key) {
-                                existing.copy(
-                                    item = item,
-                                    upgrade = upgrade,
-                                    modifier = modifier,
-                                    kind = kind,
-                                    tier = tier,
-                                    tierMatch = tierMatch,
-                                    upgradeMatch = upgradeMatch,
-                                    source = source,
-                                    identityGroup = identityGroup,
-                                    maximumDepth = itemMaximumDepth,
-                                    requireUncursed = requireUncursed,
-                                )
-                            } else {
-                                it
-                            }
-                        }
-                    }
+                onSave = { saved, count, total, copyDepth ->
+                    requirements = requirements.applyEdit(editingIndex, saved, count, total, copyDepth)
                     showRequirementSheet = false
+                },
+                // As from the board's drop zone: a lone chip goes with its
+                // copies, a member leaves the cluster and its stack behind.
+                onRemove = editingIndex?.let { index ->
+                    {
+                        val item = requirements.boardItems().first { index in it.members }
+                        requirements = if (item.cluster != null) {
+                            requirements.removeMember(index)
+                        } else {
+                            requirements.removeItem(item)
+                        }
+                        showRequirementSheet = false
+                    }
                 },
             )
         }

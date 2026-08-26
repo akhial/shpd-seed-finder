@@ -1,27 +1,26 @@
 import { useState } from 'react'
 import { useStore } from '@tanstack/react-store'
-import { LEVEL_GEN_CHALLENGES, challenges as challengeOptions, wildcardSprites } from '../../lib/catalog'
+import { LEVEL_GEN_CHALLENGES, challenges as challengeOptions } from '../../lib/catalog'
 import { probabilityLabel } from '../../lib/format'
-import { effectGlow } from '../../lib/glow'
-import { CheckIcon, CommandIcon, LinkIcon, PlusIcon, ReturnIcon, XIcon } from '../../lib/icons'
-import { BLACKSMITH_LAST_FLOOR, FLOOR_LIMIT_OPTIONS, emptyRequirement, fromQueryJson, toQueryJson, validateRequirement } from '../../lib/query'
+import { CheckIcon, CommandIcon, LinkIcon, ReturnIcon, XIcon } from '../../lib/icons'
+import { BLACKSMITH_LAST_FLOOR, FLOOR_LIMIT_OPTIONS, emptyRequirement, fromQueryJson, toQueryJson } from '../../lib/query'
 import type { ValidationResult } from '../../lib/query'
 import { questVariantLabel } from '../../lib/quests'
 import { builtInPresets, loadPresets, maxWorkers, queryStore, savePresets, setWorkerCount, workerCountStore } from '../../lib/store'
 import type { Preset } from '../../lib/store'
 import { encodeShareLink } from '../../lib/wasm'
 import { WANDMAKER_QUESTS } from '../../lib/wasm/types'
-import type { AnalysisResult, ChallengeName, ItemCategory, QueryState, RequirementState, WandmakerQuest } from '../../lib/wasm/types'
+import type { AnalysisResult, ChallengeName, QueryState, RequirementState, WandmakerQuest } from '../../lib/wasm/types'
+import { RequirementBoard } from './RequirementBoard'
+import type { StackShape } from './RequirementBoard'
+import { applyEdit, boardCount } from './relations'
 import { RequirementEditor } from './RequirementEditor'
-import { SliderRow, Sprite } from './parts'
-import { categoryPlural, requirementDetails, requirementKind, requirementSprite, requirementTitle } from './summary'
-
-const KIND_ORDER: ItemCategory[] = ['weapon', 'armor', 'wand', 'ring']
+import { SliderRow } from './parts'
 
 const patchQuery = (patch: Partial<QueryState>) => queryStore.setState((state) => ({ ...state, ...patch }))
 const cloneQuery = (query: QueryState): QueryState => fromQueryJson(toQueryJson(query))
 
-interface EditorSession { index: number | null; requirement: RequirementState }
+interface EditorSession { index: number | null; requirement: RequirementState; stack: StackShape }
 
 export function QueryPanel({
   analysis,
@@ -91,19 +90,14 @@ export function QueryPanel({
     savePresets(next)
   }
 
-  const removeRequirement = (index: number) => {
-    queryStore.setState((state) => ({
-      ...state,
-      requirements: state.requirements.filter((_, i) => i !== index),
-    }))
+  const setRequirements = (requirements: RequirementState[]) => {
+    queryStore.setState((state) => ({ ...state, requirements }))
   }
 
-  const commitRequirement = (session: EditorSession, requirement: RequirementState) => {
+  const commitRequirement = (session: EditorSession, requirement: RequirementState, count: number, total: number | undefined, copyDepth: number | undefined) => {
     queryStore.setState((state) => ({
       ...state,
-      requirements: session.index === null
-        ? [...state.requirements, requirement]
-        : state.requirements.map((current, i) => (i === session.index ? requirement : current)),
+      requirements: applyEdit(state.requirements, session.index, requirement, count, total, copyDepth),
     }))
     setEditor(null)
   }
@@ -115,12 +109,7 @@ export function QueryPanel({
     })
   }
 
-  const indexed = query.requirements.map((requirement, index) => ({ requirement, index }))
-  const groups = KIND_ORDER.map((kind) => ({
-    kind,
-    entries: indexed.filter(({ requirement }) => requirementKind(requirement) === kind),
-  })).filter((group) => group.entries.length > 0)
-  const ungrouped = indexed.filter(({ requirement }) => requirementKind(requirement) === undefined)
+  const slotTotal = boardCount(query.requirements)
   const challengeCount = query.challenges.length
   const wandmakerCount = Number(Boolean(query.wandmakerQuest))
   const blacksmithCount = Number(query.requireBlacksmith) + Number(query.excludeBlacksmithRewards)
@@ -135,7 +124,7 @@ export function QueryPanel({
         <span>Query</span>
         <span className="d1-pane-head-side">
           <span className="d1-pane-head-info">
-            {hasRequirements ? `${query.requirements.length} requirement${query.requirements.length === 1 ? '' : 's'}` : ''}
+            {hasRequirements ? `${slotTotal} requirement${slotTotal === 1 ? '' : 's'}` : ''}
           </span>
           <button
             type="button"
@@ -242,53 +231,13 @@ export function QueryPanel({
         </section>
 
         <section className="d1-section">
-          <div className="d1-section-head">
-            <h3>Requirements</h3>
-            <button
-              type="button"
-              className="d1-btn d1-btn-sm d1-btn-primary"
-              onClick={() => setEditor({ index: null, requirement: emptyRequirement('weapon') })}
-            >
-              <PlusIcon size={14} />
-              Add
-            </button>
-          </div>
-          {!hasRequirements && ungrouped.length === 0 ? (
-            <p className="d1-empty">No requirements yet. Add one to describe the item you're hunting for.</p>
-          ) : (
-            <>
-              {groups.map((group) => (
-                <div className="d1-req-group" key={group.kind}>
-                  <div className="d1-req-group-head" style={{ color: 'rgb(234, 234, 234)' }}>
-                    <Sprite index={wildcardSprites[group.kind]} size={16} />
-                    <span>{categoryPlural[group.kind]}</span>
-                  </div>
-                  <ul className="d1-req-list">
-                    {group.entries.map(({ requirement, index }) => (
-                      <RequirementRow
-                        key={index}
-                        requirement={requirement}
-                        onEdit={() => setEditor({ index, requirement })}
-                        onRemove={() => removeRequirement(index)}
-                      />
-                    ))}
-                  </ul>
-                </div>
-              ))}
-              {ungrouped.length > 0 && (
-                <ul className="d1-req-list">
-                  {ungrouped.map(({ requirement, index }) => (
-                    <RequirementRow
-                      key={index}
-                      requirement={requirement}
-                      onEdit={() => setEditor({ index, requirement })}
-                      onRemove={() => removeRequirement(index)}
-                    />
-                  ))}
-                </ul>
-              )}
-            </>
-          )}
+          <div className="d1-section-head"><h3>Requirements</h3></div>
+          <RequirementBoard
+            requirements={query.requirements}
+            onChange={setRequirements}
+            onEdit={(index, stack) => setEditor({ index, requirement: query.requirements[index], stack })}
+            onAdd={() => setEditor({ index: null, requirement: emptyRequirement('weapon'), stack: { count: 1, inCluster: false } })}
+          />
         </section>
 
         <section className="d1-section">
@@ -469,38 +418,11 @@ export function QueryPanel({
           key={editor.index ?? 'new'}
           requirement={editor.requirement}
           isNew={editor.index === null}
-          onSave={(requirement) => commitRequirement(editor, requirement)}
+          stack={editor.stack}
+          onSave={(requirement, count, total, copyDepth) => commitRequirement(editor, requirement, count, total, copyDepth)}
           onCancel={() => setEditor(null)}
         />
       )}
     </>
-  )
-}
-
-function RequirementRow({
-  requirement,
-  onEdit,
-  onRemove,
-}: {
-  requirement: RequirementState
-  onEdit: () => void
-  onRemove: () => void
-}) {
-  const errors = validateRequirement(requirement)
-  const details = requirementDetails(requirement)
-  return (
-    <li className="d1-req">
-      <button type="button" className="d1-req-main" onClick={onEdit} title="Edit requirement">
-        <Sprite index={requirementSprite(requirement)} size={28} glow={effectGlow(requirement.effect)} />
-        <span className="d1-req-text">
-          <span className="d1-req-title">{requirementTitle(requirement)}</span>
-          <span className="d1-req-sub">{details.length > 0 ? details.join(' · ') : 'any upgrade · any source'}</span>
-          {errors.length > 0 && <span className="d1-req-error">{errors[0]}</span>}
-        </span>
-      </button>
-      <button type="button" className="d1-req-remove" aria-label="Remove requirement" title="Remove" onClick={onRemove}>
-        <XIcon size={15} />
-      </button>
-    </li>
   )
 }

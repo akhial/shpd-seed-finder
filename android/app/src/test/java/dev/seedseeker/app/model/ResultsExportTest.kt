@@ -239,6 +239,80 @@ class ResultsExportTest {
         assertEquals(UpgradeMatch.AT_LEAST, requirements[2].upgradeMatch)
         assertEquals(TierMatch.AT_MOST, requirements[3].tierMatch)
         // Effect matching is case-insensitive and canonicalizes to the catalog name.
-        assertEquals("Anti-Magic", requirements[3].modifier)
+        assertEquals(EffectFilter.OneOf(listOf("Anti-Magic")), requirements[3].effect)
+    }
+
+    @Test
+    fun decodeReadsAlternativeGroupsEffectListsAndCombinedLevelGroups() {
+        val imported = ResultsExport.decode(
+            """
+            {"format":"seed-seeker-results",
+             "query":{"requirements":[
+               {"any_of":[{"item":"spear","upgrade":3},
+                          {"kind":"thrown_weapon","effect":["projecting","blocking"]}]},
+               {"kind":"armor","effect":"ANY_ENCHANTMENT","uncursed":true},
+               {"any_of":[{"item":"sword"}]},
+               {"item":"ring_might","level_sum":{"group":2,"at_least":4}},
+               {"item":"ring_might","level_sum":{"group":2,"at_least":4}}
+             ]},
+             "results":[]}
+            """.trimIndent(),
+        )
+        val requirements = imported.query.requirements
+        // Groups get fresh sequential ids in document order; a one-member group is a plain row.
+        assertEquals(listOf(1, 1, null, null, null, null), requirements.map { it.alternativeGroup })
+        assertEquals(5, requirements.slotCount())
+        // Effect lists canonicalize to catalog spelling and order.
+        assertEquals(EffectFilter.OneOf(listOf("Blocking", "Projecting")), requirements[1].effect)
+        assertEquals(ItemKind.THROWN_WEAPON, requirements[1].kind)
+        assertEquals(EffectFilter.AnyEnchantment, requirements[2].effect)
+        assertEquals(LevelSum(group = 2, atLeast = 4), requirements[4].levelSum)
+        assertEquals(LevelSum(group = 2, atLeast = 4), requirements[5].levelSum)
+
+        // And the same structures survive a trip back through the engine's writer.
+        val reImported = ResultsExport.decode(
+            ResultsExport.encode(imported.query, listOf("AAA-AAA-BUH"), "0.6.1"),
+        )
+        assertEquals(
+            requirements.map { it.copy(key = 0) },
+            reImported.query.requirements.map { it.copy(key = 0) },
+        )
+        val document = JSONObject(ResultsExport.encode(imported.query, listOf("AAA-AAA-BUH"), "0.6.1"))
+        val entries = document.getJSONObject("query").getJSONArray("requirements")
+        assertEquals(5, entries.length())
+        assertEquals(2, entries.getJSONObject(0).getJSONArray("any_of").length())
+        assertEquals("any_enchantment", entries.getJSONObject(1).getString("effect"))
+        assertEquals(4, entries.getJSONObject(3).getJSONObject("level_sum").getInt("at_least"))
+    }
+
+    @Test
+    fun theEngineRefusesASumInsideAnAlternativeGroup() {
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            ResultsExport.decode(
+                """
+                {"format":"seed-seeker-results",
+                 "query":{"requirements":[{"any_of":[
+                   {"item":"ring_might","level_sum":{"group":1,"at_least":2}},
+                   {"item":"sword"}]}]},
+                 "results":[]}
+                """.trimIndent(),
+            )
+        }
+        assertTrue(failure.message, failure.message!!.contains("alternative"))
+    }
+
+    @Test
+    fun aCategorylessMemberOfAGroupIsReportedAtTheGroupsDocumentPosition() {
+        // The app's own message for an entry the core accepted but this side
+        // cannot place uses the 1-based document entry, group members included.
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            ResultsExport.decodeQuery(
+                JSONObject(
+                    """{"requirements":[{"any_of":[{"item":"sword"},{"item":"spear"}]},
+                                        {"any_of":[{"item":"sword"},{"tier":{"exact":2}}]}]}""",
+                ),
+            )
+        }
+        assertEquals("Requirement 2 has no category.", failure.message)
     }
 }

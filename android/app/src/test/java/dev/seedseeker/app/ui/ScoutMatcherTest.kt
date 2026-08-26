@@ -5,11 +5,14 @@ import dev.seedseeker.app.catalog.ItemCatalog
 import dev.seedseeker.app.catalog.PackagedCatalog
 import dev.seedseeker.app.engine.DemoNativeSeedFinder
 import dev.seedseeker.app.engine.JniNativeSeedFinder
+import dev.seedseeker.app.engine.ScoutMatches
+import dev.seedseeker.app.model.EffectFilter
 import dev.seedseeker.app.model.ItemKind
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.ScoutItemSource
 import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.UpgradeMatch
+import dev.seedseeker.app.model.LevelSum
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -112,6 +115,104 @@ class ScoutMatcherTest {
     }
 
     @Test
+    fun anAlternativeGroupIsOneSlotAnyMemberSatisfies() {
+        // Both Wandmaker options in one "any of these" slot: one item explains
+        // the single slot, and the counts say so.
+        val marks = marksFor(
+            wand("wand_corrosion", key = 1).copy(alternativeGroup = 1),
+            wand("wand_warding", key = 2).copy(alternativeGroup = 1),
+        )
+        assertEquals(1, marks.items.size)
+        assertEquals(1, marks.matchedSlots)
+        assertEquals(1, marks.totalSlots)
+
+        // A member the world lacks does not stop the other from serving the slot.
+        val partial = marksFor(
+            ItemRequirement(
+                key = 1,
+                item = ItemCatalog.findById("ring_tenacity"),
+                upgrade = 4,
+                upgradeMatch = UpgradeMatch.EXACT,
+                alternativeGroup = 1,
+            ),
+            wand("wand_fireblast", key = 2).copy(alternativeGroup = 1),
+            wand("wand_corrosion", key = 3),
+        )
+        assertEquals(2, partial.items.size)
+        assertEquals(2, partial.matchedSlots)
+        assertEquals(2, partial.totalSlots)
+    }
+
+    @Test
+    fun effectSetsAndAnyEnchantmentMatchTheScoutedEffects() {
+        // The +2 Potential mail armors satisfy a set naming Potential among others.
+        val potentialArmors = world.items.withIndex()
+            .filter { it.value.item.id == "mail_armor" && it.value.effect == "Potential" }
+            .map { it.index }
+        val set = matchesFor(
+            ItemRequirement(
+                key = 1,
+                item = ItemCatalog.findById("mail_armor"),
+                upgrade = 2,
+                effect = EffectFilter.OneOf(listOf("Potential", "Thorns", "Brimstone")),
+            ),
+        )
+        assertEquals(1, set.size)
+        assertTrue("$set", set.single() in potentialArmors)
+
+        // "Any enchantment" matches every glyphed armor but no plain one.
+        val glyphed = world.items.withIndex()
+            .filter { it.value.item.kind == ItemKind.ARMOR && it.value.effect != null && !it.value.effect.let { effect -> effect in ItemCatalog.armorCurses } }
+            .map { it.index }
+        val any = matchesFor(
+            ItemRequirement(
+                key = 1,
+                item = null,
+                kind = ItemKind.ARMOR,
+                upgrade = 0,
+                upgradeMatch = UpgradeMatch.ANY,
+                effect = EffectFilter.AnyEnchantment,
+            ),
+        )
+        assertEquals(1, any.size)
+        assertTrue("$any", any.single() in glyphed)
+    }
+
+    @Test
+    fun aCombinedLevelGroupMarksAllOrNothing() {
+        // Two rings whose levels — each item's upgrade plus one — add up to the
+        // total. The group is one scout condition, and its members are optional,
+        // so one upgraded ring can cover a small total alone. Raising the total
+        // past what this world can reach marks nothing at all rather than the
+        // rings that fell short.
+        fun anyRing(key: Long, atLeast: Int) = ItemRequirement(
+            key = key,
+            item = null,
+            kind = ItemKind.RING,
+            upgrade = 0,
+            upgradeMatch = UpgradeMatch.ANY,
+            levelSum = LevelSum(group = 1, atLeast = atLeast),
+        )
+        val capacity = 2 * (ItemKind.RING.maximumSearchUpgrade + 1)
+        var reachable = 0
+        for (total in 1..capacity) {
+            val marks = marksFor(anyRing(1, total), anyRing(2, total))
+            assertEquals(1, marks.totalSlots)
+            if (marks.items.isEmpty()) {
+                assertEquals(0, marks.matchedSlots)
+                break
+            }
+            assertEquals(1, marks.matchedSlots)
+            assertTrue("$marks", marks.items.size in 1..2)
+            assertTrue(marks.items.all { world.items[it].item.kind == ItemKind.RING })
+            assertTrue("$marks", marks.items.sumOf { world.items[it].upgrade + 1 } >= total)
+            reachable = total
+        }
+        assertTrue("no ring total is reachable in $SEED", reachable >= 1)
+        assertTrue("every total up to $capacity was reachable", reachable < capacity)
+    }
+
+    @Test
     fun theDemoEngineMarksNothing() {
         // Its scouted world is fabricated rather than an engine packet, so
         // there is no world for the engine's marks to index — and no Kotlin
@@ -126,6 +227,9 @@ class ScoutMatcherTest {
     }
 
     private fun matchesFor(vararg requirements: ItemRequirement): Set<Int> =
+        marksFor(*requirements).items
+
+    private fun marksFor(vararg requirements: ItemRequirement): ScoutMatches =
         checkNotNull(engine.scoutMatches(SEED, 0, SearchRequest(requirements.toList())))
 
     private fun wand(id: String, key: Long) = ItemRequirement(
@@ -139,7 +243,7 @@ class ScoutMatcherTest {
         key = 1,
         item = ItemCatalog.findById("mail_armor"),
         upgrade = 2,
-        modifier = "Potential",
+        effect = EffectFilter.named("Potential"),
         upgradeMatch = UpgradeMatch.EXACT,
         maximumDepth = maximumDepth,
         requireUncursed = true,

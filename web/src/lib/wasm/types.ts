@@ -44,16 +44,38 @@ export interface TierFilter { mode: 'any' | 'exact' | 'at_least' | 'at_most'; va
 
 export interface UpgradeFilter { mode: 'any' | 'exact' | 'at_least'; value: number }
 
+/** The effect shorthand standing for every non-curse effect of the item's family. */
+export const ANY_ENCHANTMENT = 'any_enchantment'
+
+/**
+ * Which effects an item may carry: one wire name (e.g. `"Blazing"`), a list of
+ * same-family wire names in catalog order, or `ANY_ENCHANTMENT`. Absent means
+ * any effect or none. This is the document's own shape, so old presets that
+ * store a bare name load unchanged.
+ */
+export type EffectFilter = string | string[]
+
+/**
+ * Membership in a combined-level group: some subset of the group's members,
+ * filled by distinct items, must reach `atLeast` combined levels, where an
+ * item counts as its upgrade plus one. Members are optional — one +2 ring
+ * satisfies a two-member group asking for three levels.
+ */
+export interface LevelSum { group: number; atLeast: number }
+
 export interface RequirementState {
   kind?: RequirementKind
   item?: string
   tier: TierFilter
   upgrade: UpgradeFilter
-  effect?: string
+  effect?: EffectFilter
   uncursed: boolean
   source?: ItemSource
   identityGroup?: number
   maxDepth?: number
+  /** Requirements sharing a number form one "any of these" slot. */
+  alternativeGroup?: number
+  levelSum?: LevelSum
 }
 
 export interface QueryState {
@@ -75,15 +97,21 @@ export interface RequirementDocument {
   item?: string
   tier?: TierDocument
   upgrade?: UpgradeDocument
-  effect?: string
+  effect?: EffectFilter
   uncursed?: true
   source?: ItemSource
   identity_group?: number
   max_depth?: number
+  level_sum?: { group: number; at_least: number }
 }
 
+/** An "any of these" slot: satisfied by any single member. Members may not carry `level_sum`. */
+export interface AnyOfDocument { any_of: RequirementDocument[] }
+
+export type RequirementEntryDocument = RequirementDocument | AnyOfDocument
+
 export interface QueryDocument {
-  requirements: RequirementDocument[]
+  requirements: RequirementEntryDocument[]
   max_depth?: number
   require_blacksmith?: true
   exclude_blacksmith_rewards?: true
@@ -101,6 +129,7 @@ export interface EngineLimits {
   boundedTierMin: number
   boundedTierMax: number
   identityGroupMax: number
+  levelSumGroupMax: number
   maxUpgradeDefault: number
   maxUpgradeRing: number
   resultsFileMaxBytes: number
