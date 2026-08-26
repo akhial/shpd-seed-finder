@@ -61,8 +61,10 @@ import dev.seedseeker.app.model.SearchState
 import dev.seedseeker.app.model.SearchStatus
 import dev.seedseeker.app.model.SeedResult
 import dev.seedseeker.app.model.applyEdit
+import dev.seedseeker.app.model.boardItems
 import dev.seedseeker.app.model.copyDepthOf
 import dev.seedseeker.app.model.removeItem
+import dev.seedseeker.app.model.removeMember
 import dev.seedseeker.app.model.slotCount
 import dev.seedseeker.app.model.toPresetQuery
 import dev.seedseeker.app.model.validationProblem
@@ -855,6 +857,19 @@ fun SeedFinderApp(
                 onSave = { saved, count, total, copyDepth ->
                     requirements = requirements.applyEdit(editingIndex, saved, count, total, copyDepth)
                     showRequirementSheet = false
+                },
+                // As from the board's drop zone: a lone chip goes with its
+                // copies, a member leaves the cluster and its stack behind.
+                onRemove = editingIndex?.let { index ->
+                    {
+                        val item = requirements.boardItems().first { index in it.members }
+                        requirements = if (item.cluster != null) {
+                            requirements.removeMember(index)
+                        } else {
+                            requirements.removeItem(item)
+                        }
+                        showRequirementSheet = false
+                    }
                 },
             )
         }

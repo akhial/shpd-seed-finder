@@ -22,9 +22,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -94,6 +97,10 @@ private enum class EffectMode(val label: String) {
  * [startWithItemPicker] opens an existing chip on the item step, which is what
  * a freshly forked alternative wants: the copy is meant to become a different
  * item.
+ *
+ * [onRemove], given for an existing chip, takes it off the board from here: the
+ * board's chips flow across lines, so a tap is the sure way to reach one, and
+ * the editor a tap opens is where its removal lives besides the drop zone.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -105,6 +112,7 @@ fun RequirementSheet(
     startWithItemPicker: Boolean = false,
     onDismiss: () -> Unit,
     onSave: (requirement: ItemRequirement, count: Int, total: Int?, copyDepth: Int?) -> Unit,
+    onRemove: (() -> Unit)? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val identity = editing?.key ?: -1L
@@ -810,6 +818,27 @@ fun RequirementSheet(
                         RequirementPreview(draft = draft)
                         Spacer(Modifier.height(10.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            if (editing != null && onRemove != null) {
+                                OutlinedButton(
+                                    onClick = onRemove,
+                                    modifier = Modifier.height(52.dp),
+                                    shapes = ButtonDefaults.shapes(),
+                                    colors = ButtonDefaults.outlinedButtonColors(
+                                        contentColor = MaterialTheme.colorScheme.error,
+                                    ),
+                                    contentPadding = PaddingValues(horizontal = 14.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Delete,
+                                        contentDescription = if (inAlternativeGroup) {
+                                            "Remove alternative"
+                                        } else {
+                                            "Remove requirement"
+                                        },
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                }
+                            }
                             OutlinedButton(
                                 onClick = { step = SheetStep.ITEM },
                                 modifier = Modifier.height(52.dp),

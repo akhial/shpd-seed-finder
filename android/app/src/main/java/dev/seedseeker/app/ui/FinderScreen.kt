@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -55,6 +54,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -83,7 +83,7 @@ import dev.seedseeker.app.model.WandmakerQuest
 import dev.seedseeker.app.model.floorLimitIndex
 import dev.seedseeker.app.model.BoardItem
 import dev.seedseeker.app.model.boardCount
-import dev.seedseeker.app.model.slots
+import dev.seedseeker.app.model.boardItems
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -137,6 +137,30 @@ fun FinderScreen(
 ) {
     var showPresets by remember { mutableStateOf(false) }
     var showOverflowMenu by remember { mutableStateOf(false) }
+    // One page at a time: what is asked for, or what was found. Nothing here is
+    // chosen by hand first — starting a search turns to the results it will
+    // fill, a new query (edited, from a preset, or from a shared link) turns
+    // back to the board it lands on, and the collapsed header at the top or
+    // bottom edge turns the page the other way. Effects run in this order, so a
+    // file import, which brings a query *and* its seeds, settles on the seeds.
+    var showResults by remember { mutableStateOf(results.isNotEmpty()) }
+    // A run's own findings never turn the page: the start of the run turned it
+    // once, and a reader who turns it back to the board stays there while seeds
+    // land, since the bar at the bottom counts them anyway. Only seeds arriving
+    // from outside a run — an import — turn the page by themselves. The flag
+    // outlives the run by a frame, so the last batch of a finishing search,
+    // which may land in the same frame as the run ending, is covered too.
+    var runOwnsResults by remember { mutableStateOf(false) }
+    LaunchedEffect(requirements) { showResults = false }
+    LaunchedEffect(results) { if (results.isNotEmpty() && !runOwnsResults) showResults = true }
+    LaunchedEffect(isSearching) {
+        if (isSearching) {
+            showResults = true
+            runOwnsResults = true
+        } else {
+            runOwnsResults = false
+        }
+    }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -190,6 +214,7 @@ fun FinderScreen(
                                 enabled = !isSearching && canClearResults,
                                 onClick = {
                                     showOverflowMenu = false
+                                    showResults = false
                                     onClearResults()
                                 },
                             )
@@ -209,7 +234,10 @@ fun FinderScreen(
                     seedsPerSecond = seedsPerSecond,
                     elapsedSeconds = elapsedSeconds,
                     isSearching = isSearching,
-                    onSearch = onSearch,
+                    onSearch = {
+                        showResults = true
+                        onSearch()
+                    },
                     onCancel = onCancel,
                 )
                 bottomBar()
@@ -228,70 +256,100 @@ fun FinderScreen(
                     .fillMaxWidth()
                     .widthIn(max = 680.dp),
             ) {
-                QueryHeader(
-                    requirements = requirements,
-                    maximumDepth = maximumDepth,
-                    requireBlacksmith = requireBlacksmith,
-                    excludeBlacksmithRewards = excludeBlacksmithRewards,
-                    wandmakerQuest = wandmakerQuest,
-                    fastMode = fastMode,
-                    challenges = challenges,
-                    results = results,
-                    foundCount = foundCount,
-                    status = status,
-                    isSearching = isSearching,
-                    refinePhase = refinePhase,
-                    error = error,
-                    validationMessage = validationMessage,
-                    onAdd = onAdd,
-                    onEdit = onEdit,
-                    onRequirementsChange = onRequirementsChange,
-                    onRemove = onRemove,
-                    onMaximumDepthChange = onMaximumDepthChange,
-                    onRequireBlacksmithChange = onRequireBlacksmithChange,
-                    onExcludeBlacksmithRewardsChange = onExcludeBlacksmithRewardsChange,
-                    onWandmakerQuestChange = onWandmakerQuestChange,
-                    onFastModeChange = onFastModeChange,
-                    onChallenges = onChallenges,
+                PageHeader(
+                    title = "Requirements (${requirements.boardCount()})",
+                    summary = requirementsSummaryText(requirements),
+                    open = !showResults,
+                    openDescription = "Show requirements",
+                    onOpen = { showResults = false },
                 )
+                if (!showResults) {
+                    QueryPage(
+                        requirements = requirements,
+                        maximumDepth = maximumDepth,
+                        requireBlacksmith = requireBlacksmith,
+                        excludeBlacksmithRewards = excludeBlacksmithRewards,
+                        wandmakerQuest = wandmakerQuest,
+                        fastMode = fastMode,
+                        challenges = challenges,
+                        isSearching = isSearching,
+                        validationMessage = validationMessage,
+                        onAdd = onAdd,
+                        onEdit = onEdit,
+                        onRequirementsChange = onRequirementsChange,
+                        onRemove = onRemove,
+                        onMaximumDepthChange = onMaximumDepthChange,
+                        onRequireBlacksmithChange = onRequireBlacksmithChange,
+                        onExcludeBlacksmithRewardsChange = onExcludeBlacksmithRewardsChange,
+                        onWandmakerQuestChange = onWandmakerQuestChange,
+                        onFastModeChange = onFastModeChange,
+                        onChallenges = onChallenges,
+                        // Takes every line down to the closed page's header,
+                        // which waits at the bottom edge above the search bar
+                        // that fills it; a query taller than that scrolls.
+                        modifier = Modifier.weight(1f),
+                    )
+                }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                LazyColumn(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    contentPadding = PaddingValues(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    importNotice?.let { notice ->
-                        item {
-                            Text(
-                                notice,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                PageHeader(
+                    title = resultsHeaderText(
+                        resultCount = foundCount,
+                        state = status?.state,
+                        isSearching = isSearching,
+                        refinePhase = refinePhase,
+                    ),
+                    summary = null,
+                    open = showResults,
+                    openDescription = "Show results",
+                    onOpen = { showResults = true },
+                )
+                if (error != null) {
+                    Text(
+                        error,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                if (showResults) {
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentPadding = PaddingValues(start = 16.dp, top = 4.dp, end = 16.dp, bottom = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        importNotice?.let { notice ->
+                            item {
+                                Text(
+                                    notice,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
-                    }
-                    if (results.isEmpty()) {
-                        item {
-                            Text(
-                                when {
-                                    isSearching -> "0 matches yet."
-                                    status?.state == SearchState.COMPLETED -> "0 matches."
-                                    else -> "No results — run a search."
-                                },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 12.dp),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    } else {
-                        items(results, key = { it.seed }) { result ->
-                            ResultRow(result = result, onScout = { onScoutSeed(result.seed) })
+                        if (results.isEmpty()) {
+                            item {
+                                Text(
+                                    when {
+                                        isSearching -> "0 matches yet."
+                                        status?.state == SearchState.COMPLETED -> "0 matches."
+                                        else -> "No results — run a search."
+                                    },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 12.dp),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        } else {
+                            items(results, key = { it.seed }) { result ->
+                                ResultRow(result = result, onScout = { onScoutSeed(result.seed) })
+                            }
                         }
                     }
                 }
@@ -310,8 +368,63 @@ fun FinderScreen(
     }
 }
 
+/**
+ * The title line of one of the finder's two pages. Only the closed page's
+ * header is a control — it opens that page, in place of the other — and only
+ * it carries a chevron and, when it has one, a one-line summary of what it
+ * hides.
+ */
 @Composable
-private fun QueryHeader(
+private fun PageHeader(
+    title: String,
+    summary: String?,
+    open: Boolean,
+    openDescription: String,
+    onOpen: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = !open, onClick = onOpen)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, style = MaterialTheme.typography.titleSmall)
+        Spacer(Modifier.width(8.dp))
+        if (!open && !summary.isNullOrEmpty()) {
+            Text(
+                summary,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        } else {
+            Spacer(Modifier.weight(1f))
+        }
+        if (!open) {
+            Icon(
+                Icons.Filled.KeyboardArrowDown,
+                contentDescription = openDescription,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/** What the board asks for, in a line: each slot by name, its alternatives joined by "or". */
+private fun requirementsSummaryText(requirements: List<ItemRequirement>): String =
+    requirements.boardItems().joinToString(" · ") { item ->
+        buildString {
+            append(item.members.joinToString(" or ") { chipTitle(requirements[it]) })
+            if (item.stackCount > 1) append(" ×${item.stackCount}")
+        }
+    }
+
+/** The query page: the board and, under it, the run's scope. */
+@Composable
+private fun QueryPage(
     requirements: List<ItemRequirement>,
     maximumDepth: Int,
     requireBlacksmith: Boolean,
@@ -319,12 +432,7 @@ private fun QueryHeader(
     wandmakerQuest: WandmakerQuest?,
     fastMode: Boolean,
     challenges: Int,
-    results: List<SeedResult>,
-    foundCount: Int,
-    status: SearchStatus?,
     isSearching: Boolean,
-    refinePhase: RefinePhase?,
-    error: String?,
     validationMessage: String?,
     onAdd: () -> Unit,
     onEdit: (BoardItem, Int) -> Unit,
@@ -336,28 +444,22 @@ private fun QueryHeader(
     onWandmakerQuestChange: (WandmakerQuest?) -> Unit,
     onFastModeChange: (Boolean) -> Unit,
     onChallenges: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Column(Modifier.padding(horizontal = 16.dp)) {
-        Text(
-            "Requirements (${requirements.boardCount()})",
-            style = MaterialTheme.typography.titleSmall,
-            modifier = Modifier.padding(bottom = 6.dp),
+    Column(
+        modifier = modifier
+            .padding(horizontal = 16.dp)
+            .verticalScroll(rememberScrollState()),
+    ) {
+        RequirementBoard(
+            requirements = requirements,
+            enabled = !isSearching,
+            onChange = onRequirementsChange,
+            onEdit = onEdit,
+            onRemove = onRemove,
+            onAdd = onAdd,
+            modifier = Modifier.fillMaxWidth(),
         )
-        Column(
-            modifier = Modifier
-                .heightIn(max = 280.dp)
-                .verticalScroll(rememberScrollState()),
-        ) {
-            RequirementBoard(
-                requirements = requirements,
-                enabled = !isSearching,
-                onChange = onRequirementsChange,
-                onEdit = onEdit,
-                onRemove = onRemove,
-                onAdd = onAdd,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
         if (validationMessage != null && requirements.isNotEmpty()) {
             Text(
                 validationMessage,
@@ -382,22 +484,6 @@ private fun QueryHeader(
             onFastModeChange = onFastModeChange,
             onChallenges = onChallenges,
         )
-        Text(
-            resultsHeaderText(
-                resultCount = foundCount,
-                state = status?.state,
-                isSearching = isSearching,
-                refinePhase = refinePhase,
-            ),
-            style = MaterialTheme.typography.titleSmall,
-        )
-        if (error != null) {
-            Text(
-                error,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
-            )
-        }
         Spacer(Modifier.height(6.dp))
     }
 }

@@ -8,10 +8,11 @@ import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -26,10 +27,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -87,15 +85,17 @@ import dev.seedseeker.app.ui.theme.SpdYellow
  *   chip rather than relationships between chips, so both are set in the editor
  *   a tap opens — never by a drag.
  *
- * A phone is narrow, so every entry — a chip, or a whole capsule — takes a line
- * of its own rather than wrapping: a wrapped capsule reads as two slots when it
- * is one. Names give up their width first, ellipsised, so the tags that say
- * what the chip actually asks for are never the part that goes.
+ * Entries flow like words: a chip sits beside the last one when it fits and
+ * starts a new line when it does not. A capsule flows the same way inside its
+ * own edge, so its chips stack within the one dashed outline rather than the
+ * capsule splitting into what would read as two slots. A chip wider than a
+ * phone's line gives up its name first, ellipsised, so the tags that say what
+ * it actually asks for are never the part that goes.
  *
- * Removal is the platform's own gesture rather than a target to hit: swipe a
- * line away, or drop a chip on the zone the board opens under itself while one
- * is being dragged.
+ * Removal is a drop rather than a target to hit — the board opens a zone under
+ * itself while a chip is held — with the editor a tap opens as the other way.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun RequirementBoard(
     requirements: List<ItemRequirement>,
@@ -110,14 +110,14 @@ fun RequirementBoard(
     val haptics = LocalHapticFeedback.current
     // Live layout handles, so a drop can name what it landed on. Bounds are
     // resolved against the board only at hit-test time, which keeps them right
-    // through scrolling and through a row swiped half off screen.
+    // through scrolling.
     val placements = remember { mutableStateMapOf<Int, LayoutCoordinates>() }
-    val rows = remember { mutableStateMapOf<Long, LayoutCoordinates>() }
+    // A capsule is a target in its own right: the "or" between its chips and
+    // the padding around them are still the cluster's.
+    val capsules = remember { mutableStateMapOf<Long, LayoutCoordinates>() }
     // A board item's own key names a *position* in the list, which the next
-    // removal shifts; the anchor requirement's key names the thing itself, and
-    // is what a row's swipe state has to be tied to so that deleting one line
-    // cannot hand its half-dismissed state to the line that takes its place.
-    fun rowKey(item: BoardItem): Long = requirements[item.anchor].key
+    // removal shifts; the anchor requirement's key names the thing itself.
+    fun itemKey(item: BoardItem): Long = requirements[item.anchor].key
     var board by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var deleteZone by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var dragging by remember { mutableStateOf<Int?>(null) }
@@ -139,10 +139,8 @@ fun RequirementBoard(
                 index !in ownMembers && rectOf(coordinates)?.contains(position) == true
             }
             ?.let { return DropTarget.Join(it.key) }
-        // An entry holds a whole line, so the space beside a chip is still the
-        // chip's: a drop anywhere along the line joins what the line holds.
         return items
-            .firstOrNull { it !== own && rectOf(rows[rowKey(it)])?.contains(position) == true }
+            .firstOrNull { it !== own && rectOf(capsules[itemKey(it)])?.contains(position) == true }
             ?.let { DropTarget.Join(it.anchor) }
     }
 
@@ -150,16 +148,13 @@ fun RequirementBoard(
     val hovered = (target as? DropTarget.Join)?.index
 
     Box(modifier = modifier.onGloballyPositioned { board = it }) {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            items.forEach { item ->
-                key(rowKey(item)) {
-                    BoardRow(
-                        // A swipe and a held chip both want the horizontal drag,
-                        // so the board hands it to whichever started first.
-                        enabled = enabled && dragging == null,
-                        onRemove = { onRemove(item) },
-                        modifier = Modifier.onGloballyPositioned { rows[rowKey(item)] = it },
-                    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                items.forEach { item ->
+                    key(itemKey(item)) {
                         BoardEntry(
                             requirements = requirements,
                             item = item,
@@ -167,6 +162,7 @@ fun RequirementBoard(
                             draggingIndex = dragging,
                             hoveredIndex = hovered,
                             onPlaced = { index, coordinates -> placements[index] = coordinates },
+                            onCapsulePlaced = { capsules[itemKey(item)] = it },
                             onEdit = { index -> onEdit(item, index) },
                             onDragStart = { index, offset ->
                                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -193,7 +189,7 @@ fun RequirementBoard(
                                             onRemove(item)
                                         }
                                     }
-                                    // Dropped on its own line: leave the capsule.
+                                    // Let go anywhere else: leave the capsule.
                                     null -> if (requirements[source].alternativeGroup != null) {
                                         onChange(requirements.detach(source))
                                     }
@@ -203,8 +199,8 @@ fun RequirementBoard(
                         )
                     }
                 }
+                AddChip(enabled = enabled, onClick = onAdd)
             }
-            AddChip(enabled = enabled, onClick = onAdd)
             if (dragging != null) {
                 RemoveZone(
                     over = target == DropTarget.Remove,
@@ -215,6 +211,14 @@ fun RequirementBoard(
     }
 }
 
+/** The sprite tile's side in dp; a chip is this plus its padding tall. */
+private const val CHIP_TILE = 34
+
+private val CHIP_RADIUS = 18.dp
+
+/** How far a capsule's dashed edge stands off the chips inside it. */
+private val CAPSULE_INSET = 5.dp
+
 /** Where a dragged chip may be let go. */
 private sealed interface DropTarget {
     /** Become an either/or alternative of the chip at [index]. */
@@ -222,61 +226,6 @@ private sealed interface DropTarget {
 
     /** Leave the board. */
     data object Remove : DropTarget
-}
-
-/**
- * One line of the board, swipeable off either edge to delete what it holds —
- * a chip with its stack, or a whole either/or cluster.
- */
-@Composable
-private fun BoardRow(
-    enabled: Boolean,
-    onRemove: () -> Unit,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
-) {
-    val haptics = LocalHapticFeedback.current
-    val state = rememberSwipeToDismissBoxState()
-    SwipeToDismissBox(
-        state = state,
-        modifier = modifier,
-        gesturesEnabled = enabled,
-        onDismiss = {
-            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-            onRemove()
-        },
-        backgroundContent = { SwipeAwayBackground(state.dismissDirection) },
-    ) {
-        Box(Modifier.fillMaxWidth()) { content() }
-    }
-}
-
-/**
- * What shows behind a line being swiped away — and nothing at all while it
- * rests, since the background is composed under every line either way.
- */
-@Composable
-private fun RowScope.SwipeAwayBackground(direction: SwipeToDismissBoxValue) {
-    if (direction == SwipeToDismissBoxValue.Settled) return
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.errorContainer)
-            .padding(horizontal = 16.dp),
-        contentAlignment = if (direction == SwipeToDismissBoxValue.StartToEnd) {
-            Alignment.CenterStart
-        } else {
-            Alignment.CenterEnd
-        },
-    ) {
-        Icon(
-            Icons.Filled.Delete,
-            contentDescription = null,
-            modifier = Modifier.size(18.dp),
-            tint = MaterialTheme.colorScheme.onErrorContainer,
-        )
-    }
 }
 
 /** A chip, or the capsule holding an either/or cluster's chips. */
@@ -288,6 +237,7 @@ private fun BoardEntry(
     draggingIndex: Int?,
     hoveredIndex: Int?,
     onPlaced: (Int, LayoutCoordinates) -> Unit,
+    onCapsulePlaced: (LayoutCoordinates) -> Unit,
     onEdit: (Int) -> Unit,
     onDragStart: (Int, Offset) -> Unit,
     onDrag: (Offset) -> Unit,
@@ -295,49 +245,50 @@ private fun BoardEntry(
     onDragCancel: () -> Unit,
 ) {
     if (item.cluster == null) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            RequirementChip(
-                requirement = requirements[item.anchor],
-                // A lone chip carries its own stack badges; a cluster's belong
-                // to the capsule, since the stack binds to whichever member the
-                // search picks.
-                stackCount = item.stackCount,
-                total = item.total,
-                enabled = enabled,
-                dimmed = draggingIndex == item.anchor,
-                highlighted = hoveredIndex == item.anchor,
-                modifier = Modifier.weight(1f, fill = false),
-                onPlaced = { onPlaced(item.anchor, it) },
-                onClick = { onEdit(item.anchor) },
-                onDragStart = { offset -> onDragStart(item.anchor, offset) },
-                onDrag = onDrag,
-                onDragEnd = onDragEnd,
-                onDragCancel = onDragCancel,
-            )
-        }
+        RequirementChip(
+            requirement = requirements[item.anchor],
+            // A lone chip carries its own stack badges; a cluster's belong
+            // to the capsule, since the stack binds to whichever member the
+            // search picks.
+            stackCount = item.stackCount,
+            total = item.total,
+            enabled = enabled,
+            dimmed = draggingIndex == item.anchor,
+            highlighted = hoveredIndex == item.anchor,
+            onPlaced = { onPlaced(item.anchor, it) },
+            onClick = { onEdit(item.anchor) },
+            onDragStart = { offset -> onDragStart(item.anchor, offset) },
+            onDrag = onDrag,
+            onDragEnd = onDragEnd,
+            onDragCancel = onDragCancel,
+        )
         return
     }
     val highlighted = hoveredIndex != null && hoveredIndex in item.members
     val edge = MaterialTheme.colorScheme.tertiary
-    Row(
+    // The capsule is exactly as wide as what it holds, and what it holds flows
+    // too: a member that will not fit beside the last drops to the next line
+    // *inside* the dashed edge, its "or" going with it, so the capsule still
+    // reads as one slot however tall it grows.
+    FlowRow(
         modifier = Modifier
-            .fillMaxWidth()
+            .onGloballyPositioned(onCapsulePlaced)
             .dashedOutline(
                 color = if (highlighted) edge else edge.copy(alpha = 0.55f),
                 fill = edge.copy(alpha = 0.05f),
-                radius = 20.dp,
+                radius = CHIP_RADIUS + CAPSULE_INSET,
                 width = if (highlighted) 2.dp else 1.dp,
             )
-            .padding(horizontal = 5.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(CAPSULE_INSET),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-            item.members.forEachIndexed { position, index ->
+        item.members.forEachIndexed { position, index ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 if (position > 0) {
                     Text(
                         "or",
-                        modifier = Modifier.padding(horizontal = 4.dp),
-                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 5.dp),
+                        style = MaterialTheme.typography.labelMedium,
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.tertiary,
@@ -360,12 +311,19 @@ private fun BoardEntry(
                 )
             }
         }
-        StackBadges(
-            stackCount = item.stackCount,
-            total = item.total,
-            enabled = enabled,
-            onClick = { onEdit(item.anchor) },
-        )
+        if (item.stackCount > 1 || item.total != null) {
+            Row(
+                modifier = Modifier.height(CHIP_TILE.dp + 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                StackBadges(
+                    stackCount = item.stackCount,
+                    total = item.total,
+                    enabled = enabled,
+                    onClick = { onEdit(item.anchor) },
+                )
+            }
+        }
     }
 }
 
@@ -397,7 +355,7 @@ private fun RequirementChip(
         MaterialTheme.colorScheme.outlineVariant
     }
     Surface(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(CHIP_RADIUS),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         border = BorderStroke(if (highlighted) 2.dp else 1.dp, outline),
         modifier = modifier
@@ -419,30 +377,30 @@ private fun RequirementChip(
             .semantics { contentDescription = chipDescription(requirement, stackCount, total) },
     ) {
         Row(
-            modifier = Modifier.padding(start = 6.dp, top = 4.dp, end = 8.dp, bottom = 4.dp),
+            modifier = Modifier.padding(start = 6.dp, top = 5.dp, end = 10.dp, bottom = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             SpriteTile(
                 item = requirement.item,
                 glows = ItemGlows.forFilter(requirement.effect),
-                tileSize = 26,
+                tileSize = CHIP_TILE,
             )
-            Spacer(Modifier.width(6.dp))
+            Spacer(Modifier.width(8.dp))
             Text(
                 chipTitle(requirement),
                 modifier = Modifier.weight(1f, fill = false),
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             chipTags(requirement).forEach { tag ->
-                Spacer(Modifier.width(4.dp))
+                Spacer(Modifier.width(5.dp))
                 ChipTag(text = tag.text, tone = tag.tone)
             }
             EffectBadge(requirement)
             if (requirement.requireUncursed) {
-                Spacer(Modifier.width(4.dp))
+                Spacer(Modifier.width(5.dp))
                 ChipTag(text = "✓", tone = TagTone.SOFT)
             }
             StackBadges(stackCount = stackCount, total = total, enabled = enabled, onClick = onClick)
@@ -454,7 +412,7 @@ private fun RequirementChip(
 @Composable
 private fun RowScope.StackBadges(stackCount: Int, total: Int?, enabled: Boolean, onClick: () -> Unit) {
     if (stackCount > 1) {
-        Spacer(Modifier.width(5.dp))
+        Spacer(Modifier.width(6.dp))
         StackBadge(
             text = if (total != null) "≤$stackCount" else "×$stackCount",
             container = SpdGreen,
@@ -465,7 +423,7 @@ private fun RowScope.StackBadges(stackCount: Int, total: Int?, enabled: Boolean,
         )
     }
     total?.let {
-        Spacer(Modifier.width(4.dp))
+        Spacer(Modifier.width(5.dp))
         StackBadge(
             text = "Σ≥$it",
             container = SpdYellow,
@@ -487,7 +445,7 @@ private fun StackBadge(
     onClick: () -> Unit,
 ) {
     Surface(
-        shape = RoundedCornerShape(9.dp),
+        shape = RoundedCornerShape(10.dp),
         color = container,
         // No stepper on the chip: a badge is small, and a tap opening the editor
         // is one target instead of three.
@@ -497,8 +455,8 @@ private fun StackBadge(
     ) {
         Text(
             text,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp),
-            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelMedium,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
             color = content,
@@ -516,11 +474,11 @@ private fun EffectBadge(requirement: ItemRequirement) {
     val glows = ItemGlows.forFilter(requirement.effect)
     when {
         glows.size > 1 -> {
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(5.dp))
             EffectCountBadge(glows, requirement.effectLabel.orEmpty())
         }
         requirement.effect == EffectFilter.AnyEnchantment -> {
-            Spacer(Modifier.width(4.dp))
+            Spacer(Modifier.width(5.dp))
             AnyEnchantmentDot(requirement.effectLabel.orEmpty())
         }
     }
@@ -533,8 +491,8 @@ private fun EffectCountBadge(glows: List<Glow>, description: String) {
     val ring = remember(glows) { effectRing(glows) }
     Box(
         modifier = Modifier
-            .height(16.dp)
-            .widthIn(min = 16.dp)
+            .height(19.dp)
+            .widthIn(min = 19.dp)
             .drawBehind {
                 val radius = CornerRadius(size.height / 2f)
                 drawRoundRect(brush = Brush.sweepGradient(*ring), cornerRadius = radius)
@@ -551,8 +509,8 @@ private fun EffectCountBadge(glows: List<Glow>, description: String) {
     ) {
         Text(
             "${glows.size}",
-            modifier = Modifier.padding(horizontal = 4.dp),
-            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 5.dp),
+            style = MaterialTheme.typography.labelMedium,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.Bold,
         )
@@ -564,7 +522,7 @@ private fun EffectCountBadge(glows: List<Glow>, description: String) {
 private fun AnyEnchantmentDot(description: String) {
     Box(
         Modifier
-            .size(11.dp)
+            .size(13.dp)
             .clip(CircleShape)
             .background(Brush.sweepGradient(*RAINBOW))
             .semantics { contentDescription = description },
@@ -595,28 +553,33 @@ private val RAINBOW = arrayOf(
     1f to Color(0xFFFF5555),
 )
 
-/** The trailing "+ Add" chip that opens the editor on a new requirement. */
+/**
+ * The trailing "+ Add" chip that opens the editor on a new requirement. It
+ * stands as tall as a chip, so the line it shares with one stays level.
+ */
 @Composable
 private fun AddChip(enabled: Boolean, onClick: () -> Unit) {
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
-            .dashedOutline(MaterialTheme.colorScheme.outline, radius = 16.dp)
+            .clip(RoundedCornerShape(CHIP_RADIUS))
+            .dashedOutline(MaterialTheme.colorScheme.outline, radius = CHIP_RADIUS)
             .clickable(enabled = enabled, onClick = onClick)
             .semantics { contentDescription = "Add requirement" }
-            .padding(start = 10.dp, top = 7.dp, end = 14.dp, bottom = 7.dp),
+            .height(CHIP_TILE.dp + 12.dp)
+            .padding(start = 12.dp, end = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
             Icons.Filled.Add,
             contentDescription = null,
-            modifier = Modifier.size(16.dp),
+            modifier = Modifier.size(20.dp),
             tint = MaterialTheme.colorScheme.primary,
         )
-        Spacer(Modifier.width(4.dp))
+        Spacer(Modifier.width(5.dp))
         Text(
             "Add",
-            style = MaterialTheme.typography.labelLarge,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -697,11 +660,11 @@ private fun ChipTag(text: String, tone: TagTone) {
         TagTone.UPGRADE -> SpdUpgrade
         TagTone.SOFT -> SpdGreen
     }
-    Surface(shape = RoundedCornerShape(5.dp), color = container) {
+    Surface(shape = RoundedCornerShape(6.dp), color = container) {
         Text(
             text,
-            modifier = Modifier.padding(horizontal = 4.dp),
-            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+            style = MaterialTheme.typography.labelMedium,
             fontFamily = FontFamily.Monospace,
             fontWeight = FontWeight.SemiBold,
             color = content,
@@ -710,7 +673,7 @@ private fun ChipTag(text: String, tone: TagTone) {
 }
 
 /** The chip's name: the item, or the wildcard it stands for, without its tier. */
-private fun chipTitle(requirement: ItemRequirement): String =
+internal fun chipTitle(requirement: ItemRequirement): String =
     requirement.item?.name ?: "Any ${requirement.kind.singularLabel}"
 
 /** The tiny qualifiers beside a chip's name: tier, upgrade, floor. */
