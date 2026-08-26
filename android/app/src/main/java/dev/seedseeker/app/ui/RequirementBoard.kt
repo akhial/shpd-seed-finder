@@ -214,7 +214,14 @@ fun RequirementBoard(
 /** The sprite tile's side in dp; a chip is this plus its padding tall. */
 private const val CHIP_TILE = 34
 
-private val CHIP_RADIUS = 18.dp
+/** A chip's height: its tile plus the 5dp of padding above and below it. */
+private val CHIP_HEIGHT = (CHIP_TILE + 10).dp
+
+/**
+ * Half a chip's height, so a chip's ends are half circles rather than rounded
+ * corners, and so the capsule a cluster wears stays concentric with them.
+ */
+private val CHIP_RADIUS = CHIP_HEIGHT / 2
 
 /** How far a capsule's dashed edge stands off the chips inside it. */
 private val CAPSULE_INSET = 5.dp
@@ -313,7 +320,7 @@ private fun BoardEntry(
         }
         if (item.stackCount > 1 || item.total != null) {
             Row(
-                modifier = Modifier.height(CHIP_TILE.dp + 12.dp),
+                modifier = Modifier.height(CHIP_HEIGHT),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 StackBadges(
@@ -355,7 +362,9 @@ private fun RequirementChip(
         MaterialTheme.colorScheme.outlineVariant
     }
     Surface(
-        shape = RoundedCornerShape(CHIP_RADIUS),
+        // A capsule, not a rounded rectangle: the ends stay half circles
+        // however tall the chip grows at a larger font scale.
+        shape = CircleShape,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         border = BorderStroke(if (highlighted) 2.dp else 1.dp, outline),
         modifier = modifier
@@ -561,11 +570,11 @@ private val RAINBOW = arrayOf(
 private fun AddChip(enabled: Boolean, onClick: () -> Unit) {
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(CHIP_RADIUS))
+            .clip(CircleShape)
             .dashedOutline(MaterialTheme.colorScheme.outline, radius = CHIP_RADIUS)
             .clickable(enabled = enabled, onClick = onClick)
             .semantics { contentDescription = "Add requirement" }
-            .height(CHIP_TILE.dp + 12.dp)
+            .height(CHIP_HEIGHT)
             .padding(start = 12.dp, end = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -585,7 +594,10 @@ private fun AddChip(enabled: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** The zone the board opens under itself while a chip is held. */
+/**
+ * The zone the board opens under itself while a chip is held. It stands as
+ * tall as a chip, so the chip it swallows and the row it replaces match.
+ */
 @Composable
 private fun RemoveZone(over: Boolean, modifier: Modifier = Modifier) {
     val danger = MaterialTheme.colorScheme.error
@@ -600,7 +612,7 @@ private fun RemoveZone(over: Boolean, modifier: Modifier = Modifier) {
                     Modifier.dashedOutline(danger.copy(alpha = 0.6f), radius = 10.dp)
                 },
             )
-            .padding(vertical = 9.dp),
+            .height(CHIP_HEIGHT),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
