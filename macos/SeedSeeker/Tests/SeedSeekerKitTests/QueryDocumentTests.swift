@@ -150,7 +150,7 @@ final class QueryDocumentTests: XCTestCase {
         XCTAssertEqual(entries[0]["level_sum"] as? [String: Int], ["group": 1, "at_least": 4])
         XCTAssertEqual(entries[1]["level_sum"] as? [String: Int], ["group": 1, "at_least": 4])
         XCTAssertNil(entries[0]["upgrade_sum"])
-        XCTAssertEqual(first.description, "Any upgrade • level group A ≥ 4 • by floor 4")
+        XCTAssertEqual(first.description, "Any upgrade • levels ≥ 4 together • by floor 4")
         try assertEngineAgrees(SavedQuery(requirements: [first, second]))
 
         // A same-item group is a stack: the anchor may be constrained, the copies are plain.
@@ -409,7 +409,7 @@ final class QueryDocumentTests: XCTestCase {
         XCTAssertEqual(glyphed.description, "+1 or higher • any glyph")
         let summed = try ItemRequirement(key: 4, item: nil, upgrade: 0, kind: .ring, upgradeMatch: .any,
                                          levelSum: LevelSum(group: 2, atLeast: 4))
-        XCTAssertEqual(summed.description, "Any upgrade • level group B ≥ 4")
+        XCTAssertEqual(summed.description, "Any upgrade • levels ≥ 4 together")
         XCTAssertEqual(summed.maximumContributedUpgrade, 4)
         XCTAssertEqual(summed.maximumLevel, 5)
         let exact = try ItemRequirement(key: 5, item: nil, upgrade: 2, kind: .wand)
