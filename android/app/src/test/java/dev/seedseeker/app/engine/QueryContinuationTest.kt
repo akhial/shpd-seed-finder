@@ -117,13 +117,27 @@ class QueryContinuationTest {
     }
 
     @Test
-    fun anUndecodableRequestPacketIsRejected() {
-        val valid = QueryCodec.encode(request(frost))
+    fun anAlternativeGroupIsOneSlotThatNarrowsLikeARequirement() {
+        // Dropping an alternative narrows the slot, so the run continues; adding
+        // one widens it, so it does not.
+        val either = listOf(frost.copy(alternativeGroup = 1), fireblast.copy(alternativeGroup = 1))
+        assertContinues(true, request(frost), request(*either.toTypedArray()))
+        assertContinues(false, request(*either.toTypedArray()), request(frost))
+        assertContinues(true, request(*either.toTypedArray(), haste), request(*either.toTypedArray()))
+    }
+
+    @Test
+    fun anUndecodableQueryDocumentIsRejected() {
+        val valid = QueryDocument.encode(request(frost))
         assertThrows(IllegalArgumentException::class.java) {
             JniBindings.queryContinues(byteArrayOf(1, 2, 3), valid)
         }
         assertThrows(IllegalArgumentException::class.java) {
             JniBindings.queryContinues(valid, byteArrayOf())
+        }
+        // A document the codec rejects fails the same way as a malformed packet.
+        assertThrows(IllegalArgumentException::class.java) {
+            JniBindings.queryContinues("""{"requirements":[{"item":"no_such_item"}]}""".encodeToByteArray(), valid)
         }
     }
 

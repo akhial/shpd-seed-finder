@@ -13,6 +13,8 @@ public enum SearchLimits {
     public static let boundedTiers = 3...4
     /// Highest same-item group number (groups run 1...this, shown as A..D).
     public static let identityGroupMax = 4
+    /// Highest combined-level group number (groups run 1...this, shown as A..D).
+    public static let levelSumGroupMax = 4
     /// Highest upgrade a search may name, for everything but rings.
     public static let maxUpgradeDefault = 3
     /// Highest upgrade a ring requirement may name.
@@ -22,14 +24,17 @@ public enum SearchLimits {
 }
 
 public enum ItemKind: Int, Codable, CaseIterable, Sendable {
-    // The raw value doubles as the SSF8 wire kind ID: 0...3 are the original
+    // The raw value is the saved-query kind ID: 0...3 are the original
     // families and 4/5 narrow a weapon requirement to one weapon class, so
-    // saved queries and packets from older builds keep their meaning.
+    // saved queries from older builds keep their meaning.
     case weapon, armor, wand, ring, meleeWeapon, thrownWeapon
 
     public var label: String { ["Weapons", "Armor", "Wands", "Rings", "Melee weapons", "Thrown weapons"][rawValue] }
     public var singularLabel: String { ["weapon", "armor", "wand", "ring", "melee weapon", "thrown weapon"][rawValue] }
     public var modifierLabel: String? { family == .weapon ? "Enchantment" : family == .armor ? "Glyph" : nil }
+    /// The non-curse effects of this family — enchantments or glyphs — in the
+    /// shared catalog asset's order.
+    public var enchantmentNames: [String] { ItemCatalog.enchantmentsFor(self) }
     /// The highest upgrade a search may name for this family.
     public var maximumSearchUpgrade: Int { family == .ring ? SearchLimits.maxUpgradeRing : SearchLimits.maxUpgradeDefault }
 
@@ -139,17 +144,39 @@ public enum FloorLimits {
     }
 }
 
+/// Shown as A..D: the letter of a 1-based group number.
+public func groupLetter(_ group: Int) -> String {
+    UnicodeScalar(64 + group).map { String(Character($0)) } ?? "\(group)"
+}
+
 public enum ModelValidationError: Error, Equatable, LocalizedError {
-    case itemKind, tier, upgrade, modifier, uncursedCurse, identityGroup, itemMaximumDepth, emptyRequirements, maximumDepth, challenges
+    case itemKind, tier, upgrade, modifier, effect, uncursedCurse, identityGroup, itemMaximumDepth
+    case identityGroupMixedKinds(group: Int)
+    case identityGroupOverconstrained(group: Int)
+    case levelSum, levelSumInAlternative
+    case levelSumMismatch(group: Int)
+    case levelSumUnattainable(group: Int, needed: Int, maximum: Int)
+    case emptyRequirements, maximumDepth, challenges
     public var errorDescription: String? {
         switch self {
         case .itemKind: "Selected item must belong to its category"
         case .tier: "Tier predicate requires a wildcard weapon or armor and a non-redundant tier"
         case .upgrade: "Upgrade predicate is invalid"
-        case .modifier: "This category cannot carry a modifier requirement"
+        case .modifier: "This category cannot carry an effect requirement"
+        case .effect: "Effect requirement names an unknown effect"
         case .uncursedCurse: "An uncursed item cannot have a curse"
         case .identityGroup: "Same-item group must be A..D"
+        case .identityGroupMixedKinds(let group):
+            "Same-item group \(groupLetter(group)) mixes different categories"
+        case .identityGroupOverconstrained(let group):
+            "Same-item group \(groupLetter(group)) can describe one item (or one set of alternatives); its other members must be plain"
         case .itemMaximumDepth: "Item floor limit must be 1..\(SearchLimits.maxDepth)"
+        case .levelSum: "Combined level group must be A..D with a total of at least 1"
+        case .levelSumInAlternative: "An alternative cannot be part of a combined level group"
+        case .levelSumMismatch(let group):
+            "Combined level group \(groupLetter(group)) must share one total across its items"
+        case .levelSumUnattainable(let group, let needed, let maximum):
+            "Combined level group \(groupLetter(group)) needs \(needed) levels but its items can reach at most \(maximum)"
         case .emptyRequirements: "At least one requirement is needed"
         case .maximumDepth: "Maximum floor must be 1..\(SearchLimits.maxDepth)"
         case .challenges: "Challenge mask must be 0..\(SearchLimits.challengeMask)"
@@ -157,11 +184,75 @@ public enum ModelValidationError: Error, Equatable, LocalizedError {
     }
 }
 
+/// Which enchantment, glyph or curse a requirement demands.
+///
+/// `oneOf` holds wire names in the catalog asset's order (enchantments, then
+/// curses, each alphabetical); the full non-curse
+/// family set is always `anyEnchantment`, so equal predicates compare equal.
+public enum EffectFilter: Hashable, Sendable {
+    /// Any effect, or none at all.
+    case any
+    /// Some enchantment or glyph — anything but a curse or a plain item.
+    case anyEnchantment
+    /// One of these effects (a single name is the classic "with Blazing").
+    case oneOf([String])
+
+    public var isAny: Bool { self == .any }
+    /// The names this filter lists explicitly.
+    public var names: [String] {
+        if case .oneOf(let names) = self { return names }
+        return []
+    }
+    /// The one effect a single-effect filter names (what older builds saved
+    /// as `modifier`).
+    public var singleName: String? { names.count == 1 ? names[0] : nil }
+    /// The effect whose glow the sprite pulses with: the single effect, or the
+    /// first of a set. "Any enchantment" has no one colour.
+    public var glowName: String? { names.first }
+
+    /// Ordered into the catalog asset's order, deduplicated, and collapsed to
+    /// `anyEnchantment` when the set is the family's whole non-curse list.
+    /// Returns nil when a name is not an effect of `kind`.
+    func normalized(for kind: ItemKind) -> EffectFilter? {
+        guard case .oneOf(let raw) = self else { return self }
+        let known = ItemCatalog.modifiersFor(kind)
+        let names = known.filter { raw.contains($0) }
+        guard !names.isEmpty, Set(raw).count == names.count else { return nil }
+        return names == kind.enchantmentNames ? .anyEnchantment : .oneOf(names)
+    }
+
+    /// Whether every listed effect is a curse (an "uncursed" item could never match).
+    func isCursesOnly(for kind: ItemKind) -> Bool {
+        let curses = ItemCatalog.cursesFor(kind)
+        return !names.isEmpty && names.allSatisfy(curses.contains)
+    }
+
+    /// Human description: "Blazing", "Blocking/Projecting", "any enchantment".
+    public func label(for kind: ItemKind) -> String? {
+        switch self {
+        case .any: nil
+        case .anyEnchantment: "any \((kind.modifierLabel ?? "enchantment").lowercased())"
+        case .oneOf(let names): names.joined(separator: "/")
+        }
+    }
+}
+
+/// Membership in a combined-level group: the members' *levels* must add up to
+/// at least `atLeast`, which every member shares, where a matched item counts
+/// its upgrade plus one. Members are optional, so the group reads "up to N
+/// items reaching `atLeast` levels" — one +2 ring satisfies a total of 3 on
+/// its own, and so does a +0 with a +1.
+public struct LevelSum: Codable, Hashable, Sendable {
+    public var group: Int
+    public var atLeast: Int
+    public init(group: Int, atLeast: Int) { self.group = group; self.atLeast = atLeast }
+}
+
 public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
     public var key: Int64
     public var item: CatalogItem?
     public var upgrade: Int
-    public var modifier: String?
+    public var effect: EffectFilter
     public var kind: ItemKind
     public var tier: Int
     public var tierMatch: TierMatch
@@ -170,13 +261,23 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
     public var identityGroup: Int?
     public var maximumDepth: Int?
     public var requireUncursed: Bool
+    /// Requirements sharing a group are alternatives for one slot: any member
+    /// satisfies it. The number is session-local; documents renumber.
+    public var alternativeGroup: Int?
+    /// Membership in a combined-level group (never on an alternative).
+    public var levelSum: LevelSum?
     public var id: Int64 { key }
 
+    /// The single effect this requirement names, if it names exactly one.
+    public var modifier: String? { effect.singleName }
+
     public init(key: Int64, item: CatalogItem?, upgrade: Int, modifier: String? = nil,
+                effect: EffectFilter = .any,
                 kind: ItemKind, tier: Int = 0, tierMatch: TierMatch = .any,
                 upgradeMatch: UpgradeMatch = .exactly,
                 source: ScoutItemSource? = nil, identityGroup: Int? = nil,
-                maximumDepth: Int? = nil, requireUncursed: Bool = false) throws {
+                maximumDepth: Int? = nil, requireUncursed: Bool = false,
+                alternativeGroup: Int? = nil, levelSum: LevelSum? = nil) throws {
         guard item == nil || item.map(kind.accepts) == true else { throw ModelValidationError.itemKind }
         let tierable = item == nil && (kind.family == .weapon || kind.family == .armor)
         let validTier = switch tierMatch {
@@ -191,31 +292,79 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
         case .atLeast: (0...kind.maximumSearchUpgrade).contains(upgrade)
         }
         guard valid else { throw ModelValidationError.upgrade }
-        guard kind.modifierLabel != nil || modifier == nil else { throw ModelValidationError.modifier }
-        guard !requireUncursed || !ItemCatalog.cursesFor(kind).contains(modifier ?? "") else {
+        // `modifier` is the classic single-effect spelling; `effect` wins when both are given.
+        let requested = effect.isAny ? modifier.map { EffectFilter.oneOf([$0]) } ?? .any : effect
+        guard kind.modifierLabel != nil || requested.isAny else { throw ModelValidationError.modifier }
+        guard let effect = requested.normalized(for: kind) else { throw ModelValidationError.effect }
+        guard !requireUncursed || !effect.isCursesOnly(for: kind) else {
             throw ModelValidationError.uncursedCurse
         }
         guard identityGroup == nil || (1...SearchLimits.identityGroupMax).contains(identityGroup!) else { throw ModelValidationError.identityGroup }
         guard maximumDepth == nil || (1...SearchLimits.maxDepth).contains(maximumDepth!) else { throw ModelValidationError.itemMaximumDepth }
-        self.key = key; self.item = item; self.upgrade = upgrade; self.modifier = modifier
+        if let levelSum {
+            guard (1...SearchLimits.levelSumGroupMax).contains(levelSum.group), levelSum.atLeast >= 1 else {
+                throw ModelValidationError.levelSum
+            }
+            guard alternativeGroup == nil else { throw ModelValidationError.levelSumInAlternative }
+        }
+        self.key = key; self.item = item; self.upgrade = upgrade; self.effect = effect
         self.kind = kind; self.tier = tier; self.tierMatch = tierMatch
         self.upgradeMatch = upgradeMatch; self.source = source
         self.identityGroup = identityGroup
         self.maximumDepth = maximumDepth
         self.requireUncursed = requireUncursed
+        self.alternativeGroup = alternativeGroup
+        self.levelSum = levelSum
+    }
+
+    /// The most upgrade levels an item matching this requirement can contribute
+    /// to a combined total: an exact upgrade counts as itself, anything else as
+    /// the family's cap.
+    public var maximumContributedUpgrade: Int {
+        upgradeMatch == .exactly ? upgrade : kind.maximumSearchUpgrade
+    }
+
+    /// The most *levels* an item matching this requirement can contribute to
+    /// a combined total: its highest upgrade plus one, since every matched
+    /// item counts itself.
+    public var maximumLevel: Int { maximumContributedUpgrade + 1 }
+
+    /// Whether this constrains nothing beyond its category — the shape a
+    /// same-item group's extra copies take. A narrowed weapon kind is a
+    /// constraint; a per-item floor limit is a placement bound, not an item
+    /// property, and does not count.
+    public var isBare: Bool {
+        item == nil && kind == kind.family && tierMatch == .any && upgradeMatch == .any
+            && effect == .any && !requireUncursed && source == nil
     }
 
     private enum CodingKeys: String, CodingKey {
-        case key, item, upgrade, modifier, kind, tier, tierMatch, upgradeMatch, source, identityGroup, maximumDepth, requireUncursed
+        case key, item, upgrade, modifier, effect, kind, tier, tierMatch, upgradeMatch, source
+        case identityGroup, maximumDepth, requireUncursed, alternativeGroup, levelSum
     }
+
+    /// How the saved-query JSON spells the effect filter, beside the classic
+    /// `modifier` key that a single effect keeps using.
+    private static let anyEnchantmentName = "any_enchantment"
 
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
+        var effect = EffectFilter.any
+        if let names = try? values.decodeIfPresent([String].self, forKey: .effect) {
+            effect = .oneOf(names)
+        } else if let name = try? values.decodeIfPresent(String.self, forKey: .effect) {
+            guard name == Self.anyEnchantmentName else {
+                throw DecodingError.dataCorruptedError(forKey: .effect, in: values,
+                                                       debugDescription: "unknown effect filter")
+            }
+            effect = .anyEnchantment
+        }
         try self.init(
             key: values.decode(Int64.self, forKey: .key),
             item: values.decodeIfPresent(CatalogItem.self, forKey: .item),
             upgrade: values.decode(Int.self, forKey: .upgrade),
             modifier: values.decodeIfPresent(String.self, forKey: .modifier),
+            effect: effect,
             kind: values.decode(ItemKind.self, forKey: .kind),
             tier: values.decodeIfPresent(Int.self, forKey: .tier) ?? 0,
             tierMatch: values.decodeIfPresent(TierMatch.self, forKey: .tierMatch) ?? .any,
@@ -225,20 +374,32 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
             // Requirements saved before empty boss floors were removed may hold
             // 5/10/15; snap them to the equivalent limit below.
             maximumDepth: values.decodeIfPresent(Int.self, forKey: .maximumDepth).map(FloorLimits.normalize),
-            requireUncursed: values.decodeIfPresent(Bool.self, forKey: .requireUncursed) ?? false
+            requireUncursed: values.decodeIfPresent(Bool.self, forKey: .requireUncursed) ?? false,
+            alternativeGroup: values.decodeIfPresent(Int.self, forKey: .alternativeGroup),
+            levelSum: values.decodeIfPresent(LevelSum.self, forKey: .levelSum)
         )
     }
 
     public func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
         try values.encode(key, forKey: .key); try values.encodeIfPresent(item, forKey: .item)
-        try values.encode(upgrade, forKey: .upgrade); try values.encodeIfPresent(modifier, forKey: .modifier)
+        try values.encode(upgrade, forKey: .upgrade)
+        // A single effect stays under `modifier`, so older builds still read it.
+        switch effect {
+        case .any: break
+        case .anyEnchantment: try values.encode(Self.anyEnchantmentName, forKey: .effect)
+        case .oneOf(let names):
+            if names.count == 1 { try values.encode(names[0], forKey: .modifier) }
+            else { try values.encode(names, forKey: .effect) }
+        }
         try values.encode(kind, forKey: .kind); try values.encode(tier, forKey: .tier)
         try values.encode(tierMatch, forKey: .tierMatch); try values.encode(upgradeMatch, forKey: .upgradeMatch)
         try values.encodeIfPresent(source, forKey: .source)
         try values.encodeIfPresent(identityGroup, forKey: .identityGroup)
         try values.encodeIfPresent(maximumDepth, forKey: .maximumDepth)
         try values.encode(requireUncursed, forKey: .requireUncursed)
+        try values.encodeIfPresent(alternativeGroup, forKey: .alternativeGroup)
+        try values.encodeIfPresent(levelSum, forKey: .levelSum)
     }
 
     public var title: String {
@@ -256,12 +417,73 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
         case .exactly: "+\(upgrade) exactly"
         case .atLeast: "+\(upgrade) or higher"
         }
-        if let modifier { text += " • \(modifier)" }
+        if let effect = effect.label(for: kind) { text += " • \(effect)" }
         if requireUncursed { text += " • uncursed" }
         if let source { text += " • \(source.label)" }
-        if let identityGroup, let scalar = UnicodeScalar(64 + identityGroup) { text += " • same item group \(Character(scalar))" }
+        if let identityGroup { text += " • same item group \(groupLetter(identityGroup))" }
+        if let levelSum { text += " • level group \(groupLetter(levelSum.group)) ≥ \(levelSum.atLeast)" }
         if let maximumDepth { text += " • by floor \(maximumDepth)" }
         return text
+    }
+}
+
+extension Array where Element == ItemRequirement {
+    /// The query's slots in order: an alternative group is one slot at the
+    /// position of its first member, holding its members in requirement order;
+    /// every other requirement is a slot of its own.
+    public var slots: [[ItemRequirement]] {
+        var slots: [[ItemRequirement]] = []
+        var slotOfGroup: [Int: Int] = [:]
+        for requirement in self {
+            if let group = requirement.alternativeGroup {
+                if let index = slotOfGroup[group] {
+                    slots[index].append(requirement)
+                } else {
+                    slotOfGroup[group] = slots.count
+                    slots.append([requirement])
+                }
+            } else {
+                slots.append([requirement])
+            }
+        }
+        return slots
+    }
+
+    /// How many slots there are — what the app counts as "requirements".
+    public var slotCount: Int { slots.count }
+
+    /// Checks the rules spanning requirements, as the engine will: a same-item
+    /// group is a stack — one anchor unit (a lone requirement, or the members
+    /// of one alternative group) that may constrain the item, plus plain
+    /// copies of its category — and every combined-level group agrees on one
+    /// total that its members can reach together, counted in levels.
+    public func validateGroups() throws {
+        let stacks = Dictionary(grouping: self.filter { $0.identityGroup != nil }, by: { $0.identityGroup! })
+        for (group, members) in stacks.sorted(by: { $0.key < $1.key }) {
+            guard Set(members.map(\.kind.family)).count == 1 else {
+                throw ModelValidationError.identityGroupMixedKinds(group: group)
+            }
+            // Members of one alternative group form a single unit.
+            let units = Set(members.filter { !$0.isBare }.map { member in
+                member.alternativeGroup.map { "alternative \($0)" } ?? "requirement \(member.key)"
+            })
+            guard units.count <= 1 else {
+                throw ModelValidationError.identityGroupOverconstrained(group: group)
+            }
+        }
+        let sums = Dictionary(grouping: self.compactMap { requirement in
+            requirement.levelSum.map { ($0, requirement) }
+        }, by: { $0.0.group })
+        for (group, members) in sums.sorted(by: { $0.key < $1.key }) {
+            let totals = Set(members.map(\.0.atLeast))
+            guard totals.count == 1, let needed = totals.first else {
+                throw ModelValidationError.levelSumMismatch(group: group)
+            }
+            let maximum = members.reduce(0) { $0 + $1.1.maximumLevel }
+            guard needed <= maximum else {
+                throw ModelValidationError.levelSumUnattainable(group: group, needed: needed, maximum: maximum)
+            }
+        }
     }
 }
 
@@ -271,7 +493,7 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
 /// dust, an elemental ember, or a rotberry seed — can be used in the dungeon
 /// instead of being handed in. The other three quests only change the fight.
 public enum WandmakerQuest: Int, CaseIterable, Codable, Sendable {
-    // The raw value doubles as the SSF8 wire id and the 1-based variant index.
+    // The raw value doubles as the 1-based variant index.
     case corpseDust = 1, elementalEmbers, rotberry
 
     public var variant: ScoutQuestVariant { ScoutQuestKind.wandmaker.variants[rawValue - 1] }
@@ -310,6 +532,7 @@ public struct SearchRequest: Codable, Sendable {
         guard !requirements.isEmpty else { throw ModelValidationError.emptyRequirements }
         guard (1...SearchLimits.maxDepth).contains(maximumDepth) else { throw ModelValidationError.maximumDepth }
         guard (0...SearchLimits.challengeMask).contains(challenges) else { throw ModelValidationError.challenges }
+        try requirements.validateGroups()
         self.requirements = requirements; self.maximumDepth = maximumDepth
         self.requireBlacksmith = requireBlacksmith
         self.excludeBlacksmithRewards = excludeBlacksmithRewards
@@ -331,14 +554,14 @@ extension SearchRequest {
     /// where it stopped — rather than throw the results away and rescan.
     ///
     /// The rule itself is the engine's (`SearchQuery::continues`, bridged as
-    /// `seedfinder_query_continues`): both queries go over the same SSF8
-    /// wire the search takes, so refine eligibility is decided once for every
-    /// platform instead of being re-derived here. Row identity (`key`) drops
-    /// out for free — it is not part of the wire format. A query too large to
-    /// encode continues nothing.
+    /// `seedfinder_query_continues`): both queries go over the same canonical
+    /// JSON document the search takes, so refine eligibility is decided once
+    /// for every platform instead of being re-derived here. Row identity
+    /// (`key`) drops out for free — it is not part of the document. A query
+    /// that cannot be encoded continues nothing.
     public func isRefinement(of base: SearchRequest) -> Bool {
-        guard let candidate = try? QueryCodec.encode(self),
-              let encodedBase = try? QueryCodec.encode(base) else { return false }
+        guard let candidate = try? QueryDocument.encode(self),
+              let encodedBase = try? QueryDocument.encode(base) else { return false }
         return QueryContinuation.continues(candidate, base: encodedBase)
     }
 }

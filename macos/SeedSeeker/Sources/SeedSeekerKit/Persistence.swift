@@ -42,16 +42,22 @@ public struct SavedQuery: Codable, Sendable {
         guard (1...SearchLimits.maxDepth).contains(maximumDepth), (0...SearchLimits.challengeMask).contains(challenges) else { return nil }
         for requirement in requirements {
             if let item = requirement.item, ItemCatalog.findById(item.id) != item { return nil }
-            if let modifier = requirement.modifier,
-               !ItemCatalog.modifiersFor(requirement.kind).contains(modifier) { return nil }
+            // The validating initializer also checks every effect name
+            // against the catalog.
             guard (try? ItemRequirement(key: requirement.key, item: requirement.item,
-                upgrade: requirement.upgrade, modifier: requirement.modifier, kind: requirement.kind,
+                upgrade: requirement.upgrade, effect: requirement.effect, kind: requirement.kind,
                 tier: requirement.tier, tierMatch: requirement.tierMatch,
                 upgradeMatch: requirement.upgradeMatch, source: requirement.source,
                 identityGroup: requirement.identityGroup,
                 maximumDepth: requirement.maximumDepth,
-                requireUncursed: requirement.requireUncursed)) != nil else { return nil }
+                requireUncursed: requirement.requireUncursed,
+                alternativeGroup: requirement.alternativeGroup,
+                levelSum: requirement.levelSum)) != nil else { return nil }
         }
+        // A combined-level group that no longer adds up, or a same-item group
+        // constrained twice, still loads — the editor shows why the search
+        // cannot start — but the engine would refuse it, so the group checks
+        // are the request's, not this loader's.
         return self
     }
 }

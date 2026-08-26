@@ -452,7 +452,9 @@ mod tests {
     use crate::catalog::{ItemId, ItemKind};
     use crate::feasibility::QueryPlan;
     use crate::model::{ItemSource, WorldItem};
-    use crate::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
+    use crate::query::{
+        EffectRequirement, Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
+    };
     use crate::search::{FloorGate, WorldGenerator};
     use crate::seed::DungeonSeed;
 
@@ -497,11 +499,13 @@ mod tests {
             item: None,
             tier: TierRequirement::Any,
             upgrade,
-            effect: None,
+            effect: EffectRequirement::Any,
             require_uncursed: false,
             source: None,
             identity_group: None,
             max_depth: None,
+            alternative_group: None,
+            level_sum: None,
         };
         let query = |requirements: Vec<Requirement>, fast_mode| SearchQuery {
             requirements,
@@ -590,11 +594,13 @@ mod tests {
                 item: None,
                 tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::AtLeast(1),
-                effect: None,
+                effect: EffectRequirement::Any,
                 require_uncursed: false,
                 source: None,
                 identity_group: None,
                 max_depth: None,
+                alternative_group: None,
+                level_sum: None,
             }],
             max_depth: 24,
             challenges: crate::challenges::Challenges::NONE,
@@ -657,11 +663,13 @@ mod tests {
                 item: None,
                 tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Exact(3),
-                effect: None,
+                effect: EffectRequirement::Any,
                 require_uncursed: false,
                 source: None,
                 identity_group: None,
                 max_depth: None,
+                alternative_group: None,
+                level_sum: None,
             }],
             max_depth: 24,
             challenges: crate::challenges::Challenges::NONE,
@@ -695,11 +703,13 @@ mod tests {
                 item: None,
                 tier: TierRequirement::Any,
                 upgrade: UpgradeRequirement::Exact(3),
-                effect: None,
+                effect: EffectRequirement::Any,
                 require_uncursed: false,
                 source: None,
                 identity_group: None,
                 max_depth: None,
+                alternative_group: None,
+                level_sum: None,
             }],
             max_depth: 24,
             challenges: crate::challenges::Challenges::NONE,
@@ -828,11 +838,13 @@ mod tests {
                 item: Some(ItemId::RingSharpshooting),
                 tier: TierRequirement::Any,
                 upgrade: crate::query::UpgradeRequirement::Exact(4),
-                effect: None,
+                effect: EffectRequirement::Any,
                 require_uncursed: false,
                 source: None,
                 identity_group: None,
                 max_depth: None,
+                alternative_group: None,
+                level_sum: None,
             }],
             max_depth: 24,
             challenges: crate::challenges::Challenges::NONE,

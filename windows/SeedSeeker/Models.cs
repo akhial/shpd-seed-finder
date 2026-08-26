@@ -9,8 +9,8 @@ namespace SeedSeeker;
 // in Models.Presentation.cs.
 
 // MeleeWeapon and ThrownWeapon narrow a weapon requirement to one weapon
-// class; the enum value doubles as the SSF8 wire kind ID (0..=5), so they
-// must stay appended after the original four families.
+// class; the enum value indexes the document kind-name table in
+// ResultsExport, so they must stay appended after the original four families.
 public enum ItemKind { Weapon, Armor, Wand, Ring, MeleeWeapon, ThrownWeapon }
 
 /// <summary>Melee/thrown classification of weapon catalog entries.</summary>
@@ -57,6 +57,8 @@ public static class SearchLimits
     public const int BoundedTierMax = 4;
     /// <summary>Highest same-item group number (groups run 1..this, shown as A..D).</summary>
     public const int IdentityGroupMax = 4;
+    /// <summary>Highest combined-level group number (groups run 1..this, shown as A..D).</summary>
+    public const int LevelSumGroupMax = 4;
     /// <summary>Highest upgrade a search may name, for everything but rings.</summary>
     public const int MaxUpgradeDefault = 3;
     /// <summary>Highest upgrade a ring requirement may name.</summary>
@@ -128,12 +130,80 @@ public static class Labels
     };
 }
 
+/// <summary>
+/// Which effects (enchantments, glyphs, curses) a requirement accepts: any
+/// effect or none at all, any non-curse effect of the item's family, or one
+/// of a chosen set. A plain class so System.Text.Json persists it as-is;
+/// <see cref="ItemRequirement.Modifier"/> keeps the pre-set single-name view.
+/// </summary>
+public sealed class EffectFilter
+{
+    /// <summary>Every non-curse effect of the family ("any enchantment").</summary>
+    public bool AnyEnchantment { get; set; }
+    /// <summary>The accepted effect names, in the catalog's order; empty means no restriction.</summary>
+    public List<string> Effects { get; set; } = [];
+
+    public static EffectFilter Any() => new();
+    public static EffectFilter Enchantment() => new() { AnyEnchantment = true };
+    public static EffectFilter OneOf(IEnumerable<string> effects) => new() { Effects = [.. effects] };
+
+    /// <summary>True when the requirement places no condition on the effect.</summary>
+    [JsonIgnore] public bool IsAny => !AnyEnchantment && Effects.Count == 0;
+    /// <summary>The one chosen effect, or null when the filter is anything else.</summary>
+    [JsonIgnore] public string? Single => !AnyEnchantment && Effects.Count == 1 ? Effects[0] : null;
+
+    /// <summary>
+    /// Whether this filter lists exactly the family's non-curse effects,
+    /// which the document writes as the "any_enchantment" shorthand.
+    /// </summary>
+    public bool IsEveryEnchantmentOf(ItemKind kind) =>
+        !AnyEnchantment && Effects.Count > 0 && Effects.ToHashSet().SetEquals(ItemCatalog.EnchantmentsOf(kind));
+
+    /// <summary>The filter with the curse-type effects removed.</summary>
+    public EffectFilter WithoutCurses(ItemKind kind) =>
+        AnyEnchantment ? Enchantment() : OneOf(Effects.Where(effect => !ItemCatalog.IsCurse(kind, effect)));
+
+    /// <summary>Whether every listed effect is a curse (never true for "any" or "any enchantment").</summary>
+    public bool IsCursesOnly(ItemKind kind) =>
+        !AnyEnchantment && Effects.Count > 0 && Effects.All(effect => ItemCatalog.IsCurse(kind, effect));
+
+    public EffectFilter Clone() => new() { AnyEnchantment = AnyEnchantment, Effects = [.. Effects] };
+
+    /// <summary>Summary text for a requirement row, or null when there is nothing to say.</summary>
+    public string? Describe() => AnyEnchantment ? "any enchantment"
+        : Effects.Count == 0 ? null
+        : Effects.Count == 1 ? Effects[0]
+        : $"effect: {string.Join("/", Effects)}";
+}
+
+/// <summary>
+/// Membership in a combined-level group: the <em>levels</em> of the members of
+/// <paramref name="Group"/> (1..LevelSumGroupMax, shown as A..D) must add up to
+/// at least <paramref name="AtLeast"/>, where a matched item counts its upgrade
+/// plus one. Members are optional, so the group reads "up to N items reaching
+/// <paramref name="AtLeast"/> levels" — one +2 ring satisfies a total of 3 on
+/// its own, and so does a +0 with a +1. Every member carries the same total.
+/// </summary>
+public sealed record LevelSum(int Group, int AtLeast);
+
 public sealed partial class ItemRequirement
 {
     public long Key { get; set; } = Random.Shared.NextInt64(1, long.MaxValue);
     public CatalogItem? Item { get; set; }
     public int Upgrade { get; set; }
-    public string? Modifier { get; set; }
+    /// <summary>
+    /// The single pinned effect, or null — the pre-effect-set view of
+    /// <see cref="Effect"/>, kept so saved queries and presets written before
+    /// effect sets existed still load (the setter adopts a name; null leaves
+    /// the filter alone, so a newer file's <c>Effect</c> is never erased).
+    /// </summary>
+    public string? Modifier
+    {
+        get => Effect.Single;
+        set { if (value is not null) Effect = EffectFilter.OneOf([value]); }
+    }
+    /// <summary>Which effects the item may carry.</summary>
+    public EffectFilter Effect { get; set; } = EffectFilter.Any();
     public ItemKind Kind { get; set; }
     public int Tier { get; set; }
     public TierMatch TierMatch { get; set; }
@@ -142,6 +212,13 @@ public sealed partial class ItemRequirement
     public int? IdentityGroup { get; set; }
     public int? MaximumDepth { get; set; }
     public bool RequireUncursed { get; set; }
+    /// <summary>
+    /// Requirements sharing a number form one "any of these" slot, satisfied
+    /// by any single member. Null for a requirement that stands alone.
+    /// </summary>
+    public int? AlternativeGroup { get; set; }
+    /// <summary>Combined-level group membership; never set on an alternative.</summary>
+    public LevelSum? LevelSum { get; set; }
     [JsonIgnore] public string Glyph => KindStyle.Glyph(Kind);
     /// <summary>Row-major index into the upstream item atlas, or -1 for a wildcard.</summary>
     [JsonIgnore] public int SpriteIndex => Item?.SpriteIndex ?? -1;
@@ -151,12 +228,176 @@ public sealed partial class ItemRequirement
         get
         {
             var parts = new List<string> { UpgradeMatch switch { UpgradeMatch.Exactly => $"+{Upgrade} exactly", UpgradeMatch.AtLeast => $"+{Upgrade} or higher", _ => "Any upgrade" } };
-            if (Modifier is not null) parts.Add(Modifier); if (RequireUncursed) parts.Add("uncursed"); if (Source is not null) parts.Add(Labels.Source(Source.Value));
-            if (IdentityGroup is int g) parts.Add($"same item group {(char)(64 + g)}"); if (MaximumDepth is int d) parts.Add($"by floor {d}");
-            return string.Join(" • ", parts);
+            if (Effect.Describe() is string effect) parts.Add(effect); if (RequireUncursed) parts.Add("uncursed"); if (Source is not null) parts.Add(Labels.Source(Source.Value));
+            if (IdentityGroup is int g) parts.Add($"same item group {QueryRelationships.GroupLabel(g)}");
+            if (LevelSum is { } sum) parts.Add($"level group {QueryRelationships.GroupLabel(sum.Group)} \u2265 {sum.AtLeast}");
+            if (MaximumDepth is int d) parts.Add($"by floor {d}");
+            return string.Join(" \u2022 ", parts);
         }
     }
-    public ItemRequirement Clone() => (ItemRequirement)MemberwiseClone();
+    /// <summary>
+    /// The highest upgrade an item satisfying this requirement can carry. The
+    /// engine's own rule: an exact upgrade counts as itself, anything else as
+    /// the family cap.
+    /// </summary>
+    [JsonIgnore] public int MaximumUpgrade => UpgradeMatch == UpgradeMatch.Exactly ? Upgrade : Kind.MaximumSearchUpgrade();
+    /// <summary>
+    /// The most <em>levels</em> this requirement can contribute to a combined
+    /// total: its highest upgrade plus one, since every matched item counts itself.
+    /// </summary>
+    [JsonIgnore] public int MaximumLevel => MaximumUpgrade + 1;
+    /// <summary>
+    /// Whether this constrains nothing beyond its category — the shape a
+    /// same-item group's extra copies take. A narrowed weapon kind is a
+    /// constraint; a per-item floor limit is a placement bound, not an item
+    /// property, and does not count.
+    /// </summary>
+    [JsonIgnore] public bool IsBare =>
+        Item is null && Kind == Kind.Family() && TierMatch == TierMatch.Any && UpgradeMatch == UpgradeMatch.Any
+        && Effect.IsAny && !RequireUncursed && Source is null;
+    public ItemRequirement Clone()
+    {
+        var copy = (ItemRequirement)MemberwiseClone();
+        copy.Effect = Effect.Clone();
+        return copy;
+    }
+}
+
+/// <summary>
+/// The structure between requirements — "any of these" slots, same-item
+/// stacks and combined-level groups — and the edits that keep it consistent. Pure
+/// list manipulation, so SeedSeeker.Tests covers it; the window only wires
+/// it to buttons. The slot rule mirrors the engine's <c>SearchQuery::slots</c>:
+/// a slot sits at its first member's position and holds every member in
+/// requirement order.
+/// </summary>
+public static class QueryRelationships
+{
+    /// <summary>"A".."D" for a 1-based group number.</summary>
+    public static string GroupLabel(int group) => ((char)('A' + group - 1)).ToString();
+
+    /// <summary>The requirements grouped into slots, in slot order.</summary>
+    public static List<List<ItemRequirement>> Slots(IEnumerable<ItemRequirement> requirements)
+    {
+        var slots = new List<List<ItemRequirement>>(); var slotOfGroup = new Dictionary<int, List<ItemRequirement>>();
+        foreach (var requirement in requirements)
+        {
+            if (requirement.AlternativeGroup is int group)
+            {
+                if (!slotOfGroup.TryGetValue(group, out var slot)) { slot = []; slotOfGroup[group] = slot; slots.Add(slot); }
+                slot.Add(requirement);
+            }
+            else slots.Add([requirement]);
+        }
+        return slots;
+    }
+
+    /// <summary>How many slots the query has — what "N requirements" counts once alternatives collapse.</summary>
+    public static int SlotCount(IEnumerable<ItemRequirement> requirements) => Slots(requirements).Count;
+
+    /// <summary>The members of combined-level group <paramref name="group"/>.</summary>
+    public static IEnumerable<ItemRequirement> SumMembers(IEnumerable<ItemRequirement> requirements, int group) =>
+        requirements.Where(requirement => requirement.LevelSum?.Group == group);
+
+    /// <summary>The highest level total the members of <paramref name="group"/> can reach together.</summary>
+    public static int SumCapacity(IEnumerable<ItemRequirement> requirements, int group) =>
+        SumMembers(requirements, group).Sum(member => member.MaximumLevel);
+
+    /// <summary>Gives every member of <paramref name="group"/> the same total, as the engine demands.</summary>
+    public static void PropagateSum(IEnumerable<ItemRequirement> requirements, int group, int atLeast)
+    {
+        foreach (var member in SumMembers(requirements, group)) member.LevelSum = new(group, atLeast);
+    }
+
+    /// <summary>
+    /// A fresh member for the "any of these" slot of <paramref name="original"/>:
+    /// its copy, keyed anew, in the original's alternative group (or a new one
+    /// when it stands alone) and without a combined-level sum, which an
+    /// alternative may not carry. Nothing in the list changes until
+    /// <see cref="CommitAlternative"/>.
+    /// </summary>
+    public static ItemRequirement PrepareAlternative(IEnumerable<ItemRequirement> requirements, ItemRequirement original)
+    {
+        var copy = original.Clone();
+        copy.Key = Random.Shared.NextInt64(1, long.MaxValue);
+        copy.AlternativeGroup = original.AlternativeGroup ?? requirements.Max(requirement => requirement.AlternativeGroup ?? 0) + 1;
+        copy.LevelSum = null;
+        return copy;
+    }
+
+    /// <summary>
+    /// Adds <paramref name="alternative"/> (from <see cref="PrepareAlternative"/>)
+    /// after the last member of the slot of <paramref name="original"/>, moving
+    /// the original into that slot — and out of any combined-level group,
+    /// since the two relationships cannot mix.
+    /// </summary>
+    public static void CommitAlternative(IList<ItemRequirement> requirements, ItemRequirement original, ItemRequirement alternative)
+    {
+        var group = alternative.AlternativeGroup ?? throw new ArgumentException("An alternative needs a group.", nameof(alternative));
+        original.AlternativeGroup = group; original.LevelSum = null;
+        var last = requirements.Select((requirement, index) => (requirement, index))
+            .Where(entry => entry.requirement.AlternativeGroup == group).Max(entry => entry.index);
+        requirements.Insert(last + 1, alternative);
+    }
+
+    /// <summary>Removes a requirement; a slot left with one member collapses back to a plain row.</summary>
+    public static void Remove(IList<ItemRequirement> requirements, ItemRequirement requirement)
+    {
+        requirements.Remove(requirement);
+        if (requirement.AlternativeGroup is not int group) return;
+        var remaining = requirements.Where(other => other.AlternativeGroup == group).ToList();
+        if (remaining.Count == 1) remaining[0].AlternativeGroup = null;
+    }
+
+    /// <summary>
+    /// The first problem the engine would reject the query for, as a message
+    /// naming the offending group or item, or null when it is sound. The engine
+    /// only reports a generic rejection over the FFI, so this runs first.
+    /// </summary>
+    public static string? Validate(QuerySettings query)
+    {
+        var requirements = query.Requirements;
+        foreach (var requirement in requirements)
+        {
+            var family = requirement.Kind.Family();
+            if (!requirement.Effect.IsAny && family is not (ItemKind.Weapon or ItemKind.Armor))
+                return $"{requirement.Title} cannot require an effect: {Labels.Kind(requirement.Kind).ToLowerInvariant()} carry none.";
+            if (requirement.RequireUncursed && requirement.Effect.IsCursesOnly(requirement.Kind))
+                return $"{requirement.Title} requires uncursed but only lists curses.";
+            if (requirement.LevelSum is { } sum)
+            {
+                if (requirement.AlternativeGroup is not null)
+                    return $"{requirement.Title} is an alternative, so it cannot be in combined level group {GroupLabel(sum.Group)}.";
+                if (sum.Group < 1 || sum.Group > SearchLimits.LevelSumGroupMax || sum.AtLeast < 1)
+                    return $"{requirement.Title} has an invalid combined level group.";
+            }
+        }
+        // A same-item group is a stack: one anchor unit — a lone requirement, or
+        // the members of one alternative group — may constrain the item it binds
+        // to; every other member is a plain copy of the same category.
+        foreach (var group in requirements.Select(requirement => requirement.IdentityGroup).OfType<int>().Distinct().Order())
+        {
+            var members = requirements.Where(requirement => requirement.IdentityGroup == group).ToList();
+            if (members.Select(member => member.Kind.Family()).Distinct().Count() > 1)
+                return $"Same-item group {GroupLabel(group)} mixes different categories.";
+            var units = members.Where(member => !member.IsBare)
+                .Select(member => member.AlternativeGroup is int alternative ? $"alternative {alternative}" : $"requirement {member.Key}")
+                .Distinct().Count();
+            if (units > 1)
+                return $"Same-item group {GroupLabel(group)} can describe one item (or one set of alternatives); its other members must be plain.";
+        }
+        // Combined-level groups: one shared, reachable total, counted in levels
+        // (upgrade plus one per item).
+        foreach (var group in requirements.Select(requirement => requirement.LevelSum?.Group).OfType<int>().Distinct().Order())
+        {
+            var totals = SumMembers(requirements, group).Select(member => member.LevelSum!.AtLeast).Distinct().ToList();
+            if (totals.Count > 1) return $"Combined level group {GroupLabel(group)} has members that disagree on the total.";
+            var capacity = SumCapacity(requirements, group);
+            if (totals[0] > capacity)
+                return $"Combined level group {GroupLabel(group)} needs {totals[0]} levels but its items can reach at most {capacity}.";
+        }
+        return null;
+    }
 }
 
 /// <summary>
@@ -199,7 +440,7 @@ public static class FloorLimits
 /// <summary>
 /// The Wandmaker quest a search can demand. Only this giver's variant is worth
 /// filtering on: its quest item can be used in the dungeon instead of being
-/// handed in. The value doubles as the SSF8 wire id, with 0 meaning "any".
+/// handed in. The value orders the picker, with 0 meaning "any".
 /// </summary>
 public enum WandmakerQuest
 {
@@ -413,5 +654,9 @@ public static class ItemCatalog
         [.. All.Where(x => kind.Accepts(x) && (x.Tier != 1 || x.Id == current?.Id))];
     public static CatalogItem? Find(string id) => All.FirstOrDefault(x => x.Id == id);
     public static IEnumerable<string> Modifiers(ItemKind kind) => kind.Family() switch { ItemKind.Weapon => Enchantments.Concat(WeaponCurses), ItemKind.Armor => Glyphs.Concat(ArmorCurses), _ => [] };
+    /// <summary>The family's non-curse effects: what "any enchantment" stands for.</summary>
+    public static IReadOnlyList<string> EnchantmentsOf(ItemKind kind) => kind.Family() switch { ItemKind.Weapon => Enchantments, ItemKind.Armor => Glyphs, _ => [] };
+    /// <summary>The family's curse-type effects.</summary>
+    public static IReadOnlyList<string> CursesOf(ItemKind kind) => kind.Family() switch { ItemKind.Weapon => WeaponCurses, ItemKind.Armor => ArmorCurses, _ => [] };
     public static bool IsCurse(ItemKind kind, string effect) => (kind.Family() == ItemKind.Weapon ? WeaponCurses : ArmorCurses).Contains(effect);
 }

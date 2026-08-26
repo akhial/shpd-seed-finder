@@ -26,13 +26,12 @@ class JniNativeSeedFinderTest {
                     key = 1,
                     item = ItemCatalog.wands.first { it.id == "wand_frost" },
                     upgrade = 2,
-                    modifier = null,
                 ),
             ),
         )
 
         val session = finder.startSearch(request)
-        assertTrue(bindings.request.contentEquals(QueryCodec.encode(request)))
+        assertTrue(bindings.request.contentEquals(QueryDocument.encode(request)))
         assertEquals("AAA-AAA-AAA", session.poll(24).results.single().seed)
         assertEquals(1, session.poll(24).results.single().matchedRequirements)
 
@@ -56,7 +55,7 @@ class JniNativeSeedFinderTest {
         val bindings = RecordingBindings()
         val finder = JniNativeSeedFinder(bindings)
         val request = SearchRequest(
-            listOf(ItemRequirement(1, ItemCatalog.armor.first(), 1, null)),
+            listOf(ItemRequirement(1, ItemCatalog.armor.first(), 1)),
         )
         val expected = listOf(
             0L to SearchState.RUNNING,
@@ -81,11 +80,11 @@ class JniNativeSeedFinderTest {
         val bindings = RecordingBindings()
         val finder = JniNativeSeedFinder(bindings)
         val request = SearchRequest(
-            listOf(ItemRequirement(1, ItemCatalog.rings.first(), 2, null)),
+            listOf(ItemRequirement(1, ItemCatalog.rings.first(), 2)),
         )
 
         val session = finder.startResumedSearch(request, resumeFrom = 5_000L, scanLen = 77L)
-        assertTrue(bindings.resumedRequest.contentEquals(QueryCodec.encode(request)))
+        assertTrue(bindings.resumedRequest.contentEquals(QueryDocument.encode(request)))
         assertEquals(5_000L, bindings.resumedFrom)
         assertEquals(77L, bindings.resumedScanLen)
         assertEquals("AAA-AAA-AAA", session.poll(24).results.single().seed)
@@ -98,7 +97,7 @@ class JniNativeSeedFinderTest {
         val bindings = RecordingBindings()
         val finder = JniNativeSeedFinder(bindings)
         val request = SearchRequest(
-            listOf(ItemRequirement(1, ItemCatalog.wands.first(), 1, null)),
+            listOf(ItemRequirement(1, ItemCatalog.wands.first(), 1)),
         )
 
         val session = finder.startSearch(request)
@@ -117,11 +116,11 @@ class JniNativeSeedFinderTest {
         val bindings = RecordingBindings()
         val finder = JniNativeSeedFinder(bindings)
         val request = SearchRequest(
-            listOf(ItemRequirement(1, ItemCatalog.armor.first(), 3, null)),
+            listOf(ItemRequirement(1, ItemCatalog.armor.first(), 3)),
         )
 
         val kept = finder.filterSeeds(request, listOf("AAA-AAA-AAB", "AAA-AAA-BAA", "ZZZ-ZZZ-ZZZ"))
-        assertTrue(bindings.filterRequest.contentEquals(QueryCodec.encode(request)))
+        assertTrue(bindings.filterRequest.contentEquals(QueryDocument.encode(request)))
         assertArrayEquals(longArrayOf(1L, 676L, 5_429_503_678_975L), bindings.filterValues)
         assertEquals(listOf("AAA-AAA-AAB"), kept)
     }
@@ -132,13 +131,16 @@ class JniNativeSeedFinderTest {
         // library); this only pins the two packets the adapter sends and the envelope it reads.
         val bindings = RecordingBindings()
         val finder = JniNativeSeedFinder(bindings)
-        val request = SearchRequest(listOf(ItemRequirement(1, ItemCatalog.wands.first(), 1, null)))
+        val request = SearchRequest(listOf(ItemRequirement(1, ItemCatalog.wands.first(), 1)))
 
-        assertEquals(setOf(1, 3), finder.scoutMatches("AAA-AAA-AAB", 6, request))
+        assertEquals(
+            ScoutMatches(items = setOf(1, 3), matchedSlots = 2, totalSlots = 2),
+            finder.scoutMatches("AAA-AAA-AAB", 6, request),
+        )
         assertTrue(
             bindings.scoutMatchRequest.contentEquals(ScoutRequestCodec.encode("AAA-AAA-AAB", 6)),
         )
-        assertTrue(bindings.scoutMatchQuery.contentEquals(QueryCodec.encode(request)))
+        assertTrue(bindings.scoutMatchQuery.contentEquals(QueryDocument.encode(request)))
     }
 
     @Test
@@ -147,14 +149,14 @@ class JniNativeSeedFinderTest {
         // library); this only pins the two packets the adapter sends and which side is which.
         val bindings = RecordingBindings()
         val finder = JniNativeSeedFinder(bindings)
-        val base = SearchRequest(listOf(ItemRequirement(1, ItemCatalog.rings.first(), 2, null)))
+        val base = SearchRequest(listOf(ItemRequirement(1, ItemCatalog.rings.first(), 2)))
         val candidate = base.copy(
-            requirements = base.requirements + ItemRequirement(2, ItemCatalog.armor.first(), 1, null),
+            requirements = base.requirements + ItemRequirement(2, ItemCatalog.armor.first(), 1),
         )
 
         assertTrue(finder.queryContinues(candidate, base))
-        assertTrue(bindings.continuesCandidate.contentEquals(QueryCodec.encode(candidate)))
-        assertTrue(bindings.continuesBase.contentEquals(QueryCodec.encode(base)))
+        assertTrue(bindings.continuesCandidate.contentEquals(QueryDocument.encode(candidate)))
+        assertTrue(bindings.continuesBase.contentEquals(QueryDocument.encode(base)))
     }
 
     @Test
@@ -163,18 +165,18 @@ class JniNativeSeedFinderTest {
         // library); this pins which packet is which and that absent queries travel as null.
         val bindings = RecordingBindings()
         val finder = JniNativeSeedFinder(bindings)
-        val candidate = SearchRequest(listOf(ItemRequirement(1, ItemCatalog.wands.first(), 1, null)))
-        val target = SearchRequest(listOf(ItemRequirement(2, ItemCatalog.rings.first(), 2, null)))
+        val candidate = SearchRequest(listOf(ItemRequirement(1, ItemCatalog.wands.first(), 1)))
+        val target = SearchRequest(listOf(ItemRequirement(2, ItemCatalog.rings.first(), 2)))
 
         assertEquals("target-filter", finder.decideStart(candidate, target, false, true, null))
-        assertTrue(bindings.decideStartCandidate.contentEquals(QueryCodec.encode(candidate)))
-        assertTrue(bindings.decideStartTarget!!.contentEquals(QueryCodec.encode(target)))
+        assertTrue(bindings.decideStartCandidate.contentEquals(QueryDocument.encode(candidate)))
+        assertTrue(bindings.decideStartTarget!!.contentEquals(QueryDocument.encode(target)))
         assertNull(bindings.decideStartDetachedBase)
         assertArrayEquals(booleanArrayOf(false, true), bindings.decideStartFlags)
 
         finder.decideStart(candidate, null, true, false, target)
         assertNull(bindings.decideStartTarget)
-        assertTrue(bindings.decideStartDetachedBase!!.contentEquals(QueryCodec.encode(target)))
+        assertTrue(bindings.decideStartDetachedBase!!.contentEquals(QueryDocument.encode(target)))
     }
 
     private class RecordingBindings : NativeBindings {

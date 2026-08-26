@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package dev.seedseeker.app.ui
 
+import android.content.ClipData
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -51,13 +52,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.toClipEntry
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
@@ -69,6 +71,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.seedseeker.app.catalog.ItemCatalog
+import dev.seedseeker.app.engine.ScoutMatches
 import dev.seedseeker.app.engine.SeedCode
 import dev.seedseeker.app.model.ScoutAccessibility
 import dev.seedseeker.app.model.ScoutItem
@@ -81,6 +84,7 @@ import dev.seedseeker.app.ui.theme.SpdSecret
 import dev.seedseeker.app.ui.theme.SpdTeal
 import dev.seedseeker.app.ui.theme.SpdUpgrade
 import kotlin.math.abs
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -89,13 +93,13 @@ fun ScoutScreen(
     result: ScoutWorld?,
     isScouting: Boolean,
     error: String?,
-    matchIndices: Set<Int>?,
+    matches: ScoutMatches?,
     resultSeeds: List<String>,
     scoutedSeed: String?,
     onScoutSeed: (String) -> Unit,
     onSeedChange: (String) -> Unit,
     onScout: () -> Unit,
-    onChallenges: () -> Unit,
+    onSettings: () -> Unit,
     onAbout: () -> Unit,
     bottomBar: @Composable () -> Unit,
 ) {
@@ -115,8 +119,8 @@ fun ScoutScreen(
             TopAppBar(
                 title = { Text("Scout") },
                 actions = {
-                    IconButton(onClick = onChallenges) {
-                        Icon(Icons.Filled.Settings, contentDescription = "Challenges")
+                    IconButton(onClick = onSettings) {
+                        Icon(Icons.Filled.Settings, contentDescription = "Settings")
                     }
                     IconButton(onClick = onAbout) {
                         Icon(Icons.Filled.Info, contentDescription = "About and licenses")
@@ -218,8 +222,7 @@ fun ScoutScreen(
                     item {
                         ScoutSummaryCard(
                             world = world,
-                            matchCount = matchIndices?.size ?: 0,
-                            showMatchCount = matchIndices != null,
+                            matches = matches,
                             modifier = Modifier.padding(top = 22.dp),
                         )
                     }
@@ -242,7 +245,7 @@ fun ScoutScreen(
                                 item(key = "scout-$depth-${indexedItem.index}-${scoutItem.item.id}") {
                                     ScoutItemCard(
                                         scoutItem = scoutItem,
-                                        matches = matchIndices?.contains(indexedItem.index) == true,
+                                        matches = matches?.items?.contains(indexedItem.index) == true,
                                         modifier = Modifier.padding(bottom = 8.dp),
                                     )
                                 }
@@ -394,11 +397,11 @@ internal fun formatSeedFieldValue(input: TextFieldValue): TextFieldValue {
 @Composable
 private fun ScoutSummaryCard(
     world: ScoutWorld,
-    matchCount: Int,
-    showMatchCount: Boolean,
+    matches: ScoutMatches?,
     modifier: Modifier = Modifier,
 ) {
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
     val floors = world.items.map(ScoutItem::depth).distinct().size
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -414,7 +417,13 @@ private fun ScoutSummaryCard(
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.tertiary,
                 )
-                TextButton(onClick = { clipboard.setText(AnnotatedString(world.seed)) }) {
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            clipboard.setClipEntry(ClipData.newPlainText("Seed", world.seed).toClipEntry())
+                        }
+                    },
+                ) {
                     Text("Copy")
                 }
             }
@@ -422,9 +431,10 @@ private fun ScoutSummaryCard(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatusPill("${world.items.size} items")
                 StatusPill("$floors floors")
-                if (showMatchCount) {
+                if (matches != null) {
+                    val matchCount = matches.matchedSlots
                     StatusPill(
-                        text = if (matchCount == 1) "1 match" else "$matchCount matches",
+                        text = scoutMatchText(matches.matchedSlots, matches.totalSlots),
                         container = if (matchCount > 0) {
                             MaterialTheme.colorScheme.primaryContainer
                         } else {
@@ -528,7 +538,7 @@ private fun ScoutItemCard(
             // pulsing masked tint is the only modifier cue, no tile, no halo.
             ItemSprite(
                 item = scoutItem.item,
-                glow = ItemGlows.forItem(effect = scoutItem.effect, cursed = scoutItem.cursed),
+                glows = listOfNotNull(ItemGlows.forItem(effect = scoutItem.effect, cursed = scoutItem.cursed)),
                 modifier = Modifier.size(40.dp),
             )
             Spacer(Modifier.width(14.dp))

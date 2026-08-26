@@ -134,7 +134,7 @@ public final class SearchController {
     /// and `dropped` is what that step removed. Callers must ensure no search
     /// is running.
     public func loadImported(seeds: [String], dropped: Int = 0, query: SavedQuery) {
-        results = seeds.map { SeedResult(seed: $0, matchedRequirements: query.requirements.count) }
+        results = seeds.map { SeedResult(seed: $0, matchedRequirements: query.requirements.slotCount) }
         collected = seeds
         importedDropped = dropped
         exportQuery = query
@@ -275,7 +275,7 @@ public final class SearchController {
                 return
             }
             self.collected = kept
-            self.results = kept.prefix(Self.resultCap).map { SeedResult(seed: $0, matchedRequirements: request.requirements.count) }
+            self.results = kept.prefix(Self.resultCap).map { SeedResult(seed: $0, matchedRequirements: request.requirements.slotCount) }
             self.refinedKept = kept.count; self.refinedOf = baseSeeds.count
             // From here on the listed results match the refined request, so
             // that is what an export must claim. A cancel or failure above
@@ -329,7 +329,7 @@ public final class SearchController {
                 return
             }
             self.collected = kept
-            self.results = kept.prefix(Self.resultCap).map { SeedResult(seed: $0, matchedRequirements: request.requirements.count) }
+            self.results = kept.prefix(Self.resultCap).map { SeedResult(seed: $0, matchedRequirements: request.requirements.slotCount) }
             self.refinedKept = kept.count; self.refinedOf = previousSeeds.count
             self.exportQuery = SavedQuery(
                 requirements: request.requirements, maximumDepth: request.maximumDepth,

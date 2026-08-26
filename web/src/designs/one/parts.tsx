@@ -12,11 +12,15 @@ export function Sprite({
   index: number
   size?: number
   label?: string
-  /** Enchantment/curse glow that pulses the icon, matching the game. */
-  glow?: Glow | null
+  /**
+   * Enchantment/curse glow that pulses the icon, matching the game. Several
+   * glows pulse in turn, one after another.
+   */
+  glow?: Glow | Glow[] | null
 }) {
   const box = spriteBoxCss(index, size)
   const ringIcon = ringIconCss(index, size)
+  const glows = glow ? (Array.isArray(glow) ? glow : [glow]) : []
   return (
     <span
       className="d1-sprite"
@@ -26,7 +30,12 @@ export function Sprite({
       style={box.outer}
     >
       <span style={box.inner}>
-        {glow && <span className="d1-sprite-glow" style={spriteGlowCss(index, size, glow.color, glow.period)} />}
+        {glows.length > 0 && (
+          <span
+            className={glows.length > 1 ? 'd1-sprite-glow d1-sprite-glow-seq' : 'd1-sprite-glow'}
+            style={spriteGlowCss(index, size, glows)}
+          />
+        )}
       </span>
       {ringIcon && <span style={ringIcon} />}
     </span>
@@ -65,9 +74,31 @@ export function Segmented<T extends string | number>({
   )
 }
 
-export function Field({ label, children }: { label: string; children: ReactNode }) {
+export function Stepper({ value, min, max, onChange, ariaLabel, format }: {
+  value: number
+  min: number
+  max: number
+  onChange: (value: number) => void
+  ariaLabel: string
+  format?: (value: number) => string
+}) {
   return (
-    <div className="d1-field">
+    <div className="d1-stepper" role="group" aria-label={ariaLabel}>
+      <button type="button" aria-label="One fewer" disabled={value <= min} onClick={() => onChange(value - 1)}>−</button>
+      <span className="d1-stepper-value d1-mono" aria-live="polite">{format ? format(value) : String(value)}</span>
+      <button type="button" aria-label="One more" disabled={value >= max} onClick={() => onChange(value + 1)}>+</button>
+    </div>
+  )
+}
+
+export function Field({ label, stack, children }: {
+  label: string
+  /** Let a wide control drop under its label on narrow screens. */
+  stack?: boolean
+  children: ReactNode
+}) {
+  return (
+    <div className={stack ? 'd1-field d1-field-stack' : 'd1-field'}>
       <span className="d1-field-label">{label}</span>
       <div className="d1-field-control">{children}</div>
     </div>

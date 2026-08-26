@@ -13,7 +13,9 @@ use shpd_seedfinder_core::catalog::{ItemId, ItemKind};
 use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::feasibility::QueryPlan;
 use shpd_seedfinder_core::main_world::CanonicalMainWorldGenerator;
-use shpd_seedfinder_core::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
+use shpd_seedfinder_core::query::{
+    EffectRequirement, Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
+};
 use shpd_seedfinder_core::search::{SearchOptions, SearchProgress, search_parallel};
 use shpd_seedfinder_core::seed::TOTAL_SEEDS;
 
@@ -284,11 +286,13 @@ fn benchmark_query() -> SearchQuery {
             item: Some(ItemId::WandFireblast),
             tier: TierRequirement::Any,
             upgrade: UpgradeRequirement::Exact(3),
-            effect: None,
+            effect: EffectRequirement::Any,
             require_uncursed: false,
             source: None,
             identity_group: None,
             max_depth: None,
+            alternative_group: None,
+            level_sum: None,
         }],
         max_depth: 24,
         challenges: Challenges::NONE,

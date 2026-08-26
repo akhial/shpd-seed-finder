@@ -46,11 +46,23 @@ class PresetStorage(private val preferences: SharedPreferences) {
                     put("tierMatch", requirement.tierMatch.name)
                     put("upgrade", requirement.upgrade)
                     put("upgradeMatch", requirement.upgradeMatch.name)
-                    put("modifier", requirement.modifier ?: JSONObject.NULL)
+                    // "modifier" keeps the single-effect form older builds read;
+                    // the effect fields below carry everything newer.
+                    put("modifier", requirement.singleEffect ?: JSONObject.NULL)
+                    when (val effect = requirement.effect) {
+                        EffectFilter.Any -> {}
+                        EffectFilter.AnyEnchantment -> put("anyEnchantment", true)
+                        is EffectFilter.OneOf -> put("effectNames", JSONArray(effect.names))
+                    }
                     put("source", requirement.source?.name ?: JSONObject.NULL)
                     put("identityGroup", requirement.identityGroup ?: JSONObject.NULL)
                     put("maximumDepth", requirement.maximumDepth ?: JSONObject.NULL)
                     put("requireUncursed", requirement.requireUncursed)
+                    put("alternativeGroup", requirement.alternativeGroup ?: JSONObject.NULL)
+                    requirement.levelSum?.let {
+                        put("levelSumGroup", it.group)
+                        put("levelSumAtLeast", it.atLeast)
+                    }
                 })
             }
         })
@@ -73,13 +85,21 @@ class PresetStorage(private val preferences: SharedPreferences) {
                 val item = encoded.stringOrNull("item")?.let { id ->
                     requireNotNull(ItemCatalog.findById(id))
                 }
+                val kind = ItemKind.valueOf(encoded.getString("kind"))
+                val effectNames = encoded.optJSONArray("effectNames")
+                val effect = when {
+                    effectNames != null ->
+                        EffectFilter.of(List(effectNames.length()) { effectNames.getString(it) }, kind)
+                    encoded.optBoolean("anyEnchantment") -> EffectFilter.AnyEnchantment
+                    else -> EffectFilter.named(encoded.stringOrNull("modifier"))
+                }
                 add(
                     ItemRequirement(
                         key = index.toLong() + 1,
                         item = item,
                         upgrade = encoded.getInt("upgrade"),
-                        modifier = encoded.stringOrNull("modifier"),
-                        kind = ItemKind.valueOf(encoded.getString("kind")),
+                        effect = effect,
+                        kind = kind,
                         tier = encoded.optInt("tier", 0),
                         tierMatch = TierMatch.valueOf(encoded.optString("tierMatch", TierMatch.ANY.name)),
                         upgradeMatch = UpgradeMatch.valueOf(encoded.getString("upgradeMatch")),
@@ -88,6 +108,10 @@ class PresetStorage(private val preferences: SharedPreferences) {
                         maximumDepth = encoded.optInt("maximumDepth").takeIf { !encoded.isNull("maximumDepth") }
                             ?.let(::normalizeFloorLimit),
                         requireUncursed = encoded.optBoolean("requireUncursed", false),
+                        alternativeGroup = encoded.optInt("alternativeGroup")
+                            .takeIf { !encoded.isNull("alternativeGroup") },
+                        levelSum = encoded.optInt("levelSumGroup").takeIf { !encoded.isNull("levelSumGroup") }
+                            ?.let { LevelSum(group = it, atLeast = encoded.getInt("levelSumAtLeast")) },
                     ),
                 )
             }

@@ -508,7 +508,16 @@ extension ItemKind {
 private struct EditorSession: Identifiable {
     let requirement: ItemRequirement
     let isNew: Bool
+    /// For a new alternative: the row it forks from. On save the copy is
+    /// inserted right after it and both share the "any of these" group.
+    var forkedFromKey: Int64? = nil
     var id: Int64 { requirement.key }
+}
+
+/// One slot of the query: a plain requirement, or an "any of these" group.
+private struct SlotEntry: Identifiable {
+    let members: [ItemRequirement]
+    var id: Int64 { members[0].key }
 }
 
 private struct QueryView: View {
@@ -619,6 +628,12 @@ private struct QueryView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal).padding(.top, 8)
             }
+            if let requestError {
+                Label(requestError, systemImage: "exclamationmark.triangle")
+                    .font(.caption).foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal).padding(.top, 8)
+            }
             // Starting a search that narrows — or just repeats — the last
             // finished run refines it automatically; the controller decides,
             // so there is no second button here.
@@ -630,19 +645,14 @@ private struct QueryView: View {
                       systemImage: controller.isRunning ? "stop.fill" : "play.fill")
                     .frame(maxWidth: .infinity).padding(.vertical, 5)
             }.buttonStyle(.borderedProminent).tint(controller.isRunning ? .red : .accentColor)
-                .disabled(requirements.isEmpty).keyboardShortcut(.return, modifiers: .command)
+                .disabled(builtRequest == nil && !controller.isRunning).keyboardShortcut(.return, modifiers: .command)
                 .padding()
         }
         .navigationTitle("Query")
         .sheet(item: $editor) { session in
-            RequirementEditor(requirement: session.requirement, isNew: session.isNew) { result in
-                if let result {
-                    if session.isNew {
-                        requirements.append(result)
-                    } else if let index = requirements.firstIndex(where: { $0.key == result.key }) {
-                        requirements[index] = result
-                    }
-                }
+            RequirementEditor(requirement: session.requirement, isNew: session.isNew,
+                              others: requirements.filter { $0.key != session.requirement.key }) { result in
+                if let result { commit(result, from: session) }
                 editor = nil
             }
         }
@@ -656,12 +666,23 @@ private struct QueryView: View {
         }
     }
 
-    private var builtRequest: SearchRequest? {
-        try? SearchRequest(requirements: requirements, maximumDepth: maximumDepth,
-                           requireBlacksmith: requireBlacksmith,
-                           excludeBlacksmithRewards: excludeBlacksmithRewards,
-                           wandmakerQuest: wandmakerQuest,
-                           fastMode: fastMode, challenges: challenges)
+    private var builtRequest: SearchRequest? { try? buildRequest() }
+
+    /// Why the query cannot be searched as it stands (a combined-level
+    /// group that no longer adds up, say), or nil when it can.
+    private var requestError: String? {
+        guard !requirements.isEmpty else { return nil }
+        do { _ = try buildRequest(); return nil } catch {
+            return (error as? LocalizedError)?.errorDescription ?? "The query cannot be searched"
+        }
+    }
+
+    private func buildRequest() throws -> SearchRequest {
+        try SearchRequest(requirements: requirements, maximumDepth: maximumDepth,
+                          requireBlacksmith: requireBlacksmith,
+                          excludeBlacksmithRewards: excludeBlacksmithRewards,
+                          wandmakerQuest: wandmakerQuest,
+                          fastMode: fastMode, challenges: challenges)
     }
 
     @ViewBuilder private var requirementSections: some View {
@@ -672,16 +693,18 @@ private struct QueryView: View {
             }
         } else {
             // Group by the broad family so a narrowed "Any thrown weapon"
-            // requirement sits with the other weapons.
+            // requirement sits with the other weapons. An "any of these" card
+            // sits with its first member's family.
+            let slots = requirements.slots.map(SlotEntry.init)
             ForEach([ItemKind.weapon, .armor, .wand, .ring], id: \.self) { kind in
-                let group = requirements.filter { $0.kind.family == kind }
+                let group = slots.filter { $0.members[0].kind.family == kind }
                 if !group.isEmpty {
                     Section {
-                        ForEach(group) { requirement in
-                            RequirementRow(requirement: requirement) {
-                                editor = EditorSession(requirement: requirement, isNew: false)
-                            } onRemove: {
-                                requirements.removeAll { $0.key == requirement.key }
+                        ForEach(group) { slot in
+                            if slot.members.count == 1 {
+                                row(slot.members[0])
+                            } else {
+                                AlternativesCard(members: slot.members) { row($0) }
                             }
                         }
                     } header: {
@@ -692,11 +715,93 @@ private struct QueryView: View {
         }
     }
 
+    private func row(_ requirement: ItemRequirement) -> RequirementRow {
+        RequirementRow(requirement: requirement) {
+            editor = EditorSession(requirement: requirement, isNew: false)
+        } onRemove: {
+            remove(requirement)
+        } onFork: {
+            addAlternative(to: requirement)
+        }
+    }
+
     private func addRequirement() {
         if let value = try? ItemRequirement(key: Int64.random(in: 1...Int64.max), item: nil,
             upgrade: 0, kind: .weapon, upgradeMatch: .any) {
             editor = EditorSession(requirement: value, isNew: true)
         }
+    }
+
+    /// Forks a row into an "any of these" group: the editor opens on a copy,
+    /// and only saving it commits the group (an alternative carries no
+    /// combined-level membership).
+    private func addAlternative(to requirement: ItemRequirement) {
+        let group = requirement.alternativeGroup
+            ?? (requirements.compactMap(\.alternativeGroup).max() ?? 0) + 1
+        var copy = requirement
+        copy.key = Int64.random(in: 1...Int64.max)
+        copy.alternativeGroup = group
+        copy.levelSum = nil
+        editor = EditorSession(requirement: copy, isNew: true, forkedFromKey: requirement.key)
+    }
+
+    /// Removes a row; a group left with one member collapses back to a row.
+    private func remove(_ requirement: ItemRequirement) {
+        requirements.removeAll { $0.key == requirement.key }
+        if let group = requirement.alternativeGroup {
+            let remaining = requirements.indices.filter { requirements[$0].alternativeGroup == group }
+            if remaining.count == 1 { requirements[remaining[0]].alternativeGroup = nil }
+        }
+    }
+
+    /// Applies an editor result: inserts or replaces the row, joins a forked
+    /// source to the new group, and shares the combined-level total with
+    /// the rest of its group.
+    private func commit(_ result: ItemRequirement, from session: EditorSession) {
+        var updated = requirements
+        if let sourceKey = session.forkedFromKey,
+           let index = updated.firstIndex(where: { $0.key == sourceKey }) {
+            updated[index].alternativeGroup = result.alternativeGroup
+            updated[index].levelSum = nil
+            updated.insert(result, at: index + 1)
+        } else if session.isNew {
+            updated.append(result)
+        } else if let index = updated.firstIndex(where: { $0.key == result.key }) {
+            updated[index] = result
+        }
+        if let sum = result.levelSum {
+            for index in updated.indices
+            where updated[index].key != result.key && updated[index].levelSum?.group == sum.group {
+                updated[index].levelSum = sum
+            }
+        }
+        requirements = updated
+    }
+}
+
+/// An "any of these" slot: its members listed with OR separators, each
+/// edited, removed or forked like a plain row.
+private struct AlternativesCard: View {
+    let members: [ItemRequirement]
+    let row: (ItemRequirement) -> RequirementRow
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label("Any of these", systemImage: "arrow.triangle.branch")
+                .font(.caption.bold()).foregroundStyle(.secondary)
+            ForEach(members) { member in
+                if member.key != members[0].key {
+                    HStack(spacing: 6) {
+                        Rectangle().fill(.quaternary).frame(height: 1)
+                        Text("OR").font(.caption2.bold()).foregroundStyle(.tertiary)
+                        Rectangle().fill(.quaternary).frame(height: 1)
+                    }
+                }
+                row(member)
+            }
+        }
+        .padding(8)
+        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -704,6 +809,7 @@ private struct RequirementRow: View {
     let requirement: ItemRequirement
     let onEdit: () -> Void
     let onRemove: () -> Void
+    let onFork: () -> Void
 
     var body: some View {
         HStack(spacing: 6) {
@@ -714,7 +820,7 @@ private struct RequirementRow: View {
                     // requirement pulses in the game's glow colour.
                     ItemSpriteView(spriteIndex: requirement.item?.spriteIndex,
                                    kind: requirement.kind,
-                                   glow: effectGlow(requirement.modifier),
+                                   glow: effectGlow(requirement.effect.glowName),
                                    pointSize: 24, label: requirement.title)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(requirement.title).foregroundStyle(.primary)
@@ -723,12 +829,16 @@ private struct RequirementRow: View {
                 }
                 .contentShape(Rectangle())
             }.buttonStyle(.plain)
+            Button(action: onFork) {
+                Image(systemName: "arrow.triangle.branch").foregroundStyle(.tertiary)
+            }.buttonStyle(.plain).help("Add an alternative: any one of them satisfies the requirement")
             Button(action: onRemove) {
                 Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
             }.buttonStyle(.plain).help("Remove requirement")
         }
         .contextMenu {
             Button("Edit…") { onEdit() }
+            Button("Add Alternative…") { onFork() }
             Button("Remove", role: .destructive) { onRemove() }
         }
     }
@@ -736,9 +846,17 @@ private struct RequirementRow: View {
 
 // MARK: - Requirement editor
 
+/// The editor's effect choice: any item, any enchanted item, or a chosen set.
+private enum EffectMode: Hashable {
+    case any, anyEnchantment, specific
+}
+
 private struct RequirementEditor: View {
     let original: ItemRequirement
     let isNew: Bool
+    /// The rest of the query, for the combined-level group's shared total
+    /// and attainable range.
+    let others: [ItemRequirement]
     let onFinish: (ItemRequirement?) -> Void
     @State private var kind: ItemKind
     @State private var itemID: String
@@ -746,14 +864,19 @@ private struct RequirementEditor: View {
     @State private var tier: Int
     @State private var match: UpgradeMatch
     @State private var upgrade: Int
-    @State private var modifier: String
+    @State private var effectMode: EffectMode
+    @State private var selectedEffects: Set<String>
     @State private var sourceRaw: Int
     @State private var group: Int
+    @State private var sumGroup: Int
+    @State private var sumTotal: Int
     @State private var maximumDepth: Int
     @State private var requireUncursed: Bool
+    @State private var validationMessage: String?
 
-    init(requirement: ItemRequirement, isNew: Bool, onFinish: @escaping (ItemRequirement?) -> Void) {
-        original = requirement; self.isNew = isNew; self.onFinish = onFinish
+    init(requirement: ItemRequirement, isNew: Bool, others: [ItemRequirement],
+         onFinish: @escaping (ItemRequirement?) -> Void) {
+        original = requirement; self.isNew = isNew; self.others = others; self.onFinish = onFinish
         _kind = State(initialValue: requirement.kind); _itemID = State(initialValue: requirement.item?.id ?? "")
         _tierMatch = State(initialValue: requirement.tierMatch)
         _tier = State(initialValue: max(SearchLimits.exactTiers.lowerBound, requirement.tier))
@@ -765,9 +888,17 @@ private struct RequirementEditor: View {
         case .atLeast: max(1, min(requirement.upgrade, maximumUpgrade - 1))
         }
         _upgrade = State(initialValue: initialUpgrade)
-        _modifier = State(initialValue: requirement.modifier ?? "")
+        let mode: EffectMode = switch requirement.effect {
+        case .any: .any
+        case .anyEnchantment: .anyEnchantment
+        case .oneOf: .specific
+        }
+        _effectMode = State(initialValue: mode)
+        _selectedEffects = State(initialValue: Set(requirement.effect.names))
         _sourceRaw = State(initialValue: requirement.source.map { $0.rawValue + 1 } ?? 0)
         _group = State(initialValue: requirement.identityGroup ?? 0)
+        _sumGroup = State(initialValue: requirement.levelSum?.group ?? 0)
+        _sumTotal = State(initialValue: requirement.levelSum?.atLeast ?? 1)
         _maximumDepth = State(initialValue: requirement.maximumDepth ?? 0)
         _requireUncursed = State(initialValue: requirement.requireUncursed)
     }
@@ -784,7 +915,8 @@ private struct RequirementEditor: View {
                     .pickerStyle(.segmented)
                     .onChange(of: kind) { previous, value in
                         if previous.family != value.family {
-                            itemID = ""; tierMatch = .any; tier = 2; modifier = ""; normalizeUpgrade()
+                            itemID = ""; tierMatch = .any; tier = 2
+                            effectMode = .any; selectedEffects = []; normalizeUpgrade()
                         } else if let item = ItemCatalog.findById(itemID), !value.accepts(item) {
                             itemID = ""
                         }
@@ -884,32 +1016,70 @@ private struct RequirementEditor: View {
                         }
                     }
                 }
-                Section {
-                    if kind.modifierLabel != nil {
-                        Picker(kind.modifierLabel!, selection: $modifier) {
-                            Section { Text("None").tag("") }
-                            Section(kind.family == .weapon ? "Enchantments" : "Glyphs") {
-                                ForEach(kind.family == .weapon ? ItemCatalog.enchantments : ItemCatalog.glyphs, id: \.self) { Text($0).tag($0) }
-                            }
+                if let label = kind.modifierLabel {
+                    Section(label) {
+                        Picker("Effect", selection: $effectMode) {
+                            Text("Any").tag(EffectMode.any)
+                            Text("Any \(label.lowercased())").tag(EffectMode.anyEnchantment)
+                            Text("Specific…").tag(EffectMode.specific)
+                        }
+                        .pickerStyle(.segmented)
+                        if effectMode == .specific {
+                            effectGrid(kind.family == .weapon ? "Enchantments" : "Glyphs",
+                                       names: kind.family == .weapon ? ItemCatalog.enchantments : ItemCatalog.glyphs)
+                            // Curses cannot be on an uncursed item, so they hide with it.
                             if !requireUncursed {
-                                Section("Curses") { ForEach(ItemCatalog.cursesFor(kind), id: \.self) { Text($0).tag($0) } }
+                                effectGrid("Curses", names: ItemCatalog.cursesFor(kind))
                             }
                         }
                     }
+                }
+                Section {
                     Toggle("Require uncursed", isOn: $requireUncursed)
                         .toggleStyle(.checkbox)
                         .onChange(of: requireUncursed) { _, value in
-                            if value && ItemCatalog.cursesFor(kind).contains(modifier) {
-                                modifier = ""
-                            }
+                            if value { selectedEffects.subtract(ItemCatalog.cursesFor(kind)) }
                         }
                     Picker("Source", selection: $sourceRaw) {
                         Text("Any").tag(0)
                         ForEach(ScoutItemSource.allCases, id: \.rawValue) { Text($0.label).tag($0.rawValue + 1) }
                     }
-                    Picker("Same-item group", selection: $group) {
-                        Text("None").tag(0); Text("A").tag(1); Text("B").tag(2); Text("C").tag(3); Text("D").tag(4)
-                    }.pickerStyle(.segmented)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Picker("Same-item group", selection: $group) {
+                            Text("None").tag(0)
+                            ForEach(1...SearchLimits.identityGroupMax, id: \.self) { Text(groupLetter($0)).tag($0) }
+                        }.pickerStyle(.segmented)
+                        Text("Copies of one item. One member (or one set of alternatives) may name the item and its qualities; every other member must be a plain row of the same category.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Picker("Combined level group", selection: $sumGroup) {
+                            Text("None").tag(0)
+                            ForEach(1...SearchLimits.levelSumGroupMax, id: \.self) { Text(groupLetter($0)).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+                        .disabled(isAlternative)
+                        .onChange(of: sumGroup) { _, value in
+                            // Joining a group adopts the total its members already share.
+                            if value != 0, let shared = sumMembers.first?.levelSum?.atLeast { sumTotal = shared }
+                        }
+                        Text(isAlternative
+                             ? "Not available for an alternative: only one of them is ever found."
+                             : "Distinct items whose levels add up to a total, each counting its upgrade plus one: a +1 and a +2 Ring of Might reach 5.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if sumGroup != 0 && !isAlternative {
+                        VStack(alignment: .leading, spacing: 2) {
+                            LabeledContent("Total at least") {
+                                Text("\(sumTotal) level\(sumTotal == 1 ? "" : "s")").monospacedDigit().foregroundStyle(.secondary)
+                            }
+                            Slider(value: intBinding($sumTotal), in: 1...Double(max(1, sumMaximum)), step: 1)
+                                .disabled(sumMaximum <= 1)
+                            let count = sumMembers.count + 1
+                            Text("Up to \(count) item\(count == 1 ? "" : "s") in group \(groupLetter(sumGroup)) can reach \(sumMaximum) levels together; each item counts its upgrade plus one, and any subset that reaches the total satisfies the group.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
                     Toggle("Limit this item to a floor", isOn: Binding(
                         get: { maximumDepth != 0 },
                         set: { maximumDepth = $0 ? 4 : 0 }
@@ -928,12 +1098,44 @@ private struct RequirementEditor: View {
             Divider()
             HStack {
                 Button("Cancel") { onFinish(nil) }.keyboardShortcut(.cancelAction)
+                if let validationMessage {
+                    Text(validationMessage).font(.caption).foregroundStyle(.orange)
+                        .lineLimit(2).padding(.leading, 8)
+                }
                 Spacer()
                 Button(isNew ? "Add" : "Save") { save() }
                     .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
             }.padding(12)
         }
-        .frame(width: 460, height: kind.modifierLabel == nil ? 470 : 500)
+        .frame(width: 480, height: kind.modifierLabel == nil ? 540 : 620)
+    }
+
+    /// An alternative can never be part of a combined-level group.
+    private var isAlternative: Bool { original.alternativeGroup != nil }
+    /// The other members of the chosen combined-level group.
+    private var sumMembers: [ItemRequirement] {
+        sumGroup == 0 ? [] : others.filter { $0.levelSum?.group == sumGroup }
+    }
+    /// The most levels the group could add up to with this row as edited:
+    /// each member's highest upgrade plus one.
+    private var sumMaximum: Int {
+        let own = (match == .exactly ? upgrade : kind.maximumSearchUpgrade) + 1
+        return own + sumMembers.reduce(0) { $0 + $1.maximumLevel }
+    }
+
+    private func effectGrid(_ title: String, names: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), alignment: .leading), count: 3),
+                      alignment: .leading, spacing: 4) {
+                ForEach(names, id: \.self) { name in
+                    Toggle(name, isOn: Binding(
+                        get: { selectedEffects.contains(name) },
+                        set: { if $0 { selectedEffects.insert(name) } else { selectedEffects.remove(name) } }
+                    )).toggleStyle(.checkbox)
+                }
+            }
+        }
     }
 
     private func normalizeUpgrade() {
@@ -948,14 +1150,37 @@ private struct RequirementEditor: View {
     }
     private func save() {
         let item = itemID.isEmpty ? nil : ItemCatalog.findById(itemID)
-        guard let value = try? ItemRequirement(key: original.key, item: item, upgrade: upgrade,
-            modifier: modifier.isEmpty ? nil : modifier, kind: kind,
-            tier: tierMatch == .any ? 0 : tier, tierMatch: tierMatch, upgradeMatch: match,
-            source: sourceRaw == 0 ? nil : ScoutItemSource(rawValue: sourceRaw - 1),
-            identityGroup: group == 0 ? nil : group,
-            maximumDepth: maximumDepth == 0 ? nil : maximumDepth,
-            requireUncursed: requireUncursed) else { return }
-        onFinish(value)
+        let effect: EffectFilter = switch effectMode {
+        case .any: .any
+        case .anyEnchantment: .anyEnchantment
+        case .specific: .oneOf(Array(selectedEffects))
+        }
+        if effectMode == .specific && selectedEffects.isEmpty {
+            validationMessage = "Choose at least one \((kind.modifierLabel ?? "effect").lowercased())"
+            return
+        }
+        let sum = sumGroup == 0 || isAlternative ? nil : LevelSum(group: sumGroup, atLeast: sumTotal)
+        do {
+            let value = try ItemRequirement(key: original.key, item: item, upgrade: upgrade,
+                effect: effect, kind: kind,
+                tier: tierMatch == .any ? 0 : tier, tierMatch: tierMatch, upgradeMatch: match,
+                source: sourceRaw == 0 ? nil : ScoutItemSource(rawValue: sourceRaw - 1),
+                identityGroup: group == 0 ? nil : group,
+                maximumDepth: maximumDepth == 0 ? nil : maximumDepth,
+                requireUncursed: requireUncursed,
+                alternativeGroup: original.alternativeGroup, levelSum: sum)
+            // The group's other members will take this row's total on save,
+            // so check the group as it will be, not as it was.
+            let groupAsSaved = others.map { other in
+                var copy = other
+                if let sum, copy.levelSum?.group == sum.group { copy.levelSum = sum }
+                return copy
+            }
+            try (groupAsSaved + [value]).validateGroups()
+            onFinish(value)
+        } catch {
+            validationMessage = (error as? LocalizedError)?.errorDescription ?? "The requirement is invalid"
+        }
     }
 }
 
@@ -1189,27 +1414,31 @@ private struct SeedDetailView: View {
     }
 
     /// The engine's own marks for the scouted world, taken from the same
-    /// request the scout used. Without requirements there is nothing to mark.
-    private func engineMatches(in world: ScoutWorld) -> Set<Int> {
+    /// request the scout used. Without requirements (or with a query the
+    /// engine refuses) there is nothing to mark.
+    private func engineMatches(in world: ScoutWorld) -> ScoutMatches? {
         guard let query = try? SearchRequest(
                   requirements: requirements, maximumDepth: maximumDepth,
-                  excludeBlacksmithRewards: excludeBlacksmithRewards, challenges: challenges),
-              let marks = try? ScoutMatches.mark(seed: world.seed, challenges: challenges,
-                                                 query: query) else { return [] }
-        return marks.matched
+                  excludeBlacksmithRewards: excludeBlacksmithRewards, challenges: challenges)
+        else { return nil }
+        return try? ScoutMatches.mark(seed: world.seed, challenges: challenges, query: query)
     }
 
     private func manifest(_ world: ScoutWorld) -> some View {
         let byDepth = Dictionary(grouping: world.items, by: \.depth)
         let depths = byDepth.keys.sorted()
-        let matches = engineMatches(in: world)
+        let marks = engineMatches(in: world)
+        let matches = marks?.matched ?? []
+        // Slots, not rows: an "any of these" group counts once.
+        let matched = marks?.matchedRequirements ?? 0
+        let total = marks?.totalRequirements ?? requirements.slotCount
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 4) {
                 Text("\(world.items.count) items across \(depths.count) floors")
                 if !requirements.isEmpty {
                     Text("·")
-                    Label("\(matches.count) requirement match\(matches.count == 1 ? "" : "es")", systemImage: "checkmark.circle")
-                        .foregroundStyle(matches.isEmpty ? Color.secondary : Color.green)
+                    Label("\(matched) of \(total) requirement\(total == 1 ? "" : "s")", systemImage: "checkmark.circle")
+                        .foregroundStyle(matched == 0 ? Color.secondary : Color.green)
                 }
             }
             .font(.caption).foregroundStyle(.secondary)

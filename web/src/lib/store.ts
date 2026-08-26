@@ -42,7 +42,7 @@ if (typeof localStorage !== 'undefined') {
 export interface Preset { name: string; query: QueryState }
 export const builtInPresets: Preset[] = [
   {
-    // Four wands where three share identity group A: upgrade transfer stacks them into a +21 staff.
+    // A stack of three same-kind wands anchored on a +3, plus one more: upgrade transfer fuses them into a +21 staff.
     name: '+21 Staff',
     query: { ...defaultQueryState(), requirements: [
       { kind: 'wand', tier: { mode: 'any', value: 3 }, upgrade: { mode: 'exact', value: 3 }, uncursed: false, identityGroup: 1 },

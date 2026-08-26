@@ -1136,7 +1136,7 @@ mod tests {
     use crate::catalog::ItemId;
     use crate::level_prelude::Feeling;
     use crate::mobs::SewerMobKind;
-    use crate::query::{Requirement, SearchQuery, TierRequirement};
+    use crate::query::{EffectRequirement, Requirement, SearchQuery, TierRequirement};
     use crate::quests::QuestState;
     use crate::rng::{RandomStack, seed_for_depth};
     use crate::search::{SearchOptions, spawn_streaming_search};
@@ -1387,11 +1387,13 @@ mod tests {
                 item: Some(ItemId::MailArmor),
                 tier: TierRequirement::Any,
                 upgrade: crate::query::UpgradeRequirement::Exact(2),
-                effect: None,
+                effect: EffectRequirement::Any,
                 require_uncursed: false,
                 source: None,
                 identity_group: None,
                 max_depth: None,
+                alternative_group: None,
+                level_sum: None,
             }],
             max_depth: 4,
             challenges: crate::challenges::Challenges::NONE,

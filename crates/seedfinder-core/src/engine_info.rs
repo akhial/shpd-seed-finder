@@ -15,7 +15,7 @@ use crate::json_query::CHALLENGE_NAMES;
 use crate::main_world::EMPTY_BOSS_FLOORS;
 use crate::query::{
     BOUNDED_TIER_MAX, BOUNDED_TIER_MIN, EXACT_TIER_MAX, EXACT_TIER_MIN, MAX_IDENTITY_GROUP,
-    MAX_SEARCH_DEPTH,
+    MAX_LEVEL_SUM_GROUP, MAX_SEARCH_DEPTH,
 };
 use crate::results_export::{MAX_FILE_BYTES, MAX_RESULTS};
 use crate::search::PRODUCTION_SEARCH_START_STRIDE;
@@ -38,6 +38,7 @@ pub fn document() -> Value {
             "boundedTierMin": BOUNDED_TIER_MIN,
             "boundedTierMax": BOUNDED_TIER_MAX,
             "identityGroupMax": MAX_IDENTITY_GROUP,
+            "levelSumGroupMax": MAX_LEVEL_SUM_GROUP,
             "maxUpgradeDefault": ItemKind::Weapon.maximum_search_upgrade(),
             "maxUpgradeRing": ItemKind::Ring.maximum_search_upgrade(),
             "resultsFileMaxBytes": MAX_FILE_BYTES,
@@ -96,6 +97,7 @@ mod tests {
         assert_eq!(info["limits"]["boundedTierMin"], 3);
         assert_eq!(info["limits"]["boundedTierMax"], 4);
         assert_eq!(info["limits"]["identityGroupMax"], 4);
+        assert_eq!(info["limits"]["levelSumGroupMax"], 4);
         assert_eq!(info["limits"]["maxUpgradeDefault"], 3);
         assert_eq!(info["limits"]["maxUpgradeRing"], 4);
         assert_eq!(info["limits"]["resultsFileMaxBytes"], 2 * 1_024 * 1_024);
@@ -111,6 +113,7 @@ mod tests {
                 "exactTierMax",
                 "exactTierMin",
                 "identityGroupMax",
+                "levelSumGroupMax",
                 "maxDepth",
                 "maxUpgradeDefault",
                 "maxUpgradeRing",

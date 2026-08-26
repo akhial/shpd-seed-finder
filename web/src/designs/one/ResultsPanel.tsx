@@ -29,7 +29,7 @@ function estimateDuration(milliseconds: number | undefined): string {
   const seconds = milliseconds / 1_000
   if (seconds < 1) return '<1s'
   if (seconds < 60) return `${Math.round(seconds)}s`
-  if (seconds < 3_600) return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`
+  if (seconds < 3_600) return `${Math.floor(seconds / 60)}m ${Math.floor(seconds % 60)}s`
   const hours = Math.floor(seconds / 3_600)
   if (hours < 48) return `${hours}h ${Math.floor((seconds % 3_600) / 60)}m`
   return `${Math.floor(hours / 24)}d ${hours % 24}h`
@@ -239,7 +239,10 @@ export function ResultsPanel({
                 <span className="d1-stat-value d1-mono">{formatDuration(elapsed)}</span>
               </div>
               <div className="d1-stat">
-                <span className="d1-stat-label">First seed ≈</span>
+                <span className="d1-stat-label" title="Time to seed — estimated wait for the first match">
+                  <span className="d1-stat-label-wide">First seed</span>
+                  <span className="d1-stat-label-short">TTS</span> ≈
+                </span>
                 <span className="d1-stat-value d1-mono">{estimateDuration(timeToSeed)}</span>
               </div>
             </div>

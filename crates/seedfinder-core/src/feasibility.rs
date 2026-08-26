@@ -30,9 +30,9 @@
 //! consumable or torch, so there is no challenge-dependent availability bound
 //! to apply here. Its RNG knock-on effects are handled by generation itself.
 
-use crate::catalog::{Effect, ItemKind, WeaponCategory};
+use crate::catalog::{ItemKind, WeaponCategory};
 use crate::model::{ItemSource, WorldItem};
-use crate::query::{Requirement, SearchQuery, UpgradeRequirement};
+use crate::query::{EffectRequirement, Requirement, SearchQuery, UpgradeRequirement};
 use crate::quests::{QuestSummary, WandmakerQuestType};
 use crate::search::FloorGate;
 
@@ -166,17 +166,27 @@ const fn upgrade_reachable(requirement: UpgradeRequirement, low: u8, high: u8) -
     }
 }
 
-const fn effect_reachable(wanted: Option<Effect>, policy: EffectPolicy) -> bool {
-    let Some(effect) = wanted else {
+fn effect_reachable(
+    wanted: EffectRequirement,
+    policy: EffectPolicy,
+    require_uncursed: bool,
+) -> bool {
+    let EffectRequirement::OneOf(set) = wanted else {
         return true;
     };
-    let is_curse = match effect {
-        Effect::Weapon(effect) => effect.is_curse(),
-        Effect::Armor(effect) => effect.is_curse(),
+    // Uncursed items never carry curse-type effects, so only the good
+    // members of the set stay reachable under that flag.
+    let effective = if require_uncursed {
+        match set.without_curses() {
+            Some(set) => set,
+            None => return false,
+        }
+    } else {
+        set
     };
     match policy {
         EffectPolicy::Never => false,
-        EffectPolicy::GoodOnly => !is_curse,
+        EffectPolicy::GoodOnly => !effective.is_curses_only(),
         EffectPolicy::Any => true,
     }
 }
@@ -186,13 +196,11 @@ fn source_feasible(requirement: &Requirement, source: ItemSource, fast_mode: boo
     if requirement.source.is_some_and(|wanted| wanted != source) {
         return false;
     }
-    if requirement.require_uncursed
-        && (source == ItemSource::ImpReward
-            || requirement.effect.is_some_and(|effect| match effect {
-                Effect::Weapon(effect) => effect.is_curse(),
-                Effect::Armor(effect) => effect.is_curse(),
-            }))
-    {
+    let curses_only = match requirement.effect {
+        EffectRequirement::OneOf(set) => set.is_curses_only(),
+        EffectRequirement::Any => false,
+    };
+    if requirement.require_uncursed && (source == ItemSource::ImpReward || curses_only) {
         return false;
     }
     // An explicit source pin is the user's claim, not ours: honor it verbatim
@@ -206,7 +214,7 @@ fn source_feasible(requirement: &Requirement, source: ItemSource, fast_mode: boo
     )
     .is_some_and(|(low, high, policy)| {
         upgrade_reachable(requirement.upgrade, low, high)
-            && effect_reachable(requirement.effect, policy)
+            && effect_reachable(requirement.effect, policy, requirement.require_uncursed)
     })
 }
 
@@ -248,9 +256,15 @@ struct RequirementPlan {
 
 /// Query-derived generation plan: how deep worlds must be generated and when
 /// a partial world can be abandoned. Built once per search.
+///
+/// Combined-upgrade groups are not modelled here: they only add constraints
+/// on top of their members' own predicates, so ignoring them keeps every
+/// `false` answer sound and merely forgoes some early exits.
 #[derive(Clone, Debug)]
 pub struct QueryPlan {
-    requirements: Vec<RequirementPlan>,
+    /// One entry per query slot: a plain requirement alone, or every member
+    /// of an alternative group, any one of which satisfies the slot.
+    slots: Vec<Vec<RequirementPlan>>,
     generation_depth: u8,
     /// Latest depth by which a required Blacksmith must have appeared.
     blacksmith_deadline: Option<u8>,
@@ -266,44 +280,49 @@ impl QueryPlan {
     pub fn analyze(query: &SearchQuery) -> Self {
         let max_depth = query.max_depth;
         let mut generation_depth = 1;
-        let mut requirements = Vec::with_capacity(query.requirements.len());
-        for requirement in &query.requirements {
-            let requirement_max_depth = requirement.max_depth.unwrap_or(max_depth).min(max_depth);
-            let mut quests = 0_u8;
-            let mut open_deadline = None;
-            for source in ALL_SOURCES {
-                if !source_feasible(requirement, source, query.fast_mode) {
-                    continue;
-                }
-                if query.exclude_blacksmith_rewards && source == ItemSource::BlacksmithReward {
-                    continue;
-                }
-                if let Some(quest) = quest_for_source(source) {
-                    let (window_start, window_end) = quest.window();
-                    if window_start <= requirement_max_depth {
-                        quests |= quest.bit();
-                        generation_depth =
-                            generation_depth.max(window_end.min(requirement_max_depth));
+        let mut slots: Vec<Vec<RequirementPlan>> = Vec::new();
+        for slot in query.slots() {
+            let mut members = Vec::with_capacity(slot.len());
+            for requirement in slot.iter().map(|index| &query.requirements[*index]) {
+                let requirement_max_depth =
+                    requirement.max_depth.unwrap_or(max_depth).min(max_depth);
+                let mut quests = 0_u8;
+                let mut open_deadline = None;
+                for source in ALL_SOURCES {
+                    if !source_feasible(requirement, source, query.fast_mode) {
+                        continue;
                     }
-                } else if source == ItemSource::Shop {
-                    let deadline = SHOP_DEPTHS
-                        .into_iter()
-                        .rfind(|&depth| depth <= requirement_max_depth);
-                    if let Some(deadline) = deadline {
-                        open_deadline = Some(open_deadline.unwrap_or(0).max(deadline));
-                        generation_depth = generation_depth.max(deadline);
+                    if query.exclude_blacksmith_rewards && source == ItemSource::BlacksmithReward {
+                        continue;
                     }
-                } else {
-                    open_deadline = Some(requirement_max_depth);
-                    generation_depth = generation_depth.max(requirement_max_depth);
+                    if let Some(quest) = quest_for_source(source) {
+                        let (window_start, window_end) = quest.window();
+                        if window_start <= requirement_max_depth {
+                            quests |= quest.bit();
+                            generation_depth =
+                                generation_depth.max(window_end.min(requirement_max_depth));
+                        }
+                    } else if source == ItemSource::Shop {
+                        let deadline = SHOP_DEPTHS
+                            .into_iter()
+                            .rfind(|&depth| depth <= requirement_max_depth);
+                        if let Some(deadline) = deadline {
+                            open_deadline = Some(open_deadline.unwrap_or(0).max(deadline));
+                            generation_depth = generation_depth.max(deadline);
+                        }
+                    } else {
+                        open_deadline = Some(requirement_max_depth);
+                        generation_depth = generation_depth.max(requirement_max_depth);
+                    }
                 }
+                members.push(RequirementPlan {
+                    requirement: *requirement,
+                    max_depth: requirement_max_depth,
+                    quests,
+                    open_deadline,
+                });
             }
-            requirements.push(RequirementPlan {
-                requirement: *requirement,
-                max_depth: requirement_max_depth,
-                quests,
-                open_deadline,
-            });
+            slots.push(members);
         }
 
         let blacksmith_deadline = if query.require_blacksmith {
@@ -338,7 +357,7 @@ impl QueryPlan {
         });
 
         let mut plan = Self {
-            requirements,
+            slots,
             generation_depth,
             blacksmith_deadline,
             wandmaker_deadline,
@@ -388,30 +407,35 @@ impl QueryPlan {
             }
         }
 
-        // Requirements that only quests can still satisfy, grouped by their
-        // live quest bit set. Each quest offers a mutually exclusive choice,
-        // so it can cover at most one requirement; Hall's condition over the
-        // sixteen quest subsets then decides whether an assignment exists.
+        // Slots that only quests can still satisfy, grouped by their live
+        // quest bit set. An alternative group is one slot, alive while any
+        // member is. Each quest offers a mutually exclusive choice, so it can
+        // cover at most one slot; Hall's condition over the sixteen quest
+        // subsets then decides whether an assignment exists.
         let mut quest_only = [0_u16; 16];
-        for plan in &self.requirements {
-            let satisfied_by_open_item = items.iter().any(|item| {
-                item.depth <= plan.max_depth
-                    && quest_for_source(item.source).is_none()
-                    && plan.requirement.matches(item)
+        for slot in &self.slots {
+            let open = slot.iter().any(|plan| {
+                let satisfied_by_open_item = items.iter().any(|item| {
+                    item.depth <= plan.max_depth
+                        && quest_for_source(item.source).is_none()
+                        && plan.requirement.matches(item)
+                });
+                satisfied_by_open_item
+                    || plan
+                        .open_deadline
+                        .is_some_and(|deadline| completed_depth < deadline)
             });
-            if satisfied_by_open_item
-                || plan
-                    .open_deadline
-                    .is_some_and(|deadline| completed_depth < deadline)
-            {
+            if open {
                 continue;
             }
             let mut live = 0_u8;
-            for quest in QUESTS {
-                if plan.quests & quest.bit() != 0
-                    && Self::quest_alive(quest, plan, completed_depth, items)
-                {
-                    live |= quest.bit();
+            for plan in slot {
+                for quest in QUESTS {
+                    if plan.quests & quest.bit() != 0
+                        && Self::quest_alive(quest, plan, completed_depth, items)
+                    {
+                        live |= quest.bit();
+                    }
                 }
             }
             if live == 0 {
@@ -480,7 +504,9 @@ impl FloorGate for QueryPlan {
 mod tests {
     use crate::catalog::{ArmorEffect, Effect, ItemId, ItemKind, WeaponEffect};
     use crate::model::{Accessibility, ItemSource, WorldItem};
-    use crate::query::{Requirement, SearchQuery, TierRequirement, UpgradeRequirement};
+    use crate::query::{
+        EffectRequirement, EffectSet, Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
+    };
 
     use crate::quests::QuestSummary;
 
@@ -493,11 +519,13 @@ mod tests {
             item: None,
             tier: TierRequirement::Any,
             upgrade,
-            effect: None,
+            effect: EffectRequirement::Any,
             require_uncursed: false,
             source: None,
             identity_group: None,
             max_depth: None,
+            alternative_group: None,
+            level_sum: None,
         }
     }
 
@@ -650,7 +678,7 @@ mod tests {
     fn curse_effects_exclude_good_only_sources() {
         // A cursed enchantment on a +3 weapon leaves only the Sacrificial fire.
         let cursed = Requirement {
-            effect: Some(Effect::Weapon(WeaponEffect::Sacrificial)),
+            effect: EffectRequirement::exactly(Effect::Weapon(WeaponEffect::Sacrificial)),
             require_uncursed: false,
             ..requirement(ItemKind::Weapon, UpgradeRequirement::Exact(3))
         };
@@ -666,7 +694,7 @@ mod tests {
 
         // A good glyph on +3 armor is still reachable via Ghost/Blacksmith.
         let good = Requirement {
-            effect: Some(Effect::Armor(ArmorEffect::Thorns)),
+            effect: EffectRequirement::exactly(Effect::Armor(ArmorEffect::Thorns)),
             require_uncursed: false,
             ..requirement(ItemKind::Armor, UpgradeRequirement::Exact(3))
         };
@@ -676,6 +704,83 @@ mod tests {
         });
         assert!(!fast_good.is_unsatisfiable());
         assert_eq!(fast_good.generation_depth(), 14);
+
+        // A mixed set stays reachable through good-only sources, and an
+        // uncursed pure-curse set is impossible anywhere.
+        let mixed = Requirement {
+            effect: EffectRequirement::OneOf(
+                EffectSet::from_effects([
+                    Effect::Weapon(WeaponEffect::Sacrificial),
+                    Effect::Weapon(WeaponEffect::Blazing),
+                ])
+                .unwrap(),
+            ),
+            require_uncursed: false,
+            ..requirement(ItemKind::Weapon, UpgradeRequirement::Exact(3))
+        };
+        let fast_mixed = QueryPlan::analyze(&SearchQuery {
+            fast_mode: true,
+            ..query(vec![mixed], 24)
+        });
+        assert!(!fast_mixed.is_unsatisfiable());
+        assert_eq!(fast_mixed.generation_depth(), 14);
+        // Any enchantment on an uncursed +3 weapon keeps the quest sources.
+        let any_enchantment = Requirement {
+            effect: EffectRequirement::OneOf(EffectSet::enchantments(ItemKind::Weapon).unwrap()),
+            require_uncursed: true,
+            ..requirement(ItemKind::Weapon, UpgradeRequirement::Exact(3))
+        };
+        let fast_any = QueryPlan::analyze(&SearchQuery {
+            fast_mode: true,
+            ..query(vec![any_enchantment], 24)
+        });
+        assert!(!fast_any.is_unsatisfiable());
+        assert_eq!(fast_any.generation_depth(), 14);
+    }
+
+    #[test]
+    fn alternative_groups_stay_alive_while_any_member_can_still_match() {
+        // A +3 wand (Wandmaker-only) or a +4 ring (Imp-only): the slot lives
+        // until both quests have resolved without a matching prize.
+        let wand = Requirement {
+            alternative_group: Some(1),
+            ..requirement(ItemKind::Wand, UpgradeRequirement::Exact(3))
+        };
+        let ring = Requirement {
+            alternative_group: Some(1),
+            ..requirement(ItemKind::Ring, UpgradeRequirement::Exact(4))
+        };
+        let plan = QueryPlan::analyze(&query(vec![wand, ring], 24));
+        assert!(!plan.is_unsatisfiable());
+        // Generation must reach the deepest member's horizon.
+        assert_eq!(plan.generation_depth(), 19);
+        // A Wandmaker that resolved without the wand leaves the Imp alive.
+        let missed_wand = [item(ItemId::WandFrost, 2, 8, ItemSource::WandmakerReward)];
+        assert!(viable(&plan, 9, &missed_wand));
+        // Once the Imp also resolves without a +4 ring, the slot is dead.
+        let both_missed = [
+            item(ItemId::WandFrost, 2, 8, ItemSource::WandmakerReward),
+            item(ItemId::RingMight, 3, 18, ItemSource::ImpReward),
+        ];
+        assert!(!viable(&plan, 19, &both_missed));
+        // A matching member keeps the slot alive permanently.
+        let ring_hit = [
+            item(ItemId::WandFrost, 2, 8, ItemSource::WandmakerReward),
+            item(ItemId::RingMight, 4, 18, ItemSource::ImpReward),
+        ];
+        assert!(viable(&plan, 19, &ring_hit));
+        // Two quest-only slots still need two quests: a second group whose
+        // members both hinge on the Imp is pruned with the first.
+        let imp_only = Requirement {
+            alternative_group: Some(2),
+            ..requirement(ItemKind::Ring, UpgradeRequirement::Exact(4))
+        };
+        let two_slots = QueryPlan::analyze(&query(vec![wand, ring, imp_only], 24));
+        assert!(!two_slots.is_unsatisfiable());
+        assert!(!viable(&two_slots, 9, &missed_wand));
+        // A group whose members are all impossible is unsatisfiable.
+        let impossible = QueryPlan::analyze(&query(vec![ring, wand], 6));
+        assert!(impossible.is_unsatisfiable());
     }
 
     #[test]

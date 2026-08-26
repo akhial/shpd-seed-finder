@@ -71,6 +71,13 @@ object ItemCatalog {
         else -> emptyList()
     }
 
+    /** The non-curse effects of [kind]'s family, in catalog order; what "any enchantment" stands for. */
+    fun enchantmentsFor(kind: ItemKind): List<String> = when (kind.family) {
+        ItemKind.WEAPON -> enchantments
+        ItemKind.ARMOR -> glyphs
+        else -> emptyList()
+    }
+
     fun cursesFor(kind: ItemKind): List<String> = when (kind.family) {
         ItemKind.WEAPON -> weaponCurses
         ItemKind.ARMOR -> armorCurses

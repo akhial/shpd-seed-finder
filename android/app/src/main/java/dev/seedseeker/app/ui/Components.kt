@@ -23,9 +23,13 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.seedseeker.app.R
 import dev.seedseeker.app.model.CatalogItem
 import dev.seedseeker.app.model.ItemRequirement
@@ -102,15 +106,17 @@ private const val ADAPTIVE_ICON_VISIBLE = 72f
  * time (see `centerSpriteCells`), keeping small items like rings and darts
  * centred at the same pixel scale the web front-end renders them at.
  *
- * A [glow] paints the sprite's own opaque pixels with the enchantment or curse
+ * A glow paints the sprite's own opaque pixels with the enchantment or curse
  * colour at the shared pulse clock's current blend factor — the same masked
  * tint the web uses, reproducing upstream's `texel*(1-v) + glow*v` shader with
- * no bloom or halo outside the silhouette.
+ * no bloom or halo outside the silhouette. Several [glows] take the sprite in
+ * turn, a pulse each, so an item asked for by more than one effect shows every
+ * colour it may arrive in.
  */
 @Composable
 fun ItemSprite(
     item: CatalogItem,
-    glow: Glow? = null,
+    glows: List<Glow> = emptyList(),
     modifier: Modifier = Modifier,
 ) {
     val atlas = LocalItemAtlas.current
@@ -120,6 +126,13 @@ fun ItemSprite(
     Canvas(
         modifier = modifier.semantics { contentDescription = item.name },
     ) {
+        val typeIconIndex = item.typeIconIndex
+        val typeIconSize = typeIconIndex?.let { RingTypeIconSizes[it] }
+        val scale = size.minDimension / ITEM_SPRITE_SIZE
+        // A ring's gem hangs off the cell's top-right corner, past the ring
+        // centred beneath it, so ring and gem move together to centre the
+        // shape they make as one.
+        val shift = typeIconSize?.let { ringCompositeShift(it, scale) } ?: IntOffset.Zero
         if (atlas != null) {
             val srcOffset = IntOffset(
                 x = (item.spriteIndex % ITEM_ATLAS_COLUMNS) * ITEM_SPRITE_SIZE,
@@ -131,21 +144,22 @@ fun ItemSprite(
                 image = atlas,
                 srcOffset = srcOffset,
                 srcSize = srcSize,
-                dstOffset = IntOffset.Zero,
+                dstOffset = shift,
                 dstSize = dstSize,
                 filterQuality = FilterQuality.None,
             )
-            if (glow != null) {
-                // Reading the clock here keeps the pulse in the draw phase, so a
-                // frame never recomposes a scout row.
+            // Reading the clock here keeps the pulse in the draw phase, so a
+            // frame never recomposes a scout row.
+            val blend = pulse.blendFor(glows)
+            if (blend != null) {
                 drawImage(
                     image = atlas,
                     srcOffset = srcOffset,
                     srcSize = srcSize,
-                    dstOffset = IntOffset.Zero,
+                    dstOffset = shift,
                     dstSize = dstSize,
                     colorFilter = ColorFilter.tint(
-                        color = glow.color.copy(alpha = pulse.alphaFor(glow.period)),
+                        color = blend.color.copy(alpha = blend.alpha),
                         blendMode = BlendMode.SrcIn,
                     ),
                     filterQuality = FilterQuality.None,
@@ -155,13 +169,10 @@ fun ItemSprite(
             drawCircle(placeholderColor, radius = size.minDimension * 0.28f)
         }
 
-        val typeIconIndex = item.typeIconIndex
-        if (iconAtlas != null && typeIconIndex != null) {
-            val iconSize = RingTypeIconSizes[typeIconIndex]
-            val scale = size.minDimension / ITEM_SPRITE_SIZE
+        if (iconAtlas != null && typeIconIndex != null && typeIconSize != null) {
             val destinationSize = IntSize(
-                (iconSize.width * scale).roundToInt(),
-                (iconSize.height * scale).roundToInt(),
+                (typeIconSize.width * scale).roundToInt(),
+                (typeIconSize.height * scale).roundToInt(),
             )
             drawImage(
                 image = iconAtlas,
@@ -169,16 +180,37 @@ fun ItemSprite(
                     x = (typeIconIndex % ITEM_ICON_COLUMNS) * ITEM_ICON_SIZE,
                     y = (typeIconIndex / ITEM_ICON_COLUMNS) * ITEM_ICON_SIZE,
                 ),
-                srcSize = iconSize,
+                srcSize = typeIconSize,
                 dstOffset = IntOffset(
-                    x = ((size.width + size.minDimension) / 2).roundToInt() - destinationSize.width,
-                    y = ((size.height - size.minDimension) / 2).roundToInt(),
+                    x = ((size.width + size.minDimension) / 2).roundToInt() - destinationSize.width + shift.x,
+                    y = ((size.height - size.minDimension) / 2).roundToInt() + shift.y,
                 ),
                 dstSize = destinationSize,
                 filterQuality = FilterQuality.None,
             )
         }
     }
+}
+
+/**
+ * Where the ring art sits in its re-centred cell. Every ring sprite is the same
+ * 8×10 patch of its 16 px cell (measured from the atlas: x 0..7, y 0..9), which
+ * `centerSpriteCells` moves by (4, 3).
+ */
+private val RING_ART = IntRect(left = 4, top = 3, right = 12, bottom = 13)
+
+/**
+ * How far, in pixels at [scale], a ring and its gem move so that the shape they
+ * make together — the ring art plus a gem anchored to the cell's top-right
+ * corner — is centred in the cell rather than the ring alone.
+ */
+private fun ringCompositeShift(gem: IntSize, scale: Float): IntOffset {
+    val left = minOf(RING_ART.left, ITEM_SPRITE_SIZE - gem.width)
+    val bottom = maxOf(RING_ART.bottom, gem.height)
+    val width = ITEM_SPRITE_SIZE - left
+    val dx = (ITEM_SPRITE_SIZE - width) / 2f - left
+    val dy = (ITEM_SPRITE_SIZE - bottom) / 2f
+    return IntOffset((dx * scale).roundToInt(), (dy * scale).roundToInt())
 }
 
 /**
@@ -189,7 +221,7 @@ fun ItemSprite(
 @Composable
 fun SpriteTile(
     item: CatalogItem?,
-    glow: Glow? = null,
+    glows: List<Glow> = emptyList(),
     tileSize: Int = 60,
     modifier: Modifier = Modifier,
 ) {
@@ -200,15 +232,26 @@ fun SpriteTile(
     ) {
         Box(contentAlignment = Alignment.Center) {
             if (item == null) {
+                // Sized to the tile, and stripped of the font's own padding and
+                // line height, so what the box centres is the glyph itself.
+                val glyph = (tileSize * 0.5f).sp
                 Text(
                     "?",
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        fontSize = glyph,
+                        lineHeight = glyph,
+                        platformStyle = PlatformTextStyle(includeFontPadding = false),
+                        lineHeightStyle = LineHeightStyle(
+                            alignment = LineHeightStyle.Alignment.Center,
+                            trim = LineHeightStyle.Trim.Both,
+                        ),
+                    ),
                     color = MaterialTheme.colorScheme.primary,
                 )
             } else {
                 ItemSprite(
                     item = item,
-                    glow = glow,
+                    glows = glows,
                     modifier = Modifier.size((tileSize * 3 / 4).dp),
                 )
             }
@@ -241,12 +284,16 @@ fun requirementDetailLine(requirement: ItemRequirement): String = buildList {
         UpgradeMatch.EXACT -> add("+${requirement.upgrade}")
         UpgradeMatch.AT_LEAST -> add("≥+${requirement.upgrade}")
     }
-    requirement.modifier?.let { add(it) }
+    requirement.effectLabel?.let { add(it) }
     if (requirement.requireUncursed) add("uncursed")
     requirement.source?.let { add(it.label) }
-    requirement.identityGroup?.let { add("grp ${('A' + it - 1)}") }
+    requirement.levelSum?.let { add("Σ≥${it.atLeast}") }
     requirement.maximumDepth?.let { add("≤ floor $it") }
 }.joinToString(" · ")
+
+/** The scout header's match pill: satisfied slots out of the query's slots. */
+fun scoutMatchText(matchedSlots: Int, totalSlots: Int): String =
+    "$matchedSlots of $totalSlots requirement${if (totalSlots == 1) "" else "s"}"
 
 /** One-line summary of the search scope, listing only active constraints. */
 fun scopeSummaryText(

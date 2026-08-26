@@ -96,4 +96,69 @@ public sealed class ScoutMatchesTests
         Assert.Equal(0, marks.MatchedRequirements);
         Assert.Equal(0, marks.TotalRequirements);
     }
+
+    [Fact]
+    public void AnAlternativeGroupIsOneSlot()
+    {
+        // Any member satisfies the slot: the +3 wand does, a shop ring does too.
+        var wand = Wand(3); wand.AlternativeGroup = 1;
+        var shopRing = new ItemRequirement { Kind = ItemKind.Ring, Source = ScoutItemSource.Shop, AlternativeGroup = 1 };
+        var marks = Matches(Query(wand, shopRing));
+        Assert.Equal(1, marks.TotalRequirements);
+        Assert.Equal(1, marks.MatchedRequirements);
+        Assert.Single(marks.Matched);
+        // A slot no member satisfies counts once too.
+        var missing = Wand(2); missing.AlternativeGroup = 2; var missingToo = Wand(1); missingToo.AlternativeGroup = 2; missingToo.MaximumDepth = 8;
+        marks = Matches(Query(wand, shopRing, missing, missingToo));
+        Assert.Equal(2, marks.TotalRequirements);
+        Assert.Equal(1, marks.MatchedRequirements);
+    }
+
+    [Fact]
+    public void ACombinedLevelGroupIsOneConditionAnySubsetMayMeet()
+    {
+        static ItemRequirement AnyWand(int atLeast) => new() { Kind = ItemKind.Wand, LevelSum = new(1, atLeast) };
+        // The group is one condition however many members it has. The +3
+        // Wandmaker wand alone carries four levels (its upgrade plus one), so
+        // it meets a total of 5 with any other wand, and every contributing
+        // item is marked.
+        var marks = Matches(Query(AnyWand(5), AnyWand(5)));
+        Assert.Equal(1, marks.TotalRequirements);
+        Assert.Equal(1, marks.MatchedRequirements);
+        var items = Manifest();
+        Assert.Contains(marks.Matched, index => items[index].Item.Id == "wand_corrosion");
+        Assert.True(marks.Matched.Sum(index => items[index].Upgrade + 1) >= 5);
+        // Members are optional: the +3 wand meets a total of 4 by itself.
+        marks = Matches(Query(AnyWand(4), AnyWand(4)));
+        Assert.Equal(1, marks.MatchedRequirements);
+        Assert.NotEmpty(marks.Matched);
+        // Eight levels is attainable (two +3 wands) but this world has no such
+        // pair: nothing is marked, not even the +3 that serves the short group.
+        marks = Matches(Query(AnyWand(8), AnyWand(8)));
+        Assert.Equal(1, marks.TotalRequirements);
+        Assert.Equal(0, marks.MatchedRequirements);
+        Assert.Empty(marks.Matched);
+    }
+
+    [Fact]
+    public void EffectSetsAndAnyEnchantmentReachTheMatcher()
+    {
+        var items = Manifest();
+        // Floor 3 has a Shocking dirk; Lucky appears later. Either satisfies the set.
+        var set = new ItemRequirement { Kind = ItemKind.Weapon, Effect = EffectFilter.OneOf(["Lucky", "Shocking"]) };
+        var marks = Matches(Query(set));
+        Assert.Equal(1, marks.MatchedRequirements);
+        var marked = items[Assert.Single(marks.Matched)];
+        Assert.Contains(marked.Effect, new[] { "Lucky", "Shocking" });
+        // Any enchantment on uncursed armor: an enchanted, uncursed armor is marked.
+        var armor = new ItemRequirement { Kind = ItemKind.Armor, Effect = EffectFilter.Enchantment(), RequireUncursed = true };
+        marks = Matches(Query(armor));
+        Assert.Equal(1, marks.MatchedRequirements);
+        marked = items[Assert.Single(marks.Matched)];
+        Assert.Equal(ItemKind.Armor, marked.Item.Kind);
+        Assert.NotNull(marked.Effect); Assert.False(marked.Cursed);
+        // An effect the world lacks matches nothing.
+        var grim = new ItemRequirement { Kind = ItemKind.Weapon, Effect = EffectFilter.OneOf(["Grim"]) };
+        Assert.Equal(0, Matches(Query(grim)).MatchedRequirements);
+    }
 }

@@ -112,7 +112,7 @@ pub extern "C" fn seedfinder_resume_hint(handle: i64, out_hint: *mut i64) -> i32
     .unwrap_or(INTERNAL)
 }
 
-/// Re-verifies `seeds_len` seed values against the `SSF8` query in `request`
+/// Re-verifies `seeds_len` seed values against the query in `request`
 /// and returns the surviving seeds as an `SSR1` packet in input order. This is
 /// the "filter existing results" half of refining a search.
 #[unsafe(no_mangle)]
@@ -154,7 +154,7 @@ pub extern "C" fn seedfinder_filter_seeds(
     .unwrap_or(INTERNAL)
 }
 
-/// Reports whether the `SSF8` query in `candidate` continues the one in
+/// Reports whether the query in `candidate` continues the one in
 /// `base`: a scope the candidate never widens and every base requirement
 /// covered by a distinct candidate requirement at least as strict (equal or
 /// strengthened).
@@ -183,7 +183,7 @@ pub extern "C" fn seedfinder_query_continues(
     .unwrap_or(INTERNAL)
 }
 
-/// Reports what pressing Start Search must do with the `SSF8` query in
+/// Reports what pressing Start Search must do with the query in
 /// `candidate`, per `docs/search-semantics.md`. `target` is the Target Query
 /// (null when there is no Target, which always anchors), `target_set_empty`
 /// and `target_has_uncovered_seeds` describe the Target Set and its coverage,
@@ -316,7 +316,7 @@ pub extern "C" fn seedfinder_scout(
     .unwrap_or(INTERNAL)
 }
 
-/// Marks which items of a scouted world satisfy the `SSF8` query in `query`.
+/// Marks which items of a scouted world satisfy the query in `query`.
 /// The scout request identifies the world exactly like `seedfinder_scout`, and
 /// the returned UTF-8 JSON `{"matched": [<item indices>],
 /// "matchedRequirements": <n>, "totalRequirements": <n>}` indexes the item
@@ -566,10 +566,13 @@ mod tests {
     use super::*;
 
     fn query_packet() -> Vec<u8> {
-        let mut packet = b"SSF8".to_vec();
+        let mut packet = b"SSF9".to_vec();
         packet.extend_from_slice(&[24, 0, 0, 0, 0, 0, 1, 2, 0, 10]);
         packet.extend_from_slice(b"wand_frost");
-        packet.extend_from_slice(&[0, 0, 1, 2, 0, 0, 0, 0, 0, 0]);
+        // Tier any, upgrade +2 exactly, any effect, any source, no identity
+        // group, no floor limit, no alternative group, no combined-level
+        // group, no flags.
+        packet.extend_from_slice(&[0, 0, 1, 2, 0, 0, 0, 0, 0, 0, 0, 0]);
         packet
     }
 
