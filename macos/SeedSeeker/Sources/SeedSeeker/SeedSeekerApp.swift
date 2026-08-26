@@ -18,7 +18,7 @@ struct SeedSeekerApp: App {
 
     var body: some Scene {
         WindowGroup("Seed Seeker") { ContentView() }
-            .defaultSize(width: 1_180, height: 720)
+            .defaultSize(width: 1_360, height: 760)
             .commands {
                 CommandGroup(after: .appInfo) {
                     CheckForUpdatesView(updater: updaterController.updater)
@@ -100,6 +100,10 @@ private struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // The query pane is where the work happens now that requirements
+            // are a board of chips, so it is a sidebar in look only: it starts
+            // at two fifths of the default window and may grow to most of it,
+            // rather than being dealt the drawer's usual share.
             NavigationSplitView {
                 QueryView(requirements: $requirements, maximumDepth: $maximumDepth,
                           requireBlacksmith: $requireBlacksmith,
@@ -111,55 +115,15 @@ private struct ContentView: View {
                           onSavePreset: savePreset,
                           onDeletePreset: deletePreset,
                           controller: controller)
-                    .navigationSplitViewColumnWidth(min: 300, ideal: 330, max: 380)
+                    .navigationSplitViewColumnWidth(min: 440, ideal: 540, max: 900)
             } content: {
                 ResultsView(controller: controller) { seed in scout.scout(seed, challenges: challenges) }
-                    .navigationSplitViewColumnWidth(min: 340, ideal: 420)
-                    .toolbar {
-                        ToolbarItemGroup {
-                            Button {
-                                showingImporter = true
-                            } label: {
-                                Label("Import…", systemImage: "square.and.arrow.down")
-                            }
-                            // Toolbar labels default to icon-only, which left the
-                            // glyphs looking uncentred inside their glass capsules.
-                            .labelStyle(ToolbarActionLabelStyle())
-                            .help("Import results and their query from a file")
-                            .disabled(controller.isRunning)
-                            Button {
-                                beginExport()
-                            } label: {
-                                Label("Export…", systemImage: "square.and.arrow.up")
-                            }
-                            .labelStyle(ToolbarActionLabelStyle())
-                            .help("Export the results and the query that produced them to a file")
-                            .disabled(controller.isRunning || controller.results.isEmpty
-                                || controller.exportQuery == nil)
-                            Button {
-                                controller.clearResults()
-                            } label: {
-                                Label("Clear", systemImage: "trash")
-                            }
-                            .labelStyle(ToolbarActionLabelStyle(trailingEllipsis: false))
-                            .help("Clear the results, so the next search starts from scratch")
-                            .disabled(!controller.canClearResults)
-                            Button {
-                                copyQueryLink()
-                            } label: {
-                                Label("Copy Link",
-                                      systemImage: linkCopied ? "checkmark" : "link")
-                            }
-                            .labelStyle(ToolbarActionLabelStyle())
-                            .help("Copy a shareable link to the current query")
-                            .disabled(controller.isRunning)
-                        }
-                    }
+                    .navigationSplitViewColumnWidth(min: 300, ideal: 380)
             } detail: {
                 SeedDetailView(model: scout, requirements: requirements, maximumDepth: maximumDepth,
                                excludeBlacksmithRewards: excludeBlacksmithRewards, challenges: challenges,
                                resultPosition: resultPosition, onNavigateResult: { _ = navigateResult($0) })
-                    .navigationSplitViewColumnWidth(min: 360, ideal: 450)
+                    .navigationSplitViewColumnWidth(min: 380, ideal: 440)
             }
             Divider()
             // One permanent bottom bar: attribution on the left, transient
@@ -188,6 +152,7 @@ private struct ContentView: View {
             }
             .padding(.horizontal, 16)
         }
+        .toolbar { toolbarItems }
         .sheet(isPresented: $showingAbout) { AboutView() }
         .fileExporter(
             isPresented: Binding(
@@ -218,7 +183,7 @@ private struct ContentView: View {
         } message: {
             Text(transferError ?? "")
         }
-        .frame(minWidth: 1_020, minHeight: 640)
+        .frame(minWidth: 1_140, minHeight: 640)
         .background(WindowAccessor(window: $hostWindow))
         .onAppear {
             installResultKeyNavigation()
@@ -246,6 +211,49 @@ private struct ContentView: View {
             // J/K navigation scouts before moving the selection; only scout
             // here for direct table selections.
             if let seed, seed != scout.requestedSeed { scout.scout(seed, challenges: challenges) }
+        }
+    }
+
+    /// The results' file actions, in the window toolbar: import, export,
+    /// clear, and a link to the query that made them.
+    @ToolbarContentBuilder private var toolbarItems: some ToolbarContent {
+        ToolbarItemGroup {
+            Button {
+                showingImporter = true
+            } label: {
+                Label("Import…", systemImage: "square.and.arrow.down")
+            }
+            // Toolbar labels default to icon-only, which left the
+            // glyphs looking uncentred inside their glass capsules.
+            .labelStyle(ToolbarActionLabelStyle())
+            .help("Import results and their query from a file")
+            .disabled(controller.isRunning)
+            Button {
+                beginExport()
+            } label: {
+                Label("Export…", systemImage: "square.and.arrow.up")
+            }
+            .labelStyle(ToolbarActionLabelStyle())
+            .help("Export the results and the query that produced them to a file")
+            .disabled(controller.isRunning || controller.results.isEmpty
+                || controller.exportQuery == nil)
+            Button {
+                controller.clearResults()
+            } label: {
+                Label("Clear", systemImage: "trash")
+            }
+            .labelStyle(ToolbarActionLabelStyle(trailingEllipsis: false))
+            .help("Clear the results, so the next search starts from scratch")
+            .disabled(!controller.canClearResults)
+            Button {
+                copyQueryLink()
+            } label: {
+                Label("Copy Link",
+                      systemImage: linkCopied ? "checkmark" : "link")
+            }
+            .labelStyle(ToolbarActionLabelStyle())
+            .help("Copy a shareable link to the current query")
+            .disabled(controller.isRunning)
         }
     }
 
@@ -481,26 +489,19 @@ private struct ChallengesSettingsView: View {
     }
 }
 
-// MARK: - Item kind presentation
+// MARK: - Palette
 
-extension ItemKind {
-    var icon: String {
-        switch self {
-        case .weapon, .meleeWeapon: "hammer.fill"
-        case .thrownWeapon: "scope"
-        case .armor: "shield.fill"
-        case .wand: "wand.and.stars"
-        case .ring: "circle.circle.fill"
-        }
-    }
-    var tint: Color {
-        switch self {
-        case .weapon, .meleeWeapon, .thrownWeapon: .orange
-        case .armor: .blue
-        case .wand: .purple
-        case .ring: .yellow
-        }
-    }
+/// The three colours the chip board is built from, taken from the web app's
+/// palette so both front ends read as the same product. System `.green`/`.orange`
+/// are close enough to look deliberate and far enough to look wrong beside the
+/// game's own art, which is why none of them are used on the board.
+extension Color {
+    /// Shattered Pixel Dungeon's upgrade green, the web app's `--d1-upgrade`.
+    static let shatteredGreen = Color(.sRGB, red: 131 / 255, green: 252 / 255, blue: 100 / 255)
+    /// The softer green the web app spends on stack and match badges, `--d1-green`.
+    static let shatteredMint = Color(.sRGB, red: 110 / 255, green: 201 / 255, blue: 143 / 255)
+    /// The game's highlight yellow, the web app's `--d1-amber`.
+    static let shatteredYellow = Color(.sRGB, red: 1, green: 1, blue: 85 / 255)
 }
 
 // MARK: - Query sidebar
@@ -552,83 +553,13 @@ private struct QueryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            List {
-                Section("Presets") {
-                    HStack {
-                        Menu("Load Preset", systemImage: "bookmark") {
-                            Section("Included") {
-                                ForEach(BuiltInPresets.all) { preset in
-                                    Button(preset.name) { onApplyPreset(preset) }
-                                }
-                            }
-                            if !userPresets.isEmpty {
-                                Section("Saved") {
-                                    ForEach(userPresets) { preset in
-                                        Button(preset.name) { onApplyPreset(preset) }
-                                    }
-                                }
-                            }
-                        }
-                        Button {
-                            presetName = ""
-                            showingSavePreset = true
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "bookmark.badge.plus")
-                                Text("Save Current Query")
-                            }
-                            .fixedSize()
-                        }
-                        .buttonStyle(.bordered)
-                        .fixedSize()
-                        .layoutPriority(1)
-                        Spacer(minLength: 0)
-                    }
-                    if !userPresets.isEmpty {
-                        Menu("Delete Saved Preset", systemImage: "trash") {
-                            ForEach(userPresets) { preset in
-                                Button(preset.name, role: .destructive) { onDeletePreset(preset) }
-                            }
-                        }
-                    }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    presets
+                    requirementBoard
+                    settings
                 }
-                requirementSections
-                Section("Search scope") {
-                    VStack(alignment: .leading, spacing: 2) {
-                        LabeledContent("Floor limit") {
-                            Text("first \(maximumDepth) floor\(maximumDepth == 1 ? "" : "s")")
-                                .monospacedDigit().foregroundStyle(.secondary)
-                        }
-                        Slider(value: floorLimitBinding($maximumDepth),
-                               in: 0...Double(FloorLimits.options.count - 1), step: 1)
-                            .accessibilityValue(Text("first \(maximumDepth) floor\(maximumDepth == 1 ? "" : "s")"))
-                    }
-                }
-                Section("Wandmaker") {
-                    Picker("Quest", selection: $wandmakerQuest) {
-                        Text("Any").tag(WandmakerQuest?.none)
-                        ForEach(WandmakerQuest.allCases, id: \.self) { quest in
-                            Text(quest.label).tag(WandmakerQuest?.some(quest))
-                        }
-                    }
-                }
-                Section("Blacksmith") {
-                    // A run whose floor limit reaches his last floor always meets him.
-                    Toggle("Require accessible blacksmith", isOn: $requireBlacksmith)
-                        .disabled(maximumDepth >= ScoutQuestKind.blacksmith.depthRange.upperBound)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Toggle("Exclude Smith rewards", isOn: $excludeBlacksmithRewards)
-                        Text("Required items cannot come from the 2,000-favor Smith choice, leaving favor available for reforging.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                Section("Performance") {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Toggle("Fast search", isOn: $fastMode)
-                        Text("Treats +3 weapons and armor as quest rewards only, skipping the rare Crypt and Sacrificial-fire prizes. Found seeds are always genuine.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
+                .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 16)
             }
             Divider()
             if challenges.nonzeroBitCount > 0 {
@@ -698,23 +629,98 @@ private struct QueryView: View {
                           fastMode: fastMode, challenges: challenges)
     }
 
+    private var presets: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionLabel("Presets")
+            HStack(spacing: 8) {
+                Menu("Load Preset", systemImage: "bookmark") {
+                    Section("Included") {
+                        ForEach(BuiltInPresets.all) { preset in
+                            Button(preset.name) { onApplyPreset(preset) }
+                        }
+                    }
+                    if !userPresets.isEmpty {
+                        Section("Saved") {
+                            ForEach(userPresets) { preset in
+                                Button(preset.name) { onApplyPreset(preset) }
+                            }
+                        }
+                    }
+                }
+                .fixedSize()
+                Button {
+                    presetName = ""
+                    showingSavePreset = true
+                } label: {
+                    Label("Save Current Query", systemImage: "bookmark.badge.plus")
+                }
+                .fixedSize()
+                if !userPresets.isEmpty {
+                    Menu("Delete Saved Preset", systemImage: "trash") {
+                        ForEach(userPresets) { preset in
+                            Button(preset.name, role: .destructive) { onDeletePreset(preset) }
+                        }
+                    }
+                    .fixedSize()
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
     /// The requirement board: one flat wrapping row of chips, whose count is
     /// what the pane calls its requirements — a stack of three is one chip to
     /// look at, even though the engine has three items to find.
-    private var requirementSections: some View {
-        Section {
+    private var requirementBoard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 7) {
+                SectionLabel("Requirements")
+                if !requirements.isEmpty { CountBadge(requirements.boardCount) }
+            }
             RequirementBoardView(requirements: $requirements, onEdit: openEditor,
                                  onAdd: addRequirement)
             if requirements.isEmpty {
                 Text("No requirements yet. Add one to describe the item you're hunting for.")
                     .font(.callout).foregroundStyle(.secondary)
             }
-        } header: {
-            HStack {
-                Text("Requirements")
-                Spacer()
-                if !requirements.isEmpty {
-                    Text("\(requirements.boardCount)").monospacedDigit()
+        }
+    }
+
+    /// The search settings, in two columns: each group is a control or two
+    /// deep, and a pane this wide would otherwise stretch a slider or a
+    /// checkbox across far more room than it has any use for.
+    private var settings: some View {
+        HStack(alignment: .top, spacing: 14) {
+            VStack(alignment: .leading, spacing: 14) {
+                SettingsGroup("Search scope") {
+                    LabeledContent("Floor limit") {
+                        Text("first \(maximumDepth) floor\(maximumDepth == 1 ? "" : "s")")
+                            .monospacedDigit().foregroundStyle(.secondary)
+                    }
+                    Slider(value: floorLimitBinding($maximumDepth),
+                           in: 0...Double(FloorLimits.options.count - 1), step: 1)
+                        .accessibilityValue(Text("first \(maximumDepth) floor\(maximumDepth == 1 ? "" : "s")"))
+                }
+                SettingsGroup("Performance") {
+                    Toggle("Fast search", isOn: $fastMode)
+                    SettingsCaption("Treats +3 weapons and armor as quest rewards only, skipping the rare Crypt and Sacrificial-fire prizes. Found seeds are always genuine.")
+                }
+            }
+            VStack(alignment: .leading, spacing: 14) {
+                SettingsGroup("Wandmaker") {
+                    Picker("Quest", selection: $wandmakerQuest) {
+                        Text("Any").tag(WandmakerQuest?.none)
+                        ForEach(WandmakerQuest.allCases, id: \.self) { quest in
+                            Text(quest.label).tag(WandmakerQuest?.some(quest))
+                        }
+                    }
+                }
+                SettingsGroup("Blacksmith") {
+                    // A run whose floor limit reaches his last floor always meets him.
+                    Toggle("Require accessible blacksmith", isOn: $requireBlacksmith)
+                        .disabled(maximumDepth >= ScoutQuestKind.blacksmith.depthRange.upperBound)
+                    Toggle("Exclude Smith rewards", isOn: $excludeBlacksmithRewards)
+                    SettingsCaption("Required items cannot come from the 2,000-favor Smith choice, leaving favor available for reforging.")
                 }
             }
         }
@@ -836,28 +842,34 @@ private struct ClusterView: View {
     @State private var isTargeted = false
 
     var body: some View {
+        // A cluster keeps its identity across board passes by group number, so
+        // when a preset replaces the list wholesale SwiftUI can re-run this
+        // body with the previous pass's `item` against the new, shorter list.
+        // Members that no longer exist are skipped for that one frame; the
+        // parent's next pass hands down a fresh item.
+        let members = item.members.filter { requirements.indices.contains($0) }
         HStack(spacing: 2) {
-            ForEach(Array(item.members.enumerated()), id: \.element) { entry in
+            ForEach(Array(members.enumerated()), id: \.element) { entry in
                 if entry.offset > 0 {
                     Text("or")
                         .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Color.orange.opacity(0.9))
+                        .foregroundStyle(Color.shatteredYellow.opacity(0.9))
                         .padding(.horizontal, 2)
                 }
                 ChipView(requirements: $requirements, requirement: requirements[entry.element],
                          index: entry.element, item: item, inCluster: true,
                          error: errors[entry.element], dragging: $dragging, onEdit: onEdit)
             }
-            if item.stackCount > 1 || item.total != nil {
+            if (item.stackCount > 1 || item.total != nil) && requirements.indices.contains(item.anchor) {
                 StackBadgesView(requirements: $requirements,
                                 anchorKey: requirements[item.anchor].key)
                     .padding(.leading, 1).padding(.trailing, 3)
             }
         }
         .padding(3)
-        .background(Color.yellow.opacity(0.05), in: Capsule())
+        .background(Color.shatteredYellow.opacity(0.05), in: Capsule())
         .overlay(Capsule().strokeBorder(
-            isTargeted ? Color.orange : Color.yellow.opacity(0.45),
+            isTargeted ? Color.shatteredYellow : Color.shatteredYellow.opacity(0.45),
             style: StrokeStyle(lineWidth: 1, dash: isTargeted ? [] : [4, 3])))
         .dropDestination(for: String.self) { payload, _ in
             dragging = nil
@@ -891,7 +903,7 @@ private struct ChipView: View {
     var body: some View {
         HStack(spacing: 5) {
             HStack(spacing: 5) {
-                ItemSpriteView(spriteIndex: requirement.item?.spriteIndex, kind: requirement.kind,
+                ItemSpriteView(spriteIndex: requirement.item?.spriteIndex,
                                glow: effectGlow(requirement.effect.glowName), pointSize: 16)
                 Text(chipName(requirement))
                     .font(.system(size: 12, weight: .semibold))
@@ -900,18 +912,18 @@ private struct ChipView: View {
                 ForEach(chipTags(requirement), id: \.self) { tag in
                     Text(tag.text)
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(tag.upgrade ? Color.green : Color.orange)
+                        .foregroundStyle(tag.upgrade ? Color.shatteredGreen : Color.shatteredYellow)
                         .padding(.horizontal, 4)
-                        .background((tag.upgrade ? Color.green : Color.orange).opacity(0.14),
+                        .background((tag.upgrade ? Color.shatteredGreen : Color.shatteredYellow).opacity(0.13),
                                     in: RoundedRectangle(cornerRadius: 4))
                 }
                 effectBadge
                 if requirement.requireUncursed {
                     Text("✓")
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(Color.green)
+                        .foregroundStyle(Color.shatteredMint)
                         .padding(.horizontal, 4)
-                        .background(Color.green.opacity(0.14), in: RoundedRectangle(cornerRadius: 4))
+                        .background(Color.shatteredMint.opacity(0.14), in: RoundedRectangle(cornerRadius: 4))
                 }
             }
             .contentShape(Rectangle())
@@ -946,7 +958,7 @@ private struct ChipView: View {
     }
 
     private var borderColour: Color {
-        if isTargeted { return .orange }
+        if isTargeted { return .shatteredYellow }
         if error != nil { return .red }
         if focused { return .accentColor }
         return .secondary.opacity(0.35)
@@ -1129,7 +1141,7 @@ private struct StackBadgesView: View {
         HStack(spacing: 3) {
             if count > 1 {
                 Button { editingCount = true } label: {
-                    badge(total == nil ? "×\(count)" : "≤\(count)", tint: .green)
+                    badge(total == nil ? "×\(count)" : "≤\(count)", tint: .shatteredMint)
                 }
                 .buttonStyle(.plain)
                 .help(total == nil ? "\(count) of the same kind" : "Up to \(count) items")
@@ -1143,7 +1155,7 @@ private struct StackBadgesView: View {
                 }
             }
             if let total {
-                Button { editingTotal = true } label: { badge("Σ ≥ \(total)", tint: .orange) }
+                Button { editingTotal = true } label: { badge("Σ ≥ \(total)", tint: .shatteredYellow) }
                     .buttonStyle(.plain)
                     .help("Levels add to at least \(total) (a +0 item counts 1)")
                     .popover(isPresented: $editingTotal, arrowEdge: .bottom) {
@@ -1514,12 +1526,20 @@ private struct RequirementEditor: View {
                 }
                 if let label = kind.modifierLabel {
                     Section(label) {
-                        Picker("Effect", selection: $effectMode) {
-                            Text("Any").tag(EffectMode.any)
-                            Text("Any \(label.lowercased())").tag(EffectMode.anyEnchantment)
-                            Text("Specific…").tag(EffectMode.specific)
+                        // Labelled by hand rather than by the Picker: a grouped
+                        // Form pins a labelled control to its trailing column,
+                        // which leaves the segments short of the leading edge
+                        // the effect grids below them start at.
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Effect").font(.caption).foregroundStyle(.secondary)
+                            Picker("Effect", selection: $effectMode) {
+                                Text("Any").tag(EffectMode.any)
+                                Text("Any \(label.lowercased())").tag(EffectMode.anyEnchantment)
+                                Text("Specific…").tag(EffectMode.specific)
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
                         }
-                        .pickerStyle(.segmented)
                         if effectMode == .specific {
                             effectGrid(kind.family == .weapon ? "Enchantments" : "Glyphs",
                                        names: kind.family == .weapon ? ItemCatalog.enchantments : ItemCatalog.glyphs)
@@ -1833,7 +1853,9 @@ private struct SeedDetailView: View {
                     description: Text("Enter a canonical seed, or select a search result, to inspect its item manifest."))
             }
             Button("") { focused = true }.keyboardShortcut("l", modifiers: .command).hidden()
-        }.navigationTitle("Seed Detail")
+        }
+        .navigationTitle("Seed Detail")
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private var header: some View {
@@ -1862,7 +1884,7 @@ private struct SeedDetailView: View {
                     Text("J / K").font(.caption2).foregroundStyle(.tertiary)
                 }
             }
-        }.padding([.horizontal, .top]).padding(.bottom, 8)
+        }.padding(.horizontal).padding(.top, 10).padding(.bottom, 8)
     }
 
     /// The engine's own marks for the scouted world, taken from the same
@@ -1890,7 +1912,7 @@ private struct SeedDetailView: View {
                 if !requirements.isEmpty {
                     Text("·")
                     Label("\(matched) of \(total) requirement\(total == 1 ? "" : "s")", systemImage: "checkmark.circle")
-                        .foregroundStyle(matched == 0 ? Color.secondary : Color.green)
+                        .foregroundStyle(matched == 0 ? Color.secondary : Color.shatteredMint)
                 }
             }
             .font(.caption).foregroundStyle(.secondary)
@@ -1949,6 +1971,67 @@ private struct SeedDetailView: View {
 
 }
 
+// MARK: - Pane furniture
+
+/// A section's name within the query pane, in the sidebar's old voice.
+private struct SectionLabel: View {
+    let title: String
+    init(_ title: String) { self.title = title }
+
+    var body: some View {
+        Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+    }
+}
+
+/// A small count beside a section's name, for how many of a thing it holds.
+private struct CountBadge: View {
+    let count: Int
+    init(_ count: Int) { self.count = count }
+
+    var body: some View {
+        Text("\(count)")
+            .font(.system(size: 11, weight: .bold, design: .monospaced))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 5).frame(minWidth: 18, minHeight: 18)
+            .background(.quaternary, in: Capsule())
+            .accessibilityLabel("\(count) requirement\(count == 1 ? "" : "s")")
+    }
+}
+
+/// One titled group of the query pane's settings: a section label over a
+/// group box whose contents fill its column, left-aligned.
+private struct SettingsGroup<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+    init(_ title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionLabel(title)
+            GroupBox {
+                VStack(alignment: .leading, spacing: 8) { content }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(4)
+            }
+        }
+    }
+}
+
+/// The small print under a setting; wraps rather than truncates, since a
+/// column is narrower than the sentence.
+private struct SettingsCaption: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text).font(.caption).foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
 /// Lays its subviews out left to right at their natural size, starting a new
 /// row whenever the next one would overflow. SwiftUI ships no wrapping stack.
 private struct FlowLayout: Layout {
@@ -1957,23 +2040,40 @@ private struct FlowLayout: Layout {
 
     /// Every subview's origin relative to the layout's top-left, plus the size
     /// the resulting rows occupy.
+    ///
+    /// Subviews sit on their row's centre line rather than its top edge. A
+    /// cluster is a chip plus the inset its dashed capsule needs, so it stands
+    /// taller than the chips beside it; centred, its members line up with them
+    /// instead of hanging that inset lower.
     private func flow(_ subviews: Subviews, width: CGFloat) -> (origins: [CGPoint], size: CGSize) {
         var origins: [CGPoint] = []
+        var heights: [CGFloat] = []
         var size = CGSize.zero
         var cursor = CGPoint.zero
         var rowHeight: CGFloat = 0
+        var rowStart = 0
+        // Only once a row is closed is its height — and so its centre — known.
+        func centreRow() {
+            for index in rowStart..<origins.count {
+                origins[index].y += (rowHeight - heights[index]) / 2
+            }
+        }
         for subview in subviews {
             let item = subview.sizeThatFits(.unspecified)
             // A row always keeps its first subview, however wide it is.
             if cursor.x > 0, cursor.x + item.width > width {
+                centreRow()
+                rowStart = origins.count
                 cursor = CGPoint(x: 0, y: cursor.y + rowHeight + lineSpacing)
                 rowHeight = 0
             }
             origins.append(cursor)
+            heights.append(item.height)
             cursor.x += item.width + spacing
             rowHeight = max(rowHeight, item.height)
             size.width = max(size.width, cursor.x - spacing)
         }
+        centreRow()
         size.height = cursor.y + rowHeight
         return (origins, size)
     }
@@ -1996,14 +2096,15 @@ private struct ScoutItemRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            ItemSpriteView(spriteIndex: item.item.spriteIndex, kind: item.item.kind,
+            ItemSpriteView(spriteIndex: item.item.spriteIndex,
                            glow: itemGlow(item), pointSize: 32, label: item.item.name)
                 .padding(.top, 1)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(item.item.name).fontWeight(matches ? .semibold : .regular)
                     if item.upgrade > 0 {
-                        Text("+\(item.upgrade)").font(.caption.bold()).foregroundStyle(.green)
+                        Text("+\(item.upgrade)").font(.caption.bold())
+                            .foregroundStyle(Color.shatteredGreen)
                     }
                     if item.cursed {
                         Text("cursed").font(.caption2.bold()).foregroundStyle(.red)
@@ -2029,9 +2130,9 @@ private struct ScoutItemRow: View {
             Spacer(minLength: 0)
             if matches {
                 Label("Match", systemImage: "checkmark")
-                    .font(.caption.bold()).foregroundStyle(.green)
+                    .font(.caption.bold()).foregroundStyle(Color.shatteredMint)
                     .padding(.horizontal, 7).padding(.vertical, 2)
-                    .background(.green.opacity(0.12), in: Capsule())
+                    .background(Color.shatteredMint.opacity(0.12), in: Capsule())
                     .help("Selected as part of a jointly obtainable requirement match")
             }
         }

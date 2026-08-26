@@ -11,14 +11,12 @@ import SwiftUI
 /// reproduction of upstream's `texel*(1-v) + glow*v` shader the web app uses, so
 /// only the silhouette tints and there is no halo outside it.
 ///
-/// Falls back to the category's SF Symbol when there is no concrete item (a
-/// wildcard requirement) and when the atlas is not bundled, which is the case
-/// for a bare `swift run` outside the `.app`.
+/// Falls back to a question mark when there is no concrete item (a wildcard
+/// requirement) and when the atlas is not bundled, which is the case for a bare
+/// `swift run` outside the `.app`.
 struct ItemSpriteView: View {
     /// The concrete item's atlas index, or nil for a wildcard requirement.
     var spriteIndex: Int?
-    /// Category, used for the wildcard/fallback symbol and its tint.
-    var kind: ItemKind
     /// Enchantment or curse glow to pulse with, if any.
     var glow: ItemGlow?
     /// Box edge in points. Multiples of 8 keep the pixel scale integral.
@@ -52,9 +50,9 @@ struct ItemSpriteView: View {
         if let image = sprite(.art) {
             pixels(image)
         } else {
-            Image(systemName: kind.icon)
-                .font(.system(size: CGFloat(pointSize) * 0.6))
-                .foregroundStyle(kind.tint)
+            Image(systemName: "questionmark")
+                .font(.system(size: CGFloat(pointSize) * 0.6, weight: .semibold))
+                .foregroundStyle(Color.shatteredGreen)
         }
     }
 
