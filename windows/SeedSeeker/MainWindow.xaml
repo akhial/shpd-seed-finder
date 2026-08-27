@@ -4,7 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:SeedSeeker"
     Title="Seed Seeker">
-  <Grid>
+  <Grid x:Name="Root">
     <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition/><RowDefinition Height="28"/></Grid.RowDefinitions>
 
     <!-- Unified title bar drawn over Mica -->
@@ -16,7 +16,11 @@
     </Grid>
 
     <Grid Grid.Row="1">
-      <Grid.ColumnDefinitions><ColumnDefinition Width="324"/><ColumnDefinition/></Grid.ColumnDefinitions>
+      <!-- The web design's pane tracks: query 1fr, results 0.8fr, scout 0.8fr,
+           so the sidebar shares in the window's width instead of staying at a
+           fixed size while the other panes soak up all the slack. The island's
+           MinWidth is the two inner minimums plus their divider. -->
+      <Grid.ColumnDefinitions><ColumnDefinition Width="*" MinWidth="318"/><ColumnDefinition Width="1.6*" MinWidth="681"/></Grid.ColumnDefinitions>
 
       <!-- Query sidebar, directly on Mica -->
       <Grid>
@@ -51,73 +55,97 @@
             <!-- The requirement board: one chip per requirement, the members of
                  an either/or cluster sharing a dashed capsule, stack badges at
                  the trailing edge. The code-behind rebuilds it from
-                 QueryRelationships.BoardItems on every change; dropping a chip
-                 on another makes an either/or, and dropping one on the board
-                 itself takes it out of its cluster. -->
-            <local:WrapPanel x:Name="RequirementBoard" Spacing="6" LineSpacing="8" MinHeight="34"
-                             Background="Transparent" AllowDrop="True"
-                             DragOver="Board_DragOver" Drop="Board_Drop"/>
+                 QueryRelationships.BoardItems on every change; dragging a chip
+                 onto another makes an either/or, and dropping one on the board
+                 itself takes it out of its cluster. The drag is the board's
+                 own, driven by pointer events (see the board section of the
+                 code-behind); its ghost chip rides in DragLayer at the end. -->
+            <local:WrapPanel x:Name="RequirementBoard" Spacing="6" LineSpacing="8" MinHeight="34" Background="Transparent"/>
             <!-- Only there while a chip is in flight: the pointer's way to delete. -->
-            <Border x:Name="RemoveZone" Visibility="Collapsed" AllowDrop="True"
-                    DragOver="RemoveZone_DragOver" Drop="RemoveZone_Drop"
+            <Border x:Name="RemoveZone" Visibility="Collapsed"
                     Margin="0,8,0,0" Padding="0,8" CornerRadius="10" BorderThickness="1"
                     Background="Transparent" BorderBrush="{ThemeResource SystemFillColorCriticalBrush}">
               <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
-                <FontIcon Glyph="&#xE74D;" FontSize="12" Foreground="{ThemeResource SystemFillColorCriticalBrush}"/>
-                <TextBlock Text="drop to remove" FontSize="12" FontWeight="SemiBold" Foreground="{ThemeResource SystemFillColorCriticalBrush}"/>
+                <FontIcon x:Name="RemoveZoneIcon" Glyph="&#xE74D;" FontSize="12" Foreground="{ThemeResource SystemFillColorCriticalBrush}"/>
+                <TextBlock x:Name="RemoveZoneLabel" Text="drop to remove" FontSize="12" FontWeight="SemiBold" Foreground="{ThemeResource SystemFillColorCriticalBrush}"/>
               </StackPanel>
             </Border>
             <TextBlock x:Name="NoRequirements" Text="No requirements yet. Add one to describe the item you're hunting for." Style="{StaticResource Caption}" Margin="1,0,1,10"/>
-            <TextBlock Text="Search scope" Style="{StaticResource SectionHeader}"/>
-            <Border Style="{StaticResource SettingsCard}">
-              <StackPanel>
-                <Grid>
-                  <TextBlock Text="Floor limit" VerticalAlignment="Center"/>
-                  <TextBlock x:Name="FloorLabel" Style="{StaticResource Caption}" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                </Grid>
-                <!-- Indexes into FloorLimits.Options (skips the empty boss floors); the code-behind
-                     installs a ThumbToolTipValueConverter so the tooltip names the floor, not the index. -->
-                <Slider x:Name="FloorSlider" StepFrequency="1" ValueChanged="FloorSlider_ValueChanged" HorizontalAlignment="Stretch" Margin="0,2,0,-8"/>
-              </StackPanel>
-            </Border>
+            <!-- The four setting sections sit two to a row while the sidebar is
+                 wide enough for it, so the wider sidebar buys less scrolling
+                 rather than emptier cards; SettingsGrid_SizeChanged moves the
+                 cells back into one column when it is not. Each cell is a
+                 header over a card that stretches to its row, so the two cards
+                 of a row share a bottom edge. -->
+            <Grid x:Name="SettingsGrid" ColumnSpacing="12" SizeChanged="SettingsGrid_SizeChanged">
+              <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
+              <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
 
-            <TextBlock Text="Wandmaker" Style="{StaticResource SectionHeader}"/>
-            <Border Style="{StaticResource SettingsCard}">
-              <Grid ColumnSpacing="14">
-                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <TextBlock Text="Quest" VerticalAlignment="Center"/>
-                <ComboBox Grid.Column="1" x:Name="WandmakerQuestPicker" MinWidth="170" SelectionChanged="WandmakerQuestChanged"/>
+              <Grid x:Name="ScopeCell">
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
+                <TextBlock Text="Search scope" Style="{StaticResource SectionHeader}"/>
+                <Border Grid.Row="1" Style="{StaticResource SettingsCard}">
+                  <StackPanel>
+                    <Grid ColumnSpacing="8">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                      <TextBlock Text="Floor limit" VerticalAlignment="Center"/>
+                      <TextBlock Grid.Column="1" x:Name="FloorLabel" Style="{StaticResource Caption}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                    </Grid>
+                    <!-- Indexes into FloorLimits.Options (skips the empty boss floors); the code-behind
+                         installs a ThumbToolTipValueConverter so the tooltip names the floor, not the index. -->
+                    <Slider x:Name="FloorSlider" StepFrequency="1" ValueChanged="FloorSlider_ValueChanged" HorizontalAlignment="Stretch" Margin="0,2,0,-8"/>
+                  </StackPanel>
+                </Border>
               </Grid>
-            </Border>
 
-            <TextBlock Text="Blacksmith" Style="{StaticResource SectionHeader}"/>
-            <Border Style="{StaticResource SettingsCard}" Margin="0,0,0,4">
-              <Grid ColumnSpacing="14">
-                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <TextBlock Text="Require accessible blacksmith" TextWrapping="Wrap" VerticalAlignment="Center"/>
-                <ToggleSwitch Grid.Column="1" x:Name="RequireBlacksmith" Style="{StaticResource CompactToggle}" Toggled="SettingChanged"/>
+              <Grid x:Name="WandmakerCell" Grid.Column="1">
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
+                <TextBlock Text="Wandmaker" Style="{StaticResource SectionHeader}"/>
+                <Border Grid.Row="1" Style="{StaticResource SettingsCard}">
+                  <Grid ColumnSpacing="14">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                    <TextBlock Text="Quest" VerticalAlignment="Center"/>
+                    <ComboBox Grid.Column="1" x:Name="WandmakerQuestPicker" HorizontalAlignment="Stretch" MinWidth="0" SelectionChanged="WandmakerQuestChanged"/>
+                  </Grid>
+                </Border>
               </Grid>
-            </Border>
-            <Border Style="{StaticResource SettingsCard}">
-              <Grid ColumnSpacing="14" RowSpacing="4">
-                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
-                <TextBlock Text="Exclude Smith rewards" TextWrapping="Wrap" VerticalAlignment="Center"/>
-                <TextBlock Grid.Row="1" Text="Required items cannot come from the 2,000-favor Smith choice, leaving favor available for reforging." Style="{StaticResource Caption}"/>
-                <ToggleSwitch Grid.Column="1" x:Name="ExcludeRewards" Style="{StaticResource CompactToggle}" Toggled="SettingChanged" VerticalAlignment="Top" Margin="0,-4,0,0"/>
-              </Grid>
-            </Border>
 
-            <TextBlock Text="Performance" Style="{StaticResource SectionHeader}"/>
-            <Border Style="{StaticResource SettingsCard}">
-              <Grid ColumnSpacing="14" RowSpacing="4">
-                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                <Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
-                <TextBlock Text="Fast search" VerticalAlignment="Center"/>
-                <TextBlock Grid.Row="1" Text="Treats +3 weapons and armor as quest rewards only, skipping rare Crypt and Sacrificial-fire prizes. Found seeds are always genuine." Style="{StaticResource Caption}"/>
-                <ToggleSwitch Grid.Column="1" x:Name="FastMode" Style="{StaticResource CompactToggle}" Toggled="SettingChanged" VerticalAlignment="Top" Margin="0,-4,0,0"/>
+              <Grid x:Name="BlacksmithCell" Grid.Row="1">
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
+                <TextBlock Text="Blacksmith" Style="{StaticResource SectionHeader}"/>
+                <Border Grid.Row="1" Style="{StaticResource SettingsCard}">
+                  <StackPanel Spacing="10">
+                    <Grid ColumnSpacing="14">
+                      <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                      <TextBlock Text="Require accessible blacksmith" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                      <ToggleSwitch Grid.Column="1" x:Name="RequireBlacksmith" Style="{StaticResource CompactToggle}" Toggled="SettingChanged"/>
+                    </Grid>
+                    <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}"/>
+                    <Grid ColumnSpacing="14" RowSpacing="4">
+                      <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                      <Grid.RowDefinitions><RowDefinition/><RowDefinition/></Grid.RowDefinitions>
+                      <TextBlock Text="Exclude Smith rewards" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                      <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="Required items cannot come from the 2,000-favor Smith choice, leaving favor available for reforging." Style="{StaticResource Caption}"/>
+                      <ToggleSwitch Grid.Column="1" x:Name="ExcludeRewards" Style="{StaticResource CompactToggle}" Toggled="SettingChanged" VerticalAlignment="Top" Margin="0,-4,0,0"/>
+                    </Grid>
+                  </StackPanel>
+                </Border>
               </Grid>
-            </Border>
+
+              <Grid x:Name="PerformanceCell" Grid.Row="1" Grid.Column="1">
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
+                <TextBlock Text="Performance" Style="{StaticResource SectionHeader}"/>
+                <Border Grid.Row="1" Style="{StaticResource SettingsCard}">
+                  <Grid ColumnSpacing="14" RowSpacing="4">
+                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
+                    <TextBlock Text="Fast search" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="Treats +3 weapons and armor as quest rewards only, skipping rare Crypt and Sacrificial-fire prizes. Found seeds are always genuine." Style="{StaticResource Caption}" VerticalAlignment="Top"/>
+                    <ToggleSwitch Grid.Column="1" x:Name="FastMode" Style="{StaticResource CompactToggle}" Toggled="SettingChanged" VerticalAlignment="Top" Margin="0,-4,0,0"/>
+                  </Grid>
+                </Border>
+              </Grid>
+            </Grid>
 
             <TextBlock Text="Challenges" Style="{StaticResource SectionHeader}"/>
             <Button Style="{StaticResource CardButton}" Click="Challenges_Click">
@@ -155,7 +183,7 @@
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" MinWidth="320"/>
           <ColumnDefinition Width="Auto"/>
-          <ColumnDefinition Width="1.25*" MinWidth="360"/>
+          <ColumnDefinition Width="*" MinWidth="360"/>
         </Grid.ColumnDefinitions>
 
         <!-- Results -->
@@ -337,5 +365,9 @@
     <Grid Grid.Row="2" Padding="24,0" BorderThickness="0,1,0,0" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}">
       <TextBlock x:Name="StatusBarText" Style="{StaticResource Caption}" HorizontalAlignment="Right" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
     </Grid>
+
+    <!-- Above everything and transparent to the pointer: the ghost chip that
+         follows a requirement drag rides here, placed in Root coordinates. -->
+    <Canvas x:Name="DragLayer" Grid.RowSpan="3" IsHitTestVisible="False"/>
   </Grid>
 </Window>
