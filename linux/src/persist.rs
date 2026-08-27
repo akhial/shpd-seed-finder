@@ -278,7 +278,7 @@ mod tests {
 
         let restored = round_trip(&state);
         assert_eq!(predicates(&restored), predicates(&state));
-        assert_eq!(restored.slot_count(), 5);
+        assert_eq!(restored.unvalidated_query().slot_count(), 5);
         assert_eq!(save_document(&restored), document);
     }
 

@@ -16,7 +16,8 @@ use shpd_seedfinder_core::seed::DungeonSeed;
 use shpd_seedfinder_session::MAX_RESULTS;
 
 use crate::config::APP_NAME;
-use crate::state::{AppState, UiRequirement};
+use crate::query_pane::BoardAction;
+use crate::state::{AppState, StackShape, UiRequirement};
 use crate::{
     challenges_dialog, detail_pane, persist, presets_dialog, query_pane, requirement_editor,
     results_pane, update,
@@ -111,60 +112,70 @@ pub fn present(app: &adw::Application) {
         }
     });
 
-    let edit_requirement: Rc<dyn Fn(UiRequirement, bool)> = Rc::new({
+    let edit_requirement: Rc<dyn Fn(UiRequirement, StackShape, bool)> = Rc::new({
         let state = Rc::clone(&state);
         let refresh_all = Rc::clone(&refresh_all);
         let window = window.clone();
-        move |requirement, is_new| {
+        move |requirement, stack, is_new| {
             let context = state.borrow().clone();
             let state = Rc::clone(&state);
             let refresh_all = Rc::clone(&refresh_all);
-            requirement_editor::present(&window, &context, &requirement, is_new, move |result| {
-                state.borrow_mut().upsert(result);
-                refresh_all();
-            });
+            requirement_editor::present(
+                &window,
+                &context,
+                &requirement,
+                stack,
+                is_new,
+                move |result, count, total, copy_depth| {
+                    state
+                        .borrow_mut()
+                        .apply_edit(result, count, total, copy_depth);
+                    refresh_all();
+                },
+            );
         }
     });
 
-    query.connect_edit({
+    // Every board gesture — activating a chip, dropping one on another,
+    // the context menu — arrives here as one of these.
+    query.connect_board({
         let state = Rc::clone(&state);
         let edit_requirement = Rc::clone(&edit_requirement);
-        move |key| {
-            let requirement = state
-                .borrow()
-                .requirements
-                .iter()
-                .find(|requirement| requirement.key == key)
-                .copied();
-            if let Some(requirement) = requirement {
-                edit_requirement(requirement, false);
+        let refresh_all = Rc::clone(&refresh_all);
+        move |action| {
+            if let BoardAction::Edit(key) = action {
+                let snapshot = state.borrow();
+                let requirement = snapshot.requirement(key).copied();
+                let stack = snapshot.stack_shape(key);
+                drop(snapshot);
+                if let Some(requirement) = requirement {
+                    edit_requirement(requirement, stack, false);
+                }
+                return;
             }
-        }
-    });
-    query.connect_remove({
-        let state = Rc::clone(&state);
-        let refresh_all = Rc::clone(&refresh_all);
-        move |key| {
-            state.borrow_mut().remove(key);
+            {
+                let mut state = state.borrow_mut();
+                match action {
+                    BoardAction::Edit(_) => {}
+                    BoardAction::Join { source, target } => state.join(source, target),
+                    BoardAction::Detach(key) => state.detach(key),
+                    BoardAction::Remove(key) => state.remove(key),
+                    BoardAction::Count { key, count } => state.set_stack_count(key, count),
+                    BoardAction::Total { key, total } => {
+                        // The menu asks to start or stop counting levels
+                        // without naming a total; a fresh one starts at the
+                        // stack's own size, which is always reachable.
+                        let total = total.or_else(|| {
+                            state
+                                .board_item(key)
+                                .filter(|item| item.total.is_none())
+                                .map(|item| u8::try_from(item.stack_count()).unwrap_or(1).max(1))
+                        });
+                        state.set_stack_total(key, total);
+                    }
+                }
+            }
             refresh_all();
-        }
-    });
-    // Forks a row into an "any of these" group: the editor opens on a copy
-    // of the row, and only confirming it moves both into the group.
-    query.connect_add_alternative({
-        let state = Rc::clone(&state);
-        let refresh_all = Rc::clone(&refresh_all);
-        let window = window.clone();
-        move |source| {
-            let draft = state.borrow_mut().begin_alternative(source);
-            let Some(draft) = draft else { return };
-            let context = state.borrow().clone();
-            let state = Rc::clone(&state);
-            let refresh_all = Rc::clone(&refresh_all);
-            requirement_editor::present(&window, &context, &draft, true, move |result| {
-                state.borrow_mut().add_alternative(source, result);
-                refresh_all();
-            });
         }
     });
     query.connect_changed({
@@ -341,7 +352,7 @@ pub fn present(app: &adw::Application) {
         let edit_requirement = Rc::clone(&edit_requirement);
         move |_, _| {
             let draft = UiRequirement::new(state.borrow_mut().claim_key());
-            edit_requirement(draft, true);
+            edit_requirement(draft, StackShape::lone(), true);
         }
     });
     window.add_action(&add_action);
