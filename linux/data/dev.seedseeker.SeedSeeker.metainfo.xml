@@ -40,6 +40,11 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.8.0" date="2026-08-27">
+      <description>
+        <p>Build complex requirements with either/or alternatives, upgrade totals and effect sets, and share searches with deep links.</p>
+      </description>
+    </release>
     <release version="0.7.0" date="2026-08-03">
       <description>
         <p>Export and import search results, and refine finished searches.</p>
