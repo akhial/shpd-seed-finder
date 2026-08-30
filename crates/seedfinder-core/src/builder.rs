@@ -1601,8 +1601,9 @@ mod tests {
 
     #[test]
     fn loop_builder_matches_pinned_java_room_graph() {
-        // Captured by running the v3.3.8 classes at commit 7b8b845a with the
-        // same initRooms subset. This covers failed-build retries, Java list
+        // Re-pinned from the v4.0.0 port after whole-floor parity with the
+        // official 4.0.0-BETA-3 JAR (findFreeSpace now ranks collisions by
+        // float Euclidean distance). This covers failed-build retries, Java list
         // shuffle order, tunnel decks, placement, closure, neighbours, and
         // connection insertion order.
         let mut rng = RandomStack::with_base_seed(0);
@@ -1653,8 +1654,8 @@ mod tests {
                 (
                     RoomKind::Exit(StandardRoomKind::CircleBasin),
                     Some(SizeCategory::Large),
-                    Rect::new(-21, 6, -9, 16),
-                    vec![6, 7, 10],
+                    Rect::new(-20, 5, -10, 17),
+                    vec![6, 7],
                 ),
                 (
                     RoomKind::Entrance(StandardRoomKind::WaterBridge),
@@ -1665,59 +1666,59 @@ mod tests {
                 (
                     RoomKind::Standard(StandardRoomKind::Ring),
                     Some(SizeCategory::Large),
-                    Rect::new(0, -10, 10, 0),
+                    Rect::new(-2, -9, 10, 0),
                     vec![9, 1],
                 ),
                 (
                     RoomKind::Standard(StandardRoomKind::SewerPipe),
                     Some(SizeCategory::Normal),
-                    Rect::new(-13, -1, -5, 5),
+                    Rect::new(-12, -4, -6, 4),
                     vec![10],
                 ),
                 (
                     RoomKind::Standard(StandardRoomKind::Burned),
                     Some(SizeCategory::Normal),
-                    Rect::new(-20, -5, -15, 0),
-                    vec![7, 8],
+                    Rect::new(-20, -6, -15, -2),
+                    vec![7, 8, 10],
                 ),
                 (
                     RoomKind::Standard(StandardRoomKind::SewerPipe),
                     Some(SizeCategory::Normal),
                     Rect::new(-5, 8, 3, 16),
-                    vec![1, 6, 10],
+                    vec![1, 6],
                 ),
                 (
                     RoomKind::Connection(ConnectionRoomKind::Walkway),
                     None,
-                    Rect::new(-9, 13, -5, 16),
+                    Rect::new(-10, 12, -5, 16),
                     vec![5, 0],
                 ),
                 (
                     RoomKind::Connection(ConnectionRoomKind::Tunnel),
                     None,
-                    Rect::new(-21, 0, -17, 6),
+                    Rect::new(-20, -2, -18, 5),
                     vec![0, 4],
                 ),
                 (
                     RoomKind::Connection(ConnectionRoomKind::Tunnel),
                     None,
-                    Rect::new(-15, -8, -6, -3),
+                    Rect::new(-15, -12, -8, -4),
                     vec![4, 9],
                 ),
                 (
                     RoomKind::Connection(ConnectionRoomKind::Tunnel),
                     None,
-                    Rect::new(-6, -9, 0, -1),
+                    Rect::new(-8, -11, -2, -5),
                     vec![8, 2],
                 ),
                 (
                     RoomKind::Connection(ConnectionRoomKind::Tunnel),
                     None,
-                    Rect::new(-9, 5, -5, 12),
-                    vec![5, 3, 0],
+                    Rect::new(-15, -4, -12, 2),
+                    vec![4, 3],
                 ),
             ]
         );
-        assert_eq!(rng.int(), -405_108_799);
+        assert_eq!(rng.int(), -597_342_396);
     }
 }

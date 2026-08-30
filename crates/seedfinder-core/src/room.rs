@@ -1164,7 +1164,7 @@ pub fn remaining_connections(rooms: &[Room], room: RoomId, direction: Direction)
     }
 }
 
-/// `Room.canConnect(int direction)`, including the v4.0.0 MassGraveRoom
+/// `Room.canConnect(int direction)`, including the v4.0.0 `MassGraveRoom`
 /// override that only admits connections through its bottom wall.
 #[must_use]
 pub fn can_connect_direction(rooms: &[Room], room: RoomId, direction: Direction) -> bool {
@@ -1593,7 +1593,7 @@ mod tests {
                 room.max_connections(Direction::All)
             )),
             [
-                (RoomKind::Quest(QuestRoomKind::MassGrave), None, 8, 9, 1),
+                (RoomKind::Quest(QuestRoomKind::MassGrave), None, 11, 10, 1),
                 (
                     RoomKind::Quest(QuestRoomKind::RitualSite),
                     Some(SizeCategory::Normal),
@@ -1602,12 +1602,14 @@ mod tests {
                     16
                 ),
                 (RoomKind::Quest(QuestRoomKind::RotGarden), None, 10, 10, 1),
+                // Unplaced rooms sit at top == 0, so Java's
+                // `direction == this.top` quirk reports one connection.
                 (
                     RoomKind::Quest(QuestRoomKind::Blacksmith),
                     Some(SizeCategory::Normal),
-                    7,
-                    8,
-                    16
+                    9,
+                    9,
+                    1
                 ),
                 (RoomKind::Quest(QuestRoomKind::AmbitiousImp), None, 9, 9, 1),
             ]
@@ -1643,8 +1645,11 @@ mod tests {
         assert!(!can_connect_rooms(&rooms, 6, 5, &mut rng));
 
         rooms[1].connected.clear();
-        rooms[3].bounds = Rect::new(0, 0, 4, 4);
         rooms[4].bounds = Rect::new(4, 0, 10, 6);
+        // v4.0.0 MassGraveRoom only connects through its bottom wall.
+        rooms[3].bounds = Rect::new(0, 0, 4, 4);
+        assert!(!can_connect_rooms(&rooms, 4, 3, &mut rng));
+        rooms[3].bounds = Rect::new(4, 6, 8, 10);
         assert!(can_connect_rooms(&rooms, 4, 3, &mut rng));
     }
 }

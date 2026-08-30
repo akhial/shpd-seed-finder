@@ -1168,19 +1168,19 @@ mod tests {
                 StandardRoomKind::Statues,
                 SizeCategory::Normal,
                 9,
-                (33_984_027, 1_678_708_340, 0),
+                (800_827_478, 1_678_708_340, 0),
             ),
             (
                 StandardRoomKind::Statues,
                 SizeCategory::Large,
                 13,
-                (1_487_643_682, 1_678_708_340, 0),
+                (2_099_663_906, 1_678_708_340, 0),
             ),
             (
                 StandardRoomKind::Statues,
                 SizeCategory::Giant,
                 17,
-                (-941_839_949, 1_678_708_340, 0),
+                (-677_839_119, 1_678_708_340, 0),
             ),
             (
                 StandardRoomKind::SegmentedLibrary,
@@ -1366,42 +1366,42 @@ mod tests {
                 StandardRoomKind::Hallway,
                 SizeCategory::Normal,
                 9,
-                (-248_529_876, 1_381_175_215, 1),
+                (-248_529_876, 1_678_708_340, 1),
             ),
             (
                 false,
                 StandardRoomKind::Hallway,
                 SizeCategory::Normal,
                 9,
-                (-1_045_250_993, 1_381_175_215, 1),
+                (-1_045_250_993, 1_678_708_340, 1),
             ),
             (
                 true,
                 StandardRoomKind::Statues,
                 SizeCategory::Normal,
                 9,
-                (412_608_094, 1_678_708_340, 1),
+                (382_730_428, 1_678_708_340, 1),
             ),
             (
                 true,
                 StandardRoomKind::Statues,
                 SizeCategory::Large,
                 13,
-                (-1_652_455_354, 1_678_708_340, 1),
+                (-26_596_312, 1_678_708_340, 1),
             ),
             (
                 false,
                 StandardRoomKind::Statues,
                 SizeCategory::Normal,
                 9,
-                (-384_113_023, 1_678_708_340, 1),
+                (-922_717_315, 1_678_708_340, 1),
             ),
             (
                 false,
                 StandardRoomKind::Statues,
                 SizeCategory::Large,
                 13,
-                (276_773_417, 1_678_708_340, 1),
+                (-1_426_042_327, 1_678_708_340, 1),
             ),
             (
                 true,
@@ -1582,8 +1582,8 @@ mod tests {
         painter
             .paint(&mut level, &mut rooms, &mut dispatcher, &mut rng)
             .unwrap();
-        assert_eq!(level.java_map_hash(), 1_119_227_730);
-        assert_eq!(rng.int(), 489_849_364);
+        assert_eq!(level.java_map_hash(), 916_998_761);
+        assert_eq!(rng.int(), -224_344_019);
         assert_eq!(level.transitions.len(), 2);
         assert_eq!(level.traps.len(), 3);
         assert_eq!(level.heaps.len(), 0);

@@ -289,7 +289,7 @@ mod tests {
         let weapon_nine = roll_weapon(&mut stack(9));
         assert_eq!(
             weapon_nine.effect,
-            Some(Effect::Weapon(WeaponEffect::Shocking))
+            Some(Effect::Weapon(WeaponEffect::Blazing))
         );
         assert!(!weapon_nine.cursed);
 

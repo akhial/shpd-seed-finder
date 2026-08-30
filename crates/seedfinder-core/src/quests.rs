@@ -873,7 +873,7 @@ impl ImpQuest {
             return 0;
         };
         let mut count = 0;
-        for (index, option) in self.reward_options.iter().enumerate() {
+        for (option_index, option) in (0_u8..).zip(&self.reward_options) {
             let Some((item, roll)) = option.searchable() else {
                 continue;
             };
@@ -884,7 +884,7 @@ impl ImpQuest {
                 ItemSource::ImpReward,
                 Accessibility::Choice {
                     group,
-                    option: u8::try_from(index).expect("six Imp options"),
+                    option: option_index,
                 },
             ));
             count += 1;
@@ -988,17 +988,14 @@ fn generate_imp_reward_options(
     let depth = i32::from(depth);
     let mut options = Vec::with_capacity(6);
 
-    let first_ring = match random_artifact(random, generator)? {
-        Some(artifact) => {
-            options.push(ImpRewardOption::Artifact(artifact));
-            None
-        }
-        None => {
-            let mut ring = imp_deck_ring(random, generator, depth)?;
-            ring.roll.upgrade = imp_level(random, 2, 4);
-            options.push(ImpRewardOption::Ring(ring));
-            Some(ring.kind)
-        }
+    let first_ring = if let Some(artifact) = random_artifact(random, generator)? {
+        options.push(ImpRewardOption::Artifact(artifact));
+        None
+    } else {
+        let mut ring = imp_deck_ring(random, generator, depth)?;
+        ring.roll.upgrade = imp_level(random, 2, 4);
+        options.push(ImpRewardOption::Ring(ring));
+        Some(ring.kind)
     };
 
     let mut ring = loop {
@@ -1199,7 +1196,7 @@ mod tests {
         assert_eq!(rewards.missile.kind, MissileKind::Tomahawk);
         assert_eq!(rewards.armor.item, ItemId::PlateArmor);
         assert_eq!(rewards.armor.roll.upgrade, 1);
-        assert_eq!(quest.enchantment, Some(WeaponEffect::Chilling));
+        assert_eq!(quest.enchantment, Some(WeaponEffect::Kinetic));
         assert_eq!(quest.glyph, Some(ArmorEffect::Viscosity));
         assert_eq!(quest.discarded_duplicates, 0);
         assert_eq!(random.long(), 25_579_809_655_956_232);
@@ -1224,7 +1221,7 @@ mod tests {
         assert_eq!(rewards.missile.kind, MissileKind::ThrowingSpear);
         assert_eq!(rewards.armor.item, ItemId::ScaleArmor);
         assert_eq!(rewards.armor.roll.upgrade, 2);
-        assert_eq!(quest.enchantment, Some(WeaponEffect::Shocking));
+        assert_eq!(quest.enchantment, Some(WeaponEffect::Venomous));
         assert_eq!(quest.glyph, Some(ArmorEffect::Repulsion));
         assert_eq!(quest.discarded_duplicates, 1);
         assert_eq!(random.long(), 4_690_832_018_155_665_766);
@@ -1380,11 +1377,11 @@ mod tests {
         assert_eq!(smith.append_world_items(9, &mut output), 4);
         assert_eq!(
             output[0].effect,
-            Some(Effect::Weapon(WeaponEffect::Chilling))
+            Some(Effect::Weapon(WeaponEffect::Kinetic))
         );
         assert_eq!(
             output[2].effect,
-            Some(Effect::Weapon(WeaponEffect::Chilling))
+            Some(Effect::Weapon(WeaponEffect::Kinetic))
         );
         assert_eq!(output[2].item, ItemId::Tomahawk);
         assert_eq!(

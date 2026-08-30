@@ -1202,7 +1202,7 @@ pub fn can_place_water(rooms: &[Room], room: RoomId, point: Point) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::catalog::{Effect, ItemId, WeaponEffect};
+    use crate::catalog::{ArmorEffect, Effect, ItemId, WeaponEffect};
     use crate::geometry::Rect;
     use crate::level::Feeling;
     use crate::room::{ConnectionRoomKind, Door, RoomConnection};
@@ -1316,12 +1316,12 @@ mod tests {
             10,
             Point::new(2, 6),
         );
-        assert_eq!(seed_zero.map_hash, -235_461_597);
+        assert_eq!(seed_zero.map_hash, -2_133_185_797);
         assert_eq!(seed_zero.door, DoorType::Barricade);
-        assert_eq!(seed_zero.next, 3_246_199_166_113_899_023);
+        assert_eq!(seed_zero.next, 2_704_323_167_362_897_208);
         assert_eq!(
             mob_cells(&seed_zero.events, QuestMobKind::Skeleton),
-            [69, 83]
+            [67, 84]
         );
         assert_eq!(
             seed_zero.queue,
@@ -1329,12 +1329,12 @@ mod tests {
         );
         assert_eq!(seed_zero.report.searchable_items, []);
         let drops = drop_cells(&seed_zero.events);
-        assert_eq!(drops.len(), 4);
+        assert_eq!(drops.len(), 3);
         assert_eq!(
             drops.iter().map(|drop| drop.0).collect::<Vec<_>>(),
-            [95, 153, 157, 160]
+            [52, 66, 79]
         );
-        assert!(drops.iter().any(|drop| drop.0 == 95 && drop.3));
+        assert!(drops.iter().any(|drop| drop.0 == 52 && drop.3));
 
         let seed_nineteen = fixture(
             RoomKind::Quest(QuestRoomKind::MassGrave),
@@ -1343,19 +1343,20 @@ mod tests {
             10,
             Point::new(2, 6),
         );
-        assert_eq!(seed_nineteen.map_hash, -235_461_597);
-        assert_eq!(seed_nineteen.next, 3_342_370_463_724_496_012);
+        // The fixed 11x10 layout paints the same terrain for every seed.
+        assert_eq!(seed_nineteen.map_hash, -2_133_185_797);
+        assert_eq!(seed_nineteen.next, 5_307_994_216_896_367_667);
         assert_eq!(
             mob_cells(&seed_nineteen.events, QuestMobKind::Skeleton),
-            [51]
+            [51, 80]
         );
         assert_eq!(
             seed_nineteen.report.searchable_items,
             [WorldItem {
                 item: ItemId::MailArmor,
-                upgrade: 0,
-                effect: None,
-                cursed: false,
+                upgrade: 1,
+                effect: Some(Effect::Armor(ArmorEffect::Metabolism)),
+                cursed: true,
                 depth: 8,
                 source: ItemSource::Heap,
                 accessibility: Accessibility::Independent,
@@ -1367,7 +1368,7 @@ mod tests {
                 .iter()
                 .map(|drop| drop.0)
                 .collect::<Vec<_>>(),
-            [53, 123, 140, 141, 145]
+            [51, 52, 66, 94, 97, 99]
         );
     }
 
@@ -1457,20 +1458,17 @@ mod tests {
             10,
             Point::new(2, 6),
         );
-        assert_eq!(seed_zero.map_hash, -18_047_974);
-        assert_eq!(seed_zero.next, 5_072_005_423_257_391_728);
-        assert_eq!(
-            mob_cells(&seed_zero.events, QuestMobKind::Blacksmith),
-            [113]
-        );
+        assert_eq!(seed_zero.map_hash, -107_896_294);
+        assert_eq!(seed_zero.next, 7_105_486_291_024_734_541);
+        assert_eq!(mob_cells(&seed_zero.events, QuestMobKind::Blacksmith), [80]);
         assert_eq!(
             seed_zero.report.searchable_items,
             [
                 WorldItem {
-                    item: ItemId::Crossbow,
-                    upgrade: 0,
-                    effect: None,
-                    cursed: false,
+                    item: ItemId::ScaleArmor,
+                    upgrade: 1,
+                    effect: Some(Effect::Armor(ArmorEffect::Metabolism)),
+                    cursed: true,
                     depth: 13,
                     source: ItemSource::Heap,
                     accessibility: Accessibility::Independent,
@@ -1493,19 +1491,20 @@ mod tests {
                 .iter()
                 .map(|d| d.0)
                 .collect::<Vec<_>>(),
-            [84, 143]
+            [127, 128]
         );
         let traps = seed_zero
             .events
             .iter()
             .filter(|event| matches!(event, QuestPaintEvent::Trap { .. }))
             .count();
-        assert_eq!(traps, 27);
+        // v4.0.0 smithies no longer ring the room with burning traps.
+        assert_eq!(traps, 0);
         assert!(
             seed_zero
                 .events
                 .contains(&QuestPaintEvent::Transition(QuestBranchTransition {
-                    cell: 99,
+                    cell: 48,
                     depth: 13,
                     branch: 1,
                 }))
@@ -1518,18 +1517,18 @@ mod tests {
             10,
             Point::new(2, 6),
         );
-        assert_eq!(seed_seventy_seven.map_hash, -839_081_266);
-        assert_eq!(seed_seventy_seven.next, 3_663_842_716_423_163_350);
+        assert_eq!(seed_seventy_seven.map_hash, 1_919_139_820);
+        assert_eq!(seed_seventy_seven.next, -6_264_321_152_254_219_996);
         assert_eq!(
             mob_cells(&seed_seventy_seven.events, QuestMobKind::Blacksmith),
-            [95]
+            [80]
         );
         assert_eq!(
             seed_seventy_seven.report.searchable_items,
             [
                 WorldItem {
-                    item: ItemId::ThrowingSpear,
-                    upgrade: 1,
+                    item: ItemId::Crossbow,
+                    upgrade: 0,
                     effect: None,
                     cursed: false,
                     depth: 13,
@@ -1538,10 +1537,10 @@ mod tests {
                     secret: false,
                 },
                 WorldItem {
-                    item: ItemId::Tomahawk,
-                    upgrade: 1,
-                    effect: Some(Effect::Weapon(WeaponEffect::Friendly)),
-                    cursed: true,
+                    item: ItemId::ScaleArmor,
+                    upgrade: 0,
+                    effect: Some(Effect::Armor(ArmorEffect::Camouflage)),
+                    cursed: false,
                     depth: 13,
                     source: ItemSource::Heap,
                     accessibility: Accessibility::Independent,
@@ -1553,7 +1552,7 @@ mod tests {
             seed_seventy_seven
                 .events
                 .contains(&QuestPaintEvent::Transition(QuestBranchTransition {
-                    cell: 84,
+                    cell: 55,
                     depth: 13,
                     branch: 1,
                 }))
@@ -1569,7 +1568,7 @@ mod tests {
             (Point::new(6, 10), 125),
         ] {
             let result = fixture(RoomKind::Quest(QuestRoomKind::AmbitiousImp), 18, 0, 9, door);
-            assert_eq!(result.map_hash, -1_983_134_509);
+            assert_eq!(result.map_hash, 1_952_879_827);
             assert_eq!(result.next, -3_109_364_765_729_502_342);
             assert_eq!(
                 mob_cells(&result.events, QuestMobKind::Imp),
@@ -1593,7 +1592,7 @@ mod tests {
             ));
             assert!(!can_place_trap(result.rooms[0].kind));
             assert!(!can_place_grass(&result.rooms, 0, Point::new(6, 6)));
-            assert!(can_place_grass(&result.rooms, 0, Point::new(3, 3)));
+            assert!(can_place_grass(&result.rooms, 0, Point::new(2, 2)));
         }
     }
 

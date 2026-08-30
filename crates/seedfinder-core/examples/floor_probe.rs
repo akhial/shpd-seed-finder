@@ -2,7 +2,7 @@
 //! the upstream Java floor probe prints: map size and `Arrays.hashCode`,
 //! entrance/exit cells, every occupied mob cell, and the searchable items.
 //!
-//! Usage: `floor_probe <SEED-CODE> [MAX_DEPTH]`.
+//! Usage: `floor_probe <SEED-CODE> [MAX_DEPTH] [map] [CHALLENGE_MASK]`.
 use shpd_seedfinder_core::caves_floor::generate_caves_floor;
 use shpd_seedfinder_core::city_boss_shop::generate_city_boss_shop;
 use shpd_seedfinder_core::city_floor::generate_city_floor;
@@ -87,7 +87,11 @@ fn main() {
     let dungeon_seed = i64::try_from(seed.value()).unwrap();
     println!("seed={dungeon_seed}");
 
-    let mut run = RunState::new(dungeon_seed);
+    let challenges = args.get(4).map_or(0, |value| value.parse().unwrap());
+    let mut run = RunState::with_challenges(
+        dungeon_seed,
+        shpd_seedfinder_core::challenges::Challenges::new(challenges).unwrap(),
+    );
     let mut limited_drops = LimitedDrops::default();
     let mut quests = QuestState::new();
     let mut shop_run = ShopRunState::default();

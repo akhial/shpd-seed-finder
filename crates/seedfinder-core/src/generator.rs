@@ -1537,7 +1537,7 @@ mod tests {
                 ItemId::Sword,
                 1,
                 true,
-                Some(Effect::Weapon(WeaponEffect::Sacrificial))
+                Some(Effect::Weapon(WeaponEffect::Annoying))
             )
         );
         assert_eq!(
@@ -1562,7 +1562,7 @@ mod tests {
                 ItemId::Crossbow,
                 0,
                 true,
-                Some(Effect::Weapon(WeaponEffect::Annoying))
+                Some(Effect::Weapon(WeaponEffect::Dazzling))
             )
         );
     }
@@ -1576,7 +1576,7 @@ mod tests {
                     ItemId::Quarterstaff,
                     0,
                     true,
-                    Some(Effect::Weapon(WeaponEffect::Sacrificial)),
+                    Some(Effect::Weapon(WeaponEffect::Annoying)),
                 ),
             ),
             (
@@ -1618,7 +1618,7 @@ mod tests {
                 ItemId::Mace,
                 0,
                 true,
-                Some(Effect::Weapon(WeaponEffect::Sacrificial))
+                Some(Effect::Weapon(WeaponEffect::Annoying))
             ))
         );
         assert_eq!(
@@ -1684,7 +1684,7 @@ mod tests {
                 quantity: 3,
                 roll: EquipmentRoll {
                     upgrade: 1,
-                    effect: Some(Effect::Weapon(WeaponEffect::Wayward)),
+                    effect: Some(Effect::Weapon(WeaponEffect::Polarized)),
                     cursed: true
                 }
             }
@@ -1887,9 +1887,9 @@ mod tests {
             )
             .unwrap(),
             GeneratedItem::Ring(GeneratedRing {
-                kind: RingKind::Wealth,
+                kind: RingKind::Accuracy,
                 roll: EquipmentRoll {
-                    upgrade: 0,
+                    upgrade: 2,
                     effect: None,
                     cursed: true
                 }
@@ -1904,17 +1904,18 @@ mod tests {
             )
             .unwrap(),
             GeneratedItem::Ring(GeneratedRing {
-                kind: RingKind::Accuracy,
+                kind: RingKind::Tenacity,
                 roll: EquipmentRoll {
-                    upgrade: 2,
+                    upgrade: 0,
                     effect: None,
                     cursed: false
                 }
             })
         );
-        assert_eq!(random.long(), -3_901_995_299_017_043_590);
+        assert_eq!(random.long(), -3_969_803_455_732_910_376);
         assert_eq!(generator.category(GeneratorCategory::Artifact).dropped, 13);
-        assert_eq!(generator.category(GeneratorCategory::Ring).dropped, 2);
+        // v4.0.0 falls back to randomUsingDefaults(RING): the ring deck is untouched.
+        assert_eq!(generator.category(GeneratorCategory::Ring).dropped, 0);
     }
 
     #[test]
