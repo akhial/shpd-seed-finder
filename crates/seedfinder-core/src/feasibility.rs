@@ -2,16 +2,27 @@
 //! how deep generation must run, and when a partially generated seed can be
 //! abandoned early.
 //!
-//! The rules here mirror structural facts of the v3.3.8 generator:
+//! The rules here mirror structural facts of the v4.0.0 generator:
 //!
 //! - Natural equipment rolls never exceed +2 ([`crate::equipment`]), so +3
 //!   weapons come only from the Sacrificial-fire room, the Ghost quest, the
-//!   Blacksmith, or a special-room chest prize (the flooded-vault and sentry
+//!   Blacksmith, a special-room chest prize (the flooded-vault and sentry
 //!   rooms bump a weapon, missile, or armor roll by one, and the secret maze
-//!   bumps a melee weapon or armor roll — all dropped as chests); +3 armor
-//!   only from the Crypt, the Ghost, the Blacksmith, or those same chest
-//!   prizes; +3 wands only from the Wandmaker; and +3/+4 rings only from the
-//!   Imp.
+//!   bumps a melee weapon or armor roll — all dropped as chests), or the Imp;
+//!   +3 armor only from the Crypt, the Ghost, the Blacksmith, those same
+//!   chest prizes, or the Imp; +3 wands only from the Wandmaker or the Imp;
+//!   and +3 rings only from the Imp.
+//! - Everything above +3 is the Imp's alone. On its City floor the quest
+//!   rolls six prizes ([`ItemSource::ImpReward`]: an artifact or ring, a
+//!   ring, a tier-5 weapon with a tier-4 thrown weapon or the reverse, plate
+//!   armor, and a wand — +2..+4, the tier-4 weapons +3..+5, never cursed,
+//!   every weapon and armor carrying a good enchantment or glyph) and opens a
+//!   vault whose treasure rooms hold [`ItemSource::VaultTreasure`] equipment
+//!   (+0..+3 plus one +4 tier-4 melee weapon, never cursed, effects good or
+//!   absent). They are the only sources of +4 armor, wands and rings and of
+//!   +4/+5 weapons, and because the player carries exactly one item out of
+//!   the vault, both sources together are one mutually exclusive choice —
+//!   one [`Quest::Imp`] pick.
 //! - Every quest resolves inside a fixed depth window (Ghost 2–4, Wandmaker
 //!   7–9, Blacksmith 12–14, Imp 17–19) and spawns at most once per run, with
 //!   the spawn forced on the window's final floor.
@@ -22,8 +33,9 @@
 //! match, and a shortened generation depth can never hide a match. The one
 //! deliberately lossy refinement is [`SearchQuery::fast_mode`], which ignores
 //! the rare Crypt/Sacrificial-fire/chest-prize +3 rolls so that +3
-//! weapon/armor requirements become quest-only and inherit the Blacksmith's
-//! depth-14 deadline.
+//! weapon/armor requirements become quest-only — Ghost, Blacksmith or Imp,
+//! the vault prizes staying exact — and inherit the Imp's depth-19 deadline
+//! instead of running to the floor limit.
 //!
 //! The searchable catalog contains equipment only. `NO_SCROLLS` halves the
 //! scheduled Scroll of Upgrade drops, but no current requirement can target a
@@ -599,22 +611,257 @@ mod tests {
     }
 
     #[test]
-    fn plus_three_wand_ends_at_the_wandmaker_window() {
+    fn plus_three_wand_comes_from_the_wandmaker_or_the_imp() {
         let plan = QueryPlan::analyze(&query(
             vec![requirement(ItemKind::Wand, UpgradeRequirement::Exact(3))],
             24,
         ));
         assert!(!plan.is_unsatisfiable());
-        assert_eq!(plan.generation_depth(), 9);
-        // A resolved Wandmaker without a +3 wand kills the seed immediately.
+        // The Imp's vault also holds +3 wands, so the horizon is its floor.
+        assert_eq!(plan.generation_depth(), 19);
+        // A resolved Wandmaker without a +3 wand leaves the Imp alive.
         let mismatched = [item(ItemId::WandFrost, 2, 7, ItemSource::WandmakerReward)];
-        assert!(!viable(&plan, 7, &mismatched));
-        // An unresolved Wandmaker stays alive through depth eight.
-        assert!(viable(&plan, 8, &[]));
-        assert!(!viable(&plan, 9, &[]));
-        // A matching reward keeps the seed alive permanently.
-        let matched = [item(ItemId::WandFrost, 3, 8, ItemSource::WandmakerReward)];
-        assert!(viable(&plan, 9, &matched));
+        assert!(viable(&plan, 7, &mismatched));
+        assert!(viable(&plan, 9, &mismatched));
+        assert!(viable(&plan, 18, &mismatched));
+        // Once the Imp also resolves without one, the seed is dead.
+        let both_missed = [
+            item(ItemId::WandFrost, 2, 7, ItemSource::WandmakerReward),
+            item(ItemId::WandFrost, 2, 18, ItemSource::ImpReward),
+        ];
+        assert!(!viable(&plan, 18, &both_missed));
+        // A matching reward from either giver keeps the seed alive
+        // permanently — the vault's treasure counts as the Imp's.
+        let wandmaker = [item(ItemId::WandFrost, 3, 8, ItemSource::WandmakerReward)];
+        assert!(viable(&plan, 9, &wandmaker));
+        assert!(viable(&plan, 19, &wandmaker));
+        let vault = [
+            item(ItemId::WandFrost, 2, 7, ItemSource::WandmakerReward),
+            item(ItemId::WandFrost, 3, 18, ItemSource::VaultTreasure),
+        ];
+        assert!(viable(&plan, 19, &vault));
+        // Below the Imp's window the Wandmaker is the only source and its
+        // floor is the horizon.
+        let shallow = QueryPlan::analyze(&query(
+            vec![requirement(ItemKind::Wand, UpgradeRequirement::Exact(3))],
+            16,
+        ));
+        assert_eq!(shallow.generation_depth(), 9);
+        assert!(!viable(&shallow, 9, &[]));
+    }
+
+    #[test]
+    fn plus_five_weapon_is_imp_only_with_a_depth_nineteen_deadline() {
+        let plan = QueryPlan::analyze(&query(
+            vec![requirement(ItemKind::Weapon, UpgradeRequirement::Exact(5))],
+            24,
+        ));
+        assert!(!plan.is_unsatisfiable());
+        assert_eq!(plan.generation_depth(), 19);
+        // Nothing before the Imp can produce it, so an empty prefix stays
+        // alive right up to the window's last floor and no further.
+        assert!(viable(&plan, 18, &[]));
+        assert!(!viable(&plan, 19, &[]));
+        // Only the Imp's own prizes reach +5; the vault's treasure stops at
+        // +4, so a vault weapon never satisfies it.
+        let vault = [item(ItemId::Greatsword, 4, 18, ItemSource::VaultTreasure)];
+        assert!(!viable(&plan, 18, &vault));
+        let prize = [item(ItemId::Greatsword, 5, 18, ItemSource::ImpReward)];
+        assert!(viable(&plan, 19, &prize));
+        // At-least +5 is the same question.
+        let at_least = QueryPlan::analyze(&query(
+            vec![requirement(
+                ItemKind::Weapon,
+                UpgradeRequirement::AtLeast(5),
+            )],
+            24,
+        ));
+        assert_eq!(at_least.generation_depth(), 19);
+        // Below the Imp's window the query is impossible.
+        let shallow = QueryPlan::analyze(&query(
+            vec![requirement(ItemKind::Weapon, UpgradeRequirement::Exact(5))],
+            16,
+        ));
+        assert!(shallow.is_unsatisfiable());
+    }
+
+    #[test]
+    fn plus_four_wand_armor_and_ring_are_imp_only() {
+        for kind in [ItemKind::Wand, ItemKind::Armor, ItemKind::Ring] {
+            let plan = QueryPlan::analyze(&query(
+                vec![requirement(kind, UpgradeRequirement::Exact(4))],
+                24,
+            ));
+            assert!(!plan.is_unsatisfiable(), "{kind:?}");
+            assert_eq!(plan.generation_depth(), 19, "{kind:?}");
+            assert!(viable(&plan, 18, &[]), "{kind:?}");
+            assert!(!viable(&plan, 19, &[]), "{kind:?}");
+            let shallow = QueryPlan::analyze(&query(
+                vec![requirement(kind, UpgradeRequirement::Exact(4))],
+                16,
+            ));
+            assert!(shallow.is_unsatisfiable(), "{kind:?}");
+        }
+        // The vault's treasure stops at +3 for these kinds: a +3 vault wand
+        // resolves the Imp without satisfying a +4.
+        let wand = QueryPlan::analyze(&query(
+            vec![requirement(ItemKind::Wand, UpgradeRequirement::Exact(4))],
+            24,
+        ));
+        let vault = [item(ItemId::WandFrost, 3, 18, ItemSource::VaultTreasure)];
+        assert!(!viable(&wand, 18, &vault));
+        let prize = [item(ItemId::WandFrost, 4, 18, ItemSource::ImpReward)];
+        assert!(viable(&wand, 19, &prize));
+    }
+
+    #[test]
+    fn plus_four_weapon_comes_from_either_imp_source() {
+        let plus_four = requirement(ItemKind::Weapon, UpgradeRequirement::Exact(4));
+        let plan = QueryPlan::analyze(&query(vec![plus_four], 24));
+        assert!(!plan.is_unsatisfiable());
+        assert_eq!(plan.generation_depth(), 19);
+        // Pinning either Imp source keeps the query possible; every other
+        // source stops at +3.
+        for source in [ItemSource::ImpReward, ItemSource::VaultTreasure] {
+            let pinned = QueryPlan::analyze(&query(
+                vec![Requirement {
+                    source: Some(source),
+                    ..plus_four
+                }],
+                24,
+            ));
+            assert!(!pinned.is_unsatisfiable(), "{source:?}");
+            assert_eq!(pinned.generation_depth(), 19, "{source:?}");
+        }
+        for source in [ItemSource::Chest, ItemSource::BlacksmithReward] {
+            let pinned = QueryPlan::analyze(&query(
+                vec![Requirement {
+                    source: Some(source),
+                    ..plus_four
+                }],
+                24,
+            ));
+            assert!(pinned.is_unsatisfiable(), "{source:?}");
+        }
+        // A +4 weapon from either source keeps the seed alive permanently.
+        let vault = [item(ItemId::Greatsword, 4, 18, ItemSource::VaultTreasure)];
+        assert!(viable(&plan, 19, &vault));
+        let prize = [item(ItemId::Greatsword, 4, 18, ItemSource::ImpReward)];
+        assert!(viable(&plan, 19, &prize));
+        // Both sources are the same quest: prizes from one and treasure from
+        // the other appear together, and a miss across both is final.
+        let missed = [
+            item(ItemId::Greatsword, 3, 18, ItemSource::ImpReward),
+            item(ItemId::Greatsword, 3, 18, ItemSource::VaultTreasure),
+        ];
+        assert!(!viable(&plan, 18, &missed));
+    }
+
+    #[test]
+    fn two_quest_only_imp_slots_are_impossible() {
+        // The player carries one item out of the vault, so two requirements
+        // that only the Imp can satisfy can never both be met — whether they
+        // hinge on the Imp's own prizes, the vault's treasure, or both.
+        let weapon = requirement(ItemKind::Weapon, UpgradeRequirement::Exact(5));
+        let wand = requirement(ItemKind::Wand, UpgradeRequirement::Exact(4));
+        assert!(QueryPlan::analyze(&query(vec![weapon, wand], 24)).is_unsatisfiable());
+        let vault_weapon = Requirement {
+            source: Some(ItemSource::VaultTreasure),
+            ..requirement(ItemKind::Weapon, UpgradeRequirement::Exact(4))
+        };
+        assert!(QueryPlan::analyze(&query(vec![weapon, vault_weapon], 24)).is_unsatisfiable());
+        let armor = requirement(ItemKind::Armor, UpgradeRequirement::Exact(4));
+        let ring = requirement(ItemKind::Ring, UpgradeRequirement::AtLeast(4));
+        assert!(QueryPlan::analyze(&query(vec![armor, ring], 24)).is_unsatisfiable());
+        // One Imp-only slot beside a slot another quest can cover is fine.
+        let plus_three_wand = requirement(ItemKind::Wand, UpgradeRequirement::Exact(3));
+        let plan = QueryPlan::analyze(&query(vec![weapon, plus_three_wand], 24));
+        assert!(!plan.is_unsatisfiable());
+        // ...until the Wandmaker resolves without its wand, leaving both
+        // slots to the single Imp pick.
+        let missed = [item(ItemId::WandFrost, 2, 8, ItemSource::WandmakerReward)];
+        assert!(!viable(&plan, 9, &missed));
+    }
+
+    #[test]
+    fn excluding_blacksmith_rewards_leaves_the_imp_alone() {
+        let excluding = |requirements| SearchQuery {
+            exclude_blacksmith_rewards: true,
+            ..query(requirements, 24)
+        };
+        // Imp-only requirements are untouched by the exclusion.
+        let wand = QueryPlan::analyze(&excluding(vec![requirement(
+            ItemKind::Wand,
+            UpgradeRequirement::Exact(4),
+        )]));
+        assert!(!wand.is_unsatisfiable());
+        assert_eq!(wand.generation_depth(), 19);
+        for source in [ItemSource::ImpReward, ItemSource::VaultTreasure] {
+            let pinned = QueryPlan::analyze(&excluding(vec![Requirement {
+                source: Some(source),
+                ..requirement(ItemKind::Weapon, UpgradeRequirement::Exact(4))
+            }]));
+            assert!(!pinned.is_unsatisfiable(), "{source:?}");
+        }
+        // The Blacksmith's own prizes are what it removes.
+        let blacksmith = QueryPlan::analyze(&excluding(vec![Requirement {
+            source: Some(ItemSource::BlacksmithReward),
+            ..requirement(ItemKind::Armor, UpgradeRequirement::Exact(3))
+        }]));
+        assert!(blacksmith.is_unsatisfiable());
+        // A fast-mode +3 weapon then hinges on the Ghost and the Imp: two
+        // quests, so a Ghost miss still leaves the Imp.
+        let fast = QueryPlan::analyze(&SearchQuery {
+            fast_mode: true,
+            ..excluding(vec![requirement(
+                ItemKind::Weapon,
+                UpgradeRequirement::Exact(3),
+            )])
+        });
+        assert!(!fast.is_unsatisfiable());
+        assert_eq!(fast.generation_depth(), 19);
+        let ghost_missed = [item(ItemId::Sword, 1, 3, ItemSource::GhostReward)];
+        assert!(viable(&fast, 4, &ghost_missed));
+        let blacksmith_hit = [
+            item(ItemId::Sword, 1, 3, ItemSource::GhostReward),
+            item(ItemId::Sword, 3, 13, ItemSource::BlacksmithReward),
+        ];
+        // The excluded Blacksmith prize does not count, and its quest was
+        // never in the plan, so only the Imp remains.
+        assert!(viable(&fast, 14, &blacksmith_hit));
+        let imp_missed = [
+            item(ItemId::Sword, 1, 3, ItemSource::GhostReward),
+            item(ItemId::Sword, 2, 18, ItemSource::ImpReward),
+        ];
+        assert!(!viable(&fast, 18, &imp_missed));
+    }
+
+    #[test]
+    fn thrown_plus_five_is_possible() {
+        use crate::catalog::WeaponCategory;
+
+        // The Imp's tier-4 thrown prize rolls +3..+5, so a +5 thrown weapon
+        // is an Imp-only requirement like any other +5.
+        let thrown = Requirement {
+            weapon_category: Some(WeaponCategory::Thrown),
+            ..requirement(ItemKind::Weapon, UpgradeRequirement::Exact(5))
+        };
+        let plan = QueryPlan::analyze(&query(vec![thrown], 24));
+        assert!(!plan.is_unsatisfiable());
+        assert_eq!(plan.generation_depth(), 19);
+        let prize = [item(ItemId::ThrowingHammer, 5, 18, ItemSource::ImpReward)];
+        assert!(viable(&plan, 19, &prize));
+        let pinned = QueryPlan::analyze(&query(
+            vec![Requirement {
+                source: Some(ItemSource::ImpReward),
+                ..thrown
+            }],
+            24,
+        ));
+        assert!(!pinned.is_unsatisfiable());
+        // A melee +5 prize does not satisfy the thrown filter.
+        let melee = [item(ItemId::Greatsword, 5, 18, ItemSource::ImpReward)];
+        assert!(!viable(&plan, 18, &melee));
     }
 
     #[test]
@@ -643,7 +890,8 @@ mod tests {
 
     #[test]
     fn exclusive_quest_choices_respect_capacity_after_resolution() {
-        // +3 weapon and +3 armor can come from Ghost and Blacksmith, one each.
+        // +3 weapon and +3 armor can come from the Ghost, the Blacksmith and
+        // the Imp, one each.
         let plan = QueryPlan::analyze(&query(
             vec![
                 requirement(ItemKind::Weapon, UpgradeRequirement::Exact(3)),
@@ -665,20 +913,34 @@ mod tests {
                 24,
             )
         });
-        assert_eq!(fast.generation_depth(), 14);
-        // The Ghost resolved without a +3: both requirements now hinge on the
-        // single Blacksmith choice, which cannot cover two items.
+        // Quest-only: the Imp's floor is the horizon.
+        assert_eq!(fast.generation_depth(), 19);
+        // The Ghost resolved without a +3: the Blacksmith and the Imp can
+        // still cover one requirement each.
         let ghost_missed = [
             item(ItemId::Sword, 1, 3, ItemSource::GhostReward),
             item(ItemId::MailArmor, 1, 3, ItemSource::GhostReward),
         ];
-        assert!(!viable(&fast, 4, &ghost_missed));
-        // A +3 Ghost weapon leaves the armor to the Blacksmith.
+        assert!(viable(&fast, 4, &ghost_missed));
+        // The Blacksmith also resolved without a +3: both requirements now
+        // hinge on the single Imp pick, which cannot cover two items.
+        let blacksmith_missed = [
+            item(ItemId::Sword, 1, 3, ItemSource::GhostReward),
+            item(ItemId::MailArmor, 1, 3, ItemSource::GhostReward),
+            item(ItemId::Sword, 2, 13, ItemSource::BlacksmithReward),
+        ];
+        assert!(!viable(&fast, 14, &blacksmith_missed));
+        // A +3 Ghost weapon leaves the armor to the Blacksmith or the Imp.
         let ghost_hit = [
             item(ItemId::Sword, 3, 3, ItemSource::GhostReward),
             item(ItemId::MailArmor, 3, 3, ItemSource::GhostReward),
         ];
         assert!(viable(&fast, 4, &ghost_hit));
+        let ghost_hit_blacksmith_missed = [
+            item(ItemId::Sword, 3, 3, ItemSource::GhostReward),
+            item(ItemId::Sword, 2, 13, ItemSource::BlacksmithReward),
+        ];
+        assert!(viable(&fast, 14, &ghost_hit_blacksmith_missed));
     }
 
     #[test]
@@ -699,7 +961,8 @@ mod tests {
         });
         assert!(fast.is_unsatisfiable());
 
-        // A good glyph on +3 armor is still reachable via Ghost/Blacksmith.
+        // A good glyph on +3 armor is still reachable via the Ghost, the
+        // Blacksmith and the Imp, whose floor bounds the fast-mode plan.
         let good = Requirement {
             effect: EffectRequirement::exactly(Effect::Armor(ArmorEffect::Thorns)),
             require_uncursed: false,
@@ -710,7 +973,21 @@ mod tests {
             ..query(vec![good], 24)
         });
         assert!(!fast_good.is_unsatisfiable());
-        assert_eq!(fast_good.generation_depth(), 14);
+        assert_eq!(fast_good.generation_depth(), 19);
+        // Cursed effects never reach the Imp's good-only prizes either.
+        let cursed_plus_four = Requirement {
+            effect: EffectRequirement::exactly(Effect::Weapon(WeaponEffect::Pressurized)),
+            require_uncursed: false,
+            ..requirement(ItemKind::Weapon, UpgradeRequirement::Exact(4))
+        };
+        assert!(QueryPlan::analyze(&query(vec![cursed_plus_four], 24)).is_unsatisfiable());
+        // A new good enchantment is as reachable there as an old one.
+        let crystal_plus_five = Requirement {
+            effect: EffectRequirement::exactly(Effect::Weapon(WeaponEffect::Crystal)),
+            require_uncursed: true,
+            ..requirement(ItemKind::Weapon, UpgradeRequirement::Exact(5))
+        };
+        assert!(!QueryPlan::analyze(&query(vec![crystal_plus_five], 24)).is_unsatisfiable());
 
         // A mixed set stays reachable through good-only sources, and an
         // uncursed pure-curse set is impossible anywhere.
@@ -730,7 +1007,7 @@ mod tests {
             ..query(vec![mixed], 24)
         });
         assert!(!fast_mixed.is_unsatisfiable());
-        assert_eq!(fast_mixed.generation_depth(), 14);
+        assert_eq!(fast_mixed.generation_depth(), 19);
         // Any enchantment on an uncursed +3 weapon keeps the quest sources.
         let any_enchantment = Requirement {
             effect: EffectRequirement::OneOf(EffectSet::enchantments(ItemKind::Weapon).unwrap()),
@@ -742,7 +1019,7 @@ mod tests {
             ..query(vec![any_enchantment], 24)
         });
         assert!(!fast_any.is_unsatisfiable());
-        assert_eq!(fast_any.generation_depth(), 14);
+        assert_eq!(fast_any.generation_depth(), 19);
     }
 
     #[test]
@@ -842,8 +1119,8 @@ mod tests {
         }
 
         // Unpinned thrown requirements stay satisfiable through open drops,
-        // and a +3 in fast mode becomes Blacksmith-only: the Ghost no longer
-        // counts, so the plan ends at the Blacksmith's depth-14 deadline.
+        // and a +3 in fast mode becomes Blacksmith-or-Imp-only: the Ghost no
+        // longer counts, so the plan ends at the Imp's depth-19 deadline.
         let thrown = Requirement {
             weapon_category: Some(WeaponCategory::Thrown),
             ..requirement(ItemKind::Weapon, UpgradeRequirement::Any)
@@ -860,11 +1137,31 @@ mod tests {
             )
         });
         assert!(!fast.is_unsatisfiable());
-        assert_eq!(fast.generation_depth(), 14);
+        assert_eq!(fast.generation_depth(), 19);
         let ghost_resolved = [item(ItemId::Sword, 3, 3, ItemSource::GhostReward)];
         assert!(viable(&fast, 4, &ghost_resolved));
+        // A melee Blacksmith prize resolves that quest without a match,
+        // leaving the Imp; a melee Imp prize then ends the seed.
         let blacksmith_resolved = [item(ItemId::Sword, 3, 13, ItemSource::BlacksmithReward)];
-        assert!(!viable(&fast, 14, &blacksmith_resolved));
+        assert!(viable(&fast, 14, &blacksmith_resolved));
+        let imp_resolved = [
+            item(ItemId::Sword, 3, 13, ItemSource::BlacksmithReward),
+            item(ItemId::Sword, 3, 18, ItemSource::ImpReward),
+        ];
+        assert!(!viable(&fast, 18, &imp_resolved));
+        // Below the Imp's window the Blacksmith's floor is the deadline.
+        let shallow = QueryPlan::analyze(&SearchQuery {
+            fast_mode: true,
+            ..query(
+                vec![Requirement {
+                    upgrade: UpgradeRequirement::Exact(3),
+                    ..thrown
+                }],
+                16,
+            )
+        });
+        assert_eq!(shallow.generation_depth(), 14);
+        assert!(!viable(&shallow, 14, &blacksmith_resolved));
     }
 
     #[test]
@@ -931,10 +1228,17 @@ mod tests {
         base.require_blacksmith = true;
         let plan = QueryPlan::analyze(&base);
         assert!(!plan.is_unsatisfiable());
-        assert_eq!(plan.generation_depth(), 14);
+        // The +3 wand may also be the Imp's, so the item horizon is floor
+        // 19; the Blacksmith condition itself is decided by floor 14.
+        assert_eq!(plan.generation_depth(), 19);
         let wand = [item(ItemId::WandFrost, 3, 8, ItemSource::WandmakerReward)];
         assert!(viable(&plan, 13, &wand));
         assert!(!viable(&plan, 14, &wand));
+        // With the wand pinned to the Wandmaker, nothing past the Blacksmith
+        // matters and the plan ends at its deadline.
+        let mut pinned = base.clone();
+        pinned.requirements[0].source = Some(ItemSource::WandmakerReward);
+        assert_eq!(QueryPlan::analyze(&pinned).generation_depth(), 14);
 
         base.max_depth = 11;
         assert!(QueryPlan::analyze(&base).is_unsatisfiable());

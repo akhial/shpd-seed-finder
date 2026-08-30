@@ -248,16 +248,29 @@ pub const fn kind_index(kind: ItemKind) -> usize {
 /// size times the probability that the quest or shop landed on that floor.
 /// Sources that scatter independent drops return `0` and are treated as
 /// Poisson.
+///
+/// The Imp's City-floor prizes are a fixed six: a tier-5 weapon with a
+/// tier-4 thrown weapon or the reverse (two weapon slots, one per line), the
+/// plate armor, the wand, and one ring slot for the ring beside the
+/// artifact-or-ring option. The vault's treasure rooms vary; their bundles
+/// are the counts a typical vault places, rounded up so the estimator's
+/// `available / bundle` appearances scale each slot down rather than losing
+/// the mass above a rounded-down count: about eight weapons and thrown
+/// weapons, three to four armors, and two to three wands and rings.
 #[must_use]
 pub const fn bundle_size(source: ItemSource, kind: ItemKind) -> u8 {
     match (source, kind) {
-        (ItemSource::Shop, ItemKind::Weapon) => 3,
+        (ItemSource::VaultTreasure, ItemKind::Weapon) => 8,
+        (ItemSource::VaultTreasure, ItemKind::Armor) => 4,
+        (ItemSource::Shop, ItemKind::Weapon)
+        | (ItemSource::VaultTreasure, ItemKind::Wand | ItemKind::Ring) => 3,
+        (ItemSource::ImpReward, ItemKind::Weapon) => 2,
         (ItemSource::BlacksmithReward, ItemKind::Weapon)
         | (ItemSource::WandmakerReward, ItemKind::Wand)
         | (ItemSource::GhostReward, ItemKind::Weapon | ItemKind::Armor)
         | (ItemSource::BlacksmithReward | ItemSource::Shop, ItemKind::Armor)
         | (ItemSource::Shop, ItemKind::Wand | ItemKind::Ring)
-        | (ItemSource::ImpReward, ItemKind::Ring) => 1,
+        | (ItemSource::ImpReward, ItemKind::Armor | ItemKind::Wand | ItemKind::Ring) => 1,
         _ => 0,
     }
 }

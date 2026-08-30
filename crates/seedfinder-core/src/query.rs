@@ -531,10 +531,12 @@ pub struct SearchQuery {
     /// change nothing but the fight, and are reported rather than filtered.
     pub wandmaker_quest: Option<WandmakerQuestType>,
     /// Trades exhaustiveness for speed: +3 weapon/armor requirements are
-    /// assumed to come from quest rewards, ignoring the far rarer Crypt and
-    /// Sacrificial-fire prizes. Matches are still always genuine, but seeds
-    /// whose only qualifying item comes from those rooms are skipped. See
-    /// [`crate::feasibility`].
+    /// assumed to come from quest rewards — the Ghost, the Blacksmith and the
+    /// Imp's vault prizes, which stay exact — ignoring the far rarer Crypt,
+    /// Sacrificial-fire and special-room chest prizes, so such a search ends
+    /// at the Imp's floor 19 instead of the floor limit. Matches are still
+    /// always genuine, but seeds whose only qualifying item comes from those
+    /// rooms are skipped. See [`crate::feasibility`].
     pub fast_mode: bool,
 }
 
