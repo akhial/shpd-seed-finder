@@ -1,4 +1,4 @@
-//! Exact v3.3.8 painters for regular quest rooms and `DemonSpawnerRoom`.
+//! Exact v4.0.0 painters for regular quest rooms and `DemonSpawnerRoom`.
 //!
 //! These rooms are appended by quest schedulers rather than either shuffled
 //! `SpecialRoom` deck.  Their paint-time side effects nevertheless share the
@@ -555,12 +555,25 @@ where
     inputs.set_entrance_door(DoorType::Barricade);
     inputs.spawn(RegularItem::Queued(QueuedItemKind::PotionOfLiquidFlame));
 
-    fill_room(inputs.level, inputs.bounds, terrain::WALL);
-    fill_room_margin(inputs.level, inputs.bounds, 1, terrain::CUSTOM_DECO_EMPTY);
+    let bounds = inputs.bounds;
+    fill_room(inputs.level, bounds, terrain::WALL);
+    fill_room_margin(inputs.level, bounds, 1, terrain::CUSTOM_DECO_EMPTY);
+    // v4.0.0 fixed 11x10 layout: two recessed top corners, a wall banner, and
+    // two raised statues flanking the top opening.
+    {
+        let map = inputs.level.map_mut();
+        draw::fill(map, bounds.left + 1, bounds.top + 1, 3, 1, terrain::WALL);
+        draw::fill(map, bounds.left + 1, bounds.top + 2, 2, 1, terrain::WALL);
+        draw::fill(map, bounds.right - 3, bounds.top + 1, 3, 1, terrain::WALL);
+        draw::fill(map, bounds.right - 2, bounds.top + 2, 2, 1, terrain::WALL);
+        map.set(bounds.left + 5, bounds.top, terrain::WALL_DECO);
+        map.set(bounds.left + 3, bounds.top + 2, terrain::STATUE);
+        map.set(bounds.right - 3, bounds.top + 2, terrain::STATUE);
+    }
     inputs.feature(
-        Point::new(inputs.bounds.left.wrapping_add(1), inputs.bounds.top),
-        inclusive_width(inputs.bounds).wrapping_sub(2),
-        inclusive_height(inputs.bounds).wrapping_sub(1),
+        Point::new(bounds.left.wrapping_add(1), bounds.top),
+        inclusive_width(bounds).wrapping_sub(2),
+        inclusive_height(bounds).wrapping_sub(1),
         QuestFeatureKind::MassGraveBones,
     );
 
@@ -572,11 +585,9 @@ where
             break;
         }
         let cell = loop {
-            let point = random_room_point(inputs.bounds, 1, inputs.random);
+            let point = mass_grave_point(bounds, inputs.random);
             let cell = point_to_cell(inputs.level, point);
-            if inputs.level.map().cells[cell] == terrain::CUSTOM_DECO_EMPTY
-                && !inputs.level.has_mob(cell)
-            {
+            if point.y <= bounds.top + 3 && !inputs.level.has_mob(cell) {
                 break cell;
             }
         };
@@ -604,17 +615,25 @@ where
 
     for item in items {
         let cell = loop {
-            let point = random_room_point(inputs.bounds, 1, inputs.random);
+            let point = mass_grave_point(bounds, inputs.random);
             let cell = point_to_cell(inputs.level, point);
-            if inputs.level.map().cells[cell] == terrain::CUSTOM_DECO_EMPTY
-                && !inputs.level.has_heap(cell)
-            {
+            if point.y <= bounds.top + 5 && !inputs.level.has_heap(cell) {
                 break cell;
             }
         };
         inputs.drop(cell, QuestHeapKind::Skeleton, item, is_cursed(item));
     }
     Ok(())
+}
+
+/// One v4.0.0 `MassGraveRoom` placement candidate: `random(1)`, then a
+/// narrowed x re-roll for the two rows inside the recessed corners.
+fn mass_grave_point(bounds: Rect, random: &mut RandomStack) -> Point {
+    let mut point = random_room_point(bounds, 1, random);
+    if point.y <= bounds.top + 2 {
+        point.x = random.int_range(bounds.left + 4, bounds.right - 4);
+    }
+    point
 }
 
 fn paint_ritual_site<L, G, P>(inputs: &mut PaintInputs<'_, L, G, P>)
@@ -843,59 +862,78 @@ where
     G: QuestGeneratorContext,
     P: QuestPrizeContext,
 {
-    fill_room(inputs.level, inputs.bounds, terrain::WALL);
-    fill_room_margin(inputs.level, inputs.bounds, 1, terrain::TRAP);
+    let bounds = inputs.bounds;
+    let width = inputs.level.map().width;
+    fill_room(inputs.level, bounds, terrain::WALL);
+    fill_room_margin(inputs.level, bounds, 1, terrain::EMPTY);
+    fill_room_margin(inputs.level, bounds, 2, terrain::EMPTY_SP);
+    draw::fill(
+        inputs.level.map_mut(),
+        bounds.left + 2,
+        bounds.top + 1,
+        inclusive_width(bounds) - 4,
+        1,
+        terrain::REGION_DECO_ALT,
+    );
     inputs.set_all_doors(DoorType::Regular);
     let doors: Vec<Point> = inputs.rooms[inputs.room]
         .connected
         .iter()
         .map(|connection| connection.door.expect("validated door").point)
         .collect();
-    for door in doors {
-        draw::draw_inside(
-            inputs.level.map_mut(),
-            inputs.bounds,
-            door,
-            2,
-            terrain::EMPTY,
-        );
+    for &door in &doors {
+        draw::draw_inside(inputs.level.map_mut(), bounds, door, 1, terrain::EMPTY);
     }
-    fill_room_margin(inputs.level, inputs.bounds, 2, terrain::EMPTY_SP);
+    fill_room_margin(inputs.level, bounds, 2, terrain::EMPTY_SP);
 
+    // Fixed smithy layout: the NPC beside its anvil and furnace.
+    let npc_cell = point_to_cell(inputs.level, Point::new(bounds.left + 3, bounds.top + 3));
+    inputs.mob(npc_cell, QuestMobKind::Blacksmith);
+    {
+        let map = inputs.level.map_mut();
+        map.cells[add_cell_offset(npc_cell, 1)] = terrain::CUSTOM_DECO_WTR;
+        map.cells[add_cell_offset(npc_cell, 1 - width)] = terrain::CUSTOM_DECO;
+        map.cells[add_cell_offset(npc_cell, -width)] = terrain::CUSTOM_DECO;
+        map.cells[add_cell_offset(npc_cell, -1 - width)] = terrain::CUSTOM_DECO;
+    }
+
+    let mut equipment_cell = point_to_cell(
+        inputs.level,
+        Point::new(bounds.right - 3, bounds.bottom - 3),
+    );
+    if inclusive_height(bounds) == 8 {
+        equipment_cell = add_cell_offset(equipment_cell, width);
+    }
     for _ in 0..2 {
-        let cell = loop {
-            let point = random_room_point(inputs.bounds, 1, inputs.random);
-            let cell = point_to_cell(inputs.level, point);
-            if inputs.level.map().cells[cell] == terrain::EMPTY_SP {
-                break cell;
-            }
-        };
         let category = BLACKSMITH_CATEGORIES
             [usize::try_from(inputs.random.int_bound(3)).expect("Random.Int is non-negative")];
         let item = inputs.generate(QuestGeneratorRequest::Category(category))?;
-        inputs.drop(cell, QuestHeapKind::Heap, item, false);
+        inputs.drop(equipment_cell, QuestHeapKind::Heap, item, false);
+        inputs.level.map_mut().cells[equipment_cell] = terrain::PEDESTAL;
+        equipment_cell = add_cell_offset(equipment_cell, -1);
     }
 
-    let npc_cell = loop {
-        let point = random_room_point(inputs.bounds, 2, inputs.random);
-        let cell = point_to_cell(inputs.level, point);
-        if !inputs.level.has_heap(cell) {
-            break cell;
+    // The mine entrance sits in one of the two top corners; a door on the top
+    // wall forces it to the opposite corner.
+    let mut entrance_on_left = inputs.random.int_bound(2) == 0;
+    for door in doors {
+        if door.y <= bounds.top + 2 {
+            if door.x <= bounds.left + 1 {
+                entrance_on_left = false;
+            } else if door.x >= bounds.right - 1 {
+                entrance_on_left = true;
+            }
         }
-    };
-    inputs.mob(npc_cell, QuestMobKind::Blacksmith);
-
-    // Upstream's loop condition mistakenly rechecks the heap at npc.pos,
-    // rather than at entrancePos. It is known empty after the prior loop.
-    let entrance_cell = loop {
-        let point = random_room_point(inputs.bounds, 2, inputs.random);
-        let cell = point_to_cell(inputs.level, point);
-        if !inputs.level.has_heap(npc_cell) && cell != npc_cell {
-            break cell;
-        }
-    };
-    let entrance_point = inputs.level.map().cell_to_point(entrance_cell);
-    inputs.feature(entrance_point, 1, 1, QuestFeatureKind::BlacksmithEntrance);
+    }
+    let entrance_point = Point::new(
+        if entrance_on_left {
+            bounds.left + 1
+        } else {
+            bounds.right - 1
+        },
+        bounds.top + 1,
+    );
+    let entrance_cell = point_to_cell(inputs.level, entrance_point);
     inputs
         .level
         .record(QuestPaintEvent::Transition(QuestBranchTransition {
@@ -904,20 +942,7 @@ where
             branch: 1,
         }));
     inputs.level.map_mut().cells[entrance_cell] = terrain::EXIT;
-
-    for x in inputs.bounds.left..=inputs.bounds.right {
-        for y in inputs.bounds.top..=inputs.bounds.bottom {
-            let cell = inputs.level.map().cell(x, y);
-            if inputs.level.map().cells[cell] == terrain::TRAP {
-                inputs.level.record(QuestPaintEvent::Trap {
-                    cell,
-                    kind: TrapKind::Burning,
-                    visible: true,
-                    active: true,
-                });
-            }
-        }
-    }
+    inputs.feature(entrance_point, 1, 1, QuestFeatureKind::BlacksmithEntrance);
     Ok(())
 }
 
@@ -994,6 +1019,27 @@ where
         terrain::EMPTY,
     );
     inputs.set_entrance_door(DoorType::Regular);
+    // v4.0.0 carpets: a horizontal and a vertical strip through the centre.
+    {
+        let bounds = inputs.bounds;
+        let map = inputs.level.map_mut();
+        draw::fill(
+            map,
+            bounds.left + 1,
+            bounds.top + 3,
+            7,
+            3,
+            terrain::CUSTOM_DECO_EMPTY,
+        );
+        draw::fill(
+            map,
+            bounds.left + 3,
+            bounds.top + 1,
+            3,
+            7,
+            terrain::CUSTOM_DECO_EMPTY,
+        );
+    }
 
     inputs.feature(
         Point::new(center.x.wrapping_sub(2), center.y.wrapping_sub(2)),
@@ -1055,13 +1101,12 @@ where
     );
 }
 
-/// Exact `StandardRoom` merge predicate for Ritual Site and Blacksmith rooms.
+/// Exact `StandardRoom` merge predicate for the Ritual Site; the v4.0.0
+/// Blacksmith room never merges.
 #[must_use]
 pub fn can_merge(level: &Level, rooms: &[Room], room: RoomId, point: Point) -> bool {
-    matches!(
-        rooms[room].kind,
-        RoomKind::Quest(QuestRoomKind::RitualSite | QuestRoomKind::Blacksmith)
-    ) && standard_can_merge(level, rooms, room, point)
+    matches!(rooms[room].kind, RoomKind::Quest(QuestRoomKind::RitualSite))
+        && standard_can_merge(level, rooms, room, point)
 }
 
 /// `Room.canPlaceItem` overrides for all handled classes.
@@ -1085,6 +1130,9 @@ pub fn can_place_item(
             level_distance(&level.map, ritual, level.point_to_cell(point)) >= 2
         }
         RoomKind::Quest(QuestRoomKind::AmbitiousImp) => false,
+        RoomKind::Quest(QuestRoomKind::Blacksmith) => {
+            level.map.cells[level.point_to_cell(point)] == terrain::EMPTY
+        }
         _ => true,
     }
 }
@@ -1100,11 +1148,7 @@ pub fn can_place_character(
 ) -> bool {
     let selected = &rooms[room];
     match selected.kind {
-        RoomKind::Quest(QuestRoomKind::AmbitiousImp) => false,
-        RoomKind::Quest(QuestRoomKind::Blacksmith) => {
-            let cell = level.point_to_cell(point);
-            level.map.cells[cell] != terrain::EXIT && selected.inside(point)
-        }
+        RoomKind::Quest(QuestRoomKind::AmbitiousImp | QuestRoomKind::Blacksmith) => false,
         RoomKind::Quest(QuestRoomKind::RitualSite) => {
             selected.inside(point)
                 && level_distance(
@@ -1124,7 +1168,7 @@ pub fn can_place_character(
 pub const fn can_place_trap(kind: RoomKind) -> bool {
     !matches!(
         kind,
-        RoomKind::Quest(QuestRoomKind::AmbitiousImp)
+        RoomKind::Quest(QuestRoomKind::AmbitiousImp | QuestRoomKind::Blacksmith)
             | RoomKind::Special(SpecialRoomKind::DemonSpawner)
     )
 }
@@ -1134,9 +1178,10 @@ pub const fn can_place_trap(kind: RoomKind) -> bool {
 pub fn can_place_grass(rooms: &[Room], room: RoomId, point: Point) -> bool {
     match rooms[room].kind {
         RoomKind::Quest(QuestRoomKind::AmbitiousImp) => {
-            Point::distance(point, fixed_room_center(rooms[room].bounds)) >= 3.0_f32
+            Point::distance(point, fixed_room_center(rooms[room].bounds)) >= 5.0_f32
         }
-        RoomKind::Special(SpecialRoomKind::DemonSpawner) => false,
+        RoomKind::Quest(QuestRoomKind::Blacksmith)
+        | RoomKind::Special(SpecialRoomKind::DemonSpawner) => false,
         _ => true,
     }
 }
@@ -1146,9 +1191,10 @@ pub fn can_place_grass(rooms: &[Room], room: RoomId, point: Point) -> bool {
 pub fn can_place_water(rooms: &[Room], room: RoomId, point: Point) -> bool {
     match rooms[room].kind {
         RoomKind::Quest(QuestRoomKind::AmbitiousImp) => {
-            Point::distance(point, fixed_room_center(rooms[room].bounds)) >= 3.0_f32
+            Point::distance(point, fixed_room_center(rooms[room].bounds)) >= 5.0_f32
         }
-        RoomKind::Special(SpecialRoomKind::DemonSpawner) => false,
+        RoomKind::Quest(QuestRoomKind::Blacksmith)
+        | RoomKind::Special(SpecialRoomKind::DemonSpawner) => false,
         _ => true,
     }
 }
@@ -1156,7 +1202,7 @@ pub fn can_place_water(rooms: &[Room], room: RoomId, point: Point) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::catalog::{Effect, ItemId, WeaponEffect};
+    use crate::catalog::{ArmorEffect, Effect, ItemId, WeaponEffect};
     use crate::geometry::Rect;
     use crate::level::Feeling;
     use crate::room::{ConnectionRoomKind, Door, RoomConnection};
@@ -1270,12 +1316,12 @@ mod tests {
             10,
             Point::new(2, 6),
         );
-        assert_eq!(seed_zero.map_hash, -235_461_597);
+        assert_eq!(seed_zero.map_hash, -2_133_185_797);
         assert_eq!(seed_zero.door, DoorType::Barricade);
-        assert_eq!(seed_zero.next, 3_246_199_166_113_899_023);
+        assert_eq!(seed_zero.next, 2_704_323_167_362_897_208);
         assert_eq!(
             mob_cells(&seed_zero.events, QuestMobKind::Skeleton),
-            [69, 83]
+            [67, 84]
         );
         assert_eq!(
             seed_zero.queue,
@@ -1283,12 +1329,12 @@ mod tests {
         );
         assert_eq!(seed_zero.report.searchable_items, []);
         let drops = drop_cells(&seed_zero.events);
-        assert_eq!(drops.len(), 4);
+        assert_eq!(drops.len(), 3);
         assert_eq!(
             drops.iter().map(|drop| drop.0).collect::<Vec<_>>(),
-            [95, 153, 157, 160]
+            [52, 66, 79]
         );
-        assert!(drops.iter().any(|drop| drop.0 == 95 && drop.3));
+        assert!(drops.iter().any(|drop| drop.0 == 52 && drop.3));
 
         let seed_nineteen = fixture(
             RoomKind::Quest(QuestRoomKind::MassGrave),
@@ -1297,19 +1343,20 @@ mod tests {
             10,
             Point::new(2, 6),
         );
-        assert_eq!(seed_nineteen.map_hash, -235_461_597);
-        assert_eq!(seed_nineteen.next, 3_342_370_463_724_496_012);
+        // The fixed 11x10 layout paints the same terrain for every seed.
+        assert_eq!(seed_nineteen.map_hash, -2_133_185_797);
+        assert_eq!(seed_nineteen.next, 5_307_994_216_896_367_667);
         assert_eq!(
             mob_cells(&seed_nineteen.events, QuestMobKind::Skeleton),
-            [51]
+            [51, 80]
         );
         assert_eq!(
             seed_nineteen.report.searchable_items,
             [WorldItem {
                 item: ItemId::MailArmor,
-                upgrade: 0,
-                effect: None,
-                cursed: false,
+                upgrade: 1,
+                effect: Some(Effect::Armor(ArmorEffect::Metabolism)),
+                cursed: true,
                 depth: 8,
                 source: ItemSource::Heap,
                 accessibility: Accessibility::Independent,
@@ -1321,7 +1368,7 @@ mod tests {
                 .iter()
                 .map(|drop| drop.0)
                 .collect::<Vec<_>>(),
-            [53, 123, 140, 141, 145]
+            [51, 52, 66, 94, 97, 99]
         );
     }
 
@@ -1411,20 +1458,17 @@ mod tests {
             10,
             Point::new(2, 6),
         );
-        assert_eq!(seed_zero.map_hash, -18_047_974);
-        assert_eq!(seed_zero.next, 5_072_005_423_257_391_728);
-        assert_eq!(
-            mob_cells(&seed_zero.events, QuestMobKind::Blacksmith),
-            [113]
-        );
+        assert_eq!(seed_zero.map_hash, -107_896_294);
+        assert_eq!(seed_zero.next, 7_105_486_291_024_734_541);
+        assert_eq!(mob_cells(&seed_zero.events, QuestMobKind::Blacksmith), [80]);
         assert_eq!(
             seed_zero.report.searchable_items,
             [
                 WorldItem {
-                    item: ItemId::Crossbow,
-                    upgrade: 0,
-                    effect: None,
-                    cursed: false,
+                    item: ItemId::ScaleArmor,
+                    upgrade: 1,
+                    effect: Some(Effect::Armor(ArmorEffect::Metabolism)),
+                    cursed: true,
                     depth: 13,
                     source: ItemSource::Heap,
                     accessibility: Accessibility::Independent,
@@ -1447,19 +1491,20 @@ mod tests {
                 .iter()
                 .map(|d| d.0)
                 .collect::<Vec<_>>(),
-            [84, 143]
+            [127, 128]
         );
         let traps = seed_zero
             .events
             .iter()
             .filter(|event| matches!(event, QuestPaintEvent::Trap { .. }))
             .count();
-        assert_eq!(traps, 27);
+        // v4.0.0 smithies no longer ring the room with burning traps.
+        assert_eq!(traps, 0);
         assert!(
             seed_zero
                 .events
                 .contains(&QuestPaintEvent::Transition(QuestBranchTransition {
-                    cell: 99,
+                    cell: 48,
                     depth: 13,
                     branch: 1,
                 }))
@@ -1472,18 +1517,18 @@ mod tests {
             10,
             Point::new(2, 6),
         );
-        assert_eq!(seed_seventy_seven.map_hash, -839_081_266);
-        assert_eq!(seed_seventy_seven.next, 3_663_842_716_423_163_350);
+        assert_eq!(seed_seventy_seven.map_hash, 1_919_139_820);
+        assert_eq!(seed_seventy_seven.next, -6_264_321_152_254_219_996);
         assert_eq!(
             mob_cells(&seed_seventy_seven.events, QuestMobKind::Blacksmith),
-            [95]
+            [80]
         );
         assert_eq!(
             seed_seventy_seven.report.searchable_items,
             [
                 WorldItem {
-                    item: ItemId::ThrowingSpear,
-                    upgrade: 1,
+                    item: ItemId::Crossbow,
+                    upgrade: 0,
                     effect: None,
                     cursed: false,
                     depth: 13,
@@ -1492,10 +1537,10 @@ mod tests {
                     secret: false,
                 },
                 WorldItem {
-                    item: ItemId::Tomahawk,
-                    upgrade: 1,
-                    effect: Some(Effect::Weapon(WeaponEffect::Friendly)),
-                    cursed: true,
+                    item: ItemId::ScaleArmor,
+                    upgrade: 0,
+                    effect: Some(Effect::Armor(ArmorEffect::Camouflage)),
+                    cursed: false,
                     depth: 13,
                     source: ItemSource::Heap,
                     accessibility: Accessibility::Independent,
@@ -1507,7 +1552,7 @@ mod tests {
             seed_seventy_seven
                 .events
                 .contains(&QuestPaintEvent::Transition(QuestBranchTransition {
-                    cell: 84,
+                    cell: 55,
                     depth: 13,
                     branch: 1,
                 }))
@@ -1523,7 +1568,7 @@ mod tests {
             (Point::new(6, 10), 125),
         ] {
             let result = fixture(RoomKind::Quest(QuestRoomKind::AmbitiousImp), 18, 0, 9, door);
-            assert_eq!(result.map_hash, -1_983_134_509);
+            assert_eq!(result.map_hash, 1_952_879_827);
             assert_eq!(result.next, -3_109_364_765_729_502_342);
             assert_eq!(
                 mob_cells(&result.events, QuestMobKind::Imp),
@@ -1547,7 +1592,7 @@ mod tests {
             ));
             assert!(!can_place_trap(result.rooms[0].kind));
             assert!(!can_place_grass(&result.rooms, 0, Point::new(6, 6)));
-            assert!(can_place_grass(&result.rooms, 0, Point::new(3, 3)));
+            assert!(can_place_grass(&result.rooms, 0, Point::new(2, 2)));
         }
     }
 

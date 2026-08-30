@@ -1,4 +1,4 @@
-//! Canonical v3.3.8 main-path quest scheduling and generated rewards.
+//! Canonical v4.0.0 main-path quest scheduling and generated rewards.
 //!
 //! Quest room scheduling runs inside each region level's `initRooms()` hook,
 //! while the Ghost and Wandmaker rewards are generated later in `createMobs()`.
@@ -9,11 +9,14 @@
 use std::fmt;
 
 use crate::catalog::{ArmorEffect, Effect, ItemId, WeaponEffect};
-use crate::equipment::{EquipmentRoll, random_armor_glyph, random_weapon_enchantment};
+use crate::equipment::{
+    EquipmentRoll, random_armor_glyph, random_armor_glyph_ignoring, random_weapon_enchantment,
+    random_weapon_enchantment_ignoring,
+};
 use crate::generator::{
-    GeneratedEquipment, GeneratedItem, GeneratedItemFamily, GeneratedMissile, GeneratedRing,
-    GeneratorError, random_armor, random_category, random_category_target, random_missile,
-    random_wand, random_weapon, undo_drop,
+    GeneratedArtifact, GeneratedEquipment, GeneratedItem, GeneratedItemFamily, GeneratedMissile,
+    GeneratedRing, GeneratorError, random_armor, random_artifact, random_category,
+    random_category_target, random_missile, random_wand, random_weapon, undo_drop,
 };
 use crate::model::{Accessibility, ItemSource, WorldItem};
 use crate::rng::RandomStack;
@@ -27,6 +30,8 @@ pub enum QuestError {
     WandmakerSpawnWasNotBegun,
     InvalidGhostDepth(u8),
     ExpectedRing(GeneratedItemFamily),
+    /// An Imp reward category deck produced an item of the wrong family.
+    UnexpectedImpReward(GeneratedItemFamily),
 }
 
 impl fmt::Display for QuestError {
@@ -45,6 +50,12 @@ impl fmt::Display for QuestError {
                 write!(
                     formatter,
                     "Imp reward expected a ring but generated {actual:?}"
+                )
+            }
+            Self::UnexpectedImpReward(actual) => {
+                write!(
+                    formatter,
+                    "Imp reward deck generated an unexpected {actual:?}"
                 )
             }
         }
@@ -723,6 +734,48 @@ pub enum ImpQuestType {
     Vault = 1,
 }
 
+/// One of the six `Imp.Quest.rewardOptions` rolled when the quest room is
+/// scheduled. The list index is the option the player may choose.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ImpRewardOption {
+    /// Option 0 while the artifact deck still holds one; it receives
+    /// `transferUpgrade(5)`, which draws nothing.
+    Artifact(GeneratedArtifact),
+    /// Option 0's fallback and always option 1, levelled to +2..+4.
+    Ring(GeneratedRing),
+    /// A tier-4/5 melee weapon (re-enchanted), the Plate Armor, or the wand,
+    /// each with its rolled level.
+    Equipment(GeneratedEquipment),
+    /// A tier-4/5 thrown weapon, re-enchanted and levelled.
+    Missile(GeneratedMissile),
+}
+
+impl ImpRewardOption {
+    /// Catalog identity and roll of the option, or `None` for the artifact
+    /// (outside the searchable catalog) and the zero-weight plain Dart.
+    #[must_use]
+    pub const fn searchable(self) -> Option<(ItemId, EquipmentRoll)> {
+        match self {
+            Self::Artifact(_) => None,
+            Self::Ring(ring) => Some((ring.kind.item_id(), ring.roll)),
+            Self::Equipment(equipment) => Some((equipment.item, equipment.roll)),
+            Self::Missile(missile) => match missile.kind.item_id() {
+                Some(item) => Some((item, missile.roll)),
+                None => None,
+            },
+        }
+    }
+
+    const fn set_cursed(&mut self, cursed: bool) {
+        match self {
+            Self::Artifact(artifact) => artifact.cursed = cursed,
+            Self::Ring(ring) => ring.roll.cursed = cursed,
+            Self::Equipment(equipment) => equipment.roll.cursed = cursed,
+            Self::Missile(missile) => missile.roll.cursed = cursed,
+        }
+    }
+}
+
 /// State owned by `Imp.Quest` for one run.
 #[allow(clippy::struct_excessive_bools)] // These are the upstream persisted state flags.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -732,8 +785,8 @@ pub struct ImpQuest {
     pub completed: bool,
     pub depth: Option<u8>,
     pub room_accessible: bool,
-    pub reward: Option<GeneratedRing>,
-    pub rejected_cursed_rings: usize,
+    /// `Imp.Quest.rewardOptions`: six entries once the quest is scheduled.
+    pub reward_options: Vec<ImpRewardOption>,
     room_in_current_build: bool,
 }
 
@@ -776,9 +829,9 @@ impl ImpQuest {
     }
 
     /// Completes `Imp.Quest.spawn()` after `new AmbitiousImpRoom()` has run.
-    /// This boundary is explicit even though v3.3.8's room constructor itself
-    /// is draw-free, preventing later room changes from silently reordering
-    /// the target and reward stream.
+    /// This boundary is explicit even though the room constructor itself is
+    /// draw-free, preventing later room changes from silently reordering the
+    /// reward stream.
     pub(crate) fn finish_room_schedule(
         &mut self,
         random: &mut RandomStack,
@@ -787,9 +840,8 @@ impl ImpQuest {
         debug_assert!(self.room_in_current_build && self.spawned);
         let depth = self.depth.expect("scheduled Imp quest records its depth");
         self.given = false;
-        let (reward, rejected) = generate_imp_reward(random, generator, depth)?;
-        self.reward = Some(reward);
-        self.rejected_cursed_rings = rejected;
+        self.completed = false;
+        self.reward_options = generate_imp_reward_options(random, generator, depth)?;
         Ok(())
     }
 
@@ -807,26 +859,37 @@ impl ImpQuest {
         self.completed = false;
     }
 
-    /// Mirrors handing the required tokens to the Imp.
-    pub fn complete(&mut self) {
-        self.reward = None;
+    /// Mirrors returning from the vault; the option list is kept until the
+    /// player chooses.
+    pub const fn complete(&mut self) {
         self.completed = true;
     }
 
-    /// Appends the obtainable deterministic ring reward for the accessible Imp room.
-    pub fn append_world_item(&self, output: &mut Vec<WorldItem>) -> bool {
-        let (Some(depth), true, Some(reward)) = (self.depth, self.room_accessible, self.reward)
-        else {
-            return false;
+    /// Appends every searchable reward option of the accessible Imp room as a
+    /// mutually exclusive choice. The artifact option (outside the catalog)
+    /// is skipped but keeps its option index. Returns the appended count.
+    pub fn append_world_items(&self, group: u16, output: &mut Vec<WorldItem>) -> usize {
+        let (Some(depth), true) = (self.depth, self.room_accessible) else {
+            return 0;
         };
-        output.push(WorldItem::from_equipment_roll(
-            reward.kind.item_id(),
-            reward.roll,
-            depth,
-            ItemSource::ImpReward,
-            Accessibility::Independent,
-        ));
-        true
+        let mut count = 0;
+        for (option_index, option) in (0_u8..).zip(&self.reward_options) {
+            let Some((item, roll)) = option.searchable() else {
+                continue;
+            };
+            output.push(WorldItem::from_equipment_roll(
+                item,
+                roll,
+                depth,
+                ItemSource::ImpReward,
+                Accessibility::Choice {
+                    group,
+                    option: option_index,
+                },
+            ));
+            count += 1;
+        }
+        count
     }
 }
 
@@ -911,32 +974,153 @@ const fn clean_roll(upgrade: u8) -> EquipmentRoll {
     }
 }
 
-fn generate_imp_reward(
+/// `Imp.Quest.spawn()` reward rolls, in exact upstream order: the artifact
+/// deck (or a deck ring), a second deck ring of a different class, a coin
+/// flip choosing tier-5 melee + tier-4 thrown or tier-5 thrown + tier-4 melee,
+/// a freshly inscribed Plate Armor, and a deck wand. Java evaluates each
+/// receiver chain (deck draw, the item's own `random()`, then `enchant()`)
+/// before the `Random.IntRange` level argument.
+fn generate_imp_reward_options(
     random: &mut RandomStack,
     generator: &mut GeneratorState,
     depth: u8,
-) -> Result<(GeneratedRing, usize), QuestError> {
-    let mut rejected = 0;
-    let mut reward = loop {
-        let generated =
-            random_category(random, generator, GeneratorCategory::Ring, i32::from(depth))?;
-        let GeneratedItem::Ring(ring) = generated else {
-            return Err(QuestError::ExpectedRing(generated.family()));
-        };
-        if ring.roll.cursed {
-            rejected += 1;
-        } else {
+) -> Result<Vec<ImpRewardOption>, QuestError> {
+    let depth = i32::from(depth);
+    let mut options = Vec::with_capacity(6);
+
+    let first_ring = if let Some(artifact) = random_artifact(random, generator)? {
+        options.push(ImpRewardOption::Artifact(artifact));
+        None
+    } else {
+        let mut ring = imp_deck_ring(random, generator, depth)?;
+        ring.roll.upgrade = imp_level(random, 2, 4);
+        options.push(ImpRewardOption::Ring(ring));
+        Some(ring.kind)
+    };
+
+    let mut ring = loop {
+        let ring = imp_deck_ring(random, generator, depth)?;
+        if Some(ring.kind) != first_ring {
             break ring;
         }
     };
+    ring.roll.upgrade = imp_level(random, 2, 4);
+    options.push(ImpRewardOption::Ring(ring));
 
-    // Ring.upgrade(2) dispatches to Ring.upgrade twice. Each call consumes an
-    // Int(3) curse-clearing roll; Imp then unconditionally sets cursed=true.
-    reward.roll.upgrade = reward.roll.upgrade.wrapping_add(2);
-    random.int_bound(3);
-    random.int_bound(3);
-    reward.roll.cursed = true;
-    Ok((reward, rejected))
+    if random.int_bound(2) == 0 {
+        options.push(imp_melee(
+            random,
+            generator,
+            GeneratorCategory::WeaponTier5,
+            depth,
+            (2, 4),
+        )?);
+        options.push(imp_thrown(
+            random,
+            generator,
+            GeneratorCategory::MissileTier4,
+            depth,
+            (3, 5),
+        )?);
+    } else {
+        options.push(imp_thrown(
+            random,
+            generator,
+            GeneratorCategory::MissileTier5,
+            depth,
+            (2, 4),
+        )?);
+        options.push(imp_melee(
+            random,
+            generator,
+            GeneratorCategory::WeaponTier4,
+            depth,
+            (3, 5),
+        )?);
+    }
+
+    // `new PlateArmor()` never calls `random()`, so `inscribe()` ignores
+    // nothing and the level roll follows immediately.
+    let glyph = random_armor_glyph_ignoring(random, None);
+    let armor_level = imp_level(random, 2, 4);
+    options.push(ImpRewardOption::Equipment(GeneratedEquipment {
+        item: ItemId::PlateArmor,
+        roll: EquipmentRoll {
+            upgrade: armor_level,
+            effect: Some(Effect::Armor(glyph)),
+            cursed: false,
+        },
+    }));
+
+    let wand = random_category(random, generator, GeneratorCategory::Wand, depth)?;
+    let GeneratedItem::Equipment(mut wand) = wand else {
+        return Err(QuestError::UnexpectedImpReward(wand.family()));
+    };
+    wand.roll.upgrade = imp_level(random, 2, 4);
+    options.push(ImpRewardOption::Equipment(wand));
+
+    for option in &mut options {
+        option.set_cursed(false);
+    }
+    Ok(options)
+}
+
+fn imp_deck_ring(
+    random: &mut RandomStack,
+    generator: &mut GeneratorState,
+    depth: i32,
+) -> Result<GeneratedRing, QuestError> {
+    let generated = random_category(random, generator, GeneratorCategory::Ring, depth)?;
+    let GeneratedItem::Ring(ring) = generated else {
+        return Err(QuestError::ExpectedRing(generated.family()));
+    };
+    Ok(ring)
+}
+
+fn imp_melee(
+    random: &mut RandomStack,
+    generator: &mut GeneratorState,
+    category: GeneratorCategory,
+    depth: i32,
+    (low, high): (i32, i32),
+) -> Result<ImpRewardOption, QuestError> {
+    let generated = random_category(random, generator, category, depth)?;
+    let GeneratedItem::Equipment(mut weapon) = generated else {
+        return Err(QuestError::UnexpectedImpReward(generated.family()));
+    };
+    weapon.roll.effect = Some(Effect::Weapon(imp_reenchant(random, weapon.roll.effect)));
+    weapon.roll.upgrade = imp_level(random, low, high);
+    Ok(ImpRewardOption::Equipment(weapon))
+}
+
+fn imp_thrown(
+    random: &mut RandomStack,
+    generator: &mut GeneratorState,
+    category: GeneratorCategory,
+    depth: i32,
+    (low, high): (i32, i32),
+) -> Result<ImpRewardOption, QuestError> {
+    let generated = random_category(random, generator, category, depth)?;
+    let GeneratedItem::Missile(mut missile) = generated else {
+        return Err(QuestError::UnexpectedImpReward(generated.family()));
+    };
+    missile.roll.effect = Some(Effect::Weapon(imp_reenchant(random, missile.roll.effect)));
+    missile.roll.upgrade = imp_level(random, low, high);
+    Ok(ImpRewardOption::Missile(missile))
+}
+
+/// `Weapon.enchant()`: `Enchantment.random(currentEnchantmentClass)`, where
+/// the current enchantment may be the curse rolled by `random()`.
+fn imp_reenchant(random: &mut RandomStack, current: Option<Effect>) -> WeaponEffect {
+    let current = match current {
+        Some(Effect::Weapon(effect)) => Some(effect),
+        _ => None,
+    };
+    random_weapon_enchantment_ignoring(random, current)
+}
+
+fn imp_level(random: &mut RandomStack, low: i32, high: i32) -> u8 {
+    u8::try_from(random.int_range(low, high)).expect("Imp levels are 2..=5")
 }
 
 #[cfg(test)]
@@ -945,9 +1129,12 @@ mod tests {
     use crate::generator::MissileKind;
     use crate::model::{Accessibility, ItemSource};
     use crate::rng::RandomStack;
-    use crate::run::{GeneratorCategory, RingKind, RunState};
+    use crate::run::{GeneratorCategory, RunState};
 
-    use super::{BlacksmithQuest, GhostQuest, WandmakerQuest, generate_imp_reward};
+    use super::{
+        BlacksmithQuest, GhostQuest, ImpQuest, ImpRewardOption, WandmakerQuest,
+        generate_imp_reward_options,
+    };
 
     fn fixture(dungeon_seed: i64, outer_seed: i64) -> (RandomStack, crate::run::GeneratorState) {
         let mut random = RandomStack::with_base_seed(0);
@@ -1009,7 +1196,7 @@ mod tests {
         assert_eq!(rewards.missile.kind, MissileKind::Tomahawk);
         assert_eq!(rewards.armor.item, ItemId::PlateArmor);
         assert_eq!(rewards.armor.roll.upgrade, 1);
-        assert_eq!(quest.enchantment, Some(WeaponEffect::Chilling));
+        assert_eq!(quest.enchantment, Some(WeaponEffect::Kinetic));
         assert_eq!(quest.glyph, Some(ArmorEffect::Viscosity));
         assert_eq!(quest.discarded_duplicates, 0);
         assert_eq!(random.long(), 25_579_809_655_956_232);
@@ -1034,23 +1221,83 @@ mod tests {
         assert_eq!(rewards.missile.kind, MissileKind::ThrowingSpear);
         assert_eq!(rewards.armor.item, ItemId::ScaleArmor);
         assert_eq!(rewards.armor.roll.upgrade, 2);
-        assert_eq!(quest.enchantment, Some(WeaponEffect::Shocking));
+        assert_eq!(quest.enchantment, Some(WeaponEffect::Venomous));
         assert_eq!(quest.glyph, Some(ArmorEffect::Repulsion));
         assert_eq!(quest.discarded_duplicates, 1);
         assert_eq!(random.long(), 4_690_832_018_155_665_766);
     }
 
     #[test]
-    fn imp_ring_loop_and_virtual_upgrade_draws_match_java_fixture() {
+    fn imp_reward_options_follow_the_v4_roll_order() {
         let (mut random, mut generator) = fixture(0, 0);
-        let (reward, rejected) = generate_imp_reward(&mut random, &mut generator, 17).unwrap();
+        let options = generate_imp_reward_options(&mut random, &mut generator, 17).unwrap();
 
-        assert_eq!(reward.kind, RingKind::Tenacity);
-        assert_eq!(reward.roll.upgrade, 2);
-        assert!(reward.roll.cursed);
-        assert_eq!(rejected, 1);
-        assert_eq!(generator.category(GeneratorCategory::Ring).dropped, 2);
-        assert_eq!(random.long(), 2_158_390_814_503_909_950);
+        assert_eq!(options.len(), 6);
+        assert!(matches!(options[0], ImpRewardOption::Artifact(_)));
+        let ImpRewardOption::Ring(ring) = options[1] else {
+            panic!("option 1 is always a ring")
+        };
+        assert!((2..=4).contains(&ring.roll.upgrade));
+        assert!(matches!(
+            (options[2], options[3]),
+            (ImpRewardOption::Equipment(_), ImpRewardOption::Missile(_))
+                | (ImpRewardOption::Missile(_), ImpRewardOption::Equipment(_))
+        ));
+        let ImpRewardOption::Equipment(armor) = options[4] else {
+            panic!("option 4 is the Plate Armor")
+        };
+        assert_eq!(armor.item, ItemId::PlateArmor);
+        assert!(matches!(armor.roll.effect, Some(Effect::Armor(_))));
+        let ImpRewardOption::Equipment(wand) = options[5] else {
+            panic!("option 5 is a wand")
+        };
+        assert!(matches!(
+            wand.item,
+            ItemId::WandMagicMissile
+                | ItemId::WandFireblast
+                | ItemId::WandFrost
+                | ItemId::WandLightning
+                | ItemId::WandDisintegration
+                | ItemId::WandPrismaticLight
+                | ItemId::WandCorrosion
+                | ItemId::WandLivingEarth
+                | ItemId::WandBlastWave
+                | ItemId::WandCorruption
+                | ItemId::WandWarding
+                | ItemId::WandRegrowth
+                | ItemId::WandTransfusion
+        ));
+        for option in &options {
+            assert!(option.searchable().is_none_or(|(_, roll)| !roll.cursed));
+        }
+        assert_eq!(generator.category(GeneratorCategory::Ring).dropped, 1);
+        assert_eq!(generator.category(GeneratorCategory::Artifact).dropped, 1);
+        assert_eq!(generator.category(GeneratorCategory::Wand).dropped, 1);
+
+        let mut output = Vec::new();
+        let quest = ImpQuest {
+            spawned: true,
+            depth: Some(17),
+            room_accessible: true,
+            reward_options: options,
+            ..ImpQuest::default()
+        };
+        assert_eq!(quest.append_world_items(4, &mut output), 5);
+        assert_eq!(output[0].source, ItemSource::ImpReward);
+        assert_eq!(
+            output[0].accessibility,
+            Accessibility::Choice {
+                group: 4,
+                option: 1
+            }
+        );
+        assert_eq!(
+            output[4].accessibility,
+            Accessibility::Choice {
+                group: 4,
+                option: 5
+            }
+        );
     }
 
     #[test]
@@ -1130,11 +1377,11 @@ mod tests {
         assert_eq!(smith.append_world_items(9, &mut output), 4);
         assert_eq!(
             output[0].effect,
-            Some(Effect::Weapon(WeaponEffect::Chilling))
+            Some(Effect::Weapon(WeaponEffect::Kinetic))
         );
         assert_eq!(
             output[2].effect,
-            Some(Effect::Weapon(WeaponEffect::Chilling))
+            Some(Effect::Weapon(WeaponEffect::Kinetic))
         );
         assert_eq!(output[2].item, ItemId::Tomahawk);
         assert_eq!(

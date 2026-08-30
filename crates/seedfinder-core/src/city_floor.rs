@@ -395,8 +395,13 @@ pub fn generate_city_floor(
 
     let mut world_items = painted.world_items.clone();
     append_painted_room_items(&painted.level, depth, &mut world_items);
+    let imp_group = painted.remaining_prizes.next_choice_group;
     if quests.imp.depth == Some(u8::try_from(depth).expect("City depth fits u8")) {
-        quests.imp.append_world_item(&mut world_items);
+        quests.imp.append_world_items(imp_group, &mut world_items);
+        // VAULT TREASURE HOOK: the Imp's Vault sub-level (branch 1 of this
+        // depth) is generated separately. Its own searchable treasure belongs
+        // to the same `imp_group` choice group so it is reported alongside
+        // the six reward options; append it to `world_items` here.
     }
     let queue = painted
         .remaining_prizes
@@ -858,7 +863,7 @@ impl RoomCharacterRules for CitySpatialRules {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::catalog::{Effect, ItemId, WeaponEffect};
+    use crate::catalog::{ArmorEffect, Effect, ItemId, WeaponEffect};
     use crate::city_mobs::CityMobKind;
     use crate::level_prelude::Feeling;
     use crate::model::{Accessibility, ItemSource};
@@ -928,75 +933,74 @@ mod tests {
             (
                 16,
                 Feeling::None,
-                (50, 42),
-                441_925_238,
-                1_341,
-                861,
+                (39, 37),
+                -640_772_373,
+                1_186,
+                383,
                 vec![
-                    (CityMobKind::Ghoul, 163),
-                    (CityMobKind::Ghoul, 512),
-                    (CityMobKind::Warlock, 614),
-                    (CityMobKind::Ghoul, 709),
-                    (CityMobKind::FrostElemental, 1_018),
-                    (CityMobKind::Ghoul, 1_476),
+                    (CityMobKind::FireElemental, 308),
+                    (CityMobKind::Warlock, 539),
+                    (CityMobKind::Ghoul, 687),
+                    (CityMobKind::FireElemental, 799),
+                    (CityMobKind::Ghoul, 1_045),
+                    (CityMobKind::Ghoul, 1_214),
                 ],
-                vec![163, 512, 614, 709, 994, 1_018, 1_476],
+                vec![308, 539, 687, 799, 1_045, 1_214, 1_231],
             ),
             (
                 17,
                 Feeling::None,
-                (32, 44),
-                173_532_134,
-                981,
-                200,
+                (57, 36),
+                -1_251_089_393,
+                679,
+                1_601,
                 vec![
-                    (CityMobKind::Monk, 437),
-                    (CityMobKind::FrostElemental, 508),
-                    (CityMobKind::Ghoul, 665),
-                    (CityMobKind::Ghoul, 751),
-                    (CityMobKind::FrostElemental, 808),
-                    (CityMobKind::FireElemental, 940),
-                    (CityMobKind::Warlock, 1_144),
+                    (CityMobKind::Warlock, 257),
+                    (CityMobKind::FrostElemental, 480),
+                    (CityMobKind::Ghoul, 941),
+                    (CityMobKind::Ghoul, 983),
+                    (CityMobKind::ShockElemental, 988),
+                    (CityMobKind::ShockElemental, 997),
+                    (CityMobKind::Monk, 1_725),
                 ],
-                vec![437, 508, 665, 751, 808, 940, 1_144],
+                vec![144, 257, 480, 941, 983, 988, 997, 1_725],
             ),
             (
                 18,
                 Feeling::None,
-                (46, 34),
-                769_134_049,
-                266,
-                1_016,
+                (43, 37),
+                435_526_208,
+                338,
+                1_080,
                 vec![
-                    (CityMobKind::Warlock, 347),
-                    (CityMobKind::Warlock, 667),
-                    (CityMobKind::Golem, 820),
-                    (CityMobKind::Monk, 869),
-                    (CityMobKind::FrostElemental, 892),
-                    (CityMobKind::Monk, 1_062),
-                    (CityMobKind::Ghoul, 1_154),
+                    (CityMobKind::Ghoul, 501),
+                    (CityMobKind::Warlock, 547),
+                    (CityMobKind::Warlock, 594),
+                    (CityMobKind::Monk, 749),
+                    (CityMobKind::FireElemental, 1_012),
+                    (CityMobKind::Golem, 1_039),
                 ],
-                vec![347, 667, 820, 869, 892, 1_062, 1_154, 1_461],
+                vec![408, 501, 547, 594, 749, 1_012, 1_039],
             ),
             (
                 19,
                 Feeling::None,
-                (52, 39),
-                74_208_099,
-                708,
-                1_747,
+                (45, 45),
+                -293_701_983,
+                877,
+                1_088,
                 vec![
-                    (CityMobKind::Golem, 684),
-                    (CityMobKind::FireElemental, 928),
-                    (CityMobKind::Golem, 977),
-                    (CityMobKind::Golem, 995),
-                    (CityMobKind::FrostElemental, 1_020),
-                    (CityMobKind::Monk, 1_100),
-                    (CityMobKind::Warlock, 1_104),
-                    (CityMobKind::Monk, 1_369),
-                    (CityMobKind::Warlock, 1_745),
+                    (CityMobKind::Golem, 118),
+                    (CityMobKind::Golem, 379),
+                    (CityMobKind::Golem, 431),
+                    (CityMobKind::Warlock, 639),
+                    (CityMobKind::Monk, 645),
+                    (CityMobKind::Golem, 997),
+                    (CityMobKind::Monk, 1_426),
+                    (CityMobKind::Warlock, 1_555),
+                    (CityMobKind::ChaosElemental, 1_643),
                 ],
-                vec![324, 684, 928, 977, 995, 1_020, 1_100, 1_104, 1_369, 1_745],
+                vec![118, 379, 431, 639, 645, 997, 1_187, 1_426, 1_555, 1_643],
             ),
         ];
 
@@ -1042,26 +1046,26 @@ mod tests {
             (
                 "AAA-AAA-AAB",
                 Feeling::None,
-                (35, 48),
-                1_827_382_225,
-                1_413,
-                187,
+                (36, 56),
+                129_683_275,
+                1_420,
+                194,
             ),
             (
                 "ABC-DEF-GHI",
                 Feeling::Traps,
-                (46, 40),
-                -1_650_104_591,
-                720,
-                747,
+                (52, 32),
+                1_928_380_213,
+                997,
+                667,
             ),
             (
                 "ZZZ-ZZZ-ZZZ",
                 Feeling::None,
-                (35, 49),
-                -439_689_725,
-                1_348,
-                367,
+                (33, 49),
+                -1_234_450_086,
+                350,
+                1_176,
             ),
         ] {
             let seed = DungeonSeed::from_code(code).unwrap();
@@ -1083,39 +1087,162 @@ mod tests {
         let floors = generate_city_prefix(DungeonSeed::MIN, 19);
         let expected = [
             vec![
-                (ItemId::Javelin, 0, None, false, ItemSource::Heap),
-                (ItemId::Longsword, 0, None, false, ItemSource::Shop),
-                (ItemId::ScaleArmor, 0, None, false, ItemSource::Shop),
-                (ItemId::Javelin, 0, None, false, ItemSource::Shop),
-                (ItemId::ChillingDart, 0, None, false, ItemSource::Shop),
+                (
+                    ItemId::Glaive,
+                    1,
+                    None,
+                    false,
+                    ItemSource::Chest,
+                    Accessibility::Independent,
+                ),
+                (
+                    ItemId::Javelin,
+                    0,
+                    None,
+                    false,
+                    ItemSource::Shop,
+                    Accessibility::Independent,
+                ),
+                (
+                    ItemId::Longsword,
+                    0,
+                    None,
+                    false,
+                    ItemSource::Shop,
+                    Accessibility::Independent,
+                ),
+                (
+                    ItemId::ScaleArmor,
+                    0,
+                    None,
+                    false,
+                    ItemSource::Shop,
+                    Accessibility::Independent,
+                ),
+                (
+                    ItemId::IncendiaryDart,
+                    0,
+                    None,
+                    false,
+                    ItemSource::Shop,
+                    Accessibility::Independent,
+                ),
+                (
+                    ItemId::WandMagicMissile,
+                    0,
+                    None,
+                    false,
+                    ItemSource::LockedChest,
+                    Accessibility::Independent,
+                ),
             ],
-            vec![],
+            vec![(
+                ItemId::ThrowingHammer,
+                0,
+                None,
+                false,
+                ItemSource::Mimic,
+                Accessibility::Independent,
+            )],
             vec![
                 (
                     ItemId::RingSharpshooting,
                     0,
                     None,
-                    true,
+                    false,
                     ItemSource::Skeleton,
+                    Accessibility::Independent,
                 ),
-                (ItemId::Bolas, 1, None, false, ItemSource::Heap),
                 (
-                    ItemId::Javelin,
+                    ItemId::PlateArmor,
                     0,
-                    Some(Effect::Weapon(WeaponEffect::Kinetic)),
+                    None,
+                    false,
+                    ItemSource::Chest,
+                    Accessibility::Independent,
+                ),
+                (
+                    ItemId::Trident,
+                    1,
+                    None,
                     false,
                     ItemSource::Heap,
+                    Accessibility::Independent,
                 ),
                 (
                     ItemId::Javelin,
-                    0,
-                    Some(Effect::Weapon(WeaponEffect::Annoying)),
+                    1,
+                    Some(Effect::Weapon(WeaponEffect::Sacrificial)),
                     true,
                     ItemSource::Heap,
+                    Accessibility::Independent,
                 ),
-                (ItemId::MailArmor, 0, None, false, ItemSource::Heap),
+                (
+                    ItemId::Bolas,
+                    1,
+                    Some(Effect::Weapon(WeaponEffect::Sacrificial)),
+                    true,
+                    ItemSource::Heap,
+                    Accessibility::Independent,
+                ),
             ],
-            vec![(ItemId::RingHaste, 3, None, true, ItemSource::ImpReward)],
+            vec![
+                (
+                    ItemId::RingHaste,
+                    2,
+                    None,
+                    false,
+                    ItemSource::ImpReward,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 1,
+                    },
+                ),
+                (
+                    ItemId::Greatshield,
+                    4,
+                    Some(Effect::Weapon(WeaponEffect::Unstable)),
+                    false,
+                    ItemSource::ImpReward,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 2,
+                    },
+                ),
+                (
+                    ItemId::Javelin,
+                    4,
+                    Some(Effect::Weapon(WeaponEffect::Blazing)),
+                    false,
+                    ItemSource::ImpReward,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 3,
+                    },
+                ),
+                (
+                    ItemId::PlateArmor,
+                    3,
+                    Some(Effect::Armor(ArmorEffect::Brimstone)),
+                    false,
+                    ItemSource::ImpReward,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 4,
+                    },
+                ),
+                (
+                    ItemId::WandCorrosion,
+                    4,
+                    None,
+                    false,
+                    ItemSource::ImpReward,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 5,
+                    },
+                ),
+            ],
         ];
         for (floor, expected) in floors.iter().zip(expected) {
             assert_eq!(
@@ -1125,7 +1252,7 @@ mod tests {
                 floor.painted.level.depth,
                 floor.world_items
             );
-            for (item, upgrade, effect, cursed, source) in expected {
+            for (item, upgrade, effect, cursed, source, accessibility) in expected {
                 assert!(
                     floor.world_items.iter().any(|actual| {
                         actual.item == item
@@ -1133,7 +1260,7 @@ mod tests {
                             && actual.effect == effect
                             && actual.cursed == cursed
                             && actual.source == source
-                            && actual.accessibility == Accessibility::Independent
+                            && actual.accessibility == accessibility
                     }),
                     "depth {} missing {item:?} {source:?}",
                     floor.painted.level.depth

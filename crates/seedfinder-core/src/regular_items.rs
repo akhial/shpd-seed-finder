@@ -888,7 +888,7 @@ mod tests {
         let reward = &result.world_items[0];
         assert_eq!(reward.item, ItemId::Sai);
         assert_eq!(reward.upgrade, 1);
-        assert_eq!(reward.effect, Some(Effect::Weapon(WeaponEffect::Blocking)));
+        assert_eq!(reward.effect, Some(Effect::Weapon(WeaponEffect::Vorpal)));
         assert_eq!(reward.source, ItemSource::Mimic);
         assert!(
             placement

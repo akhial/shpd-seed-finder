@@ -27,7 +27,8 @@ use crate::painter::{
 };
 use crate::rng::RandomStack;
 use crate::room::{
-    ConnectionRoomKind, DoorType, Room, RoomId, RoomKind, SizeCategory, StandardRoomKind,
+    ConnectionRoomKind, DoorType, QuestRoomKind, Room, RoomId, RoomKind, SizeCategory,
+    StandardRoomKind,
 };
 use crate::sewer_rooms::{SewerRoomContent, SewerRoomDispatcher};
 
@@ -982,7 +983,12 @@ pub fn decorate_caves(level: &mut Level, rooms: &[Room], order: &[RoomId], rng: 
     let width = level.width();
     let width_usize = usize::try_from(width).expect("level width is negative");
     for &room in order {
-        if !rooms[room].is_standard() || rooms[room].width() <= 4 || rooms[room].height() <= 4 {
+        // v4.0.0 `CavesPainter.decorate` excludes the repainted BlacksmithRoom.
+        if !rooms[room].is_standard()
+            || matches!(rooms[room].kind, RoomKind::Quest(QuestRoomKind::Blacksmith))
+            || rooms[room].width() <= 4
+            || rooms[room].height() <= 4
+        {
             continue;
         }
         let bounds = rooms[room].bounds;
@@ -1097,9 +1103,9 @@ impl RoomPaintDispatch for CavesDecorationMergeDispatch {
             RoomKind::Standard(_)
             | RoomKind::Entrance(_)
             | RoomKind::Exit(_)
-            | RoomKind::Quest(
-                crate::room::QuestRoomKind::RitualSite | crate::room::QuestRoomKind::Blacksmith,
-            ) => standard_can_merge(level, rooms, room, point),
+            | RoomKind::Quest(QuestRoomKind::RitualSite) => {
+                standard_can_merge(level, rooms, room, point)
+            }
             RoomKind::Connection(ConnectionRoomKind::Walkway | ConnectionRoomKind::RingBridge) => {
                 merge_terrain == terrain::CHASM
             }
