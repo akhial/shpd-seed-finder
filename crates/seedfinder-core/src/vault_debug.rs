@@ -19,15 +19,12 @@ fn dump_vault_for_probe_diff() {
         .ok()
         .and_then(|value| value.parse::<u16>().ok())
         .map_or(Challenges::NONE, |bits| Challenges::new(bits).unwrap());
-    let output_path = std::env::var("VAULT_OUT").map_or_else(
-        |_| {
-            std::env::temp_dir()
-                .join(format!("rust-vault-{code}.txt"))
-                .to_string_lossy()
-                .into_owned()
-        },
-        |path| path,
-    );
+    let output_path = std::env::var("VAULT_OUT").unwrap_or_else(|_| {
+        std::env::temp_dir()
+            .join(format!("rust-vault-{code}.txt"))
+            .to_string_lossy()
+            .into_owned()
+    });
     let seed = i64::try_from(DungeonSeed::from_code(&code).unwrap().value()).unwrap();
     let vault = generate_vault(seed, depth, challenges).unwrap();
     let mut out = String::new();

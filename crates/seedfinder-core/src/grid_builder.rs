@@ -435,7 +435,10 @@ mod tests {
     fn int_map_place_matches_libgdx_fibonacci_hash() {
         let cells = GridCells::new();
         // 100100 * -7046029254386353131 >>> 58, computed independently.
-        let expected = ((100_100_i64.wrapping_mul(-7_046_029_254_386_353_131_i64)) as u64) >> 58;
+        let expected = 100_100_i64
+            .wrapping_mul(-7_046_029_254_386_353_131_i64)
+            .cast_unsigned()
+            >> 58;
         assert_eq!(cells.place(100_100), usize::try_from(expected).unwrap());
         assert_eq!(cells.shift, 58);
         assert_eq!(cells.mask, 63);
