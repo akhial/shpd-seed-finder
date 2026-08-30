@@ -33,7 +33,7 @@ public static class ResultsExport
         "heap", "chest", "locked_chest", "crystal_chest", "tomb", "skeleton",
         "sacrificial_fire", "mimic", "golden_mimic", "crystal_mimic", "statue",
         "armored_statue", "shop", "ghost_reward", "wandmaker_reward",
-        "blacksmith_reward", "imp_reward",
+        "blacksmith_reward", "imp_reward", "vault_treasure",
     ];
     private static readonly (string Name, int Bit)[] ChallengeNames =
         [.. Challenges.All.Select(entry => (entry.Name, entry.Mask))];

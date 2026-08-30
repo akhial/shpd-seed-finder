@@ -29,10 +29,17 @@ public sealed class EngineConstantsTests
         Assert.Equal(SearchLimits.LevelSumGroupMax, Limit("levelSumGroupMax"));
         Assert.Equal(SearchLimits.MaxUpgradeDefault, Limit("maxUpgradeDefault"));
         Assert.Equal(SearchLimits.MaxUpgradeRing, Limit("maxUpgradeRing"));
+        Assert.Equal(SearchLimits.MaxUpgradeWeapon, Limit("maxUpgradeWeapon"));
         // The families route to the right maximum, narrowed weapon kinds included.
         Assert.Equal(Limit("maxUpgradeRing"), ItemKind.Ring.MaximumSearchUpgrade());
-        foreach (var kind in new[] { ItemKind.Weapon, ItemKind.Armor, ItemKind.Wand, ItemKind.MeleeWeapon, ItemKind.ThrownWeapon })
+        foreach (var kind in new[] { ItemKind.Weapon, ItemKind.MeleeWeapon, ItemKind.ThrownWeapon })
+            Assert.Equal(Limit("maxUpgradeWeapon"), kind.MaximumSearchUpgrade());
+        foreach (var kind in new[] { ItemKind.Armor, ItemKind.Wand })
             Assert.Equal(Limit("maxUpgradeDefault"), kind.MaximumSearchUpgrade());
+        // Every family's ceiling is the engine's own, keyed by the document's name for it.
+        foreach (var (name, kind) in new[] {
+            ("weapon", ItemKind.Weapon), ("armor", ItemKind.Armor), ("wand", ItemKind.Wand), ("ring", ItemKind.Ring) })
+            Assert.Equal((int)((JsonObject)Limits["maxUpgradeByKind"]!)[name]!, kind.MaximumSearchUpgrade());
         Assert.Equal(SearchLimits.MaxDepth, new QuerySettings().MaximumDepth);
     }
 

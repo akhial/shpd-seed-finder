@@ -27,7 +27,7 @@
   <ItemGroup>
     <!-- ItemCatalog reads this beside the test binary exactly as the app reads
          it beside its own; the file itself is the Android app's, shared. -->
-    <Content Include="..\..\android\app\src\main\assets\third_party\shattered-pixel-dungeon\catalog-v3.3.8.json" Link="Assets\catalog-v3.3.8.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\android\app\src\main\assets\third_party\shattered-pixel-dungeon\catalog-v4.0.0.json" Link="Assets\catalog-v4.0.0.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <!-- The engine library for the host, which NativeEngineLibrary.cs then finds.
        The WinUI csproj cross-builds the Windows DLL for the app itself; this is

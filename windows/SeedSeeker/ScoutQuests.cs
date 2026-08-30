@@ -9,7 +9,7 @@ public enum QuestVariant
     FetidRat, GnollTrickster, GreatCrab,       // Ghost
     CorpseDust, ElementalEmbers, Rotberry,     // Wandmaker
     Crystal, Gnoll,                            // Blacksmith
-    Monk, Golem,                               // Imp
+    Vault,                                     // Imp
 }
 
 /// <summary>One quest of a scouted world: who gives it, which variant, and its floor.</summary>
@@ -28,7 +28,8 @@ public static class ScoutQuests
     private static readonly QuestVariant[] GhostVariants = [QuestVariant.FetidRat, QuestVariant.GnollTrickster, QuestVariant.GreatCrab];
     private static readonly QuestVariant[] WandmakerVariants = [QuestVariant.CorpseDust, QuestVariant.ElementalEmbers, QuestVariant.Rotberry];
     private static readonly QuestVariant[] BlacksmithVariants = [QuestVariant.Crystal, QuestVariant.Gnoll];
-    private static readonly QuestVariant[] ImpVariants = [QuestVariant.Monk, QuestVariant.Golem];
+    // v4.0.0 replaced the Monk/Golem token hunts with a single vault expedition.
+    private static readonly QuestVariant[] ImpVariants = [QuestVariant.Vault];
 
     /// <summary>
     /// Decodes the quest block — <c>count:u8</c> then <c>count</c> ×
@@ -109,8 +110,7 @@ public static class ScoutQuests
         QuestVariant.Rotberry => "Rotberry",
         QuestVariant.Crystal => "Crystal spire",
         QuestVariant.Gnoll => "Gnoll geomancer",
-        QuestVariant.Monk => "Monks",
-        _ => "Golems",
+        _ => "Vault",
     };
 
     private static byte Next(ReadOnlySpan<byte> data, ref int offset)

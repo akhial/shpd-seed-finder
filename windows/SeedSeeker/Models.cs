@@ -35,8 +35,12 @@ public static class ItemKindExtensions
         item.Kind == kind.Family() && (kind.WeaponClass() is not { } weaponClass || item.Class == weaponClass);
 
     /// <summary>The highest upgrade a search may name for this family.</summary>
-    public static int MaximumSearchUpgrade(this ItemKind kind) =>
-        kind.Family() == ItemKind.Ring ? SearchLimits.MaxUpgradeRing : SearchLimits.MaxUpgradeDefault;
+    public static int MaximumSearchUpgrade(this ItemKind kind) => kind.Family() switch
+    {
+        ItemKind.Weapon => SearchLimits.MaxUpgradeWeapon,
+        ItemKind.Ring => SearchLimits.MaxUpgradeRing,
+        _ => SearchLimits.MaxUpgradeDefault,
+    };
 }
 
 /// <summary>
@@ -61,10 +65,16 @@ public static class SearchLimits
     public const int StackMax = 3;
     /// <summary>Highest combined-level group number (groups run 1..this, shown as A..D).</summary>
     public const int LevelSumGroupMax = 4;
-    /// <summary>Highest upgrade a search may name, for everything but rings.</summary>
-    public const int MaxUpgradeDefault = 3;
+    /// <summary>
+    /// Highest upgrade a search may name, for everything but weapons. v4.0.0's
+    /// Imp vault sets the ceilings: its final-room options reach +4 on plate
+    /// armor, wands and rings.
+    /// </summary>
+    public const int MaxUpgradeDefault = 4;
     /// <summary>Highest upgrade a ring requirement may name.</summary>
     public const int MaxUpgradeRing = 4;
+    /// <summary>Highest upgrade a weapon requirement may name; the vault reaches +5 on a tier-4 weapon.</summary>
+    public const int MaxUpgradeWeapon = 5;
     /// <summary>How many results one run lists, and one import restores.</summary>
     public const int ResultCap = 1024;
 }
@@ -105,7 +115,11 @@ public enum ScoutItemSource
 {
     Heap, Chest, LockedChest, CrystalChest, Tomb, Skeleton, SacrificialFire, Mimic,
     GoldenMimic, CrystalMimic, Statue, ArmoredStatue, Shop, GhostReward,
-    WandmakerReward, BlacksmithReward, ImpReward
+    WandmakerReward, BlacksmithReward, ImpReward,
+    // v4.0.0's Imp vault. The value indexes the wire ids and the document
+    // source-name table in ResultsExport, so it stays appended after the
+    // v3.3.8 block.
+    VaultTreasure
 }
 
 /// <summary>
@@ -128,6 +142,7 @@ public static class Labels
         ScoutItemSource.CrystalMimic => "Crystal mimic", ScoutItemSource.ArmoredStatue => "Armored statue",
         ScoutItemSource.GhostReward => "Ghost reward", ScoutItemSource.WandmakerReward => "Wandmaker reward",
         ScoutItemSource.BlacksmithReward => "Blacksmith reward", ScoutItemSource.ImpReward => "Imp reward",
+        ScoutItemSource.VaultTreasure => "Vault treasure",
         _ => string.Concat(value.ToString().Select((c, i) => i > 0 && char.IsUpper(c) ? " " + char.ToLowerInvariant(c) : char.ToLowerInvariant(c).ToString()))
     };
 }
