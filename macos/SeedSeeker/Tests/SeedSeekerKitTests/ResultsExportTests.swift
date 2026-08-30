@@ -85,6 +85,32 @@ final class ResultsExportTests: XCTestCase {
         XCTAssertEqual(requirements[1]["max_depth"] as? Int, 9)
     }
 
+    /// v4.0.0's additions travel through the canonical document like every
+    /// other predicate: the vault's item source, the appended weapon
+    /// enchantments, and the weapon ceiling one above the other families'.
+    func testVaultSourceAndNewEnchantmentsSurviveTheDocument() throws {
+        let query = SavedQuery(requirements: [
+            try ItemRequirement(key: 1, item: ItemCatalog.findById("greatsword"), upgrade: 5,
+                                effect: .oneOf(["Vorpal", "Venomous"]), kind: .weapon,
+                                upgradeMatch: .exactly, source: .vaultTreasure),
+        ])
+        let text = ResultsExport.encode(query, seeds: ["AAA-AAA-BUH"], appVersion: "0.8.0")
+        let document = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+        let requirements = try XCTUnwrap(
+            (document["query"] as? [String: Any])?["requirements"] as? [[String: Any]])
+        XCTAssertEqual(requirements[0]["source"] as? String, "vault_treasure")
+        XCTAssertEqual(requirements[0]["upgrade"] as? Int, 5)
+        // Effect lists travel in the catalog asset's order, not the caller's.
+        XCTAssertEqual(requirements[0]["effect"] as? [String], ["Venomous", "Vorpal"])
+
+        var expected = query.requirements
+        var actual = try ResultsExport.decode(text).query.requirements
+        for index in expected.indices { expected[index].key = 0 }
+        for index in actual.indices { actual[index].key = 0 }
+        XCTAssertEqual(expected, actual)
+    }
+
     /// An unencodable query never produces a half-written file.
     func testEncodeRefusesAQueryTheEngineRejects() {
         XCTAssertEqual(ResultsExport.encode(SavedQuery(), seeds: [], appVersion: "0.6.1"), "")

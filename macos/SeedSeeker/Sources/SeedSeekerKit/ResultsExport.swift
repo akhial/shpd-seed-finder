@@ -40,7 +40,7 @@ public enum ResultsExport {
         "heap", "chest", "locked_chest", "crystal_chest", "tomb", "skeleton",
         "sacrificial_fire", "mimic", "golden_mimic", "crystal_mimic", "statue",
         "armored_statue", "shop", "ghost_reward", "wandmaker_reward",
-        "blacksmith_reward", "imp_reward",
+        "blacksmith_reward", "imp_reward", "vault_treasure",
     ]
     private static let challengeNames: [(name: String, challenge: Challenge)] = [
         ("on_diet", .noFood), ("faith_is_my_armor", .noArmor),
