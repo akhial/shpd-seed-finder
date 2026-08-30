@@ -226,8 +226,11 @@ impl QueryPane {
         let fast_row = adw::SwitchRow::builder()
             .title("Fast search")
             .subtitle(
-                "Treats +3 weapons and armor as quest rewards only, skipping the rare \
-                 Crypt and Sacrificial-fire prizes. Found seeds are always genuine",
+                "Treats +3 weapons and armor as quest rewards only — the Ghost, the \
+                 Blacksmith and the Imp's vault — skipping the rare Crypt, \
+                 Sacrificial-fire and special-room chest prizes, so such a search \
+                 ends at floor 19 rather than the floor limit. Found seeds are \
+                 always genuine",
             )
             .build();
         let performance_group = adw::PreferencesGroup::builder()
