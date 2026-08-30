@@ -395,8 +395,13 @@ pub fn generate_city_floor(
 
     let mut world_items = painted.world_items.clone();
     append_painted_room_items(&painted.level, depth, &mut world_items);
+    let imp_group = painted.remaining_prizes.next_choice_group;
     if quests.imp.depth == Some(u8::try_from(depth).expect("City depth fits u8")) {
-        quests.imp.append_world_item(&mut world_items);
+        quests.imp.append_world_items(imp_group, &mut world_items);
+        // VAULT TREASURE HOOK: the Imp's Vault sub-level (branch 1 of this
+        // depth) is generated separately. Its own searchable treasure belongs
+        // to the same `imp_group` choice group so it is reported alongside
+        // the six reward options; append it to `world_items` here.
     }
     let queue = painted
         .remaining_prizes
