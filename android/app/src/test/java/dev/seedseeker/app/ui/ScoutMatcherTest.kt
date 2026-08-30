@@ -57,39 +57,39 @@ class ScoutMatcherTest {
     @Test
     fun exclusiveBranchesCannotSatisfyTwoRequirementsAtOnce() {
         // Both wands exist in the manifest, but naming both cannot be
-        // satisfied: they are two options of the same reward.
+        // satisfied: they are the Wandmaker's two reward options.
         val exclusive = matchesFor(
-            wand("wand_corrosion", key = 1),
-            wand("wand_warding", key = 2),
+            wand("wand_warding", key = 1),
+            wand("wand_blast_wave", key = 2),
         )
         assertEquals(1, exclusive.size)
 
         // A requirement outside that group is claimed alongside it.
         val compatible = matchesFor(
-            wand("wand_corrosion", key = 1),
-            wand("wand_fireblast", key = 2),
+            wand("wand_warding", key = 1),
+            wand("wand_corrosion", key = 2),
         )
         assertEquals(2, compatible.size)
         assertEquals(
-            setOf("wand_corrosion", "wand_fireblast"),
+            setOf("wand_warding", "wand_corrosion"),
             compatible.mapTo(mutableSetOf()) { world.items[it].item.id },
         )
     }
 
     @Test
     fun uncursedRequirementRejectsCursedCopies() {
-        // This world holds two +2 Potential mail armors: a cursed one on floor
-        // 14 and a clean one on floor 19.
-        val potentialArmors = world.items.withIndex()
-            .filter { it.value.item.id == "mail_armor" && it.value.effect == "Potential" }
-        assertEquals(listOf(true, false), potentialArmors.map { it.value.cursed })
+        // This world holds two Fireblast wands: a cursed one in a floor-2 chest
+        // and a clean one among the Imp vault's floor-17 treasure.
+        val fireblasts = world.items.withIndex()
+            .filter { it.value.item.id == "wand_fireblast" }
+        assertEquals(listOf(true, false), fireblasts.map { it.value.cursed })
 
-        val marks = matchesFor(uncursedPotentialArmor(maximumDepth = null))
+        val marks = matchesFor(uncursedFireblast(maximumDepth = null))
         assertEquals(1, marks.size)
-        assertEquals(potentialArmors.last().index, marks.single())
+        assertEquals(fireblasts.last().index, marks.single())
 
         // Limited to the floors that hold only the cursed copy, nothing matches.
-        assertEquals(emptySet<Int>(), matchesFor(uncursedPotentialArmor(maximumDepth = 14)))
+        assertEquals(emptySet<Int>(), matchesFor(uncursedFireblast(maximumDepth = 2)))
     }
 
     @Test
@@ -145,20 +145,21 @@ class ScoutMatcherTest {
 
     @Test
     fun effectSetsAndAnyEnchantmentMatchTheScoutedEffects() {
-        // The +2 Potential mail armors satisfy a set naming Potential among others.
-        val potentialArmors = world.items.withIndex()
-            .filter { it.value.item.id == "mail_armor" && it.value.effect == "Potential" }
+        // The Thorns mail armor satisfies a set naming Thorns among others.
+        val thornsArmors = world.items.withIndex()
+            .filter { it.value.item.id == "mail_armor" && it.value.effect == "Thorns" }
             .map { it.index }
         val set = matchesFor(
             ItemRequirement(
                 key = 1,
                 item = ItemCatalog.findById("mail_armor"),
-                upgrade = 2,
+                upgrade = 0,
+                upgradeMatch = UpgradeMatch.ANY,
                 effect = EffectFilter.OneOf(listOf("Potential", "Thorns", "Brimstone")),
             ),
         )
         assertEquals(1, set.size)
-        assertTrue("$set", set.single() in potentialArmors)
+        assertTrue("$set", set.single() in thornsArmors)
 
         // "Any enchantment" matches every glyphed armor but no plain one.
         val glyphed = world.items.withIndex()
@@ -239,12 +240,11 @@ class ScoutMatcherTest {
         upgradeMatch = UpgradeMatch.ANY,
     )
 
-    private fun uncursedPotentialArmor(maximumDepth: Int?) = ItemRequirement(
+    private fun uncursedFireblast(maximumDepth: Int?) = ItemRequirement(
         key = 1,
-        item = ItemCatalog.findById("mail_armor"),
-        upgrade = 2,
-        effect = EffectFilter.named("Potential"),
-        upgradeMatch = UpgradeMatch.EXACT,
+        item = ItemCatalog.findById("wand_fireblast"),
+        upgrade = 0,
+        upgradeMatch = UpgradeMatch.ANY,
         maximumDepth = maximumDepth,
         requireUncursed = true,
     )

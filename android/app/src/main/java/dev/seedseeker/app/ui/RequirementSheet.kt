@@ -482,7 +482,10 @@ fun RequirementSheet(
                             }
                         } else if (upgradeMatch == UpgradeMatch.AT_LEAST) {
                             Spacer(Modifier.height(8.dp))
-                            if (kind == ItemKind.RING) {
+                            // A slider needs three stops to beat a dropdown, and
+                            // since v4.0.0 raised the ceilings every family has
+                            // them (+1..+4 for weapons, +1..+3 for the rest).
+                            if (kind.maximumSearchUpgrade - 1 >= 3) {
                                 Column {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),

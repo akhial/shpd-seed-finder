@@ -28,11 +28,18 @@ object SearchLimits {
     /** The most items a stack may ask for, its anchor included. */
     const val STACK_MAX = 3
 
-    /** Highest upgrade a search may name, for everything but rings. */
-    const val MAX_UPGRADE_DEFAULT = 3
+    /** Highest upgrade a search may name, for everything but weapons. */
+    const val MAX_UPGRADE_DEFAULT = 4
 
     /** Highest upgrade a ring requirement may name. */
     const val MAX_UPGRADE_RING = 4
+
+    /**
+     * Highest upgrade a weapon requirement may name. v4.0.0's Imp vault lays
+     * out a +5 tier-4 weapon among its prizes, one level above what any other
+     * family can reach.
+     */
+    const val MAX_UPGRADE_WEAPON = 5
 }
 
 enum class ItemKind(
@@ -42,7 +49,7 @@ enum class ItemKind(
     /** The highest upgrade a search may name for this family. */
     val maximumSearchUpgrade: Int,
 ) {
-    WEAPON("Weapons", "weapon", "Enchantment", SearchLimits.MAX_UPGRADE_DEFAULT),
+    WEAPON("Weapons", "weapon", "Enchantment", SearchLimits.MAX_UPGRADE_WEAPON),
     ARMOR("Armor", "armor", "Glyph", SearchLimits.MAX_UPGRADE_DEFAULT),
     WAND("Wands", "wand", null, SearchLimits.MAX_UPGRADE_DEFAULT),
     RING("Rings", "ring", null, SearchLimits.MAX_UPGRADE_RING),
@@ -50,8 +57,8 @@ enum class ItemKind(
     // Wire kind IDs 4 and 5 (the enum ordinal is the wire ID): weapon
     // requirements narrowed to one weapon class. Catalog items always carry
     // the WEAPON family, never a narrowed kind.
-    MELEE_WEAPON("Melee weapons", "melee weapon", "Enchantment", SearchLimits.MAX_UPGRADE_DEFAULT),
-    THROWN_WEAPON("Thrown weapons", "thrown weapon", "Enchantment", SearchLimits.MAX_UPGRADE_DEFAULT),
+    MELEE_WEAPON("Melee weapons", "melee weapon", "Enchantment", SearchLimits.MAX_UPGRADE_WEAPON),
+    THROWN_WEAPON("Thrown weapons", "thrown weapon", "Enchantment", SearchLimits.MAX_UPGRADE_WEAPON),
     ;
 
     /** The broad item family this kind belongs to. */
@@ -506,8 +513,9 @@ enum class ScoutQuestVariant(val giver: ScoutQuestGiver, val label: String) {
     ROTBERRY(ScoutQuestGiver.WANDMAKER, "Rotberry"),
     CRYSTAL(ScoutQuestGiver.BLACKSMITH, "Crystal spire"),
     GNOLL(ScoutQuestGiver.BLACKSMITH, "Gnoll geomancer"),
-    MONK(ScoutQuestGiver.IMP, "Monks"),
-    GOLEM(ScoutQuestGiver.IMP, "Golems"),
+    // v4.0.0 replaced the Imp's Monk/Golem token hunts with one vault
+    // expedition, so this giver has a single variant.
+    VAULT(ScoutQuestGiver.IMP, "Vault"),
     ;
 
     companion object {
@@ -545,6 +553,9 @@ enum class ScoutItemSource(val label: String) {
     WANDMAKER_REWARD("Wandmaker reward"),
     BLACKSMITH_REWARD("Blacksmith reward"),
     IMP_REWARD("Imp reward"),
+
+    /** Equipment the v4.0.0 Imp vault's treasure rooms lay out on the way in. */
+    VAULT_TREASURE("Vault treasure"),
 }
 
 sealed interface ScoutAccessibility {

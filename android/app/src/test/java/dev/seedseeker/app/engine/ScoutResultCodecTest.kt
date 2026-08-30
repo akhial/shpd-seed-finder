@@ -63,6 +63,14 @@ class ScoutResultCodecTest {
                 flags = 3,
                 source = 16,
             ),
+            // v4.0.0's vault: source 17, and the +5 only weapons can carry.
+            item(
+                id = "katana",
+                depth = 19,
+                upgrade = 5,
+                effect = "Vorpal",
+                source = 17,
+            ),
             quests = listOf(quest(1, 2, 3), quest(4, 1, 17)),
         )
 
@@ -72,13 +80,13 @@ class ScoutResultCodecTest {
         assertEquals(
             listOf(
                 ScoutQuest(ScoutQuestVariant.GNOLL_TRICKSTER, 3),
-                ScoutQuest(ScoutQuestVariant.MONK, 17),
+                ScoutQuest(ScoutQuestVariant.VAULT, 17),
             ),
             world.quests,
         )
-        assertEquals(4, world.items.size)
+        assertEquals(5, world.items.size)
         assertEquals(
-            listOf("dagger", "dagger", "wand_frost", "ring_sharpshooting"),
+            listOf("dagger", "dagger", "wand_frost", "ring_sharpshooting", "katana"),
             world.items.map { it.item.id },
         )
         with(world.items[0]) {
@@ -110,6 +118,11 @@ class ScoutResultCodecTest {
             assertTrue(secret)
             assertEquals(ScoutItemSource.IMP_REWARD, source)
         }
+        with(world.items[4]) {
+            assertEquals(5, upgrade)
+            assertEquals("Vorpal", effect)
+            assertEquals(ScoutItemSource.VAULT_TREASURE, source)
+        }
     }
 
     @Test
@@ -122,7 +135,7 @@ class ScoutResultCodecTest {
                 0x01, 0x03, 0x04,
                 0x02, 0x03, 0x08,
                 0x03, 0x01, 0x0D,
-                0x04, 0x02, 0x12,
+                0x04, 0x01, 0x12,
                 0x00, 0x00,
             )
 
@@ -135,7 +148,7 @@ class ScoutResultCodecTest {
                 ScoutQuest(ScoutQuestVariant.GREAT_CRAB, 4),
                 ScoutQuest(ScoutQuestVariant.ROTBERRY, 8),
                 ScoutQuest(ScoutQuestVariant.CRYSTAL, 13),
-                ScoutQuest(ScoutQuestVariant.GOLEM, 18),
+                ScoutQuest(ScoutQuestVariant.VAULT, 18),
             ),
             world.quests,
         )
@@ -167,7 +180,8 @@ class ScoutResultCodecTest {
             ScoutResultCodec.decode(unknownGhostVariant)
         }
 
-        val unknownImpVariant = scoutPacket(quests = listOf(quest(4, 3, 18)))
+        // The Imp has one variant since v4.0.0, so even code 2 is unknown now.
+        val unknownImpVariant = scoutPacket(quests = listOf(quest(4, 2, 18)))
         assertThrows(IllegalStateException::class.java) {
             ScoutResultCodec.decode(unknownImpVariant)
         }
@@ -228,7 +242,7 @@ class ScoutResultCodecTest {
             ScoutResultCodec.decode(reservedFlags)
         }
 
-        val unknownSource = scoutPacket(item(source = 17))
+        val unknownSource = scoutPacket(item(source = 18))
         assertThrows(IllegalStateException::class.java) {
             ScoutResultCodec.decode(unknownSource)
         }
@@ -255,9 +269,16 @@ class ScoutResultCodecTest {
             ScoutResultCodec.decode(invalidDepth)
         }
 
-        val invalidUpgrade = scoutPacket(item(upgrade = 4))
+        // The ceiling is per family: the vault's +5 belongs to weapons alone,
+        // and nothing at all goes above it.
+        val invalidUpgrade = scoutPacket(item(upgrade = 6))
         assertThrows(IllegalStateException::class.java) {
             ScoutResultCodec.decode(invalidUpgrade)
+        }
+
+        val ringAboveItsCeiling = scoutPacket(item(id = "ring_haste", upgrade = 5))
+        assertThrows(IllegalStateException::class.java) {
+            ScoutResultCodec.decode(ringAboveItsCeiling)
         }
 
         val trailing = scoutPacket(item()) + 0x55.toByte()

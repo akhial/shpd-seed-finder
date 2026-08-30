@@ -51,6 +51,11 @@ object ItemGlows {
         "Corrupting" to Glow(Color(0xFF440066), DEFAULT_PERIOD),
         "Grim" to Glow(Color(0xFF000000), DEFAULT_PERIOD),
         "Vampiric" to Glow(Color(0xFF660022), DEFAULT_PERIOD),
+        // Weapon enchantments added in v4.0.0
+        "Venomous" to Glow(Color(0xFF4400AA), DEFAULT_PERIOD),
+        "Eldritch" to Glow(Color(0xFF222222), DEFAULT_PERIOD),
+        "Vorpal" to Glow(Color(0xFFAA6666), DEFAULT_PERIOD),
+        "Crystal" to Glow(Color(0xFF0088FF), DEFAULT_PERIOD),
         // Armor glyphs
         "Obfuscation" to Glow(Color(0xFF888888), DEFAULT_PERIOD),
         "Swiftness" to Glow(Color(0xFFFFFF00), DEFAULT_PERIOD),
