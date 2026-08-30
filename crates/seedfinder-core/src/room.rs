@@ -704,7 +704,7 @@ impl Room {
                 _ => 5,
             },
             RoomKind::Quest(kind) => match kind {
-                QuestRoomKind::MassGrave => 7,
+                QuestRoomKind::MassGrave => 11,
                 QuestRoomKind::RitualSite => self
                     .size_category
                     .expect("RitualSiteRoom has a size category")
@@ -715,7 +715,7 @@ impl Room {
                     .size_category
                     .expect("BlacksmithRoom has a size category")
                     .min_dimension()
-                    .max(6),
+                    .max(8),
                 QuestRoomKind::AmbitiousImp => 9,
             },
         }
@@ -747,20 +747,28 @@ impl Room {
                     .expect("quest StandardRoom has a size category")
                     .max_dimension(),
                 QuestRoomKind::AmbitiousImp => 9,
-                QuestRoomKind::MassGrave | QuestRoomKind::RotGarden => 10,
+                QuestRoomKind::MassGrave => 11,
+                QuestRoomKind::RotGarden => 10,
             },
         }
     }
 
     #[must_use]
     pub fn min_height(&self) -> i32 {
-        // All graph-relevant v3.3.8 overrides are symmetric.
-        self.min_width()
+        // Every graph-relevant override is symmetric except the fixed 11x10
+        // v4.0.0 MassGraveRoom.
+        match self.kind {
+            RoomKind::Quest(QuestRoomKind::MassGrave) => 10,
+            _ => self.min_width(),
+        }
     }
 
     #[must_use]
     pub fn max_height(&self) -> i32 {
-        self.max_width()
+        match self.kind {
+            RoomKind::Quest(QuestRoomKind::MassGrave) => 10,
+            _ => self.max_width(),
+        }
     }
 
     /// `Room.setSize()`.
@@ -837,6 +845,9 @@ impl Room {
                 QuestRoomKind::MassGrave | QuestRoomKind::RotGarden | QuestRoomKind::AmbitiousImp,
             ) => 1,
             RoomKind::Connection(ConnectionRoomKind::Maze) => 2,
+            // v4.0.0 BlacksmithRoom compares the direction ordinal against its
+            // `top` coordinate (`direction == this.top`), not against TOP.
+            RoomKind::Quest(QuestRoomKind::Blacksmith) if direction as i32 == self.bounds.top => 1,
             _ if direction == Direction::All => 16,
             _ => 4,
         }
@@ -846,6 +857,26 @@ impl Room {
     /// `SentryRoom.canConnect` calls `center()` in a way that can consume a
     /// draw for the unused coordinate.
     pub fn can_connect_point(&self, point: Point, rng: &mut RandomStack) -> bool {
+        // MassGraveRoom (v4.0.0) replaces the edge test entirely and draws the
+        // unused `center()` y jitter on every call.
+        if matches!(self.kind, RoomKind::Quest(QuestRoomKind::MassGrave)) {
+            let center = self.center(rng);
+            return point.x.wrapping_sub(center.x).abs() <= 2;
+        }
+        // BlacksmithRoom (v4.0.0) only admits its two top corners on the top
+        // wall and nothing on the row below it.
+        if matches!(self.kind, RoomKind::Quest(QuestRoomKind::Blacksmith)) {
+            if point.y == self.bounds.top
+                && point.x != self.bounds.left.wrapping_add(1)
+                && point.x != self.bounds.right.wrapping_sub(1)
+            {
+                return false;
+            }
+            if point.y == self.bounds.top.wrapping_add(1) {
+                return false;
+            }
+        }
+
         let on_vertical = point.x == self.bounds.left || point.x == self.bounds.right;
         let on_horizontal = point.y == self.bounds.top || point.y == self.bounds.bottom;
         if on_vertical == on_horizontal {
@@ -1133,9 +1164,13 @@ pub fn remaining_connections(rooms: &[Room], room: RoomId, direction: Direction)
     }
 }
 
+/// `Room.canConnect(int direction)`, including the v4.0.0 MassGraveRoom
+/// override that only admits connections through its bottom wall.
 #[must_use]
 pub fn can_connect_direction(rooms: &[Room], room: RoomId, direction: Direction) -> bool {
     remaining_connections(rooms, room, direction) > 0
+        && (!matches!(rooms[room].kind, RoomKind::Quest(QuestRoomKind::MassGrave))
+            || direction == Direction::Bottom)
 }
 
 /// `Room.canConnect(Room)`, including candidate point iteration and any draws

@@ -2,7 +2,7 @@
 //!
 //! The five City standard classes, their four entrance/exit variants, and
 //! City decoration are implemented directly from Shattered Pixel Dungeon
-//! v3.3.8. Region-independent standard rooms and generic connection rooms
+//! v4.0.0. Region-independent standard rooms and generic connection rooms
 //! reuse [`crate::sewer_rooms::SewerRoomDispatcher`], including its cached
 //! ring-tunnel and builder-injected maze state.
 
@@ -290,18 +290,20 @@ impl<C: SewerRoomContent> CityRoomDispatcher<C> {
     ) {
         match kind {
             StandardRoomKind::Hallway => {
+                // v4.0.0 HallwayRoom paints the transition tile itself; the
+                // entrance/exit subclasses only locate it.
                 self.paint_hallway(level, rooms, room, rng);
+                let wanted = if entrance {
+                    terrain::ENTRANCE_SP
+                } else {
+                    terrain::EXIT
+                };
                 let transition = rooms[room]
                     .bounds
                     .points()
                     .into_iter()
-                    .find(|&point| {
-                        matches!(
-                            level.map.cells[level.point_to_cell(point)],
-                            terrain::STATUE_SP | terrain::REGION_DECO_ALT
-                        )
-                    })
-                    .expect("HallwayRoom always paints its center decoration");
+                    .find(|&point| level.map.cells[level.point_to_cell(point)] == wanted)
+                    .expect("HallwayRoom always paints its transition tile");
                 place_transition(level, transition, entrance, true);
             }
             StandardRoomKind::LibraryHall => {
@@ -332,30 +334,43 @@ impl<C: SewerRoomContent> CityRoomDispatcher<C> {
             }
             StandardRoomKind::Statues => {
                 self.paint_statues(level, rooms, room, rng);
-                let point = rooms[room].center(rng);
-                let cell = level.point_to_cell(point);
-                if rooms[room].width() <= 10 && rooms[room].height() <= 10 {
-                    fill_room_margin(level, &rooms[room], 3, terrain::EMPTY_SP);
-                }
-                let width = level.width();
-                let cell_i32 = i32::try_from(cell).expect("map exceeds Java int indexing");
-                for offset in [
-                    -width - 1,
-                    -width,
-                    -width + 1,
-                    -1,
-                    1,
-                    width - 1,
-                    width,
-                    width + 1,
-                ] {
-                    let neighbour = usize::try_from(cell_i32 + offset)
-                        .expect("transition center lies inside the padded room");
-                    if level.map.cells[neighbour] != terrain::STATUE_SP {
-                        level.map.cells[neighbour] = terrain::EMPTY_SP;
+                let point = if rooms[room].width() < 11 && rooms[room].height() < 11 {
+                    // A single statue block painted its own transition tile.
+                    let wanted = if entrance {
+                        terrain::ENTRANCE
+                    } else {
+                        terrain::EXIT
+                    };
+                    rooms[room]
+                        .bounds
+                        .points()
+                        .into_iter()
+                        .find(|&point| level.map.cells[level.point_to_cell(point)] == wanted)
+                        .expect("single-block StatuesRoom paints its transition tile")
+                } else {
+                    let point = rooms[room].center(rng);
+                    let cell = level.point_to_cell(point);
+                    let width = level.width();
+                    let cell_i32 = i32::try_from(cell).expect("map exceeds Java int indexing");
+                    for offset in [
+                        -width - 1,
+                        -width,
+                        -width + 1,
+                        -1,
+                        1,
+                        width - 1,
+                        width,
+                        width + 1,
+                    ] {
+                        let neighbour = usize::try_from(cell_i32 + offset)
+                            .expect("transition center lies inside the padded room");
+                        if level.map.cells[neighbour] != terrain::STATUE {
+                            level.map.cells[neighbour] = terrain::EMPTY_DECO;
+                        }
                     }
-                }
-                place_transition(level, point, entrance, entrance);
+                    point
+                };
+                place_transition(level, point, entrance, false);
             }
             _ => panic!("non-City transition room passed to CityRoomDispatcher: {kind:?}"),
         }
@@ -420,14 +435,16 @@ impl<C: SewerRoomContent> CityRoomDispatcher<C> {
             3,
             terrain::EMPTY_SP,
         );
+        let center_tile = match rooms[room].kind {
+            RoomKind::Entrance(_) => terrain::ENTRANCE_SP,
+            RoomKind::Exit(_) => terrain::EXIT,
+            _ if rng.int_bound(2) == 0 => terrain::STATUE_SP,
+            _ => terrain::REGION_DECO_ALT,
+        };
         level.map.set(
             connection_space.left + 1,
             connection_space.top + 1,
-            if rng.int_bound(2) == 0 {
-                terrain::STATUE_SP
-            } else {
-                terrain::REGION_DECO_ALT
-            },
+            center_tile,
         );
     }
 
@@ -639,7 +656,7 @@ impl<C: SewerRoomContent> CityRoomDispatcher<C> {
                     top,
                     block_width,
                     block_height,
-                    terrain::EMPTY_SP,
+                    terrain::CUSTOM_DECO_EMPTY,
                 );
                 for point in [
                     Point::new(left, top),
@@ -647,9 +664,12 @@ impl<C: SewerRoomContent> CityRoomDispatcher<C> {
                     Point::new(left, top + block_height - 1),
                     Point::new(left + block_width - 1, top + block_height - 1),
                 ] {
-                    level.map.set_point(point, terrain::STATUE_SP);
+                    level.map.set_point(point, terrain::STATUE);
                 }
-                if block_width >= 5 && block_height >= 5 {
+                let transition_room =
+                    matches!(rooms[room].kind, RoomKind::Entrance(_) | RoomKind::Exit(_));
+                let single_block = columns == 1 && rows == 1;
+                if (block_width >= 5 && block_height >= 5) || (transition_room && single_block) {
                     let mut x = left + div_i32(block_width, 2);
                     if rem_i32(block_width, 2) == 0 && rng.int_bound(2) == 0 {
                         x -= 1;
@@ -658,7 +678,12 @@ impl<C: SewerRoomContent> CityRoomDispatcher<C> {
                     if rem_i32(block_height, 2) == 0 && rng.int_bound(2) == 0 {
                         y -= 1;
                     }
-                    level.map.set(x, y, terrain::REGION_DECO_ALT);
+                    let tile = match rooms[room].kind {
+                        RoomKind::Entrance(_) if single_block => terrain::ENTRANCE,
+                        RoomKind::Exit(_) if single_block => terrain::EXIT,
+                        _ => terrain::REGION_DECO,
+                    };
+                    level.map.set(x, y, tile);
                 }
             }
         }
