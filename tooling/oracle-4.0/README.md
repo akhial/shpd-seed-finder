@@ -252,6 +252,23 @@ Byte determinism is defined for the same JAR, oracle options and JVM runtime;
 the v3.3.8 caveat about `ShopRoom.ChooseBag` iterating a `HashMap` still
 applies, and the Vault consumable caveat above is new.
 
+## Comparing against the engine
+
+`crates/seedfinder-core/examples/dump_floors.rs` prints a seed's floors in a
+reduced text form (size, map hash, entrance, exit, feeling, ordinary mobs,
+searchable items) and `tooling/parity/compare_floors.py` diffs a `--format
+json --vault` document against it, folding the vault's treasure into the
+Imp's floor the way the engine reports it:
+
+```sh
+tooling/oracle-4.0/run.sh --seed AAA-AAA-AAA --floors 1-24 --vault --format json > oracle.json
+cargo run --release --example dump_floors -- AAA-AAA-AAA 24 > engine.txt
+python tooling/parity/compare_floors.py oracle.json engine.txt
+```
+
+The script reports painted actors it cannot classify (a Mass Grave's
+skeleton) and skips the boss depths the engine never simulates.
+
 ## Isolation
 
 No file outside this directory is touched. `.work/` (JAR, compiled classes,

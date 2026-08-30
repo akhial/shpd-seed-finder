@@ -91,7 +91,14 @@ wands and rings and of `+4`/`+5` weapons.
 The vault sub-level is generated from `seedForDepth(depth, 1)` — a seed derived
 from the Imp's floor and the branch number — independently of the main run's
 generator state, so its contents depend only on the dungeon seed and the floor
-the quest landed on, not on anything the player did before entering.
+the quest landed on, not on anything the player did before entering. The
+engine builds it immediately after the City floor that schedules the quest.
+A search skips that extra level whenever no requirement could be satisfied by
+vault treasure (`FloorGate::wants_vault_treasure`, answered by the query
+plan), which is exact because unmatched items never change a verdict;
+scouting and probability calibration always generate it. Which consumable
+sits in a given vault heap is decided by an unseeded shuffle upstream and is
+not modelled; every weapon, armor, wand and ring is.
 
 Scroll-of-Transmutation outcomes are not searchable. Run setup resets the RNG
 stack to an unseeded gameplay generator; floor creation temporarily pushes a
