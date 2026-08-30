@@ -65,10 +65,16 @@ mod tests {
     use shpd_seedfinder_core::challenges::Challenges;
     use shpd_seedfinder_core::json_query;
     use shpd_seedfinder_core::seed::DungeonSeed;
-    use shpd_seedfinder_core::wire::{decode_scout_world, encode_query};
+    use shpd_seedfinder_core::wire::decode_scout_world;
 
     use super::*;
     use crate::{production_scout_packet, production_scout_world};
+
+    /// The request bytes a frontend sends for a query: its canonical JSON
+    /// document.
+    fn query_request(query: &shpd_seedfinder_core::query::SearchQuery) -> Vec<u8> {
+        json_query::encode(query).to_string().into_bytes()
+    }
 
     #[test]
     fn start_decision_names_are_the_documented_ones() {
@@ -100,19 +106,18 @@ mod tests {
             wandmaker_quest: None,
             fast_mode: false,
         };
-        let target = encode_query(&query(ItemKind::Ring)).unwrap();
-        let deeper = encode_query(&SearchQuery {
+        let target = query_request(&query(ItemKind::Ring));
+        let deeper = query_request(&SearchQuery {
             max_depth: 9,
             ..query(ItemKind::Ring)
-        })
-        .unwrap();
-        let armor = encode_query(&query(ItemKind::Armor)).unwrap();
+        });
+        let armor = query_request(&query(ItemKind::Armor));
         let mut narrowed_query = query(ItemKind::Armor);
         narrowed_query.requirements.push(Requirement {
             upgrade: UpgradeRequirement::AtLeast(2),
             ..requirement(ItemKind::Armor)
         });
-        let narrowed = encode_query(&narrowed_query).unwrap();
+        let narrowed = query_request(&narrowed_query);
 
         assert_eq!(
             decide_start_name(&target, Some(&target), false, true, None).unwrap(),
@@ -159,7 +164,7 @@ mod tests {
                 "max_depth": known.depth,
             }],
         });
-        let query = encode_query(&json_query::decode(&document.to_string()).unwrap()).unwrap();
+        let query = query_request(&json_query::decode(&document.to_string()).unwrap());
 
         let envelope: Value =
             serde_json::from_str(&scout_matches_document(b"AAA-AAA-AAA", &query).unwrap()).unwrap();
@@ -174,13 +179,12 @@ mod tests {
         assert_eq!(scouted.items[index].item, known.item);
 
         // An unsatisfiable requirement still reports the requirement count.
-        let impossible = encode_query(
+        let impossible = query_request(
             &json_query::decode(
                 r#"{"requirements":[{"item":"sword","max_depth":1}],"max_depth":1}"#,
             )
             .unwrap(),
-        )
-        .unwrap();
+        );
         let envelope: Value =
             serde_json::from_str(&scout_matches_document(b"AAA-AAA-AAA", &impossible).unwrap())
                 .unwrap();
