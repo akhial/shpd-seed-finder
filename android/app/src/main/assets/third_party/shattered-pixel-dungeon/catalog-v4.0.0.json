@@ -94,9 +94,9 @@
     {"id":"ring_wealth","name":"Ring of Wealth","type":"ring","sprite":235,"typeIcon":11}
   ],
   "modifiers": {
-    "weaponEnchantments": ["Blazing","Blocking","Blooming","Chilling","Corrupting","Crystal","Elastic","Eldritch","Grim","Kinetic","Lucky","Projecting","Shocking","Unstable","Vampiric","Venomous","Vorpal"],
-    "weaponCurses": ["Annoying","Dazzling","Displacing","Explosive","Friendly","Polarized","Pressurized","Sacrificial","Wayward","Wondrous"],
-    "armorGlyphs": ["Affection","Anti-Magic","Brimstone","Camouflage","Entanglement","Flow","Obfuscation","Potential","Repulsion","Stone","Swiftness","Thorns","Viscosity"],
-    "armorCurses": ["Anti-Entropy","Bulk","Corrosion","Displacement","Metabolism","Multiplicity","Overgrowth","Stench"]
+    "weaponEnchantments": ["Blazing","Chilling","Kinetic","Shocking","Venomous","Blocking","Blooming","Eldritch","Elastic","Lucky","Projecting","Unstable","Vorpal","Corrupting","Crystal","Grim","Vampiric"],
+    "weaponCurses": ["Annoying","Displacing","Dazzling","Explosive","Friendly","Polarized","Pressurized","Sacrificial","Wayward","Wondrous"],
+    "armorGlyphs": ["Obfuscation","Swiftness","Viscosity","Potential","Brimstone","Stone","Entanglement","Repulsion","Camouflage","Flow","Affection","Anti-Magic","Thorns"],
+    "armorCurses": ["Anti-Entropy","Corrosion","Displacement","Metabolism","Multiplicity","Stench","Overgrowth","Bulk"]
   }
 }

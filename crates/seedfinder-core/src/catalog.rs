@@ -681,58 +681,50 @@ pub const ITEMS: &[ItemDefinition] = &[
     item!(RingWealth, "ring_wealth", "Ring of wealth", Ring, None, 235),
 ];
 
-/// Weapon enchantments and curses. Array ordering matches upstream RNG arrays.
+/// Weapon enchantments and curses in the game journal's order: enchantments
+/// by rarity (common, uncommon, rare), then the curses. Share links persist
+/// these ordinals (results files carry names), so reordering re-froze the
+/// link format; nothing else keys on the numbers.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 #[repr(u8)]
 pub enum WeaponEffect {
+    // Common
     Blazing,
     Chilling,
     Kinetic,
     Shocking,
+    Venomous,
+    // Uncommon
     Blocking,
     Blooming,
+    Eldritch,
     Elastic,
     Lucky,
     Projecting,
     Unstable,
+    Vorpal,
+    // Rare
     Corrupting,
+    Crystal,
     Grim,
     Vampiric,
+    // Curses
     Annoying,
     Displacing,
     Dazzling,
     Explosive,
+    Friendly,
+    Polarized,
+    Pressurized,
     Sacrificial,
     Wayward,
-    Polarized,
-    Friendly,
-    // v4.0.0 additions. Codes are append-only (share links and results files
-    // persist them), so the new enchantments and curses follow the v3.3.8
-    // block instead of sitting beside their rarity peers.
-    Venomous,
-    Eldritch,
-    Vorpal,
-    Crystal,
-    Pressurized,
     Wondrous,
 }
 
 impl WeaponEffect {
     #[must_use]
     pub const fn is_curse(self) -> bool {
-        matches!(
-            self,
-            Self::Annoying
-                | Self::Displacing
-                | Self::Dazzling
-                | Self::Explosive
-                | Self::Sacrificial
-                | Self::Wayward
-                | Self::Polarized
-                | Self::Friendly
-                | Self::Pressurized
-                | Self::Wondrous
-        )
+        (self as u8) >= (Self::Annoying as u8)
     }
 
     #[must_use]
@@ -742,28 +734,28 @@ impl WeaponEffect {
             Self::Chilling => "Chilling",
             Self::Kinetic => "Kinetic",
             Self::Shocking => "Shocking",
+            Self::Venomous => "Venomous",
             Self::Blocking => "Blocking",
             Self::Blooming => "Blooming",
+            Self::Eldritch => "Eldritch",
             Self::Elastic => "Elastic",
             Self::Lucky => "Lucky",
             Self::Projecting => "Projecting",
             Self::Unstable => "Unstable",
+            Self::Vorpal => "Vorpal",
             Self::Corrupting => "Corrupting",
+            Self::Crystal => "Crystal",
             Self::Grim => "Grim",
             Self::Vampiric => "Vampiric",
             Self::Annoying => "Annoying",
             Self::Displacing => "Displacing",
             Self::Dazzling => "Dazzling",
             Self::Explosive => "Explosive",
+            Self::Friendly => "Friendly",
+            Self::Polarized => "Polarized",
+            Self::Pressurized => "Pressurized",
             Self::Sacrificial => "Sacrificial",
             Self::Wayward => "Wayward",
-            Self::Polarized => "Polarized",
-            Self::Friendly => "Friendly",
-            Self::Venomous => "Venomous",
-            Self::Eldritch => "Eldritch",
-            Self::Vorpal => "Vorpal",
-            Self::Crystal => "Crystal",
-            Self::Pressurized => "Pressurized",
             Self::Wondrous => "Wondrous",
         }
     }
@@ -879,28 +871,28 @@ pub const ALL_WEAPON_EFFECTS: &[WeaponEffect] = &[
     WeaponEffect::Chilling,
     WeaponEffect::Kinetic,
     WeaponEffect::Shocking,
+    WeaponEffect::Venomous,
     WeaponEffect::Blocking,
     WeaponEffect::Blooming,
+    WeaponEffect::Eldritch,
     WeaponEffect::Elastic,
     WeaponEffect::Lucky,
     WeaponEffect::Projecting,
     WeaponEffect::Unstable,
+    WeaponEffect::Vorpal,
     WeaponEffect::Corrupting,
+    WeaponEffect::Crystal,
     WeaponEffect::Grim,
     WeaponEffect::Vampiric,
     WeaponEffect::Annoying,
     WeaponEffect::Displacing,
     WeaponEffect::Dazzling,
     WeaponEffect::Explosive,
+    WeaponEffect::Friendly,
+    WeaponEffect::Polarized,
+    WeaponEffect::Pressurized,
     WeaponEffect::Sacrificial,
     WeaponEffect::Wayward,
-    WeaponEffect::Polarized,
-    WeaponEffect::Friendly,
-    WeaponEffect::Venomous,
-    WeaponEffect::Eldritch,
-    WeaponEffect::Vorpal,
-    WeaponEffect::Crystal,
-    WeaponEffect::Pressurized,
     WeaponEffect::Wondrous,
 ];
 

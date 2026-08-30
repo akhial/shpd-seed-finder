@@ -226,15 +226,42 @@ fn select<T: Copy>(random: &mut RandomStack, values: &[T]) -> T {
 
 #[cfg(test)]
 mod tests {
-    use crate::catalog::{ArmorEffect, Effect, WeaponEffect};
+    use crate::catalog::{ALL_ARMOR_EFFECTS, ALL_WEAPON_EFFECTS, ArmorEffect, Effect, WeaponEffect};
     use crate::rng::RandomStack;
 
-    use super::{EquipmentRoll, roll_armor, roll_wand, roll_weapon};
+    use super::{
+        ARMOR_COMMON, ARMOR_CURSES, ARMOR_RARE, ARMOR_UNCOMMON, EquipmentRoll, WEAPON_COMMON,
+        WEAPON_CURSES, WEAPON_RARE, WEAPON_UNCOMMON, roll_armor, roll_wand, roll_weapon,
+    };
 
     fn stack(seed: i64) -> RandomStack {
         let mut random = RandomStack::with_base_seed(0);
         random.push(seed);
         random
+    }
+
+    /// The catalog enums (and so the effect wire codes) follow the game
+    /// journal: enchantments by rarity, then the curses. The rarity lists
+    /// here are the source of that order.
+    #[test]
+    fn catalog_order_is_the_journal_order() {
+        let weapon: Vec<WeaponEffect> = WEAPON_COMMON
+            .into_iter()
+            .chain(WEAPON_UNCOMMON)
+            .chain(WEAPON_RARE)
+            .chain(WEAPON_CURSES)
+            .collect();
+        assert_eq!(weapon, ALL_WEAPON_EFFECTS);
+        assert!(weapon.windows(2).all(|pair| (pair[0] as u8) < (pair[1] as u8)));
+
+        let armor: Vec<ArmorEffect> = ARMOR_COMMON
+            .into_iter()
+            .chain(ARMOR_UNCOMMON)
+            .chain(ARMOR_RARE)
+            .chain(ARMOR_CURSES)
+            .collect();
+        assert_eq!(armor, ALL_ARMOR_EFFECTS);
+        assert!(armor.windows(2).all(|pair| (pair[0] as u8) < (pair[1] as u8)));
     }
 
     #[test]
