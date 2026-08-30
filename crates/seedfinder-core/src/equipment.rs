@@ -226,7 +226,9 @@ fn select<T: Copy>(random: &mut RandomStack, values: &[T]) -> T {
 
 #[cfg(test)]
 mod tests {
-    use crate::catalog::{ALL_ARMOR_EFFECTS, ALL_WEAPON_EFFECTS, ArmorEffect, Effect, WeaponEffect};
+    use crate::catalog::{
+        ALL_ARMOR_EFFECTS, ALL_WEAPON_EFFECTS, ArmorEffect, Effect, WeaponEffect,
+    };
     use crate::rng::RandomStack;
 
     use super::{
@@ -252,7 +254,11 @@ mod tests {
             .chain(WEAPON_CURSES)
             .collect();
         assert_eq!(weapon, ALL_WEAPON_EFFECTS);
-        assert!(weapon.windows(2).all(|pair| (pair[0] as u8) < (pair[1] as u8)));
+        assert!(
+            weapon
+                .windows(2)
+                .all(|pair| (pair[0] as u8) < (pair[1] as u8))
+        );
 
         let armor: Vec<ArmorEffect> = ARMOR_COMMON
             .into_iter()
@@ -261,7 +267,11 @@ mod tests {
             .chain(ARMOR_CURSES)
             .collect();
         assert_eq!(armor, ALL_ARMOR_EFFECTS);
-        assert!(armor.windows(2).all(|pair| (pair[0] as u8) < (pair[1] as u8)));
+        assert!(
+            armor
+                .windows(2)
+                .all(|pair| (pair[0] as u8) < (pair[1] as u8))
+        );
     }
 
     #[test]
