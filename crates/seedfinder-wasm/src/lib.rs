@@ -826,8 +826,11 @@ mod tests {
         assert_eq!(invalid["valid"], false);
         assert!(invalid["error"].as_str().unwrap().contains("invalid JSON"));
 
+        // A +4 ring exists only in the Imp's vault (floors 17-19), so a
+        // search that stops before it can never match. (An uncursed +4 ring
+        // is possible since 4.0.0: vault prizes are never cursed.)
         let impossible: Value = serde_json::from_str(&analyze_query(
-            r#"{"requirements":[{"kind":"ring","upgrade":4,"uncursed":true}]}"#,
+            r#"{"requirements":[{"kind":"ring","upgrade":4,"uncursed":true}],"max_depth":16}"#,
         ))
         .unwrap();
         assert_eq!(impossible["valid"], true);
@@ -865,7 +868,7 @@ mod tests {
                 { "quest": "ghost", "variant": "great_crab", "depth": 4 },
                 { "quest": "wandmaker", "variant": "elemental_embers", "depth": 9 },
                 { "quest": "blacksmith", "variant": "crystal", "depth": 13 },
-                { "quest": "imp", "variant": "golem", "depth": 19 },
+                { "quest": "imp", "variant": "vault", "depth": 19 },
             ])
         );
 
