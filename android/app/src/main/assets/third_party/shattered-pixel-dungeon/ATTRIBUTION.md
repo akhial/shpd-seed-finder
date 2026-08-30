@@ -2,15 +2,17 @@
 
 `items.png` and `item_icons.png` are unchanged copies of:
 
-`core/src/main/assets/sprites/items.png`
+`sprites/items.png`
 
-`core/src/main/assets/sprites/item_icons.png`
+`sprites/item_icons.png`
 
-from Shattered Pixel Dungeon v3.3.8, commit `7b8b845a76fe76c6b7c031ae9e570852411f56db`.
-The v4.0.0-BETA-3 release keeps the same 256x512 layout for every generated
-weapon, armor, wand and ring cell, so the sprite indices in
-`catalog-v4.0.0.json` (whose effect tables follow v4.0.0-BETA-3) remain valid
-against these v3.3.8 atlases.
+from the Shattered Pixel Dungeon v4.0.0-BETA-3 release JAR
+(`ShatteredPD-v4.0.0-BETA-3-Java.jar`, SHA-256
+`f62f8ac2ef6d36c72223c1a4e78f18e98d0bb1282cd4f1fca123082d43edccc9`). No
+source revision of 4.0.0 has been published, so the JAR digest stands in for
+a commit hash. `item_icons.png` is byte-identical with the v3.3.8 copy
+(commit `7b8b845a76fe76c6b7c031ae9e570852411f56db`); `items.png` keeps the
+same 256x512 layout but redraws the tipped darts and adds the vault crystals.
 
 - Pixel Dungeon: Copyright © 2012–2015 Oleg Dolya
 - Shattered Pixel Dungeon: Copyright © 2014–2026 Evan Debenham
