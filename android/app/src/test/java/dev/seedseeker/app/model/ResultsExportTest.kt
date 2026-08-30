@@ -110,7 +110,10 @@ class ResultsExportTest {
     fun version1FixtureAlwaysDecodes() {
         val imported = ResultsExport.decode(version1Fixture)
         assertEquals(listOf("AAA-AAA-BUH", "ABC-DEF-GHI"), imported.seeds)
-        assertEquals(EngineInfo.shpdVersion, imported.shpdVersion)
+        // A file reports the upstream version it was exported against, which
+        // for this frozen fixture is the v3.3.8 the engine has since left
+        // behind; decoding preserves it rather than restamping it.
+        assertEquals("3.3.8", imported.shpdVersion)
         assertEquals(12, imported.query.maximumDepth)
         assertEquals(Challenge.NO_HERBALISM.bit, imported.query.challenges)
         assertEquals("ring_tenacity", imported.query.requirements[0].item?.id)

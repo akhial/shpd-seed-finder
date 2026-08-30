@@ -46,13 +46,13 @@ class SearchRequestValidationTest {
         val failure = assertThrows(IllegalArgumentException::class.java) { SearchRequest(members) }
         assertEquals("A combined level of 8 needs more items: these 2 can reach 7.", failure.message)
 
-        // A weapon pair uses the default cap of 3, so 4 levels each.
+        // A weapon pair uses the weapon cap of 5, so 6 levels each.
         val weapons = listOf(
-            ItemRequirement(1, sword, 0, upgradeMatch = UpgradeMatch.ANY, levelSum = LevelSum(2, 9)),
-            ItemRequirement(2, sword, 0, upgradeMatch = UpgradeMatch.ANY, levelSum = LevelSum(2, 9)),
+            ItemRequirement(1, sword, 0, upgradeMatch = UpgradeMatch.ANY, levelSum = LevelSum(2, 13)),
+            ItemRequirement(2, sword, 0, upgradeMatch = UpgradeMatch.ANY, levelSum = LevelSum(2, 13)),
         )
         assertEquals(
-            "A combined level of 9 needs more items: these 2 can reach 8.",
+            "A combined level of 13 needs more items: these 2 can reach 12.",
             weapons.validationProblem(),
         )
     }
@@ -153,9 +153,11 @@ class SearchRequestValidationTest {
             ItemRequirement(1, sword, 0, kind = ItemKind.THROWN_WEAPON, upgradeMatch = UpgradeMatch.ANY)
         }
         assertEquals("Any melee weapon", anyWeapon.copy(kind = ItemKind.MELEE_WEAPON).title)
-        // Rings reach +4; nothing else does.
+        // Weapons reach the vault's +5; every other family stops at +4.
+        assertEquals(5, ItemRequirement(1, sword, 5).upgrade)
         assertEquals(4, ItemRequirement(1, might, 4).upgrade)
-        assertThrows(IllegalArgumentException::class.java) { ItemRequirement(1, ItemCatalog.findById("wand_frost"), 4) }
+        assertThrows(IllegalArgumentException::class.java) { ItemRequirement(1, sword, 6) }
+        assertThrows(IllegalArgumentException::class.java) { ItemRequirement(1, ItemCatalog.findById("wand_frost"), 5) }
         // Uncursed with a curses-only set.
         assertThrows(IllegalArgumentException::class.java) {
             ItemRequirement(1, sword, 1, effect = EffectFilter.named("Displacing"), requireUncursed = true)

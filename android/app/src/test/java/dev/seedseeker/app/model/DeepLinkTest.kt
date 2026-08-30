@@ -189,6 +189,34 @@ class DeepLinkTest {
         assertEquals(pinnedLink, DeepLink.encodeLink(pinnedQuery))
     }
 
+    /**
+     * The v4.0.0 enchantments and curses sit above the 24 effect codes a
+     * version-2 mask can carry, so a set naming one makes the codec write a
+     * version-3 link. The app never names a version — it only has to keep
+     * round-tripping what the wider mask now holds.
+     */
+    @Test
+    fun roundTripsEffectSetsNeedingTheVersionThreeMask() {
+        assertRoundTrips(
+            minimal(
+                wildcard(ItemKind.WEAPON).copy(
+                    effect = EffectFilter.OneOf(listOf("Crystal", "Wondrous")),
+                ),
+            ),
+        )
+        // Every effect the catalog lists survives being paired with another.
+        for (effect in ItemCatalog.modifiersFor(ItemKind.WEAPON)) {
+            assertRoundTrips(
+                minimal(
+                    wildcard(ItemKind.WEAPON)
+                        .copy(effect = EffectFilter.of(listOf("Blazing", effect), ItemKind.WEAPON)),
+                ),
+            )
+        }
+        // A plain query is untouched by the wider mask and keeps its version-1 code.
+        assertEquals(pinnedLink, DeepLink.encodeLink(pinnedQuery))
+    }
+
     @Test
     fun refusesToEncodeInvalidQueries() {
         val empty = assertThrows(IllegalArgumentException::class.java) {

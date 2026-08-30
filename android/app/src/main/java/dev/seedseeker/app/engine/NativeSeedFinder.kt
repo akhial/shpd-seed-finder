@@ -220,12 +220,23 @@ class DemoNativeSeedFinder : NativeSeedFinder {
                     source = ScoutItemSource.IMP_REWARD,
                     accessibility = ScoutAccessibility.Independent,
                 ),
+                // The v4.0.0 vault: a treasure-room weapon at the family's new
+                // +5 ceiling, carrying one of the enchantments the beta added.
+                ScoutItem(
+                    item = ItemCatalog.weapons.first { it.id == "katana" },
+                    depth = 19,
+                    upgrade = 5,
+                    effect = "Vorpal",
+                    cursed = false,
+                    source = ScoutItemSource.VAULT_TREASURE,
+                    accessibility = ScoutAccessibility.Independent,
+                ),
             ),
             quests = listOf(
                 ScoutQuest(variant = ScoutQuestVariant.GREAT_CRAB, depth = 4),
                 ScoutQuest(variant = ScoutQuestVariant.ROTBERRY, depth = 8),
                 ScoutQuest(variant = ScoutQuestVariant.CRYSTAL, depth = 13),
-                ScoutQuest(variant = ScoutQuestVariant.MONK, depth = 18),
+                ScoutQuest(variant = ScoutQuestVariant.VAULT, depth = 18),
             ),
         )
     }
