@@ -68,6 +68,8 @@ fn main() -> ExitCode {
     }
 }
 
+// One match arm per region keeps the sequential driver readable as a whole.
+#[allow(clippy::too_many_lines)]
 fn dump(seed: DungeonSeed, max_depth: u8, challenges: Challenges) -> Result<String, String> {
     let dungeon_seed = i64::try_from(seed.value()).expect("base-26 seed range fits Java long");
     let mut run = RunState::with_challenges(dungeon_seed, challenges);
