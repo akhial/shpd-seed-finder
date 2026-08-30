@@ -1080,8 +1080,11 @@ fn random_artifact_or_ring(
     if let Some(artifact) = random_artifact(random, generator)? {
         Ok(GeneratedItem::Artifact(artifact))
     } else {
-        let index = select_seeded_identity_index(random, generator, GeneratorCategory::Ring)?;
-        randomize_identity(random, GeneratorCategory::Ring, index, true)
+        // v4.0.0: an exhausted artifact deck falls back to
+        // `randomUsingDefaults(RING)`, which draws the identity from the outer
+        // stream and leaves the ring deck untouched.
+        let index = select_default_identity_index(random, GeneratorCategory::Ring)?;
+        randomize_identity(random, GeneratorCategory::Ring, index, false)
     }
 }
 

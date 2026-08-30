@@ -40,15 +40,18 @@ const ARMOR_CURSES: [ArmorEffect; 8] = [
     ArmorEffect::Bulk,
 ];
 
-const WEAPON_CURSES: [WeaponEffect; 8] = [
+/// `Weapon.Enchantment.curses` in v4.0.0 declaration order.
+const WEAPON_CURSES: [WeaponEffect; 10] = [
     WeaponEffect::Annoying,
     WeaponEffect::Displacing,
     WeaponEffect::Dazzling,
     WeaponEffect::Explosive,
+    WeaponEffect::Friendly,
+    WeaponEffect::Polarized,
+    WeaponEffect::Pressurized,
     WeaponEffect::Sacrificial,
     WeaponEffect::Wayward,
-    WeaponEffect::Polarized,
-    WeaponEffect::Friendly,
+    WeaponEffect::Wondrous,
 ];
 
 /// Directly constructed items which are not represented by `Generator`.
