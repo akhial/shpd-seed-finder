@@ -1,0 +1,40 @@
+{
+  "level": {
+    "level_class": "com.shatteredpixel.shatteredpixeldungeon.levels.SewerLevel",
+    "branch": 0,
+    "width": 37,
+    "height": 43,
+    "map_hash": -72472821
+  },
+  "item_record_count": 3,
+  "items": {
+    "classes": [
+      "com.shatteredpixel.shatteredpixeldungeon.items.wands.WandOfFrost",
+      "com.shatteredpixel.shatteredpixeldungeon.items.weapon.missiles.Shuriken",
+      "com.shatteredpixel.shatteredpixeldungeon.items.weapon.missiles.ThrowingSpear"
+    ],
+    "searchable": [
+      [
+        "chest",
+        "com.shatteredpixel.shatteredpixeldungeon.items.weapon.missiles.ThrowingSpear",
+        2,
+        null,
+        null
+      ],
+      [
+        "heap",
+        "com.shatteredpixel.shatteredpixeldungeon.items.wands.WandOfFrost",
+        0,
+        null,
+        null
+      ],
+      [
+        "heap",
+        "com.shatteredpixel.shatteredpixeldungeon.items.weapon.missiles.Shuriken",
+        0,
+        null,
+        null
+      ]
+    ]
+  }
+}

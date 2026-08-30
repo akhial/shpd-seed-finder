@@ -1,0 +1,938 @@
+{
+  "schema": "shpd-city-parity-fixture/v3",
+  "game_version": "4.0.0-BETA-3",
+  "game_jar_sha256": "f62f8ac2ef6d36c72223c1a4e78f18e98d0bb1282cd4f1fca123082d43edccc9",
+  "runtime": {
+    "java_version": "21.0.11",
+    "java_vendor": "Oracle Corporation",
+    "java_vm": "Java HotSpot(TM) 64-Bit Server VM"
+  },
+  "generator_checkpoint_columns": [
+    "depth",
+    "level_class",
+    "hash"
+  ],
+  "mob_columns": [
+    "class",
+    "cell"
+  ],
+  "item_columns": [
+    "depth",
+    "source",
+    "choice",
+    "cell",
+    "container",
+    "class",
+    "kind",
+    "upgrade",
+    "cursed",
+    "effect",
+    "accessibility"
+  ],
+  "seeds": {
+    "AAA-AAA-AAA": {
+      "seed": 0,
+      "challenges": 0,
+      "requested_depths": [
+        16,
+        17,
+        18,
+        19
+      ],
+      "generator_checkpoints": [
+        [
+          15,
+          "CavesBossLevel",
+          -2111138786
+        ],
+        [
+          16,
+          "CityLevel",
+          -2035984614
+        ],
+        [
+          17,
+          "CityLevel",
+          -1591784297
+        ],
+        [
+          18,
+          "CityLevel",
+          105915157
+        ],
+        [
+          19,
+          "CityLevel",
+          -50636863
+        ]
+      ],
+      "levels": [
+        {
+          "depth": 16,
+          "class": "CityLevel",
+          "feeling": "NONE",
+          "size": [
+            39,
+            37
+          ],
+          "map_hash": -640772373,
+          "entrance": 1186,
+          "exit": 383,
+          "generator_state_hash": -2035984614,
+          "mobs": [
+            [
+              "Elemental$FireElemental",
+              308
+            ],
+            [
+              "Warlock",
+              539
+            ],
+            [
+              "Ghoul",
+              687
+            ],
+            [
+              "Elemental$FireElemental",
+              799
+            ],
+            [
+              "Ghoul",
+              1045
+            ],
+            [
+              "Ghoul",
+              1214
+            ],
+            [
+              "Shopkeeper",
+              1231
+            ]
+          ]
+        },
+        {
+          "depth": 17,
+          "class": "CityLevel",
+          "feeling": "NONE",
+          "size": [
+            57,
+            36
+          ],
+          "map_hash": -1251089393,
+          "entrance": 679,
+          "exit": 1601,
+          "generator_state_hash": -1591784297,
+          "mobs": [
+            [
+              "Mimic",
+              144
+            ],
+            [
+              "Warlock",
+              257
+            ],
+            [
+              "Elemental$FrostElemental",
+              480
+            ],
+            [
+              "Ghoul",
+              941
+            ],
+            [
+              "Ghoul",
+              983
+            ],
+            [
+              "Elemental$ShockElemental",
+              988
+            ],
+            [
+              "Elemental$ShockElemental",
+              997
+            ],
+            [
+              "Monk",
+              1725
+            ]
+          ]
+        },
+        {
+          "depth": 18,
+          "class": "CityLevel",
+          "feeling": "NONE",
+          "size": [
+            43,
+            37
+          ],
+          "map_hash": 435526208,
+          "entrance": 338,
+          "exit": 1080,
+          "generator_state_hash": 105915157,
+          "mobs": [
+            [
+              "SentryRoom$Sentry",
+              408
+            ],
+            [
+              "Ghoul",
+              501
+            ],
+            [
+              "Warlock",
+              547
+            ],
+            [
+              "Warlock",
+              594
+            ],
+            [
+              "Monk",
+              749
+            ],
+            [
+              "Elemental$FireElemental",
+              1012
+            ],
+            [
+              "Golem",
+              1039
+            ]
+          ]
+        },
+        {
+          "depth": 19,
+          "class": "CityLevel",
+          "feeling": "NONE",
+          "size": [
+            45,
+            45
+          ],
+          "map_hash": -293701983,
+          "entrance": 877,
+          "exit": 1088,
+          "generator_state_hash": -50636863,
+          "mobs": [
+            [
+              "Golem",
+              118
+            ],
+            [
+              "Golem",
+              379
+            ],
+            [
+              "Golem",
+              431
+            ],
+            [
+              "Warlock",
+              639
+            ],
+            [
+              "Monk",
+              645
+            ],
+            [
+              "Golem",
+              997
+            ],
+            [
+              "Imp",
+              1187
+            ],
+            [
+              "Monk",
+              1426
+            ],
+            [
+              "Warlock",
+              1555
+            ],
+            [
+              "Elemental$ChaosElemental",
+              1643
+            ]
+          ]
+        }
+      ],
+      "items": [
+        [
+          16,
+          "chest",
+          0,
+          753,
+          "CHEST",
+          "Glaive",
+          "weapon",
+          1,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          16,
+          "locked_chest",
+          0,
+          1176,
+          "LOCKED_CHEST",
+          "WandOfMagicMissile",
+          "wand",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          16,
+          "shop",
+          0,
+          1195,
+          "FOR_SALE",
+          "Javelin",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          16,
+          "shop",
+          0,
+          1312,
+          "FOR_SALE",
+          "Longsword",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          16,
+          "shop",
+          0,
+          1347,
+          "FOR_SALE",
+          "IncendiaryDart",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          16,
+          "shop",
+          0,
+          1349,
+          "FOR_SALE",
+          "ScaleArmor",
+          "armor",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          17,
+          "mimic",
+          1,
+          144,
+          null,
+          "ThrowingHammer",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          18,
+          "chest",
+          0,
+          579,
+          "CHEST",
+          "PlateArmor",
+          "armor",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          18,
+          "heap",
+          0,
+          1121,
+          "HEAP",
+          "Bolas",
+          "weapon",
+          1,
+          true,
+          "Sacrificial",
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          18,
+          "heap",
+          0,
+          1320,
+          "HEAP",
+          "Javelin",
+          "weapon",
+          1,
+          true,
+          "Sacrificial",
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          18,
+          "heap",
+          0,
+          1364,
+          "HEAP",
+          "Trident",
+          "weapon",
+          1,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          18,
+          "skeleton",
+          2,
+          1001,
+          "SKELETON",
+          "RingOfSharpshooting",
+          "ring",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          19,
+          "imp_quest",
+          1,
+          null,
+          null,
+          "RingOfHaste",
+          "ring",
+          2,
+          false,
+          null,
+          {
+            "kind": "choice",
+            "group": "imp_quest@19",
+            "option": 1
+          }
+        ],
+        [
+          19,
+          "imp_quest",
+          2,
+          null,
+          null,
+          "Greatshield",
+          "weapon",
+          4,
+          false,
+          "Unstable",
+          {
+            "kind": "choice",
+            "group": "imp_quest@19",
+            "option": 2
+          }
+        ],
+        [
+          19,
+          "imp_quest",
+          3,
+          null,
+          null,
+          "Javelin",
+          "weapon",
+          4,
+          false,
+          "Blazing",
+          {
+            "kind": "choice",
+            "group": "imp_quest@19",
+            "option": 3
+          }
+        ],
+        [
+          19,
+          "imp_quest",
+          4,
+          null,
+          null,
+          "PlateArmor",
+          "armor",
+          3,
+          false,
+          "Brimstone",
+          {
+            "kind": "choice",
+            "group": "imp_quest@19",
+            "option": 4
+          }
+        ],
+        [
+          19,
+          "imp_quest",
+          5,
+          null,
+          null,
+          "WandOfCorrosion",
+          "wand",
+          4,
+          false,
+          null,
+          {
+            "kind": "choice",
+            "group": "imp_quest@19",
+            "option": 5
+          }
+        ]
+      ]
+    },
+    "AAA-AAA-AAB": {
+      "seed": 1,
+      "challenges": 0,
+      "requested_depths": [
+        16
+      ],
+      "generator_checkpoints": [
+        [
+          15,
+          "CavesBossLevel",
+          1652502520
+        ],
+        [
+          16,
+          "CityLevel",
+          469473430
+        ]
+      ],
+      "levels": [
+        {
+          "depth": 16,
+          "class": "CityLevel",
+          "feeling": "NONE",
+          "size": [
+            36,
+            56
+          ],
+          "map_hash": 129683275,
+          "entrance": 1420,
+          "exit": 194,
+          "generator_state_hash": 469473430,
+          "mobs": [
+            [
+              "Ghoul",
+              230
+            ],
+            [
+              "Ghoul",
+              656
+            ],
+            [
+              "Ghoul",
+              695
+            ],
+            [
+              "Elemental$FrostElemental",
+              1076
+            ],
+            [
+              "Shopkeeper",
+              1171
+            ]
+          ]
+        }
+      ],
+      "items": [
+        [
+          16,
+          "crystal_chest",
+          0,
+          1711,
+          "CRYSTAL_CHEST",
+          "WandOfFireblast",
+          "wand",
+          0,
+          true,
+          null,
+          {
+            "kind": "choice",
+            "group": "crystal_vault@16",
+            "option": 1
+          }
+        ],
+        [
+          16,
+          "shop",
+          0,
+          1061,
+          "FOR_SALE",
+          "ScaleArmor",
+          "armor",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          16,
+          "shop",
+          0,
+          1063,
+          "FOR_SALE",
+          "Javelin",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          16,
+          "shop",
+          0,
+          1132,
+          "FOR_SALE",
+          "AssassinsBlade",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          16,
+          "shop",
+          0,
+          1279,
+          "FOR_SALE",
+          "PoisonDart",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ]
+      ]
+    },
+    "ABC-DEF-GHI": {
+      "seed": 8687205886,
+      "challenges": 0,
+      "requested_depths": [
+        16
+      ],
+      "generator_checkpoints": [
+        [
+          15,
+          "CavesBossLevel",
+          -1972664426
+        ],
+        [
+          16,
+          "CityLevel",
+          -2017404231
+        ]
+      ],
+      "levels": [
+        {
+          "depth": 16,
+          "class": "CityLevel",
+          "feeling": "TRAPS",
+          "size": [
+            52,
+            32
+          ],
+          "map_hash": 1928380213,
+          "entrance": 997,
+          "exit": 667,
+          "generator_state_hash": -2017404231,
+          "mobs": [
+            [
+              "Warlock",
+              236
+            ],
+            [
+              "Ghoul",
+              754
+            ],
+            [
+              "Ghoul",
+              796
+            ],
+            [
+              "Elemental$FrostElemental",
+              822
+            ],
+            [
+              "Ghoul",
+              1071
+            ],
+            [
+              "Shopkeeper",
+              1412
+            ]
+          ]
+        }
+      ],
+      "items": [
+        [
+          16,
+          "shop",
+          0,
+          1255,
+          "FOR_SALE",
+          "CleansingDart",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          16,
+          "shop",
+          0,
+          1466,
+          "FOR_SALE",
+          "ScaleArmor",
+          "armor",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          16,
+          "shop",
+          0,
+          1514,
+          "FOR_SALE",
+          "Crossbow",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          16,
+          "shop",
+          0,
+          1517,
+          "FOR_SALE",
+          "Javelin",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ]
+      ]
+    },
+    "ZZZ-ZZZ-ZZZ": {
+      "seed": 5429503678975,
+      "challenges": 0,
+      "requested_depths": [
+        16
+      ],
+      "generator_checkpoints": [
+        [
+          15,
+          "CavesBossLevel",
+          -1105196865
+        ],
+        [
+          16,
+          "CityLevel",
+          419533580
+        ]
+      ],
+      "levels": [
+        {
+          "depth": 16,
+          "class": "CityLevel",
+          "feeling": "NONE",
+          "size": [
+            33,
+            49
+          ],
+          "map_hash": -1234450086,
+          "entrance": 350,
+          "exit": 1176,
+          "generator_state_hash": 419533580,
+          "mobs": [
+            [
+              "Shopkeeper",
+              174
+            ],
+            [
+              "Piranha",
+              307
+            ],
+            [
+              "Piranha",
+              374
+            ],
+            [
+              "Piranha",
+              438
+            ],
+            [
+              "Elemental$FrostElemental",
+              578
+            ],
+            [
+              "Ghoul",
+              752
+            ],
+            [
+              "Ghoul",
+              831
+            ],
+            [
+              "Mimic",
+              887
+            ],
+            [
+              "Ghoul",
+              1004
+            ],
+            [
+              "Warlock",
+              1144
+            ]
+          ]
+        }
+      ],
+      "items": [
+        [
+          16,
+          "chest",
+          0,
+          372,
+          "CHEST",
+          "PlateArmor",
+          "armor",
+          1,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          16,
+          "shop",
+          0,
+          72,
+          "FOR_SALE",
+          "ScaleArmor",
+          "armor",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          16,
+          "shop",
+          0,
+          74,
+          "FOR_SALE",
+          "AssassinsBlade",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          16,
+          "shop",
+          0,
+          237,
+          "FOR_SALE",
+          "HealingDart",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          16,
+          "shop",
+          0,
+          242,
+          "FOR_SALE",
+          "HeavyBoomerang",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ]
+      ]
+    }
+  }
+}
