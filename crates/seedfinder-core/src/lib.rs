@@ -22,6 +22,7 @@ pub mod equipment;
 pub mod feasibility;
 pub mod generator;
 pub mod geometry;
+pub mod grid_builder;
 pub mod halls_floor;
 pub mod halls_mobs;
 pub mod halls_rooms;
@@ -63,6 +64,13 @@ pub mod shop;
 pub mod special_consumable;
 pub mod special_equipment;
 pub mod special_forced;
+#[cfg(test)]
+mod vault_debug;
+pub mod vault_floor;
+pub mod vault_loot;
+pub mod vault_mobs;
+pub mod vault_paint;
+pub mod vault_rooms;
 pub mod wire;
 
 /// Upstream generation line this engine targets.
