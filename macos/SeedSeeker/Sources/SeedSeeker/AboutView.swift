@@ -1,3 +1,4 @@
+import SeedSeekerKit
 import SwiftUI
 
 /// Artwork attribution and license notice.
@@ -21,7 +22,7 @@ struct AboutView: View {
                     Text("The item sprites and ring type glyphs are unchanged copies of "
                          + "Shattered Pixel Dungeon's item atlases.")
                         .foregroundStyle(.secondary)
-                    attribution("Upstream", "Shattered Pixel Dungeon v3.3.8")
+                    attribution("Upstream", "Shattered Pixel Dungeon v\(EngineInfo.shared.shpdVersion)")
                     attribution("Commit", "7b8b845a76fe76c6b7c031ae9e570852411f56db")
                     attribution("Pixel Dungeon", "© 2012–2015 Oleg Dolya")
                     attribution("Shattered Pixel Dungeon", "© 2014–2026 Evan Debenham")

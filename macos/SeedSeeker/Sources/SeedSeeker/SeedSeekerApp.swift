@@ -135,7 +135,7 @@ private struct ContentView: View {
                 // attribution and the full license text have to be reachable
                 // from the app.
                 Button { showingAbout = true } label: {
-                    Text("Shattered Pixel Dungeon v3.3.8 · Artwork & licenses")
+                    Text("Shattered Pixel Dungeon v\(EngineInfo.shared.shpdVersion) · Artwork & licenses")
                         .font(.caption).foregroundStyle(.secondary)
                         .padding(.vertical, 5)
                         .contentShape(Rectangle())
@@ -703,7 +703,7 @@ private struct QueryView: View {
                 }
                 SettingsGroup("Performance") {
                     Toggle("Fast search", isOn: $fastMode)
-                    SettingsCaption("Treats +3 weapons and armor as quest rewards only, skipping the rare Crypt and Sacrificial-fire prizes. Found seeds are always genuine.")
+                    SettingsCaption("Treats +3 weapons and armor as quest rewards only — the Ghost's, the Blacksmith's and the Imp's vault prizes, so the search ends at floor 19 — skipping the rare Crypt, Sacrificial-fire and special-room chest prizes. Found seeds are always genuine.")
                 }
             }
             VStack(alignment: .leading, spacing: 14) {
@@ -1757,7 +1757,8 @@ private struct ResultsView: View {
                     .foregroundStyle(.orange).background(.quaternary, in: Capsule())
                 Text("No seed can satisfy these requirements within the current floor limit. " +
                      "Quest-reward-only items need their quest floors in range: +3 wands floor 9, " +
-                     "+3/+4 rings floor 19.")
+                     "and, from the Imp's vault, +3/+4 rings, +4 wands and armor " +
+                     "and +4/+5 weapons floor 19.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         } else if let state = controller.state {
