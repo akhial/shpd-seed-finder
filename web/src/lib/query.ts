@@ -38,11 +38,14 @@ export const LEVEL_SUM_GROUP_MAX = 4
 /** The most items a stack may ask for, its anchor included. */
 export const STACK_MAX = 3
 
-/** The highest upgrade a search may name for an item family. */
-export const MAX_UPGRADE_DEFAULT = 3
+/** The highest upgrade a search may name for an item family. v4.0.0's Imp
+ * vault sets the ceilings: its final-room options reach +5 on a weapon or
+ * thrown weapon, +4 on armor, wands and rings. */
+export const MAX_UPGRADE_DEFAULT = 4
 export const MAX_UPGRADE_RING = 4
+export const MAX_UPGRADE_WEAPON = 5
 export const maxUpgradeFor = (family: string | undefined): number =>
-  (family === 'ring' ? MAX_UPGRADE_RING : MAX_UPGRADE_DEFAULT)
+  (family === 'weapon' ? MAX_UPGRADE_WEAPON : family === 'ring' ? MAX_UPGRADE_RING : MAX_UPGRADE_DEFAULT)
 
 /** The broad family a requirement belongs to, from its kind or its item. */
 export const requirementFamily = (requirement: Pick<RequirementState, 'kind' | 'item'>): string | undefined =>

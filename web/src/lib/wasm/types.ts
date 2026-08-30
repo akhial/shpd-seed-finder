@@ -39,6 +39,7 @@ export type ItemSource =
   | 'wandmaker_reward'
   | 'blacksmith_reward'
   | 'imp_reward'
+  | 'vault_treasure'
 
 export interface TierFilter { mode: 'any' | 'exact' | 'at_least' | 'at_most'; value: number }
 
@@ -132,6 +133,7 @@ export interface EngineLimits {
   levelSumGroupMax: number
   maxUpgradeDefault: number
   maxUpgradeRing: number
+  maxUpgradeWeapon: number
   resultsFileMaxBytes: number
 }
 
@@ -215,8 +217,8 @@ export type QuestVariant =
   | 'rotberry'
   | 'crystal'
   | 'gnoll'
-  | 'monk'
-  | 'golem'
+  // v4.0.0 replaced the Imp's Monk/Golem token hunts with one vault expedition.
+  | 'vault'
 
 export interface ScoutQuest {
   quest: QuestName

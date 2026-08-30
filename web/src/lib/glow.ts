@@ -36,6 +36,11 @@ const ENCHANT_GLOW: Record<string, Glow> = {
   Corrupting: { color: '#440066', period: DEFAULT_PERIOD },
   Grim: { color: '#000000', period: DEFAULT_PERIOD },
   Vampiric: { color: '#660022', period: DEFAULT_PERIOD },
+  // Weapon enchantments v4.0.0 added, after the block above.
+  Venomous: { color: '#4400aa', period: DEFAULT_PERIOD },
+  Eldritch: { color: '#222222', period: DEFAULT_PERIOD },
+  Vorpal: { color: '#aa6666', period: DEFAULT_PERIOD },
+  Crystal: { color: '#0088ff', period: DEFAULT_PERIOD },
   // Armor glyphs
   Obfuscation: { color: '#888888', period: DEFAULT_PERIOD },
   Swiftness: { color: '#ffff00', period: DEFAULT_PERIOD },

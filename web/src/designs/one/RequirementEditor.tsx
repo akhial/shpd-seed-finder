@@ -299,34 +299,18 @@ export function RequirementEditor({
                 onChange={(value) => setDraft((current) => ({ ...current, upgrade: { ...current.upgrade, value } }))}
               />
             )}
-            {draft.upgrade.mode === 'at_least' &&
-              // Rings span +1…+3, enough range to warrant a slider; other kinds
-              // have just +1/+2, which read more clearly as a dropdown.
-              (family === 'ring' ? (
-                <SliderRow
-                  label="Minimum upgrade"
-                  valueLabel={`+${draft.upgrade.value} or higher`}
-                  min={1}
-                  max={maxUpgrade - 1}
-                  value={draft.upgrade.value}
-                  onChange={(value) => setDraft((current) => ({ ...current, upgrade: { ...current.upgrade, value } }))}
-                />
-              ) : (
-                <Field label="Minimum upgrade">
-                  <select
-                    className="d1-select"
-                    value={draft.upgrade.value}
-                    onChange={(event) => {
-                      const value = Number(event.currentTarget.value)
-                      setDraft((current) => ({ ...current, upgrade: { ...current.upgrade, value } }))
-                    }}
-                  >
-                    {Array.from({ length: maxUpgrade - 1 }, (_, index) => index + 1).map((value) => (
-                      <option key={value} value={value}>+{value} or higher</option>
-                    ))}
-                  </select>
-                </Field>
-              ))}
+            {draft.upgrade.mode === 'at_least' && (
+              // Under v4.0.0's ceilings every family spans at least +1…+3
+              // (weapons +1…+4), enough range to warrant a slider.
+              <SliderRow
+                label="Minimum upgrade"
+                valueLabel={`+${draft.upgrade.value} or higher`}
+                min={1}
+                max={maxUpgrade - 1}
+                value={draft.upgrade.value}
+                onChange={(value) => setDraft((current) => ({ ...current, upgrade: { ...current.upgrade, value } }))}
+              />
+            )}
           </section>
           )}
 

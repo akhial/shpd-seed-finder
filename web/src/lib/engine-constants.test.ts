@@ -12,7 +12,9 @@ import {
   MAX_DEPTH,
   MAX_UPGRADE_DEFAULT,
   MAX_UPGRADE_RING,
+  MAX_UPGRADE_WEAPON,
   LEVEL_SUM_GROUP_MAX,
+  maxUpgradeFor,
 } from './query'
 import { RESULT_CAP } from './search/coordinator-state'
 import { SEARCH_START_STRIDE, TOTAL_SEEDS } from './search/traversal'
@@ -45,6 +47,16 @@ describe('local constants match the engine document', () => {
     expect(LEVEL_SUM_GROUP_MAX).toBe(info.limits.levelSumGroupMax)
     expect(MAX_UPGRADE_DEFAULT).toBe(info.limits.maxUpgradeDefault)
     expect(MAX_UPGRADE_RING).toBe(info.limits.maxUpgradeRing)
+    expect(MAX_UPGRADE_WEAPON).toBe(info.limits.maxUpgradeWeapon)
+  })
+
+  it('upgrade ceilings per item family', () => {
+    // `maxUpgradeFor` is what every picker and level-sum capacity reads, so
+    // it — not just the constants behind it — is checked against the engine.
+    expect(maxUpgradeFor('weapon')).toBe(info.limits.maxUpgradeWeapon)
+    expect(maxUpgradeFor('armor')).toBe(info.limits.maxUpgradeDefault)
+    expect(maxUpgradeFor('wand')).toBe(info.limits.maxUpgradeDefault)
+    expect(maxUpgradeFor('ring')).toBe(info.limits.maxUpgradeRing)
   })
 
   it('result cap and seed space', () => {
