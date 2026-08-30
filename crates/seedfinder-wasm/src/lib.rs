@@ -826,8 +826,10 @@ mod tests {
         assert_eq!(invalid["valid"], false);
         assert!(invalid["error"].as_str().unwrap().contains("invalid JSON"));
 
+        // +4 rings come only from the Imp's vault (floors 17-19), so a floor
+        // limit that ends before the quest window can never be satisfied.
         let impossible: Value = serde_json::from_str(&analyze_query(
-            r#"{"requirements":[{"kind":"ring","upgrade":4,"uncursed":true}]}"#,
+            r#"{"requirements":[{"kind":"ring","upgrade":4}],"max_depth":16}"#,
         ))
         .unwrap();
         assert_eq!(impossible["valid"], true);
