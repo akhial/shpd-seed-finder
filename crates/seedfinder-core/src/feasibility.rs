@@ -121,7 +121,7 @@ const fn source_profile(
     use ItemKind::{Armor, Ring, Wand, Weapon};
     use ItemSource as S;
     // The Ghost and Sacrificial-fire prizes and both statue drops roll
-    // exclusively melee weapons in v3.3.8, so a thrown-narrowed weapon
+    // exclusively melee weapons, so a thrown-narrowed weapon
     // requirement can never be satisfied by them. Every thrown-capable
     // source also rolls melee weapons, so a melee filter removes nothing.
     if matches!(kind, Weapon)

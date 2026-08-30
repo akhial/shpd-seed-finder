@@ -11,12 +11,11 @@ pub enum ItemKind {
 }
 
 impl ItemKind {
-    /// Highest exact upgrade accepted by the Android search UI for this family.
-    #[must_use]
     /// Highest upgrade any generated item of this kind can carry, and so the
     /// highest value a requirement may ask for. v4.0.0's Imp vault sets the
     /// ceilings: its final-room options reach +5 on a tier-4 weapon or thrown
     /// weapon, +4 on plate armor, wands and rings.
+    #[must_use]
     pub const fn maximum_search_upgrade(self) -> u8 {
         match self {
             Self::Weapon => 5,
