@@ -132,8 +132,8 @@ fun AboutScreen(onBack: () -> Unit) {
                         AttributionLine("Pixel Dungeon", "© 2012–2015 Oleg Dolya / Watabou")
                         AttributionLine("Shattered Pixel Dungeon", "© 2014–2026 Evan Debenham")
                         AttributionLine("Upstream", "Shattered Pixel Dungeon v${EngineInfo.shpdVersion}")
-                        AttributionLine("Commit", "7b8b845a76fe76c6b7c031ae9e570852411f56db")
-                        AttributionLine("Atlas SHA-256", "ce2496368660e9b2…a294caacaf")
+                        AttributionLine("Release JAR SHA-256", EngineInfo.shpdCommit)
+                        AttributionLine("Atlas SHA-256", "4774791518f960a4…7e8e7b5706")
                         AttributionLine("Icon SHA-256", "38df728d32842d9f…24d7eb9b72")
                         Spacer(Modifier.height(8.dp))
                         TextButton(onClick = { showLicense = !showLicense }) {
