@@ -143,7 +143,11 @@ const fn source_profile(
         // Shop stock is always +0 with no effect.
         (S::Shop, _) => (0, 0, Never),
         // Quest rewards.
-        (S::GhostReward | S::BlacksmithReward, Weapon | Armor) => (0, 3, GoodOnly),
+        // Vault treasure armor shares the Ghost/Blacksmith ceiling: four loot
+        // tiers at +0..+3 with a good glyph or none, never a curse.
+        (S::GhostReward | S::BlacksmithReward, Weapon | Armor) | (S::VaultTreasure, Armor) => {
+            (0, 3, GoodOnly)
+        }
         (S::WandmakerReward, Wand) => (1, 3, Never),
         // The Imp's final-room options (v4.0.0): every weapon, thrown weapon and
         // the plate armor carry a good effect, wands and rings carry none,
@@ -152,10 +156,9 @@ const fn source_profile(
         (S::ImpReward, Weapon) => (2, 5, GoodOnly),
         (S::ImpReward, Armor) => (2, 4, GoodOnly),
         (S::ImpReward, Wand | Ring) => (2, 4, Never),
-        // Vault treasure rooms: four loot tiers at +0..+3, plus one +4 tier-4
-        // melee weapon; effects are good or absent, never curses.
+        // Vault treasure weapons add one +4 tier-4 melee weapon on top of the
+        // +0..+3 tiers; wands and rings stop at +3 and carry no effect.
         (S::VaultTreasure, Weapon) => (0, 4, GoodOnly),
-        (S::VaultTreasure, Armor) => (0, 3, GoodOnly),
         (S::VaultTreasure, Wand | Ring) => (0, 3, Never),
         _ => return None,
     })

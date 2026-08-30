@@ -947,9 +947,7 @@ mod tests {
     use crate::rng::RandomStack;
     use crate::run::{GeneratorCategory, RingKind, RunState};
 
-    use super::{
-        BlacksmithQuest, GhostQuest, ImpQuest, WandmakerQuest, generate_imp_reward,
-    };
+    use super::{BlacksmithQuest, GhostQuest, ImpQuest, WandmakerQuest, generate_imp_reward};
 
     fn fixture(dungeon_seed: i64, outer_seed: i64) -> (RandomStack, crate::run::GeneratorState) {
         let mut random = RandomStack::with_base_seed(0);
