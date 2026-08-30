@@ -179,9 +179,21 @@ fn build(context: AppState, requirement: &UiRequirement, stack: StackShape) -> E
         ),
         bounded_tier: combo_row("Minimum tier", &borrowed(&bounded_tier_labels())),
         upgrade_row: combo_row("Upgrade", &["Any", "Exactly", "At least"]),
-        exact_upgrade: spin_row("Exactly", 1.0, 1.0, 4.0),
-        minimum_upgrade: combo_row("Minimum upgrade", &["+1 or higher", "+2 or higher"]),
-        ring_minimum_upgrade: spin_row("Minimum upgrade", 1.0, 1.0, 3.0),
+        // The upgrade controls open on the widest ceiling of any family —
+        // weapons' — and `normalize_upgrades` narrows them to the selected
+        // category's own as soon as the editor restores the requirement. The
+        // ring spin is only ever shown for rings, so it takes their ceiling.
+        exact_upgrade: spin_row("Exactly", 1.0, 1.0, f64::from(widest_upgrade())),
+        minimum_upgrade: combo_row(
+            "Minimum upgrade",
+            &borrowed(&minimum_upgrade_labels(widest_upgrade())),
+        ),
+        ring_minimum_upgrade: spin_row(
+            "Minimum upgrade",
+            1.0,
+            1.0,
+            f64::from(ItemKind::Ring.maximum_search_upgrade() - 1),
+        ),
         upgrade_group: adw::PreferencesGroup::builder()
             .title("Upgrade Level")
             .build(),
@@ -206,7 +218,9 @@ fn build(context: AppState, requirement: &UiRequirement, stack: StackShape) -> E
             .title("Count levels together")
             .subtitle("Any upgrade on each, as long as they add up")
             .build(),
-        levels_value: spin_row("Levels reach", 1.0, 1.0, 4.0),
+        // One item's levels: its upgrade plus one. `refresh_levels_range`
+        // widens this to the whole stack's capacity.
+        levels_value: spin_row("Levels reach", 1.0, 1.0, f64::from(widest_upgrade() + 1)),
         effect_mode_group: adw::PreferencesGroup::builder()
             .title("Enchantment")
             .build(),
@@ -814,13 +828,10 @@ fn refresh_levels_range(editor: &Rc<Editor>) {
 
 fn populate_minimum_upgrades(editor: &Rc<Editor>, selection: u8) {
     let maximum = selected_kind(editor).maximum_search_upgrade();
-    let labels: Vec<_> = (1..maximum)
-        .map(|upgrade| format!("+{upgrade} or higher"))
-        .collect();
-    let label_refs: Vec<_> = labels.iter().map(String::as_str).collect();
+    let labels = minimum_upgrade_labels(maximum);
     editor
         .minimum_upgrade
-        .set_model(Some(&gtk::StringList::new(&label_refs)));
+        .set_model(Some(&gtk::StringList::new(&borrowed(&labels))));
     editor
         .minimum_upgrade
         .set_selected(u32::from(selection.clamp(1, maximum - 1) - 1));
@@ -890,6 +901,20 @@ fn refresh_visibility(editor: &Rc<Editor>) {
 fn bounded_tier_labels() -> Vec<String> {
     (BOUNDED_TIER_MIN..=BOUNDED_TIER_MAX)
         .map(|tier| format!("Tier {tier}"))
+        .collect()
+}
+
+/// The highest upgrade any family can be asked for: weapons reach furthest,
+/// on the Imp's vault prizes.
+fn widest_upgrade() -> u8 {
+    ItemKind::Weapon.maximum_search_upgrade()
+}
+
+/// The "+N or higher" options for a family: every upgrade below its ceiling,
+/// since asking for at least the ceiling is what "Exactly" already says.
+fn minimum_upgrade_labels(maximum: u8) -> Vec<String> {
+    (1..maximum)
+        .map(|upgrade| format!("+{upgrade} or higher"))
         .collect()
 }
 
