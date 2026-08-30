@@ -30,8 +30,16 @@ NON_ORDINARY_MOBS = {
     "RatKing", "Mimic", "GoldenMimic", "CrystalMimic", "EbonyMimic", "Statue",
     "ArmoredStatue", "Sentry", "Piranha", "PhantomPiranha", "DemonSpawner",
     "Sheep", "VaultSentry", "VaultLaser", "VaultMirror", "VaultTokenDoor",
-    "WandOfRegrowth$Lotus", "CrystalSpire", "GnollGeomancer",
+    "WandOfRegrowth$Lotus", "CrystalSpire", "GnollGeomancer", "Bee", "RotHeart",
+    "RotLasher",
 }
+# A Mass Grave quest room also paints one `Skeleton`, which this script cannot
+# tell apart from the Prison's ordinary skeletons; expect one such report on
+# the Corpse Dust floor.
+
+# Upstream classes that are not catalog equipment and so never reach the
+# engine's item list (the vault drops a plain Dart stack).
+NON_CATALOG_ITEMS = {"dart"}
 
 SEARCHABLE_KINDS = {"weapon", "armor", "wand", "ring", "missile", "melee"}
 
@@ -68,8 +76,8 @@ def load_oracle(path):
             entry["feeling"] = (record.get("feeling") or "NONE").title().replace("_", "")
             mobs = Counter()
             for mob in record.get("mobs", []):
-                name = simple(mob.get("class"))
-                if name in NON_ORDINARY_MOBS:
+                name = mob_name(mob.get("class"))
+                if name in {entry.lower() for entry in NON_ORDINARY_MOBS}:
                     continue
                 mobs[(name, mob.get("cell"))] += 1
             entry["mobs"] = mobs
@@ -77,10 +85,21 @@ def load_oracle(path):
             if not record.get("searchable", True):
                 continue
             depth = record["depth"]
-            entry = target.setdefault(depth, empty_floor())
+            if branch == 1:
+                # The engine reports vault treasure on the Imp's floor; the
+                # final room only re-lists the reward options already recorded
+                # there, so it is skipped.
+                if record.get("room") == "VaultFinalRoom":
+                    continue
+                entry = floors.setdefault(depth, empty_floor())
+            else:
+                entry = target.setdefault(depth, empty_floor())
             effect = simple(record.get("enchantment")) or simple(record.get("glyph")) or "-"
+            identity = item_id(record.get("simple_class") or simple(record.get("class")))
+            if identity in NON_CATALOG_ITEMS:
+                continue
             entry["items"][(
-                item_id(record.get("simple_class") or simple(record.get("class"))),
+                identity,
                 record.get("true_level"),
                 bool(record.get("cursed")),
                 effect_name(effect),
@@ -96,6 +115,17 @@ def effect_name(effect):
 
 def simple(value):
     return None if value is None else str(value).rsplit(".", 1)[-1]
+
+
+def mob_name(value):
+    """Upstream `Outer$Inner` class names versus the engine's enum variants,
+    compared case-insensitively (`DM100` is `Dm100` in Rust)."""
+    return simple(value).rsplit("$", 1)[-1].lower()
+
+
+# Boss floors the engine never simulates (state-neutral under the canonical
+# profile); their oracle records are informational only.
+SKIPPED_DEPTHS = {5, 10, 15, 25}
 
 
 def empty_floor():
@@ -138,7 +168,7 @@ def load_engine(path):
             continue
         match = MOB_LINE.match(line)
         if match and current is not None:
-            current["mobs"][(match["kind"], int(match["cell"]))] += 1
+            current["mobs"][(match["kind"].lower(), int(match["cell"]))] += 1
             continue
         match = ITEM_LINE.match(line)
         if match and current is not None:
@@ -151,6 +181,8 @@ def load_engine(path):
 def compare(oracle, engine, verbose):
     differences = 0
     for depth in sorted(set(oracle) | set(engine)):
+        if depth in SKIPPED_DEPTHS and depth not in engine:
+            continue
         if depth not in oracle or depth not in engine:
             side = "oracle" if depth in oracle else "engine"
             print(f"depth {depth}: only in {side}")

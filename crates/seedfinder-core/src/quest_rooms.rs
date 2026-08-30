@@ -1202,7 +1202,7 @@ pub fn can_place_water(rooms: &[Room], room: RoomId, point: Point) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::catalog::{ArmorEffect, Effect, ItemId, WeaponEffect};
+    use crate::catalog::{ArmorEffect, Effect, ItemId};
     use crate::geometry::Rect;
     use crate::level::Feeling;
     use crate::room::{ConnectionRoomKind, Door, RoomConnection};

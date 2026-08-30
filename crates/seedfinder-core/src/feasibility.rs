@@ -290,6 +290,9 @@ pub struct QueryPlan {
     /// Required Wandmaker variant paired with the latest depth by which its
     /// quest must have appeared.
     wandmaker_deadline: Option<(WandmakerQuestType, u8)>,
+    /// Whether some requirement could be satisfied by vault treasure, so the
+    /// Imp's sub-level must be generated for a seed to be judged.
+    needs_vault_treasure: bool,
     unsatisfiable: bool,
 }
 
@@ -299,6 +302,7 @@ impl QueryPlan {
     pub fn analyze(query: &SearchQuery) -> Self {
         let max_depth = query.max_depth;
         let mut generation_depth = 1;
+        let mut needs_vault_treasure = false;
         let mut slots: Vec<Vec<RequirementPlan>> = Vec::new();
         for slot in query.slots() {
             let mut members = Vec::with_capacity(slot.len());
@@ -313,6 +317,9 @@ impl QueryPlan {
                     }
                     if query.exclude_blacksmith_rewards && source == ItemSource::BlacksmithReward {
                         continue;
+                    }
+                    if source == ItemSource::VaultTreasure {
+                        needs_vault_treasure = true;
                     }
                     if let Some(quest) = quest_for_source(source) {
                         let (window_start, window_end) = quest.window();
@@ -380,6 +387,7 @@ impl QueryPlan {
             generation_depth,
             blacksmith_deadline,
             wandmaker_deadline,
+            needs_vault_treasure,
             unsatisfiable: false,
         };
         plan.unsatisfiable = !plan.viable_after_floor(0, &[], &QuestSummary::default());
@@ -515,6 +523,10 @@ impl FloorGate for QueryPlan {
         quests_so_far: &QuestSummary,
     ) -> bool {
         self.viable_after_floor(completed_depth, items_so_far, quests_so_far)
+    }
+
+    fn wants_vault_treasure(&self) -> bool {
+        self.needs_vault_treasure
     }
 }
 

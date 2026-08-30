@@ -1231,14 +1231,16 @@ mod tests {
             WandmakerQuestType,
         };
 
+        // Re-pinned from the v4.0.0-BETA-3 oracle (tooling/oracle-4.0): the
+        // vault adds fifteen treasure options to the Imp's five prizes.
         let generated = CanonicalMainWorldGenerator.generate(DungeonSeed::MIN, 24);
-        assert_eq!(generated.items.len(), 67);
+        assert_eq!(generated.items.len(), 94);
         assert_eq!(
             generated.quests,
             QuestSummary {
                 ghost: Some(ScheduledQuest {
-                    variant: GhostQuestType::GreatCrab,
-                    depth: 4,
+                    variant: GhostQuestType::GnollTrickster,
+                    depth: 3,
                 }),
                 wandmaker: Some(ScheduledQuest {
                     variant: WandmakerQuestType::ElementalEmbers,
@@ -1260,7 +1262,7 @@ mod tests {
                 .iter()
                 .filter(|value| item(value.item).kind == ItemKind::Ring)
                 .count(),
-            5
+            8
         );
         let packet = encode_scout_world(&generated).unwrap();
         let decoded = decode_scout_world(&packet).unwrap();
@@ -1268,24 +1270,25 @@ mod tests {
 
         assert!(decoded.items.iter().any(|item| {
             item.depth == 1
-                && item.item == ItemId::ScaleArmor
-                && item.upgrade == 0
+                && item.item == ItemId::ThrowingSpear
+                && item.upgrade == 2
                 && item.source == ItemSource::Chest
         }));
-        assert_eq!(decoded.items.iter().filter(|item| item.secret).count(), 4);
+        assert_eq!(decoded.items.iter().filter(|item| item.secret).count(), 5);
         assert!(decoded.items.iter().any(|item| {
             item.depth == 2
-                && item.item == ItemId::LeatherArmor
-                && item.upgrade == 1
+                && item.item == ItemId::Kunai
+                && item.upgrade == 0
                 && item.source == ItemSource::LockedChest
                 && item.secret
         }));
+        // A v4.0.0 curse travels through the packet by its wire name.
         assert!(decoded.items.iter().any(|item| {
             item.depth == 7
-                && item.item == ItemId::ThrowingSpear
+                && item.item == ItemId::Scimitar
                 && item.upgrade == 1
                 && item.cursed
-                && item.effect == Some(Effect::Weapon(WeaponEffect::Polarized))
+                && item.effect == Some(Effect::Weapon(WeaponEffect::Wondrous))
         }));
 
         let blacksmith = decoded
@@ -1298,40 +1301,69 @@ mod tests {
             item.upgrade == 2 && matches!(item.accessibility, Accessibility::Choice { .. })
         }));
 
-        let depth_twenty = decoded
+        let mut depth_twenty = decoded
             .items
             .iter()
             .filter(|item| item.depth == 20 && item.source == ItemSource::Shop)
             .map(|item| item.item)
             .collect::<Vec<_>>();
+        depth_twenty.sort_by_key(|item| *item as u8);
         assert_eq!(
             depth_twenty,
             vec![
-                ItemId::PlateArmor,
+                ItemId::WarHammer,
                 ItemId::ThrowingHammer,
-                ItemId::Greatshield,
+                ItemId::PlateArmor,
                 ItemId::IncendiaryDart,
             ]
         );
+        // A v4.0.0 enchantment on an animated statue's weapon.
         assert!(decoded.items.iter().any(|item| {
             item.depth == 22
-                && item.item == ItemId::PlateArmor
-                && item.upgrade == 2
-                && item.effect == Some(Effect::Armor(ArmorEffect::Swiftness))
+                && item.item == ItemId::Greatsword
+                && item.source == ItemSource::Statue
+                && item.effect == Some(Effect::Weapon(WeaponEffect::Venomous))
         }));
         assert!(decoded.items.iter().any(|item| {
             item.depth == 24
-                && item.item == ItemId::RunicBlade
+                && item.item == ItemId::AssassinsBlade
+                && item.upgrade == 2
                 && item.cursed
-                && item.effect == Some(Effect::Weapon(WeaponEffect::Displacing))
+                && item.source == ItemSource::SacrificialFire
+                && item.effect == Some(Effect::Weapon(WeaponEffect::Polarized))
         }));
-        assert!(decoded.items.iter().any(|item| {
-            item.depth == 19
-                && item.item == ItemId::RingHaste
-                && item.upgrade == 3
-                && item.cursed
-                && item.source == ItemSource::ImpReward
-        }));
+        // The Imp's prizes and the vault's treasure share one single-pick group.
+        let imp_ring = decoded
+            .items
+            .iter()
+            .find(|item| {
+                item.depth == 19
+                    && item.item == ItemId::RingHaste
+                    && item.upgrade == 2
+                    && !item.cursed
+                    && item.source == ItemSource::ImpReward
+            })
+            .expect("the Imp's ring prize");
+        let vault_axe = decoded
+            .items
+            .iter()
+            .find(|item| {
+                item.depth == 19
+                    && item.item == ItemId::BattleAxe
+                    && item.upgrade == 4
+                    && item.source == ItemSource::VaultTreasure
+                    && item.effect == Some(Effect::Weapon(WeaponEffect::Blooming))
+            })
+            .expect("the vault's +4 battle axe");
+        let group = |accessibility: Accessibility| match accessibility {
+            Accessibility::Choice { group, .. } => group,
+            other => panic!("expected a choice, got {other:?}"),
+        };
+        assert_eq!(
+            group(imp_ring.accessibility),
+            group(vault_axe.accessibility)
+        );
+        assert_ne!(imp_ring.accessibility, vault_axe.accessibility);
     }
 
     #[test]

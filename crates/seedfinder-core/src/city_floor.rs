@@ -65,6 +65,7 @@ use crate::special_forced::{
     ForcedLevelPaintContext, ForcedPaintEvent, ForcedPaintOutcome, ForcedShopRoomState,
     is_forced_special, paint_forced_special,
 };
+use crate::vault_floor::{VaultError, generate_vault};
 
 /// Fully painted state immediately before `buildFlagMaps()`.
 #[derive(Clone, Debug, PartialEq)]
@@ -137,6 +138,7 @@ pub enum CityFloorError {
     Caves(CavesFloorError),
     Paint(CityPaintError),
     Items(RegularItemsError),
+    Vault(VaultError),
 }
 
 impl fmt::Display for CityFloorError {
@@ -153,11 +155,18 @@ impl fmt::Display for CityFloorError {
             Self::Caves(error) => error.fmt(formatter),
             Self::Paint(error) => error.fmt(formatter),
             Self::Items(error) => error.fmt(formatter),
+            Self::Vault(error) => error.fmt(formatter),
         }
     }
 }
 
 impl std::error::Error for CityFloorError {}
+
+impl From<VaultError> for CityFloorError {
+    fn from(error: VaultError) -> Self {
+        Self::Vault(error)
+    }
+}
 
 impl From<SewerFloorError> for CityFloorError {
     fn from(error: SewerFloorError) -> Self {
@@ -188,6 +197,11 @@ impl From<RegularItemsError> for CityFloorError {
         Self::Items(error)
     }
 }
+
+/// Choice option of the first vault treasure item: the Imp's six reward
+/// options occupy 0..=5 (the artifact slot keeps its index even though it is
+/// not searchable).
+const VAULT_FIRST_OPTION: u8 = 6;
 
 /// Exact world prefix through a regular City depth.
 #[derive(Clone, Copy, Debug, Default)]
@@ -398,10 +412,15 @@ pub fn generate_city_floor(
     let imp_group = painted.remaining_prizes.next_choice_group;
     if quests.imp.depth == Some(u8::try_from(depth).expect("City depth fits u8")) {
         quests.imp.append_world_items(imp_group, &mut world_items);
-        // VAULT TREASURE HOOK: the Imp's Vault sub-level (branch 1 of this
-        // depth) is generated separately. Its own searchable treasure belongs
-        // to the same `imp_group` choice group so it is reported alongside
-        // the six reward options; append it to `world_items` here.
+        // The Imp's Vault (branch 1 of this depth) has its own depth seed and
+        // mutates no run state, so it can be generated right here. The Escape
+        // Crystal lets exactly one item leave, so its treasure joins the six
+        // reward options' choice group, numbered after them.
+        if run.generate_vault && quests.imp.room_accessible {
+            let depth_u8 = u8::try_from(depth).expect("City depth fits u8");
+            let vault = generate_vault(run.dungeon_seed, depth_u8, run.challenges)?;
+            world_items.extend(vault.world_items(depth_u8, imp_group, VAULT_FIRST_OPTION));
+        }
     }
     let queue = painted
         .remaining_prizes
@@ -1240,6 +1259,173 @@ mod tests {
                     Accessibility::Choice {
                         group: 0,
                         option: 5,
+                    },
+                ),
+                // The vault's treasure follows the six reward options in the
+                // same single-pick group, in cell order (VaultProbe/oracle).
+                (
+                    ItemId::Katana,
+                    2,
+                    None,
+                    false,
+                    ItemSource::VaultTreasure,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 6,
+                    },
+                ),
+                (
+                    ItemId::BattleAxe,
+                    4,
+                    Some(Effect::Weapon(WeaponEffect::Blooming)),
+                    false,
+                    ItemSource::VaultTreasure,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 7,
+                    },
+                ),
+                (
+                    ItemId::Javelin,
+                    2,
+                    None,
+                    false,
+                    ItemSource::VaultTreasure,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 8,
+                    },
+                ),
+                (
+                    ItemId::WandLivingEarth,
+                    3,
+                    None,
+                    false,
+                    ItemSource::VaultTreasure,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 9,
+                    },
+                ),
+                (
+                    ItemId::Whip,
+                    3,
+                    Some(Effect::Weapon(WeaponEffect::Kinetic)),
+                    false,
+                    ItemSource::VaultTreasure,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 10,
+                    },
+                ),
+                (
+                    ItemId::RingEvasion,
+                    1,
+                    None,
+                    false,
+                    ItemSource::VaultTreasure,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 11,
+                    },
+                ),
+                (
+                    ItemId::RingArcana,
+                    2,
+                    None,
+                    false,
+                    ItemSource::VaultTreasure,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 12,
+                    },
+                ),
+                (
+                    ItemId::LeatherArmor,
+                    0,
+                    None,
+                    false,
+                    ItemSource::VaultTreasure,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 13,
+                    },
+                ),
+                (
+                    ItemId::Sickle,
+                    0,
+                    None,
+                    false,
+                    ItemSource::VaultTreasure,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 14,
+                    },
+                ),
+                (
+                    ItemId::Greatsword,
+                    3,
+                    Some(Effect::Weapon(WeaponEffect::Grim)),
+                    false,
+                    ItemSource::VaultTreasure,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 15,
+                    },
+                ),
+                (
+                    ItemId::WandFireblast,
+                    1,
+                    None,
+                    false,
+                    ItemSource::VaultTreasure,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 16,
+                    },
+                ),
+                (
+                    ItemId::PlateArmor,
+                    3,
+                    Some(Effect::Armor(ArmorEffect::Entanglement)),
+                    false,
+                    ItemSource::VaultTreasure,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 17,
+                    },
+                ),
+                (
+                    ItemId::Spear,
+                    2,
+                    Some(Effect::Weapon(WeaponEffect::Corrupting)),
+                    false,
+                    ItemSource::VaultTreasure,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 18,
+                    },
+                ),
+                (
+                    ItemId::FishingSpear,
+                    0,
+                    None,
+                    false,
+                    ItemSource::VaultTreasure,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 19,
+                    },
+                ),
+                (
+                    ItemId::HandAxe,
+                    0,
+                    None,
+                    false,
+                    ItemSource::VaultTreasure,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 20,
                     },
                 ),
             ],

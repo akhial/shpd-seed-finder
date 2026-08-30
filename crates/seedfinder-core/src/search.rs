@@ -35,6 +35,13 @@ pub trait FloorGate: Sync {
         items_so_far: &[WorldItem],
         quests_so_far: &QuestSummary,
     ) -> bool;
+
+    /// Whether the Imp's Vault sub-level must be generated. Its treasure is
+    /// only ever matched by requirements the vault can satisfy, so a gate
+    /// that knows none exist lets the generator skip the extra level.
+    fn wants_vault_treasure(&self) -> bool {
+        true
+    }
 }
 
 /// Version-pinned world simulator used by the parallel search scheduler.
