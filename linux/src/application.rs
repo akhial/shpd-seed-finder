@@ -161,6 +161,12 @@ mod tests {
         assert!(attribution.contains("items.png"));
         assert!(attribution.contains("Oleg Dolya"));
         assert!(attribution.contains("Evan Debenham"));
+        // The v4.0.0 artwork is pinned by the release JAR's digest; the
+        // v3.3.8 commit remains for the byte-identical item_icons.png.
+        assert!(
+            attribution
+                .contains("f62f8ac2ef6d36c72223c1a4e78f18e98d0bb1282cd4f1fca123082d43edccc9")
+        );
         assert!(attribution.contains("7b8b845a76fe76c6b7c031ae9e570852411f56db"));
         // Markdown punctuation is rendered away rather than shown verbatim.
         assert!(!attribution.contains('`'));

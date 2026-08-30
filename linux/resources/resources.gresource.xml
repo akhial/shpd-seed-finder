@@ -19,7 +19,7 @@
     <file>style/style.css</file>
 
     <!--
-      Shattered Pixel Dungeon v3.3.8 item artwork, GPL-3.0-or-later. These are
+      Shattered Pixel Dungeon v4.0.0-BETA-3 item artwork, GPL-3.0-or-later. These are
       resolved from the shared third-party assets directory that build.rs adds
       as a second source directory, so the binaries are not duplicated here.
       The licence and attribution ship alongside them, as the GPL requires of

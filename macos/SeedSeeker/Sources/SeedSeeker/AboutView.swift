@@ -23,7 +23,7 @@ struct AboutView: View {
                          + "Shattered Pixel Dungeon's item atlases.")
                         .foregroundStyle(.secondary)
                     attribution("Upstream", "Shattered Pixel Dungeon v\(EngineInfo.shared.shpdVersion)")
-                    attribution("Commit", "7b8b845a76fe76c6b7c031ae9e570852411f56db")
+                    attribution("Release JAR SHA-256", EngineInfo.shared.shpdCommit)
                     attribution("Pixel Dungeon", "© 2012–2015 Oleg Dolya")
                     attribution("Shattered Pixel Dungeon", "© 2014–2026 Evan Debenham")
                     attribution("Project", "github.com/00-Evan/shattered-pixel-dungeon")

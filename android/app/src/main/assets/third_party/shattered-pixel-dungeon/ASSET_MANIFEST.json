@@ -3,15 +3,16 @@
   "upstream": {
     "name": "Shattered Pixel Dungeon",
     "repository": "https://github.com/00-Evan/shattered-pixel-dungeon",
-    "version": "3.3.8",
-    "commit": "7b8b845a76fe76c6b7c031ae9e570852411f56db",
+    "version": "4.0.0-BETA-3",
+    "release": "https://github.com/00-Evan/shattered-pixel-dungeon/releases/download/4.0.0-beta/ShatteredPD-v4.0.0-BETA-3-Java.jar",
+    "releaseSha256": "f62f8ac2ef6d36c72223c1a4e78f18e98d0bb1282cd4f1fca123082d43edccc9",
     "license": "GPL-3.0-or-later"
   },
   "asset": {
     "file": "items.png",
-    "upstreamPath": "core/src/main/assets/sprites/items.png",
-    "sha256": "ce2496368660e9b2c4b50401fe4436656cfab5f7785f667ef32aa6a294caacaf",
-    "byteLength": 25062,
+    "upstreamPath": "sprites/items.png",
+    "sha256": "4774791518f960a4abe0d189b5502f67b9719f746bb8867c9a9d1d7e8e7b5706",
+    "byteLength": 27502,
     "width": 256,
     "height": 512,
     "cellSize": 16,
@@ -20,7 +21,7 @@
   },
   "iconAsset": {
     "file": "item_icons.png",
-    "upstreamPath": "core/src/main/assets/sprites/item_icons.png",
+    "upstreamPath": "sprites/item_icons.png",
     "sha256": "38df728d32842d9fb032ddf5e6052b31ddb9987c2624a36048492c24d7eb9b72",
     "byteLength": 1614,
     "width": 128,

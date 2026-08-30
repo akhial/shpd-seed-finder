@@ -1143,8 +1143,8 @@ public sealed partial class MainWindow : Window
         ("Pixel Dungeon", "© 2012–2015 Oleg Dolya / Watabou"),
         ("Shattered Pixel Dungeon", "© 2014–2026 Evan Debenham"),
         ("Upstream", $"Shattered Pixel Dungeon v{EngineInfo.ShpdVersion}"),
-        ("Commit", EngineInfo.ShpdCommit),
-        ("Atlas SHA-256", "ce2496368660e9b2…a294caacaf"),
+        ("Release JAR SHA-256", EngineInfo.ShpdCommit),
+        ("Atlas SHA-256", "4774791518f960a4…7e8e7b5706"),
         ("Icon SHA-256", "38df728d32842d9f…24d7eb9b72"),
     ];
 
