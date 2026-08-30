@@ -22,6 +22,7 @@ pub mod equipment;
 pub mod feasibility;
 pub mod generator;
 pub mod geometry;
+pub mod grid_builder;
 pub mod halls_floor;
 pub mod halls_mobs;
 pub mod halls_rooms;
@@ -63,10 +64,20 @@ pub mod shop;
 pub mod special_consumable;
 pub mod special_equipment;
 pub mod special_forced;
+#[cfg(test)]
+mod vault_debug;
+pub mod vault_floor;
+pub mod vault_loot;
+pub mod vault_mobs;
+pub mod vault_paint;
+pub mod vault_rooms;
 pub mod wire;
 
 /// Upstream generation line this engine targets.
-pub const SHPD_VERSION: &str = "3.3.8";
+pub const SHPD_VERSION: &str = "4.0.0-BETA-3";
 
-/// Exact upstream revision used while implementing and validating parity.
-pub const SHPD_COMMIT: &str = "7b8b845a76fe76c6b7c031ae9e570852411f56db";
+/// Exact upstream build used while implementing and validating parity. No
+/// 4.0.0 source revision has been published, so this is the SHA-256 digest of
+/// the official `ShatteredPD-v4.0.0-BETA-3-Java.jar` release asset that the
+/// parity oracle in `tooling/oracle-4.0` runs against.
+pub const SHPD_COMMIT: &str = "f62f8ac2ef6d36c72223c1a4e78f18e98d0bb1282cd4f1fca123082d43edccc9";

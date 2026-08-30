@@ -2052,10 +2052,7 @@ mod tests {
         let result = paint_fixture_seed(SpecialRoomKind::Treasury, 7, Point::new(2, 5), 4);
         assert_eq!(result.map_hash, -1_464_547_848);
         assert_eq!(result.next, 4_485_853_605_302_284_072);
-        assert_eq!(
-            event_hash(&result.events, result.level.len()),
-            1_627_702_067
-        );
+        assert_eq!(event_hash(&result.events, result.level.len()), 61_121_673);
         let mimics: Vec<_> = result
             .events
             .iter()

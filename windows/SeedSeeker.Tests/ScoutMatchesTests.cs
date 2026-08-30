@@ -6,8 +6,8 @@ namespace SeedSeeker.Tests;
 /// <summary>
 /// The scout pane's match marks, which the engine now computes
 /// (<c>seedfinder_scout_matches</c>) over the same SSQ2 request the manifest
-/// came from. Pinned on seed AAA-AAA-BUH without challenges, whose floor-9
-/// Wandmaker reward is a +3 Wand of Corrosion.
+/// came from. Pinned on seed AAA-AAA-BUH without challenges, whose only +3 wand
+/// is the Wand of Frost in the floor-17 Imp vault.
 /// </summary>
 public sealed class ScoutMatchesTests
 {
@@ -33,23 +33,26 @@ public sealed class ScoutMatchesTests
         var items = Manifest();
         var marked = marks.Matched.Select(index => items[index]).ToList();
         var only = Assert.Single(marked);
-        Assert.Equal("wand_corrosion", only.Item.Id);
-        Assert.Equal(9, only.Depth);
+        Assert.Equal("wand_frost", only.Item.Id);
+        Assert.Equal(17, only.Depth);
         Assert.Equal(3, only.Upgrade);
-        Assert.Equal(ScoutItemSource.WandmakerReward, only.Source);
+        // v4.0.0's vault treasure, which the scout decodes as its own source.
+        Assert.Equal(ScoutItemSource.VaultTreasure, only.Source);
     }
 
     [Fact]
     public void EachRequirementClaimsADistinctItem()
     {
-        var shopRing = new ItemRequirement { Kind = ItemKind.Ring, Source = ScoutItemSource.Shop };
-        var marks = Matches(Query(Wand(3), shopRing));
+        // Not a second vault item: the Imp lets exactly one item leave, so the
+        // +3 vault wand and a vault ring would be one mutually exclusive pick.
+        var crystalRing = new ItemRequirement { Kind = ItemKind.Ring, Source = ScoutItemSource.CrystalChest };
+        var marks = Matches(Query(Wand(3), crystalRing));
         Assert.Equal(2, marks.TotalRequirements);
         Assert.Equal(2, marks.MatchedRequirements);
         Assert.Equal(2, marks.Matched.Count);
         var items = Manifest();
-        Assert.Contains(marks.Matched, index => items[index].Item.Id == "wand_corrosion");
-        Assert.Contains(marks.Matched, index => items[index].Source == ScoutItemSource.Shop
+        Assert.Contains(marks.Matched, index => items[index].Item.Id == "wand_frost");
+        Assert.Contains(marks.Matched, index => items[index].Source == ScoutItemSource.CrystalChest
             && items[index].Item.Kind == ItemKind.Ring);
     }
 
@@ -66,7 +69,7 @@ public sealed class ScoutMatchesTests
     [Fact]
     public void TheQueryScopeNarrowsTheMarks()
     {
-        // The one matching wand sits on floor 9, outside both limits.
+        // The one matching wand sits on floor 17, outside both limits.
         var byFloorLimit = Query(Wand(3));
         byFloorLimit.MaximumDepth = 8;
         Assert.Empty(Matches(byFloorLimit).Matched);
@@ -100,16 +103,17 @@ public sealed class ScoutMatchesTests
     [Fact]
     public void AnAlternativeGroupIsOneSlot()
     {
-        // Any member satisfies the slot: the +3 wand does, a shop ring does too.
+        // Any member satisfies the slot: the +3 wand does, a vault ring does too.
         var wand = Wand(3); wand.AlternativeGroup = 1;
-        var shopRing = new ItemRequirement { Kind = ItemKind.Ring, Source = ScoutItemSource.Shop, AlternativeGroup = 1 };
-        var marks = Matches(Query(wand, shopRing));
+        var vaultRing = new ItemRequirement { Kind = ItemKind.Ring, Source = ScoutItemSource.VaultTreasure, AlternativeGroup = 1 };
+        var marks = Matches(Query(wand, vaultRing));
         Assert.Equal(1, marks.TotalRequirements);
         Assert.Equal(1, marks.MatchedRequirements);
         Assert.Single(marks.Matched);
-        // A slot no member satisfies counts once too.
-        var missing = Wand(2); missing.AlternativeGroup = 2; var missingToo = Wand(1); missingToo.AlternativeGroup = 2; missingToo.MaximumDepth = 8;
-        marks = Matches(Query(wand, shopRing, missing, missingToo));
+        // A slot no member satisfies counts once too: this world holds no +4
+        // wand at all, and no +1 wand within the first eight floors.
+        var missing = Wand(4); missing.AlternativeGroup = 2; var missingToo = Wand(1); missingToo.AlternativeGroup = 2; missingToo.MaximumDepth = 8;
+        marks = Matches(Query(wand, vaultRing, missing, missingToo));
         Assert.Equal(2, marks.TotalRequirements);
         Assert.Equal(1, marks.MatchedRequirements);
     }
@@ -118,22 +122,22 @@ public sealed class ScoutMatchesTests
     public void ACombinedLevelGroupIsOneConditionAnySubsetMayMeet()
     {
         static ItemRequirement AnyWand(int atLeast) => new() { Kind = ItemKind.Wand, LevelSum = new(1, atLeast) };
-        // The group is one condition however many members it has. The +3
-        // Wandmaker wand alone carries four levels (its upgrade plus one), so
-        // it meets a total of 5 with any other wand, and every contributing
-        // item is marked.
+        // The group is one condition however many members it has. The +3 vault
+        // wand alone carries four levels (its upgrade plus one), so it meets a
+        // total of 5 with any other wand, and every contributing item is marked.
         var marks = Matches(Query(AnyWand(5), AnyWand(5)));
         Assert.Equal(1, marks.TotalRequirements);
         Assert.Equal(1, marks.MatchedRequirements);
         var items = Manifest();
-        Assert.Contains(marks.Matched, index => items[index].Item.Id == "wand_corrosion");
+        Assert.Contains(marks.Matched, index => items[index].Item.Id == "wand_frost");
         Assert.True(marks.Matched.Sum(index => items[index].Upgrade + 1) >= 5);
         // Members are optional: the +3 wand meets a total of 4 by itself.
         marks = Matches(Query(AnyWand(4), AnyWand(4)));
         Assert.Equal(1, marks.MatchedRequirements);
         Assert.NotEmpty(marks.Matched);
-        // Eight levels is attainable (two +3 wands) but this world has no such
-        // pair: nothing is marked, not even the +3 that serves the short group.
+        // Eight levels is attainable (two +4 wands would carry ten) but this
+        // world's best pair is the +3 and a +2, seven levels: nothing is
+        // marked, not even the +3 that serves the short group.
         marks = Matches(Query(AnyWand(8), AnyWand(8)));
         Assert.Equal(1, marks.TotalRequirements);
         Assert.Equal(0, marks.MatchedRequirements);
@@ -144,12 +148,13 @@ public sealed class ScoutMatchesTests
     public void EffectSetsAndAnyEnchantmentReachTheMatcher()
     {
         var items = Manifest();
-        // Floor 3 has a Shocking dirk; Lucky appears later. Either satisfies the set.
-        var set = new ItemRequirement { Kind = ItemKind.Weapon, Effect = EffectFilter.OneOf(["Lucky", "Shocking"]) };
+        // Floor 3 has a Venomous dirk — one of v4.0.0's enchantments — and a
+        // Lucky katana appears later. Either satisfies the set.
+        var set = new ItemRequirement { Kind = ItemKind.Weapon, Effect = EffectFilter.OneOf(["Lucky", "Venomous"]) };
         var marks = Matches(Query(set));
         Assert.Equal(1, marks.MatchedRequirements);
         var marked = items[Assert.Single(marks.Matched)];
-        Assert.Contains(marked.Effect, new[] { "Lucky", "Shocking" });
+        Assert.Contains(marked.Effect, new[] { "Lucky", "Venomous" });
         // Any enchantment on uncursed armor: an enchanted, uncursed armor is marked.
         var armor = new ItemRequirement { Kind = ItemKind.Armor, Effect = EffectFilter.Enchantment(), RequireUncursed = true };
         marks = Matches(Query(armor));
@@ -160,5 +165,9 @@ public sealed class ScoutMatchesTests
         // An effect the world lacks matches nothing.
         var grim = new ItemRequirement { Kind = ItemKind.Weapon, Effect = EffectFilter.OneOf(["Grim"]) };
         Assert.Equal(0, Matches(Query(grim)).MatchedRequirements);
+        // v4.0.0's curses reach the matcher too: floor 17 drops a Wondrous javelin.
+        var wondrous = new ItemRequirement { Kind = ItemKind.ThrownWeapon, Effect = EffectFilter.OneOf(["Wondrous"]) };
+        marked = items[Assert.Single(Matches(Query(wondrous)).Matched)];
+        Assert.Equal("Wondrous", marked.Effect); Assert.True(marked.Cursed);
     }
 }

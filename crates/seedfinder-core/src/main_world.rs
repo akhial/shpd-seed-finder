@@ -329,6 +329,7 @@ fn generate_gated_world_with_roots(
 ) -> Result<Option<GeneratedWorld>, MainWorldError> {
     let dungeon_seed = i64::try_from(seed.value()).expect("base-26 seed range fits Java long");
     let mut run = RunState::with_challenges(dungeon_seed, challenges);
+    run.generate_vault = gate.wants_vault_treasure();
     let mut limited_drops = LimitedDrops::default();
     let mut quests = QuestState::new();
     let mut shop_run = ShopRunState::default();
@@ -653,7 +654,7 @@ mod tests {
     /// special-room chest. A thrown +3 plan must not treat +3 as quest-only
     /// outside fast mode, or this seed would be silently skipped.
     #[test]
-    fn chest_prize_plus_three_thrown_seed_survives_the_gate() {
+    fn plus_three_thrown_seed_survives_the_gate() {
         use crate::catalog::WeaponCategory;
 
         let query = SearchQuery {
@@ -680,7 +681,8 @@ mod tests {
         };
         let plan = QueryPlan::analyze(&query);
         assert!(!plan.is_unsatisfiable());
-        let seed = DungeonSeed::new(66).unwrap();
+        // ABC-DEF-GHI offers a +3 Force Cube among its depth-18 Imp rewards.
+        let seed = DungeonSeed::from_code("ABC-DEF-GHI").unwrap();
         let world = generate_main_world(seed, 24).unwrap();
         assert!(query.matches(&world), "the oracle seed lost its match");
         let gated = CanonicalMainWorldGenerator.generate_batch_gated(
@@ -719,7 +721,8 @@ mod tests {
             fast_mode: true,
         };
         let plan = QueryPlan::analyze(&query);
-        assert_eq!(plan.generation_depth(), 14);
+        // The Imp's Plate Armor option can reach +3 as late as depth 19.
+        assert_eq!(plan.generation_depth(), 19);
         let seeds = (0..32)
             .map(|value| DungeonSeed::new(value).unwrap())
             .collect::<Vec<_>>();
@@ -792,7 +795,7 @@ mod tests {
             vec![
                 ItemId::PlateArmor,
                 ItemId::ThrowingHammer,
-                ItemId::Greatshield,
+                ItemId::WarHammer,
                 ItemId::IncendiaryDart,
             ]
         );
@@ -821,13 +824,13 @@ mod tests {
 
     #[test]
     fn plus_four_imp_ring_matches_only_its_generated_identity() {
-        let seed = DungeonSeed::from_code("AAA-AAA-AAF").unwrap();
+        let seed = DungeonSeed::from_code("AAA-AAA-AAB").unwrap();
         let world = generate_main_world(seed, 24).unwrap();
         let imp_ring = world.items.iter().find(|value| {
-            value.item == ItemId::RingSharpshooting
+            value.item == ItemId::RingElements
                 && value.upgrade == 4
-                && value.depth == 17
-                && value.cursed
+                && value.depth == 18
+                && !value.cursed
                 && value.source == ItemSource::ImpReward
         });
         assert!(imp_ring.is_some());
@@ -835,7 +838,7 @@ mod tests {
             requirements: vec![Requirement {
                 kind: ItemKind::Ring,
                 weapon_category: None,
-                item: Some(ItemId::RingSharpshooting),
+                item: Some(ItemId::RingElements),
                 tier: TierRequirement::Any,
                 upgrade: crate::query::UpgradeRequirement::Exact(4),
                 effect: EffectRequirement::Any,

@@ -14,7 +14,12 @@ final class GlowTableTests: XCTestCase {
         // Shocking and Potential are the only entries with a non-default period.
         XCTAssertEqual(enchantmentGlows["Shocking"], ItemGlow(hex: "#ffffff", period: 0.5))
         XCTAssertEqual(enchantmentGlows["Potential"], ItemGlow(hex: "#ffffff", period: 0.6))
-        XCTAssertEqual(enchantmentGlows.count, 26)
+        // The four enchantments v4.0.0 added, at upstream's own colours.
+        XCTAssertEqual(enchantmentGlows["Venomous"], ItemGlow(hex: "#4400aa", period: 1))
+        XCTAssertEqual(enchantmentGlows["Eldritch"], ItemGlow(hex: "#222222", period: 1))
+        XCTAssertEqual(enchantmentGlows["Vorpal"], ItemGlow(hex: "#aa6666", period: 1))
+        XCTAssertEqual(enchantmentGlows["Crystal"], ItemGlow(hex: "#0088ff", period: 1))
+        XCTAssertEqual(enchantmentGlows.count, 30)
         for (name, glow) in enchantmentGlows where name != "Shocking" && name != "Potential" {
             XCTAssertEqual(glow.period, ItemGlow.defaultPeriod, "\(name) should use the default period")
         }

@@ -250,9 +250,9 @@ final class QueryDocumentTests: XCTestCase {
     func testScoutCountsAnAlternativeGroupAsOneSlot() async throws {
         let world = try await ProductionSeedFinderEngine().scoutSeed(Self.pinnedSeed, challenges: 0)
         let sharpshooting = try XCTUnwrap(ItemCatalog.findById("ring_sharpshooting"))
-        let fireblast = try XCTUnwrap(ItemCatalog.findById("wand_fireblast"))
-        // The world's only Wand of Fireblast is cursed; the ring is there.
-        let wand = try ItemRequirement(key: 1, item: fireblast, upgrade: 0, kind: .wand,
+        let corrosion = try XCTUnwrap(ItemCatalog.findById("wand_corrosion"))
+        // The world's only Wand of Corrosion is cursed; the ring is there.
+        let wand = try ItemRequirement(key: 1, item: corrosion, upgrade: 0, kind: .wand,
                                        upgradeMatch: .any, requireUncursed: true, alternativeGroup: 1)
         let ring = try ItemRequirement(key: 2, item: sharpshooting, upgrade: 1, kind: .ring, alternativeGroup: 1)
         let either = try marks([wand, ring])
@@ -271,22 +271,24 @@ final class QueryDocumentTests: XCTestCase {
 
     func testScoutMarksACombinedLevelGroupAsOneCondition() async throws {
         let world = try await ProductionSeedFinderEngine().scoutSeed(Self.pinnedSeed, challenges: 0)
-        let scale = try XCTUnwrap(ItemCatalog.findById("scale_armor"))
+        let plate = try XCTUnwrap(ItemCatalog.findById("plate_armor"))
         func pair(total: Int) throws -> [ItemRequirement] {
             try [1, 2].map { key in
-                try ItemRequirement(key: Int64(key), item: scale, upgrade: 0, kind: .armor, upgradeMatch: .any,
+                try ItemRequirement(key: Int64(key), item: plate, upgrade: 0, kind: .armor, upgradeMatch: .any,
                                     requireUncursed: true, levelSum: LevelSum(group: 1, atLeast: total))
             }
         }
-        // The world's scale armors carry +1 and +2 between them: five levels.
-        // The group is one condition, and every contributing item is marked.
+        // The world's uncursed plate armors reach five levels between them: the
+        // vault's +3 and a plain +0. (The Imp's own +2 plate is one of the
+        // vault prize's alternatives, so the two never count together.) The
+        // group is one condition, and every contributing item is marked.
         let reached = try marks(try pair(total: 5))
         XCTAssertEqual(reached.totalRequirements, 1, "a combined-level group is one condition")
         XCTAssertEqual(reached.matchedRequirements, 1)
-        XCTAssertEqual(Set(reached.matched.map { world.items[$0].upgrade }), [1, 2])
+        XCTAssertEqual(Set(reached.matched.map { world.items[$0].upgrade }), [0, 3])
 
-        // Members are optional: the +2 armor's three levels satisfy a total of 3 alone.
-        let single = try marks(try pair(total: 3))
+        // Members are optional: the +3 armor's four levels satisfy a total of 4 alone.
+        let single = try marks(try pair(total: 4))
         XCTAssertEqual(single.matchedRequirements, 1)
         XCTAssertFalse(single.matched.isEmpty)
 
@@ -298,29 +300,37 @@ final class QueryDocumentTests: XCTestCase {
 
     func testScoutMatchesEffectSetsAndAnyEnchantment() async throws {
         let world = try await ProductionSeedFinderEngine().scoutSeed(Self.pinnedSeed, challenges: 0)
-        let mace = try XCTUnwrap(ItemCatalog.findById("mace"))
-        // Two maces: one Corrupting, one cursed and Explosive.
-        let corrupting = try marks([ItemRequirement(key: 1, item: mace, upgrade: 0,
-                                                    effect: .oneOf(["Shocking", "Corrupting"]),
-                                                    kind: .weapon, upgradeMatch: .any)])
-        XCTAssertEqual(corrupting.matchedRequirements, 1)
-        XCTAssertEqual(world.items[try XCTUnwrap(corrupting.matched.first)].effect, "Corrupting")
-        let explosive = try marks([ItemRequirement(key: 1, item: mace, upgrade: 0,
-                                                   effect: .oneOf(["Explosive"]), kind: .weapon, upgradeMatch: .any)])
-        XCTAssertEqual(explosive.matchedRequirements, 1)
-        XCTAssertEqual(world.items[try XCTUnwrap(explosive.matched.first)].effect, "Explosive")
-        XCTAssertEqual(try marks([ItemRequirement(key: 1, item: mace, upgrade: 0, effect: .oneOf(["Explosive"]),
-                                                  kind: .weapon, upgradeMatch: .any, requireUncursed: false)])
+        let leather = try XCTUnwrap(ItemCatalog.findById("leather_armor"))
+        // Among the world's leather armors: one Obfuscation, one cursed and Multiplicity.
+        let obfuscation = try marks([ItemRequirement(key: 1, item: leather, upgrade: 0,
+                                                     effect: .oneOf(["Swiftness", "Obfuscation"]),
+                                                     kind: .armor, upgradeMatch: .any)])
+        XCTAssertEqual(obfuscation.matchedRequirements, 1)
+        XCTAssertEqual(world.items[try XCTUnwrap(obfuscation.matched.first)].effect, "Obfuscation")
+        let multiplicity = try marks([ItemRequirement(key: 1, item: leather, upgrade: 0,
+                                                      effect: .oneOf(["Multiplicity"]), kind: .armor, upgradeMatch: .any)])
+        XCTAssertEqual(multiplicity.matchedRequirements, 1)
+        XCTAssertEqual(world.items[try XCTUnwrap(multiplicity.matched.first)].effect, "Multiplicity")
+        XCTAssertEqual(try marks([ItemRequirement(key: 1, item: leather, upgrade: 0, effect: .oneOf(["Multiplicity"]),
+                                                  kind: .armor, upgradeMatch: .any, requireUncursed: false)])
                            .matchedRequirements, 1)
-        let enchanted = try marks([ItemRequirement(key: 1, item: mace, upgrade: 0, effect: .anyEnchantment,
-                                                   kind: .weapon, upgradeMatch: .any)])
+        let enchanted = try marks([ItemRequirement(key: 1, item: leather, upgrade: 0, effect: .anyEnchantment,
+                                                   kind: .armor, upgradeMatch: .any)])
         XCTAssertEqual(enchanted.matchedRequirements, 1)
-        XCTAssertEqual(world.items[try XCTUnwrap(enchanted.matched.first)].effect, "Corrupting",
-                       "a curse is not an enchantment")
-        let plain = try XCTUnwrap(ItemCatalog.findById("sai"))
+        XCTAssertEqual(world.items[try XCTUnwrap(enchanted.matched.first)].effect, "Obfuscation",
+                       "a curse is not a glyph")
+        // The enchantments v4.0.0 added are searchable like any other: the
+        // world's Dirk from the statue carries Venomous.
+        let dirk = try XCTUnwrap(ItemCatalog.findById("dirk"))
+        let venomous = try marks([ItemRequirement(key: 1, item: dirk, upgrade: 0,
+                                                  effect: .oneOf(["Venomous", "Vorpal"]),
+                                                  kind: .weapon, upgradeMatch: .any)])
+        XCTAssertEqual(venomous.matchedRequirements, 1)
+        XCTAssertEqual(world.items[try XCTUnwrap(venomous.matched.first)].effect, "Venomous")
+        let plain = try XCTUnwrap(ItemCatalog.findById("shortsword"))
         XCTAssertEqual(try marks([ItemRequirement(key: 1, item: plain, upgrade: 0, effect: .anyEnchantment,
                                                   kind: .weapon, upgradeMatch: .any)]).matchedRequirements, 0,
-                       "the world's Sai carries no enchantment")
+                       "the world's Shortsword carries no enchantment")
     }
 
     // MARK: Local validation and summaries
@@ -352,10 +362,10 @@ final class QueryDocumentTests: XCTestCase {
             ring(1, upgrade: 1, match: .exactly, total: 7, group: 2), ring(2, total: 7, group: 2),
         ]))
         let wand = try ItemRequirement(key: 3, item: nil, upgrade: 0, kind: .wand, upgradeMatch: .any,
-                                       levelSum: LevelSum(group: 3, atLeast: 5))
+                                       levelSum: LevelSum(group: 3, atLeast: 6))
         XCTAssertThrowsError(try SearchRequest(requirements: [wand])) { error in
             XCTAssertEqual(error as? ModelValidationError,
-                           .levelSumUnattainable(group: 3, needed: 5, maximum: 4))
+                           .levelSumUnattainable(group: 3, needed: 6, maximum: 5))
         }
         XCTAssertNoThrow(try SearchRequest(requirements: [ring(1, total: 4), ring(2, total: 3, group: 2)]))
     }

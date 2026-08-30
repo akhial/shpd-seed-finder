@@ -18,7 +18,7 @@ import java.io.InputStream
  * they have no generated-world pool.
  */
 object ItemCatalog {
-    private const val ASSET_PATH = "third_party/shattered-pixel-dungeon/catalog-v3.3.8.json"
+    private const val ASSET_PATH = "third_party/shattered-pixel-dungeon/catalog-v4.0.0.json"
 
     /** Opens a packaged asset by its assets-relative path. */
     fun interface Assets {

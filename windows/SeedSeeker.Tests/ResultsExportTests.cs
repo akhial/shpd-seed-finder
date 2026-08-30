@@ -183,7 +183,40 @@ public sealed class ResultsExportTests
         Assert.Equal(new LevelSum(2, 4), imported.Requirements[3].LevelSum);
         Assert.Equal(new LevelSum(2, 4), imported.Requirements[4].LevelSum);
         Assert.Equal([null, null, null, null, null, 1, 1], imported.Requirements.Select(r => r.IdentityGroup));
-        // The share-link codec carries the same structures (a v2 link).
+        // The share-link codec carries the same structures (a v3 link).
+        var link = NativeEngine.TryEncodeShareLink(document);
+        Assert.NotNull(link);
+        var shared = ResultsExport.DecodeQueryDocument(NativeEngine.TryDecodeShareText(link!)!);
+        Assert.Equal(document, ResultsExport.EncodeQueryDocument(shared));
+    }
+
+    [Fact]
+    public void TheVaultSourceAndTheNewEffectsRoundTripThroughTheEngine()
+    {
+        // v4.0.0's additions, end to end: the ceilings the Imp's vault raised
+        // (+5 on a weapon, +4 on everything else), the vault's own item source,
+        // and the four new enchantments and two new curses.
+        var query = new QuerySettings
+        {
+            Requirements = new ObservableCollection<ItemRequirement>([
+                new() { Kind = ItemKind.MeleeWeapon, UpgradeMatch = UpgradeMatch.Exactly, Upgrade = 5 },
+                new() { Kind = ItemKind.Armor, UpgradeMatch = UpgradeMatch.Exactly, Upgrade = 3, Source = ScoutItemSource.VaultTreasure },
+                new() { Kind = ItemKind.Weapon, Effect = EffectFilter.OneOf(["Venomous", "Eldritch", "Vorpal", "Crystal"]) },
+                new() { Kind = ItemKind.ThrownWeapon, Effect = EffectFilter.OneOf(["Pressurized", "Wondrous"]) },
+                new() { Kind = ItemKind.Wand, UpgradeMatch = UpgradeMatch.Exactly, Upgrade = 4 },
+            ]),
+        };
+        // The effect sets are written in catalog order, whatever order they were picked in.
+        const string expected = """{"requirements":[{"kind":"melee_weapon","upgrade":5},{"kind":"armor","upgrade":3,"source":"vault_treasure"},{"kind":"weapon","effect":["Crystal","Eldritch","Venomous","Vorpal"]},{"kind":"thrown_weapon","effect":["Pressurized","Wondrous"]},{"kind":"wand","upgrade":4}]}""";
+        var document = ResultsExport.EncodeQueryDocument(query);
+        Assert.Equal(expected, document);
+
+        // Through the real codec and back: the engine validates and re-encodes it.
+        var imported = ResultsExport.Decode(ResultsExport.Encode(query, ["AAA-AAA-BUH"], "test")).Query;
+        Assert.Equal(document, ResultsExport.EncodeQueryDocument(imported));
+        Assert.Equal(ScoutItemSource.VaultTreasure, imported.Requirements[1].Source);
+        Assert.Equal(5, imported.Requirements[0].Upgrade);
+        // A v3 share link, whose 32-bit effect masks are what the new effects need.
         var link = NativeEngine.TryEncodeShareLink(document);
         Assert.NotNull(link);
         var shared = ResultsExport.DecodeQueryDocument(NativeEngine.TryDecodeShareText(link!)!);

@@ -76,6 +76,12 @@ const ENCHANTMENTS: &[(&str, Glow)] = &[
     ("Corrupting", Glow::new(0x0044_0066, DEFAULT_PERIOD)),
     ("Grim", Glow::new(0x0000_0000, DEFAULT_PERIOD)),
     ("Vampiric", Glow::new(0x0066_0022, DEFAULT_PERIOD)),
+    // v4.0.0 weapon enchantments. They follow the v3.3.8 block for the same
+    // reason the catalog appends them there: the wire codes are append-only.
+    ("Venomous", Glow::new(0x0044_00aa, DEFAULT_PERIOD)),
+    ("Eldritch", Glow::new(0x0022_2222, DEFAULT_PERIOD)),
+    ("Vorpal", Glow::new(0x00aa_6666, DEFAULT_PERIOD)),
+    ("Crystal", Glow::new(0x0000_88ff, DEFAULT_PERIOD)),
     // Armor glyphs
     ("Obfuscation", Glow::new(0x0088_8888, DEFAULT_PERIOD)),
     ("Swiftness", Glow::new(0x00ff_ff00, DEFAULT_PERIOD)),
@@ -165,10 +171,19 @@ mod tests {
         assert_eq!(enchantment("Thorns").unwrap().hex(), "#660022");
         // Grim is a beneficial enchantment that happens to glow black.
         assert_eq!(enchantment("Grim").unwrap().hex(), "#000000");
+        // v4.0.0's four enchantments, all at the default period.
+        assert_eq!(enchantment("Venomous").unwrap().hex(), "#4400aa");
+        assert_eq!(enchantment("Eldritch").unwrap().hex(), "#222222");
+        assert_eq!(enchantment("Vorpal").unwrap().hex(), "#aa6666");
+        assert_eq!(enchantment("Crystal").unwrap().hex(), "#0088ff");
+        assert_eq!(enchantment("Crystal").unwrap().period, 1.0);
         assert_eq!(CURSE.hex(), "#000000");
         assert_eq!(CURSE.period, 1.0);
         assert!(enchantment("Annoying").is_none());
         assert!(enchantment("Bulk").is_none());
+        // v4.0.0's two curses take the shared curse glow like the rest.
+        assert!(enchantment("Pressurized").is_none());
+        assert!(enchantment("Wondrous").is_none());
     }
 
     #[test]
@@ -248,7 +263,15 @@ mod tests {
             enchantment("Swiftness")
         );
         assert_eq!(
+            effect(Some(Effect::Weapon(WeaponEffect::Crystal))),
+            enchantment("Crystal")
+        );
+        assert_eq!(
             effect(Some(Effect::Armor(ArmorEffect::Stench))),
+            Some(CURSE)
+        );
+        assert_eq!(
+            effect(Some(Effect::Weapon(WeaponEffect::Wondrous))),
             Some(CURSE)
         );
     }

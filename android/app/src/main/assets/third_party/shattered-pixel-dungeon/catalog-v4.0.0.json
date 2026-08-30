@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "catalogId": "shattered-pixel-dungeon/3.3.8/generated-equipment",
+  "catalogId": "shattered-pixel-dungeon/4.0.0-beta-3/generated-equipment",
   "atlas": "items.png",
   "iconAtlas": "item_icons.png",
   "entries": [
@@ -94,8 +94,8 @@
     {"id":"ring_wealth","name":"Ring of Wealth","type":"ring","sprite":235,"typeIcon":11}
   ],
   "modifiers": {
-    "weaponEnchantments": ["Blazing","Blocking","Blooming","Chilling","Corrupting","Elastic","Grim","Kinetic","Lucky","Projecting","Shocking","Unstable","Vampiric"],
-    "weaponCurses": ["Annoying","Dazzling","Displacing","Explosive","Friendly","Polarized","Sacrificial","Wayward"],
+    "weaponEnchantments": ["Blazing","Blocking","Blooming","Chilling","Corrupting","Crystal","Elastic","Eldritch","Grim","Kinetic","Lucky","Projecting","Shocking","Unstable","Vampiric","Venomous","Vorpal"],
+    "weaponCurses": ["Annoying","Dazzling","Displacing","Explosive","Friendly","Polarized","Pressurized","Sacrificial","Wayward","Wondrous"],
     "armorGlyphs": ["Affection","Anti-Magic","Brimstone","Camouflage","Entanglement","Flow","Obfuscation","Potential","Repulsion","Stone","Swiftness","Thorns","Viscosity"],
     "armorCurses": ["Anti-Entropy","Bulk","Corrosion","Displacement","Metabolism","Multiplicity","Overgrowth","Stench"]
   }

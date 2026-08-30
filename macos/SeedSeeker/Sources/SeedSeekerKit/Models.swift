@@ -20,10 +20,14 @@ public enum SearchLimits {
     /// engine takes any number of copies; three is what a chip badge can say
     /// without turning into a list.
     public static let stackMax = 3
-    /// Highest upgrade a search may name, for everything but rings.
-    public static let maxUpgradeDefault = 3
+    /// Highest upgrade a search may name for armor, wands and rings.
+    public static let maxUpgradeDefault = 4
     /// Highest upgrade a ring requirement may name.
     public static let maxUpgradeRing = 4
+    /// Highest upgrade a weapon requirement may name: v4.0.0's Imp vault
+    /// reaches +5 on a tier-4 weapon or thrown weapon, one above every other
+    /// family's ceiling.
+    public static let maxUpgradeWeapon = 5
     /// Every challenge bit together: the largest legal challenge mask.
     public static let challengeMask = 511
 }
@@ -41,7 +45,10 @@ public enum ItemKind: Int, Codable, CaseIterable, Sendable {
     /// shared catalog asset's order.
     public var enchantmentNames: [String] { ItemCatalog.enchantmentsFor(self) }
     /// The highest upgrade a search may name for this family.
-    public var maximumSearchUpgrade: Int { family == .ring ? SearchLimits.maxUpgradeRing : SearchLimits.maxUpgradeDefault }
+    public var maximumSearchUpgrade: Int {
+        family == .weapon ? SearchLimits.maxUpgradeWeapon
+            : family == .ring ? SearchLimits.maxUpgradeRing : SearchLimits.maxUpgradeDefault
+    }
 
     /// The broad item family; catalog items always carry the family.
     public var family: ItemKind { self == .meleeWeapon || self == .thrownWeapon ? .weapon : self }
@@ -83,13 +90,13 @@ public enum TierMatch: Int, Codable, CaseIterable, Sendable {
 public enum ScoutItemSource: Int, Codable, CaseIterable, Sendable {
     case heap, chest, lockedChest, crystalChest, tomb, skeleton, sacrificialFire, mimic
     case goldenMimic, crystalMimic, statue, armoredStatue, shop, ghostReward
-    case wandmakerReward, blacksmithReward, impReward
+    case wandmakerReward, blacksmithReward, impReward, vaultTreasure
 
     public var label: String {
         ["Heap", "Chest", "Locked chest", "Crystal chest", "Tomb", "Skeleton",
          "Sacrificial fire", "Mimic", "Golden mimic", "Crystal mimic", "Statue",
          "Armored statue", "Shop", "Ghost reward", "Wandmaker reward",
-         "Blacksmith reward", "Imp reward"][rawValue]
+         "Blacksmith reward", "Imp reward", "Vault treasure"][rawValue]
     }
 }
 
@@ -528,8 +535,10 @@ public struct SearchRequest: Codable, Sendable {
     /// Which Wandmaker quest the run must roll; `nil` accepts any.
     public var wandmakerQuest: WandmakerQuest?
     /// Faster but non-exhaustive: +3 weapon/armor requirements only consider
-    /// quest rewards, skipping seeds whose sole match is a Crypt or
-    /// Sacrificial-fire prize. Found seeds are always genuine matches.
+    /// quest rewards — the Ghost's, the Blacksmith's and the Imp's vault
+    /// prizes, so such a search ends at the Imp's floor 19 — skipping seeds
+    /// whose sole match is a Crypt, Sacrificial-fire or special-room chest
+    /// prize. Found seeds are always genuine matches.
     public var fastMode: Bool
     public var challenges: Int
 
@@ -628,7 +637,7 @@ public enum ScoutQuestKind: Int, CaseIterable, Sendable {
         case .ghost: [.fetidRat, .gnollTrickster, .greatCrab]
         case .wandmaker: [.corpseDust, .elementalEmbers, .rotberry]
         case .blacksmith: [.crystal, .gnoll]
-        case .imp: [.monk, .golem]
+        case .imp: [.vault]
         }
     }
 }
@@ -638,14 +647,16 @@ public enum ScoutQuestVariant: Hashable, Sendable {
     case fetidRat, gnollTrickster, greatCrab
     case corpseDust, elementalEmbers, rotberry
     case crystal, gnoll
-    case monk, golem
+    /// v4.0.0 replaced the Imp's monk and golem hunts with the vault heist;
+    /// it is his only variant, so the giver and the variant say the same thing.
+    case vault
 
     public var kind: ScoutQuestKind {
         switch self {
         case .fetidRat, .gnollTrickster, .greatCrab: .ghost
         case .corpseDust, .elementalEmbers, .rotberry: .wandmaker
         case .crystal, .gnoll: .blacksmith
-        case .monk, .golem: .imp
+        case .vault: .imp
         }
     }
     public var label: String {
@@ -658,8 +669,7 @@ public enum ScoutQuestVariant: Hashable, Sendable {
         case .rotberry: "Rotberry"
         case .crystal: "Crystal spire"
         case .gnoll: "Gnoll geomancer"
-        case .monk: "Monks"
-        case .golem: "Golems"
+        case .vault: "Vault"
         }
     }
 }

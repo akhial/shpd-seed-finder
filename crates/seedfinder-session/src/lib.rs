@@ -606,9 +606,17 @@ mod tests {
     };
     use shpd_seedfinder_core::search::{SearchOptions, WorldGenerator};
     use shpd_seedfinder_core::seed::DungeonSeed;
-    use shpd_seedfinder_core::wire::{WireError, decode_scout_world, encode_query};
+    use shpd_seedfinder_core::wire::{WireError, decode_scout_world};
 
     use super::*;
+
+    /// The request bytes a frontend sends for a query: its canonical JSON
+    /// document.
+    fn query_request(query: &SearchQuery) -> Vec<u8> {
+        shpd_seedfinder_core::json_query::encode(query)
+            .to_string()
+            .into_bytes()
+    }
 
     struct MatchingGenerator;
     impl WorldGenerator for MatchingGenerator {
@@ -912,41 +920,25 @@ mod tests {
         let seed = DungeonSeed::from_code("AAA-AAA-AAF").unwrap();
         let world = production_scout_world(seed, Challenges::NONE).unwrap();
         let known = world.items.first().cloned().unwrap();
-        let mut request = b"SSF9".to_vec();
-        request.push(known.depth); // max_depth
-        request.push(0); // flags
-        request.extend_from_slice(&[0, 0]); // challenges
-        request.push(0); // any Wandmaker quest
-        request.extend_from_slice(&[0, 1]); // one requirement
         let definition = shpd_seedfinder_core::catalog::item(known.item);
-        let kind_byte = match definition.kind {
-            shpd_seedfinder_core::catalog::ItemKind::Weapon => 0,
-            shpd_seedfinder_core::catalog::ItemKind::Armor => 1,
-            shpd_seedfinder_core::catalog::ItemKind::Wand => 2,
-            shpd_seedfinder_core::catalog::ItemKind::Ring => 3,
-        };
-        request.push(kind_byte);
-        let id = definition.stable_id.as_bytes();
-        request.extend_from_slice(&u16::try_from(id.len()).unwrap().to_be_bytes());
-        request.extend_from_slice(id);
-        request.extend_from_slice(&[0, 0]); // tier any
-        request.extend_from_slice(&[0, 0]); // upgrade any
-        request.push(0); // any effect
-        // source, identity group, depth, alternative group, sum group, sum
-        // total, flags
-        request.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0]);
+        let request = format!(
+            r#"{{"max_depth":{},"requirements":[{{"item":"{}"}}]}}"#,
+            known.depth, definition.stable_id
+        );
 
-        let packet = production_filter_packet(&request, &[seed.value()]).unwrap();
+        let packet = production_filter_packet(request.as_bytes(), &[seed.value()]).unwrap();
         assert_eq!(&packet[..4], b"SSR1");
         assert_eq!(u16::from_be_bytes([packet[4], packet[5]]), 1);
         assert_eq!(
-            production_filter_packet(&request, &[]).unwrap(),
+            production_filter_packet(request.as_bytes(), &[]).unwrap(),
             b"SSR1\0\0"
         );
-        assert_eq!(
+        assert!(matches!(
             production_filter_packet(b"bad!????????", &[seed.value()]),
-            Err(FilterPacketError::Request(WireError::BadMagic))
-        );
+            Err(FilterPacketError::Request(WireError::InvalidQueryDocument(
+                _
+            )))
+        ));
     }
 
     #[test]
@@ -1209,7 +1201,7 @@ mod tests {
     }
 
     #[test]
-    fn start_decisions_travel_as_ssf8_packets_and_lowercase_names() {
+    fn start_decisions_travel_as_query_documents_and_lowercase_names() {
         let target = kind_query(ItemKind::Ring);
         let detached = kind_query(ItemKind::Armor);
         let mut narrowed = detached.clone();
@@ -1219,7 +1211,7 @@ mod tests {
         });
         let mut deeper = target.clone();
         deeper.max_depth = 9;
-        let packet = |query: &SearchQuery| encode_query(query).unwrap();
+        let packet = query_request;
 
         for (candidate, base, decision, name) in [
             (&target, None, StartDecision::TargetRefine, "target-refine"),

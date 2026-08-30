@@ -15,7 +15,7 @@ use shpd_seedfinder_core::model::{Accessibility, ItemSource, WorldItem};
 use shpd_seedfinder_core::probability::estimate_match_probability;
 use shpd_seedfinder_core::query::{SearchQuery, decide_start as decide_start_query, scout_matches};
 use shpd_seedfinder_core::quests::{
-    BlacksmithQuestType, GhostQuestType, ImpTarget, QuestSummary, WandmakerQuestType,
+    BlacksmithQuestType, GhostQuestType, ImpQuestType, QuestSummary, WandmakerQuestType,
 };
 use shpd_seedfinder_core::results_export;
 pub use shpd_seedfinder_core::results_export::MAX_RESULTS;
@@ -584,8 +584,7 @@ fn scout_quest_outputs(quests: QuestSummary) -> Vec<ScoutQuestOutput> {
         output.push(ScoutQuestOutput {
             quest: "imp",
             variant: match quest.variant {
-                ImpTarget::Monk => "monk",
-                ImpTarget::Golem => "golem",
+                ImpQuestType::Vault => "vault",
             },
             depth: quest.depth,
         });
@@ -639,6 +638,7 @@ const fn item_source_name(source: ItemSource) -> &'static str {
         ItemSource::WandmakerReward => "wandmaker_reward",
         ItemSource::BlacksmithReward => "blacksmith_reward",
         ItemSource::ImpReward => "imp_reward",
+        ItemSource::VaultTreasure => "vault_treasure",
     }
 }
 
@@ -826,8 +826,11 @@ mod tests {
         assert_eq!(invalid["valid"], false);
         assert!(invalid["error"].as_str().unwrap().contains("invalid JSON"));
 
+        // A +4 ring exists only in the Imp's vault (floors 17-19), so a
+        // search that stops before it can never match. (An uncursed +4 ring
+        // is possible since 4.0.0: vault prizes are never cursed.)
         let impossible: Value = serde_json::from_str(&analyze_query(
-            r#"{"requirements":[{"kind":"ring","upgrade":4,"uncursed":true}]}"#,
+            r#"{"requirements":[{"kind":"ring","upgrade":4,"uncursed":true}],"max_depth":16}"#,
         ))
         .unwrap();
         assert_eq!(impossible["valid"], true);
@@ -862,15 +865,15 @@ mod tests {
         assert_eq!(
             output["quests"],
             serde_json::json!([
-                { "quest": "ghost", "variant": "great_crab", "depth": 4 },
+                { "quest": "ghost", "variant": "gnoll_trickster", "depth": 3 },
                 { "quest": "wandmaker", "variant": "elemental_embers", "depth": 9 },
                 { "quest": "blacksmith", "variant": "crystal", "depth": 13 },
-                { "quest": "imp", "variant": "golem", "depth": 19 },
+                { "quest": "imp", "variant": "vault", "depth": 19 },
             ])
         );
 
         let catalog: AndroidCatalog = serde_json::from_str(include_str!(
-            "../../../android/app/src/main/assets/third_party/shattered-pixel-dungeon/catalog-v3.3.8.json"
+            "../../../android/app/src/main/assets/third_party/shattered-pixel-dungeon/catalog-v4.0.0.json"
         ))
         .unwrap();
         let sprites = catalog

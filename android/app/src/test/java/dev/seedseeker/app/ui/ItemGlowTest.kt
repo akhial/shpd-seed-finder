@@ -25,6 +25,18 @@ class ItemGlowTest {
     }
 
     @Test
+    fun `the v4_0_0 enchantments glow their upstream colour`() {
+        assertEquals(Glow(Color(0xFF4400AA), 1f), ItemGlows.forEffect("Venomous"))
+        // Eldritch is near-black but still its own colour, not the curse glow.
+        assertEquals(Glow(Color(0xFF222222), 1f), ItemGlows.forEffect("Eldritch"))
+        assertEquals(Glow(Color(0xFFAA6666), 1f), ItemGlows.forEffect("Vorpal"))
+        assertEquals(Glow(Color(0xFF0088FF), 1f), ItemGlows.forEffect("Crystal"))
+        // Their curse siblings take the shared black glow like every other curse.
+        assertEquals(Glow(black, 1f), ItemGlows.forEffect("Pressurized"))
+        assertEquals(Glow(black, 1f), ItemGlows.forEffect("Wondrous"))
+    }
+
+    @Test
     fun `armor glyphs glow their upstream colour and period`() {
         assertEquals(Glow(Color(0xFFFF4400), 1f), ItemGlows.forEffect("Brimstone"))
         assertEquals(Glow(Color(0xFFFFFFFF), 0.6f), ItemGlows.forEffect("Potential"))

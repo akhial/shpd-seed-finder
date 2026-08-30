@@ -105,6 +105,9 @@ public sealed partial class MainWindow : Window
             presenter.PreferredMinimumWidth = (int)(1020 * scale);
             presenter.PreferredMinimumHeight = (int)(620 * scale);
         }
+        // The upstream version is the engine's own, as the About dialog has it,
+        // so the footer cannot fall behind a profile bump.
+        UpstreamLink.Content = $"Shattered Pixel Dungeon v{EngineInfo.ShpdVersion}";
         // Decode the item atlases up front so the first sprite render is warm.
         _ = ItemAtlas.GetAsync();
         ResultsList.ItemsSource = results; ScoutButton.IsEnabled = false;

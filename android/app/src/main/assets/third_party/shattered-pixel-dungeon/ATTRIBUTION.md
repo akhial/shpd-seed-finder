@@ -7,6 +7,10 @@
 `core/src/main/assets/sprites/item_icons.png`
 
 from Shattered Pixel Dungeon v3.3.8, commit `7b8b845a76fe76c6b7c031ae9e570852411f56db`.
+The v4.0.0-BETA-3 release keeps the same 256x512 layout for every generated
+weapon, armor, wand and ring cell, so the sprite indices in
+`catalog-v4.0.0.json` (whose effect tables follow v4.0.0-BETA-3) remain valid
+against these v3.3.8 atlases.
 
 - Pixel Dungeon: Copyright © 2012–2015 Oleg Dolya
 - Shattered Pixel Dungeon: Copyright © 2014–2026 Evan Debenham

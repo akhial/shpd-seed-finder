@@ -59,7 +59,8 @@ describe('results file', () => {
     const text = encodeResultsFile(toQueryDocument(loadedQuery), ['AAA-AAA-BUH', 'ABC-DEF-GHI'])
     const decoded = decodeResultsFile(text)
     expect(decoded.appVersion).toBeDefined()
-    expect(decoded.shpdVersion).toBe('3.3.8')
+    // A file written today carries the game version this engine targets.
+    expect(decoded.shpdVersion).toBe('4.0.0-BETA-3')
     expect(decoded.query).toEqual(loadedQuery)
     expect(decoded.seeds).toEqual(['AAA-AAA-BUH', 'ABC-DEF-GHI'])
     expect(decoded.dropped).toBe(0)
@@ -68,6 +69,7 @@ describe('results file', () => {
   it('always decodes the canonical frozen version-1 fixture', () => {
     const decoded = decodeResultsFile(VERSION_1_FIXTURE)
     expect(decoded.appVersion).toBe('0.6.1')
+    // The fixture keeps the version it was written under, not this engine's.
     expect(decoded.shpdVersion).toBe('3.3.8')
     expect(decoded.query).toEqual(loadedQuery)
     expect(decoded.seeds).toEqual(['AAA-AAA-BUH', 'ABC-DEF-GHI'])

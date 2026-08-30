@@ -835,7 +835,7 @@ impl RoomCharacterRules for PrisonSpatialRules {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::catalog::{Effect, ItemId, WeaponEffect};
+    use crate::catalog::{ArmorEffect, Effect, ItemId, WeaponEffect};
     use crate::level_prelude::Feeling;
     use crate::model::{Accessibility, ItemSource};
     use crate::prison_mobs::PrisonMobKind;
@@ -879,77 +879,83 @@ mod tests {
             (
                 6,
                 Feeling::Large,
-                (39, 52),
-                1_815_027_889,
-                249,
-                1_225,
+                (46, 53),
+                1_223_218_598,
+                297,
+                1_450,
                 None,
                 vec![
-                    (PrisonMobKind::Skeleton, 417),
-                    (PrisonMobKind::Skeleton, 786),
-                    (PrisonMobKind::Thief, 837),
-                    (PrisonMobKind::Skeleton, 1_028),
-                    (PrisonMobKind::Swarm, 1_311),
-                    (PrisonMobKind::Skeleton, 1_454),
+                    (PrisonMobKind::Thief, 489),
+                    (PrisonMobKind::Skeleton, 931),
+                    (PrisonMobKind::Swarm, 1_633),
+                    (PrisonMobKind::Skeleton, 1_768),
+                    (PrisonMobKind::Swarm, 1_860),
+                    (PrisonMobKind::Skeleton, 2_318),
                 ],
-                vec![256, 417, 786, 837, 1_028, 1_311, 1_454, 1_704],
+                vec![259, 489, 931, 1_420, 1_633, 1_768, 1_773, 1_860, 2_318],
             ),
             (
                 7,
                 Feeling::Large,
-                (48, 54),
-                229_406_850,
-                652,
-                2_084,
+                (41, 54),
+                -2_025_558_282,
+                1_221,
+                995,
                 None,
                 vec![
-                    (PrisonMobKind::Guard, 278),
-                    (PrisonMobKind::Skeleton, 755),
-                    (PrisonMobKind::Thief, 811),
-                    (PrisonMobKind::Skeleton, 1_231),
-                    (PrisonMobKind::Skeleton, 1_521),
-                    (PrisonMobKind::Dm100, 1_568),
-                    (PrisonMobKind::Thief, 1_789),
+                    (PrisonMobKind::Thief, 217),
+                    (PrisonMobKind::Skeleton, 296),
+                    (PrisonMobKind::Skeleton, 538),
+                    (PrisonMobKind::Skeleton, 848),
+                    (PrisonMobKind::Dm100, 919),
+                    (PrisonMobKind::Skeleton, 1_038),
+                    (PrisonMobKind::Guard, 1_173),
+                    (PrisonMobKind::Skeleton, 1_241),
+                    (PrisonMobKind::Dm100, 1_320),
+                    (PrisonMobKind::Skeleton, 1_331),
                 ],
-                vec![278, 755, 811, 1_231, 1_521, 1_568, 1_789, 2_138],
+                vec![
+                    217, 224, 296, 538, 848, 919, 1_038, 1_173, 1_197, 1_241, 1_320, 1_331,
+                ],
             ),
             (
                 8,
                 Feeling::None,
-                (56, 50),
-                -2_001_044_122,
-                1_780,
-                846,
+                (40, 35),
+                -1_261_455_225,
+                1_235,
+                489,
                 None,
                 vec![
-                    (PrisonMobKind::Necromancer, 465),
-                    (PrisonMobKind::Dm100, 1_208),
-                    (PrisonMobKind::Guard, 1_301),
-                    (PrisonMobKind::Dm100, 1_592),
-                    (PrisonMobKind::Guard, 2_336),
-                    (PrisonMobKind::Skeleton, 2_506),
+                    (PrisonMobKind::Guard, 212),
+                    (PrisonMobKind::Skeleton, 452),
+                    (PrisonMobKind::Dm100, 504),
+                    (PrisonMobKind::Guard, 655),
+                    (PrisonMobKind::Necromancer, 702),
+                    (PrisonMobKind::Thief, 812),
+                    (PrisonMobKind::Dm100, 822),
+                    (PrisonMobKind::Skeleton, 886),
                 ],
-                vec![353, 465, 1_208, 1_301, 1_592, 2_336, 2_506],
+                vec![212, 452, 504, 655, 702, 768, 812, 822, 886],
             ),
             (
                 9,
                 Feeling::None,
-                (35, 38),
-                -1_759_126_364,
-                189,
-                791,
-                Some(328),
+                (27, 45),
+                -782_393_744,
+                462,
+                856,
+                Some(465),
                 vec![
-                    (PrisonMobKind::Thief, 579),
-                    (PrisonMobKind::Skeleton, 585),
-                    (PrisonMobKind::Guard, 618),
-                    (PrisonMobKind::Dm100, 688),
-                    (PrisonMobKind::Dm100, 852),
-                    (PrisonMobKind::Necromancer, 854),
-                    (PrisonMobKind::Guard, 939),
-                    (PrisonMobKind::Necromancer, 1_030),
+                    (PrisonMobKind::Thief, 252),
+                    (PrisonMobKind::Dm100, 321),
+                    (PrisonMobKind::Necromancer, 499),
+                    (PrisonMobKind::Guard, 872),
+                    (PrisonMobKind::Skeleton, 922),
+                    (PrisonMobKind::Dm100, 937),
+                    (PrisonMobKind::Necromancer, 1_131),
                 ],
-                vec![328, 579, 585, 618, 688, 852, 854, 939, 1_030],
+                vec![252, 321, 465, 499, 872, 922, 937, 1_131],
             ),
         ];
 
@@ -1010,26 +1016,26 @@ mod tests {
             (
                 "AAA-AAA-AAB",
                 Feeling::None,
-                (47, 38),
-                554_209_483,
-                814,
-                366,
+                (43, 40),
+                -903_102_768,
+                627,
+                994,
             ),
             (
                 "ABC-DEF-GHI",
                 Feeling::Water,
-                (45, 37),
-                1_938_948_240,
-                411,
-                1_115,
+                (31, 54),
+                -226_466_149,
+                1_253,
+                335,
             ),
             (
                 "ZZZ-ZZZ-ZZZ",
                 Feeling::None,
                 (39, 45),
-                964_050_401,
-                1_144,
-                145,
+                774_748_808,
+                1_146,
+                223,
             ),
         ] {
             let seed = DungeonSeed::from_code(code).unwrap();
@@ -1052,45 +1058,7 @@ mod tests {
         let expected = [
             vec![
                 (
-                    ItemId::ScaleArmor,
-                    1,
-                    None,
-                    false,
-                    ItemSource::Chest,
-                    Accessibility::Independent,
-                ),
-                (
-                    ItemId::WandFrost,
-                    1,
-                    None,
-                    false,
-                    ItemSource::CrystalChest,
-                    Accessibility::Choice {
-                        group: 0,
-                        option: 0,
-                    },
-                ),
-                (
-                    ItemId::RingTenacity,
-                    1,
-                    None,
-                    true,
-                    ItemSource::CrystalChest,
-                    Accessibility::Choice {
-                        group: 0,
-                        option: 1,
-                    },
-                ),
-                (
-                    ItemId::ScaleArmor,
-                    0,
-                    None,
-                    false,
-                    ItemSource::Heap,
-                    Accessibility::Independent,
-                ),
-                (
-                    ItemId::Sickle,
+                    ItemId::Quarterstaff,
                     0,
                     None,
                     false,
@@ -1106,14 +1074,6 @@ mod tests {
                     Accessibility::Independent,
                 ),
                 (
-                    ItemId::Shuriken,
-                    0,
-                    None,
-                    false,
-                    ItemSource::Shop,
-                    Accessibility::Independent,
-                ),
-                (
                     ItemId::LeatherArmor,
                     0,
                     None,
@@ -1121,10 +1081,16 @@ mod tests {
                     ItemSource::Shop,
                     Accessibility::Independent,
                 ),
-            ],
-            vec![
                 (
-                    ItemId::ScaleArmor,
+                    ItemId::ThrowingClub,
+                    0,
+                    None,
+                    false,
+                    ItemSource::Shop,
+                    Accessibility::Independent,
+                ),
+                (
+                    ItemId::Katana,
                     1,
                     None,
                     false,
@@ -1133,16 +1099,42 @@ mod tests {
                 ),
                 (
                     ItemId::WandBlastWave,
+                    0,
+                    None,
+                    false,
+                    ItemSource::CrystalChest,
+                    Accessibility::Independent,
+                ),
+                (
+                    ItemId::RingTenacity,
                     1,
+                    None,
+                    false,
+                    ItemSource::CrystalMimic,
+                    Accessibility::Independent,
+                ),
+                (
+                    ItemId::HandAxe,
+                    0,
+                    None,
+                    false,
+                    ItemSource::LockedChest,
+                    Accessibility::Independent,
+                ),
+            ],
+            vec![
+                (
+                    ItemId::LeatherArmor,
+                    0,
                     None,
                     false,
                     ItemSource::Heap,
                     Accessibility::Independent,
                 ),
                 (
-                    ItemId::ThrowingSpear,
+                    ItemId::Scimitar,
                     1,
-                    Some(Effect::Weapon(WeaponEffect::Polarized)),
+                    Some(Effect::Weapon(WeaponEffect::Wondrous)),
                     true,
                     ItemSource::Heap,
                     Accessibility::Independent,
@@ -1150,21 +1142,37 @@ mod tests {
                 (
                     ItemId::Sickle,
                     0,
-                    Some(Effect::Weapon(WeaponEffect::Blocking)),
+                    Some(Effect::Weapon(WeaponEffect::Polarized)),
+                    true,
+                    ItemSource::Skeleton,
+                    Accessibility::Independent,
+                ),
+                (
+                    ItemId::AssassinsBlade,
+                    1,
+                    Some(Effect::Weapon(WeaponEffect::Vorpal)),
                     false,
                     ItemSource::Statue,
                     Accessibility::Independent,
                 ),
-            ],
-            vec![
                 (
-                    ItemId::ScaleArmor,
+                    ItemId::Scimitar,
+                    1,
+                    None,
+                    false,
+                    ItemSource::Chest,
+                    Accessibility::Independent,
+                ),
+                (
+                    ItemId::Tomahawk,
                     0,
                     None,
                     false,
-                    ItemSource::Heap,
+                    ItemSource::Mimic,
                     Accessibility::Independent,
                 ),
+            ],
+            vec![
                 (
                     ItemId::RingEnergy,
                     0,
@@ -1176,19 +1184,19 @@ mod tests {
                         option: 1,
                     },
                 ),
+                (
+                    ItemId::LeatherArmor,
+                    0,
+                    Some(Effect::Armor(ArmorEffect::Corrosion)),
+                    true,
+                    ItemSource::Heap,
+                    Accessibility::Independent,
+                ),
             ],
             vec![
                 (
-                    ItemId::Sai,
-                    0,
-                    Some(Effect::Weapon(WeaponEffect::Sacrificial)),
-                    true,
-                    ItemSource::LockedChest,
-                    Accessibility::Independent,
-                ),
-                (
                     ItemId::WandTransfusion,
-                    1,
+                    3,
                     None,
                     false,
                     ItemSource::WandmakerReward,
@@ -1199,7 +1207,7 @@ mod tests {
                 ),
                 (
                     ItemId::WandFrost,
-                    1,
+                    3,
                     None,
                     false,
                     ItemSource::WandmakerReward,
@@ -1242,53 +1250,59 @@ mod tests {
         assert!(!world.items.is_empty());
     }
 
-    /// Seed `AAA-AAA-BUH`'s depth-6 golden mimic upgrades a `+0` cursed Ring
-    /// of Force, and `Ring.upgrade()` always consumes its curse-clearing
+    /// Seed `AAA-AAA-AFG`'s depth-4 golden mimic upgrades a `+0` Ring of
+    /// Evasion, and `Ring.upgrade()` always consumes its curse-clearing
     /// `Int(3)` even though the prize pass cleared the curse first. Skipping
-    /// that draw shifted every later draw of the run: depth 7 lost its extra
-    /// cursed-wand chest and the depth-9 Wandmaker offered the wrong wands.
-    /// Expected values come from the official v3.3.8 oracle
-    /// (`tooling/oracle/run.sh AAA-AAA-BUH 6-9`), cross-checked against the
-    /// reference Java seed finder.
+    /// that draw shifts every later draw of the run, including the Prison
+    /// floors below. Expected values come from the 4.0.0-BETA-3 floor probe.
     #[test]
     fn golden_mimic_ring_upgrade_consumes_the_curse_reroll_draw() {
-        let seed = DungeonSeed::from_code("AAA-AAA-BUH").unwrap();
-        let floors = generate_prison_prefix(seed, 9);
+        let seed = DungeonSeed::from_code("AAA-AAA-AFG").unwrap();
+        let world = generate_prison_world(seed, 9).unwrap();
 
-        let golden: Vec<_> = floors[0]
-            .world_items
+        let golden: Vec<_> = world
+            .items
             .iter()
             .filter(|item| item.source == ItemSource::GoldenMimic)
             .collect();
         assert_eq!(golden.len(), 2);
-        assert_eq!(golden[0].item, ItemId::Sword);
-        assert_eq!(golden[0].upgrade, 0);
-        assert_eq!(golden[1].item, ItemId::RingForce);
+        assert_eq!(golden[0].item, ItemId::WandBlastWave);
+        assert_eq!(golden[0].upgrade, 2);
+        assert_eq!(golden[0].depth, 4);
+        assert_eq!(golden[1].item, ItemId::RingEvasion);
         assert_eq!(golden[1].upgrade, 1);
         assert!(!golden[1].cursed);
 
         // The draw consumed by Ring.upgrade() is what keeps the rest of the
-        // run aligned: depth 7 rolls a second chest holding a cursed wand.
-        assert!(floors[1].world_items.iter().any(|item| {
-            item.item == ItemId::WandFireblast
+        // run aligned: depth 8 drops a plain Whip and depth 9 rolls a Statue,
+        // a Mimic, and the Wandmaker's two wands.
+        assert!(world.items.iter().any(|item| {
+            item.item == ItemId::Whip
                 && item.upgrade == 0
-                && item.cursed
-                && item.source == ItemSource::Chest
+                && item.depth == 8
+                && item.source == ItemSource::Heap
         }));
-        assert!(floors[1].world_items.iter().any(|item| {
-            item.item == ItemId::MailArmor && item.upgrade == 1 && item.source == ItemSource::Chest
+        assert!(world.items.iter().any(|item| {
+            item.item == ItemId::BattleAxe
+                && item.depth == 9
+                && item.effect == Some(Effect::Weapon(WeaponEffect::Elastic))
+                && item.source == ItemSource::Statue
+        }));
+        assert!(world.items.iter().any(|item| {
+            item.item == ItemId::Katana && item.depth == 9 && item.source == ItemSource::Mimic
         }));
 
-        let rewards: Vec<_> = floors[3]
-            .world_items
+        let rewards: Vec<_> = world
+            .items
             .iter()
             .filter(|item| item.source == ItemSource::WandmakerReward)
             .collect();
         assert_eq!(rewards.len(), 2);
-        assert_eq!(rewards[0].item, ItemId::WandCorrosion);
-        assert_eq!(rewards[0].upgrade, 3);
-        assert_eq!(rewards[1].item, ItemId::WandWarding);
+        assert_eq!(rewards[0].item, ItemId::WandFireblast);
+        assert_eq!(rewards[0].upgrade, 1);
+        assert_eq!(rewards[1].item, ItemId::WandRegrowth);
         assert_eq!(rewards[1].upgrade, 1);
+        assert!(rewards.iter().all(|item| item.depth == 9));
     }
 
     #[test]

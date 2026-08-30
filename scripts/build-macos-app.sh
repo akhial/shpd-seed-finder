@@ -36,7 +36,7 @@ install -m 644 "$PACKAGE/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIco
 # are surfaced in the app's Artwork & Licenses sheet. SeedSeekerKit degrades
 # to SF Symbols when the atlases are missing, which keeps a bare `swift run`
 # outside the bundle working; the catalog it then reads from the checkout.
-for asset in catalog-v3.3.8.json items.png item_icons.png LICENSE.txt ATTRIBUTION.md; do
+for asset in catalog-v4.0.0.json items.png item_icons.png LICENSE.txt ATTRIBUTION.md; do
     install -m 644 "$ASSETS/$asset" "$APP/Contents/Resources/$asset"
 done
 

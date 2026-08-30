@@ -63,6 +63,25 @@ final class DeepLinkTests: XCTestCase {
         XCTAssertEqual(expected, actual)
     }
 
+    /// The enchantments and the item source v4.0.0 added are what the engine
+    /// writes format-3 links for; the pinned version-1 link above must keep
+    /// decoding all the same, so both eras stay shareable from this build.
+    func testAQueryOfV4EffectsAndTheVaultSourceRoundTripsThroughALink() throws {
+        let query = SavedQuery(requirements: [
+            try ItemRequirement(key: 1, item: ItemCatalog.findById("greatsword"), upgrade: 5,
+                                effect: .oneOf(["Vorpal", "Crystal"]), kind: .weapon,
+                                upgradeMatch: .exactly, source: .vaultTreasure),
+        ])
+        let decoded = try DeepLink.decode(try DeepLink.encodeLink(for: query))
+        var expected = query.requirements
+        var actual = decoded.requirements
+        for index in expected.indices { expected[index].key = 0 }
+        for index in actual.indices { actual[index].key = 0 }
+        XCTAssertEqual(expected, actual)
+        XCTAssertEqual(actual.first?.effect, .oneOf(["Crystal", "Vorpal"]))
+        XCTAssertEqual(actual.first?.source, .vaultTreasure)
+    }
+
     func testGarbageAndEmptyTextAreRejected() {
         for text in ["", "   ", "not a link", "!!!", "https://example.com/",
                      "https://shpd-seed-seeker.web.app/#q=", "seedseeker://q/",

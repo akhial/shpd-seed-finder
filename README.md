@@ -147,11 +147,13 @@ cargo run --release -p shpd-seedfinder-cli -- -i requirements.json -b 1000 --wor
         { "at_most": 3..4 }
         = "any",
 
-      // +4 is valid only for rings; "any" and effect names are case-insensitive.
+      // Weapons (melee and thrown) reach +5; armor, wands and rings reach +4.
+      // Everything above +3 comes only from the Imp's vault (floors 17-19).
+      // "any" and effect names are case-insensitive.
       "upgrade"?:
-        "any" | 1..3 | 4 |
-        { "exact": 1..3 | 4 } |
-        { "at_least": 0..3 | 4 }
+        "any" | 1..5 |
+        { "exact": 1..5 } |
+        { "at_least": 0..5 }
         = "any",
 
       // The effect must belong to the selected weapon or armor kind. A list
@@ -161,10 +163,10 @@ cargo run --release -p shpd-seedfinder-cli -- -i requirements.json -b 1000 --wor
         // Weapon enchantments
         "Blazing" | "Chilling" | "Kinetic" | "Shocking" | "Blocking" | "Blooming" |
         "Elastic" | "Lucky" | "Projecting" | "Unstable" | "Corrupting" | "Grim" |
-        "Vampiric" |
+        "Vampiric" | "Venomous" | "Eldritch" | "Vorpal" | "Crystal" |
         // Weapon curses
         "Annoying" | "Displacing" | "Dazzling" | "Explosive" | "Sacrificial" |
-        "Wayward" | "Polarized" | "Friendly" |
+        "Wayward" | "Polarized" | "Friendly" | "Pressurized" | "Wondrous" |
         // Armor glyphs
         "Obfuscation" | "Swiftness" | "Viscosity" | "Potential" | "Brimstone" | "Stone" |
         "Entanglement" | "Repulsion" | "Camouflage" | "Flow" | "Affection" |
@@ -179,7 +181,10 @@ cargo run --release -p shpd-seedfinder-cli -- -i requirements.json -b 1000 --wor
         "heap" | "chest" | "locked_chest" | "crystal_chest" | "tomb" | "skeleton" |
         "sacrificial_fire" | "mimic" | "golden_mimic" | "crystal_mimic" | "statue" |
         "armored_statue" | "shop" | "ghost_reward" | "wandmaker_reward" |
-        "blacksmith_reward" | "imp_reward",
+        "blacksmith_reward" |
+        // The Imp's six vault prizes, and the equipment in the vault's
+        // treasure rooms; the player carries exactly one item out of either.
+        "imp_reward" | "vault_treasure",
       // Equal groups must resolve to the same kind and item ID.
       "identity_group"?: 1..255,
       "max_depth"?: 1..24 = query.max_depth,
@@ -204,7 +209,7 @@ cargo run --release -p shpd-seedfinder-cli -- -i requirements.json -b 1000 --wor
 
 ### Fast Mode
 
-This mode adds one lossy shortcut: +3 weapon/armor requirements consider only Ghost and Blacksmith rewards, skipping the rare Crypt and Sacrificial-fire prizes, so those searches end at floor 14.
+This mode adds one lossy shortcut: +3 weapon/armor requirements consider only quest rewards — the Ghost, the Blacksmith, and the Imp's vault prizes, which are quest rewards and stay exact — skipping the rare Crypt, Sacrificial-fire and special-room chest prizes, so those searches end at floor 19 instead of running to the floor limit. Requirements above +3 are always exact: only the Imp's vault produces them.
 
 ### Share links
 
@@ -350,13 +355,18 @@ swift test
 
 #### Java Oracle
 
-
 ```sh
 javac -d /tmp tooling/parity/RngOracle.java
 java -cp /tmp RngOracle
 ```
 
-`EquipmentOracle.java` is compiled against the isolated v3.3.8 JAR
+`EquipmentOracle.java` is compiled against the isolated v3.3.8 JAR.
+
+The engine now targets Shattered Pixel Dungeon 4.0.0, whose source has not
+been published: `tooling/oracle-4.0` is the 4.0.0 oracle, built from the
+official `4.0.0-BETA-3` release JAR (the digest pinned in `SHPD_COMMIT`)
+rather than from a source checkout. The v3.3.8 oracle in `tooling/oracle`
+remains for the fixtures that still pin that version.
 
 ## Acknowledgements<a id="acknowledgements"></a>
 

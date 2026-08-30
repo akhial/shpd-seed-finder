@@ -4,7 +4,8 @@
 //! `https://shpd-seed-seeker.web.app/#q=EAEkgA`. The payload is a versioned
 //! bit stream, so codes shared today must keep decoding in every future
 //! release: the numeric code tables below are frozen by tests and may only
-//! ever grow at the end.
+//! ever grow at the end, and the encoder writes the oldest version that can
+//! carry a query so links keep opening in older releases.
 
 // Every narrowing cast in this module operates on a value already masked or
 // bounds-checked to fewer bits than the destination type.
@@ -34,10 +35,19 @@ const VERSION_ONE: u8 = 1;
 /// Adds effect sets, alternative groups and combined-level groups to each
 /// requirement. Written only when a query uses one of them.
 const VERSION_TWO: u8 = 2;
+/// Identical to version 2 except that an effect-set mask is 32 bits wide, so
+/// it can carry the weapon effects v4.0.0 appended at codes 24–26. Written
+/// only when a query's effect set names one of them; everything else keeps
+/// writing version 1 or 2 so its links still open in older releases.
+const VERSION_THREE: u8 = 3;
 /// Requirement-count field width; far above anything the UIs produce.
 const MAX_REQUIREMENTS: usize = 63;
-/// Effect-set mask width; both families define 21 effects, frozen by a test.
-const EFFECT_MASK_BITS: u32 = 24;
+/// Effect-set mask width in version 2: the 21 effects each family had when
+/// the version was frozen, with room to spare, all below code 24.
+const EFFECT_MASK_BITS_V2: u32 = 24;
+/// Effect-set mask width in version 3; the weapon family now has 27 effects.
+/// Both widths are frozen by a test.
+const EFFECT_MASK_BITS_V3: u32 = 32;
 
 const BASE64URL: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
@@ -89,7 +99,9 @@ pub fn encode(query: &SearchQuery) -> Result<String, String> {
     // Alternative groups are renumbered in first-appearance order so the
     // labels fit the count field; the structure is all that travels.
     let mut alternative_labels: Vec<u8> = Vec::new();
-    let version = if needs_version_two(query) {
+    let version = if needs_version_three(query) {
+        VERSION_THREE
+    } else if needs_version_two(query) {
         VERSION_TWO
     } else {
         VERSION_ONE
@@ -131,6 +143,42 @@ fn needs_version_two(query: &SearchQuery) -> bool {
         })
 }
 
+/// Whether a query has an effect set that only the 32-bit mask of version
+/// three can carry: one written as a mask (neither a single effect, which
+/// travels as a 5-bit code, nor the family's whole enchantment list, which
+/// travels as a mode) that names an effect at code 24 or above.
+fn needs_version_three(query: &SearchQuery) -> bool {
+    query.requirements.iter().any(|requirement| {
+        matches!(
+            requirement.effect,
+            EffectRequirement::OneOf(set)
+                if effect_set_mode(set) == 3
+                    && set.effects().any(|effect| effect_code(effect) >= EFFECT_MASK_BITS_V2)
+        )
+    })
+}
+
+/// How a version-two-or-later record carries an effect set: `1` a single
+/// effect, `2` the family's whole enchantment list, `3` a mask.
+fn effect_set_mode(set: EffectSet) -> u32 {
+    if set.count() == 1 {
+        1
+    } else if EffectSet::enchantments(set.family()) == Some(set) {
+        2
+    } else {
+        3
+    }
+}
+
+/// Effect-set mask width of a format version.
+const fn effect_mask_bits(version: u8) -> u32 {
+    if version >= VERSION_THREE {
+        EFFECT_MASK_BITS_V3
+    } else {
+        EFFECT_MASK_BITS_V2
+    }
+}
+
 /// Encodes a validated query as a full shareable web link.
 ///
 /// # Errors
@@ -150,10 +198,10 @@ pub fn decode(code: &str) -> Result<SearchQuery, String> {
     let bytes = base64url_decode(code.trim())?;
     let mut bits = BitReader::new(&bytes);
     let version = bits.pull(4)?;
-    if version != u32::from(VERSION_ONE) && version != u32::from(VERSION_TWO) {
+    if !(u32::from(VERSION_ONE)..=u32::from(VERSION_THREE)).contains(&version) {
         return Err(format!(
             "this link uses format version {version}; this app only understands \
-             versions {VERSION_ONE} and {VERSION_TWO} — it may have been created by a newer \
+             versions {VERSION_ONE} to {VERSION_THREE} — it may have been created by a newer \
              release"
         ));
     }
@@ -273,17 +321,17 @@ fn encode_requirement(
         }
         EffectRequirement::Any => bits.push(0, 2),
         EffectRequirement::OneOf(set) => {
-            if set.count() == 1 {
-                bits.push(1, 2);
-                bits.push(set.effects().next().map_or(0, effect_code), 5);
-            } else if EffectSet::enchantments(set.family()) == Some(set) {
-                bits.push(2, 2);
-            } else {
-                bits.push(3, 2);
-                bits.push(
+            let mode = effect_set_mode(set);
+            bits.push(mode, 2);
+            match mode {
+                1 => bits.push(set.effects().next().map_or(0, effect_code), 5),
+                2 => {}
+                // `needs_version_three` guarantees every code fits the
+                // version's mask width.
+                _ => bits.push(
                     set.effects().map(|effect| 1 << effect_code(effect)).sum(),
-                    EFFECT_MASK_BITS,
-                );
+                    effect_mask_bits(version),
+                ),
             }
         }
     }
@@ -354,8 +402,9 @@ fn decode_requirement(bits: &mut BitReader<'_>, version: u8) -> Result<Requireme
                     .ok_or_else(|| "any-enchantment needs a weapon or armor".to_owned())?,
             ),
             _ => {
-                let mask = bits.pull(EFFECT_MASK_BITS)?;
-                let effects = (0..EFFECT_MASK_BITS)
+                let width = effect_mask_bits(version);
+                let mask = bits.pull(width)?;
+                let effects = (0..width)
                     .filter(|code| mask & (1 << code) != 0)
                     .map(|code| effect_from(kind, code))
                     .collect::<Result<Vec<_>, _>>()?;
@@ -730,9 +779,14 @@ mod tests {
     use crate::quests::WandmakerQuestType;
 
     use super::{
-        ALL_ITEM_IDS, EFFECT_MASK_BITS, SOURCE_CODES, decode, decode_text, encode, encode_link,
-        extract_code,
+        ALL_ITEM_IDS, EFFECT_MASK_BITS_V2, EFFECT_MASK_BITS_V3, SOURCE_CODES, decode, decode_text,
+        encode, encode_link, extract_code,
     };
+
+    /// The format version a code was written with (its top nibble).
+    fn version_of(code: &str) -> u8 {
+        super::base64url_decode(code).unwrap()[0] >> 4
+    }
 
     fn wildcard(kind: ItemKind) -> Requirement {
         Requirement {
@@ -1123,6 +1177,14 @@ mod tests {
             "Wayward",
             "Polarized",
             "Friendly",
+            // Appended by v4.0.0: codes 21–26. Codes 24–26 overflow the
+            // 24-bit mask of version 2, which is what version 3 is for.
+            "Venomous",
+            "Eldritch",
+            "Vorpal",
+            "Crystal",
+            "Pressurized",
+            "Wondrous",
         ];
         let expected_armor_effects = [
             "Obfuscation",
@@ -1180,6 +1242,7 @@ mod tests {
             "wandmaker_reward",
             "blacksmith_reward",
             "imp_reward",
+            "vault_treasure",
         ];
         assert_eq!(
             SOURCE_CODES
@@ -1287,8 +1350,176 @@ mod tests {
 
     #[test]
     fn effect_masks_fit_every_family() {
-        assert!(ALL_WEAPON_EFFECTS.len() as u32 <= EFFECT_MASK_BITS);
-        assert!(ALL_ARMOR_EFFECTS.len() as u32 <= EFFECT_MASK_BITS);
+        // Version 2 froze a 24-bit mask when both families had 21 effects;
+        // the weapon family outgrew it in v4.0.0, hence version 3's 32 bits.
+        assert_eq!(EFFECT_MASK_BITS_V2, 24);
+        assert_eq!(EFFECT_MASK_BITS_V3, 32);
+        assert!(ALL_ARMOR_EFFECTS.len() as u32 <= EFFECT_MASK_BITS_V2);
+        assert!(ALL_WEAPON_EFFECTS.len() as u32 > EFFECT_MASK_BITS_V2);
+        assert!(ALL_WEAPON_EFFECTS.len() as u32 <= EFFECT_MASK_BITS_V3);
+        // Single effects travel as a 5-bit code in every version.
+        assert!(ALL_WEAPON_EFFECTS.len() <= 32);
+    }
+
+    /// An effect set naming one of the v4.0.0 weapon effects at codes 24–26
+    /// needs the 32-bit mask, so it — and only it — writes version 3.
+    #[test]
+    fn effect_sets_with_new_weapon_effects_write_version_three() {
+        let query = minimal(vec![Requirement {
+            effect: EffectRequirement::OneOf(
+                EffectSet::from_effects([
+                    Effect::Weapon(WeaponEffect::Crystal),
+                    Effect::Weapon(WeaponEffect::Pressurized),
+                ])
+                .unwrap(),
+            ),
+            ..wildcard(ItemKind::Weapon)
+        }]);
+        let code = encode(&query).unwrap();
+        assert_eq!(version_of(&code), super::VERSION_THREE);
+        assert_eq!(decode(&code).unwrap(), query);
+        // A known version-three code must decode identically forever.
+        assert_eq!(code, "MAEAwMAAAAA");
+        assert_eq!(decode("MAEAwMAAAAA").unwrap(), query);
+
+        // Venomous, Eldritch and Vorpal sit below code 24 and still fit the
+        // version-two mask.
+        let low = minimal(vec![Requirement {
+            effect: EffectRequirement::OneOf(
+                EffectSet::from_effects([
+                    Effect::Weapon(WeaponEffect::Venomous),
+                    Effect::Weapon(WeaponEffect::Vorpal),
+                ])
+                .unwrap(),
+            ),
+            ..wildcard(ItemKind::Weapon)
+        }]);
+        let code = encode(&low).unwrap();
+        assert_eq!(version_of(&code), super::VERSION_TWO);
+        assert_eq!(decode(&code).unwrap(), low);
+    }
+
+    /// Sets of the original effects, the whole-family "any enchantment"
+    /// mode (which now includes the new enchantments but carries no mask)
+    /// and single new effects (a 5-bit code) all keep their old version, so
+    /// those links still open in releases that predate version 3.
+    #[test]
+    fn queries_that_fit_older_versions_keep_writing_them() {
+        let original_set = minimal(vec![Requirement {
+            effect: EffectRequirement::OneOf(
+                EffectSet::from_effects([
+                    Effect::Weapon(WeaponEffect::Blocking),
+                    Effect::Weapon(WeaponEffect::Projecting),
+                    Effect::Weapon(WeaponEffect::Vampiric),
+                ])
+                .unwrap(),
+            ),
+            ..wildcard(ItemKind::Weapon)
+        }]);
+        let code = encode(&original_set).unwrap();
+        assert_eq!(version_of(&code), super::VERSION_TWO);
+        assert_eq!(decode(&code).unwrap(), original_set);
+
+        let any_enchantment = minimal(vec![Requirement {
+            effect: EffectRequirement::OneOf(EffectSet::enchantments(ItemKind::Weapon).unwrap()),
+            ..wildcard(ItemKind::Weapon)
+        }]);
+        let code = encode(&any_enchantment).unwrap();
+        assert_eq!(version_of(&code), super::VERSION_TWO);
+        assert_eq!(decode(&code).unwrap(), any_enchantment);
+
+        let single = minimal(vec![Requirement {
+            effect: EffectRequirement::exactly(Effect::Weapon(WeaponEffect::Wondrous)),
+            ..wildcard(ItemKind::Weapon)
+        }]);
+        let code = encode(&single).unwrap();
+        assert_eq!(version_of(&code), super::VERSION_ONE);
+        assert_eq!(decode(&code).unwrap(), single);
+    }
+
+    /// A version-two mask stays 24 bits wide whatever the catalog grows to:
+    /// a hand-built version-two stream must keep decoding bit for bit.
+    #[test]
+    fn version_two_masks_stay_twenty_four_bits_wide() {
+        let mut bits = super::BitWriter::default();
+        bits.push(2, 4); // version
+        bits.push(0, 3); // flags
+        bits.push(0, 1); // max depth absent
+        bits.push(0, 1); // challenges absent
+        bits.push(0, 1); // Wandmaker filter absent
+        bits.push(1, 6); // one requirement
+        bits.push(0, 3); // weapon
+        bits.push(0, 1); // item absent
+        bits.push(0, 2); // tier any
+        bits.push(0, 2); // upgrade any
+        bits.push(3, 2); // effect set
+        bits.push((1 << 4) | (1 << 8) | (1 << 12), 24); // Blocking, Projecting, Vampiric
+        bits.push(0, 1); // cursed allowed
+        bits.push(0, 1); // source absent
+        bits.push(0, 1); // identity group absent
+        bits.push(0, 1); // requirement depth absent
+        bits.push(0, 1); // alternative group absent
+        bits.push(0, 1); // combined-level group absent
+        let code = super::base64url_encode(&bits.finish());
+        let expected = minimal(vec![Requirement {
+            effect: EffectRequirement::OneOf(
+                EffectSet::from_effects([
+                    Effect::Weapon(WeaponEffect::Blocking),
+                    Effect::Weapon(WeaponEffect::Projecting),
+                    Effect::Weapon(WeaponEffect::Vampiric),
+                ])
+                .unwrap(),
+            ),
+            ..wildcard(ItemKind::Weapon)
+        }]);
+        assert_eq!(decode(&code).unwrap(), expected);
+        assert_eq!(encode(&expected).unwrap(), code);
+    }
+
+    /// Upgrade values ride three bits, so the v4.0.0 ceilings — weapons +5,
+    /// everything else +4 — round-trip in the original version.
+    #[test]
+    fn round_trips_the_raised_upgrade_ceilings() {
+        for (kind, upgrade) in [
+            (ItemKind::Weapon, UpgradeRequirement::Exact(5)),
+            (ItemKind::Weapon, UpgradeRequirement::AtLeast(5)),
+            (ItemKind::Armor, UpgradeRequirement::Exact(4)),
+            (ItemKind::Wand, UpgradeRequirement::AtLeast(4)),
+        ] {
+            let query = minimal(vec![Requirement {
+                upgrade,
+                ..wildcard(kind)
+            }]);
+            let code = encode(&query).unwrap();
+            assert_eq!(version_of(&code), super::VERSION_ONE);
+            assert_eq!(decode(&code).unwrap(), query, "{kind:?} {upgrade:?}");
+        }
+        let thrown = minimal(vec![Requirement {
+            weapon_category: Some(WeaponCategory::Thrown),
+            upgrade: UpgradeRequirement::Exact(5),
+            ..wildcard(ItemKind::Weapon)
+        }]);
+        assert_eq!(decode(&encode(&thrown).unwrap()).unwrap(), thrown);
+    }
+
+    /// The vault-treasure source took the next free code at the end of the
+    /// source table, so it fits the original five-bit field.
+    #[test]
+    fn round_trips_the_vault_treasure_source() {
+        let query = minimal(vec![Requirement {
+            item: Some(ItemId::PlateArmor),
+            upgrade: UpgradeRequirement::AtLeast(3),
+            source: Some(ItemSource::VaultTreasure),
+            ..wildcard(ItemKind::Armor)
+        }]);
+        let code = encode(&query).unwrap();
+        assert_eq!(version_of(&code), super::VERSION_ONE);
+        assert_eq!(super::source_code(ItemSource::VaultTreasure), 17);
+        assert_eq!(decode(&code).unwrap(), query);
+        assert_eq!(
+            json_query::encode(&decode(&code).unwrap())["requirements"][0]["source"],
+            "vault_treasure"
+        );
     }
 
     /// A known version-two code must decode identically forever.

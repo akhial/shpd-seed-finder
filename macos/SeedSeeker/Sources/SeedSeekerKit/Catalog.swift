@@ -5,7 +5,7 @@ import Foundation
 ///
 /// The asset is the one every front-end reads
 /// (`android/app/src/main/assets/third_party/shattered-pixel-dungeon/
-/// catalog-v3.3.8.json`), installed into the app bundle by
+/// catalog-v4.0.0.json`), installed into the app bundle by
 /// `scripts/build-macos-app.sh` beside the atlases it indexes, so no platform
 /// keeps a second copy of the item list, its tiers and sprites, or the
 /// enchantment, glyph and curse names.
@@ -39,7 +39,7 @@ public enum ItemCatalog {
     /// atlases, or the repository checkout itself under `swift test` and
     /// `swift run`, located relative to this source file.
     private static var catalogURL: URL {
-        let installed = Bundle.main.resourceURL?.appendingPathComponent("catalog-v3.3.8.json")
+        let installed = Bundle.main.resourceURL?.appendingPathComponent("catalog-v4.0.0.json")
         if let installed, FileManager.default.fileExists(atPath: installed.path) { return installed }
         return URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent() // Catalog.swift
@@ -48,7 +48,7 @@ public enum ItemCatalog {
             .deletingLastPathComponent() // SeedSeeker
             .deletingLastPathComponent() // macos
             .appendingPathComponent(
-                "android/app/src/main/assets/third_party/shattered-pixel-dungeon/catalog-v3.3.8.json")
+                "android/app/src/main/assets/third_party/shattered-pixel-dungeon/catalog-v4.0.0.json")
     }
 
     private static let document: Document = {

@@ -48,7 +48,7 @@ final class SeedSeekerKitTests: XCTestCase {
             .deletingLastPathComponent() // macos
             .deletingLastPathComponent() // repository root
             .appendingPathComponent(
-                "android/app/src/main/assets/third_party/shattered-pixel-dungeon/catalog-v3.3.8.json")
+                "android/app/src/main/assets/third_party/shattered-pixel-dungeon/catalog-v4.0.0.json")
         let document = try XCTUnwrap(
             try JSONSerialization.jsonObject(with: Data(contentsOf: asset)) as? [String: Any])
         let entries = try XCTUnwrap(document["entries"] as? [[String: Any]])
@@ -177,20 +177,20 @@ final class SeedSeekerKitTests: XCTestCase {
     /// marking a partial match rather than an impossible pair.
     func testEngineMarksOnlyOneMutuallyExclusiveRewardAndReportsPartialMatches() async throws {
         let world = try await pinnedWorld()
-        let corrosion = try ItemRequirement(key: 1, item: nil, upgrade: 3, kind: .wand,
+        let blastWave = try ItemRequirement(key: 1, item: nil, upgrade: 2, kind: .wand,
                                             upgradeMatch: .exactly, source: .wandmakerReward)
         let warding = try ItemRequirement(key: 2, item: nil, upgrade: 1, kind: .wand,
                                           upgradeMatch: .exactly, source: .wandmakerReward)
 
-        let single = try marks([corrosion])
+        let single = try marks([blastWave])
         XCTAssertEqual(single.matchedRequirements, 1)
         XCTAssertEqual(single.totalRequirements, 1)
         let index = try XCTUnwrap(single.matched.first)
         XCTAssertEqual(single.matched.count, 1)
-        XCTAssertEqual(world.items[index].item.id, "wand_corrosion")
+        XCTAssertEqual(world.items[index].item.id, "wand_blast_wave")
         XCTAssertEqual(world.items[index].source, .wandmakerReward)
 
-        let both = try marks([corrosion, warding])
+        let both = try marks([blastWave, warding])
         XCTAssertEqual(both.totalRequirements, 2)
         XCTAssertEqual(both.matchedRequirements, 1, "the two rewards exclude each other")
         XCTAssertEqual(both.matched.count, 1)
@@ -207,9 +207,9 @@ final class SeedSeekerKitTests: XCTestCase {
         let index = try XCTUnwrap(found.matched.first)
         XCTAssertEqual(found.matched.count, 1)
         XCTAssertEqual(world.items[index].item.id, "ring_sharpshooting")
-        XCTAssertEqual(world.items[index].depth, 9)
+        XCTAssertEqual(world.items[index].depth, 11)
 
-        // The world's only one sits on floor 9, out of reach of a shallower run.
+        // The world's only one sits on floor 11, out of reach of a shallower run.
         XCTAssertTrue(try marks([named], maximumDepth: 8).matched.isEmpty)
         XCTAssertEqual(try marks([named], maximumDepth: 8).matchedRequirements, 0)
         // Two requirements cannot both claim that single ring.
@@ -217,12 +217,12 @@ final class SeedSeekerKitTests: XCTestCase {
                                          upgradeMatch: .exactly)
         XCTAssertEqual(try marks([named, second]).matchedRequirements, 1)
 
-        // The world's only Wand of Fireblast is cursed.
-        let fireblast = try XCTUnwrap(ItemCatalog.findById("wand_fireblast"))
-        XCTAssertEqual(try marks([ItemRequirement(key: 1, item: fireblast, upgrade: 0,
+        // The world's only Wand of Corrosion is cursed.
+        let corrosion = try XCTUnwrap(ItemCatalog.findById("wand_corrosion"))
+        XCTAssertEqual(try marks([ItemRequirement(key: 1, item: corrosion, upgrade: 0,
                                                   kind: .wand, upgradeMatch: .any)])
                            .matchedRequirements, 1)
-        XCTAssertTrue(try marks([ItemRequirement(key: 1, item: fireblast, upgrade: 0, kind: .wand,
+        XCTAssertTrue(try marks([ItemRequirement(key: 1, item: corrosion, upgrade: 0, kind: .wand,
                                                  upgradeMatch: .any, requireUncursed: true)])
                           .matched.isEmpty)
 
@@ -306,17 +306,35 @@ final class SeedSeekerKitTests: XCTestCase {
 
     func testScoutCodecGoldenQuestBlock() throws {
         let world = try ScoutCodec.decode(questPacket(
-            [1, 3, 4], [2, 3, 8], [3, 1, 13], [4, 2, 18]))
+            [1, 3, 4], [2, 3, 8], [3, 1, 13], [4, 1, 18]))
         XCTAssertEqual(world.seed, "AAA-AAA-AAA")
         XCTAssertTrue(world.items.isEmpty)
         XCTAssertEqual(world.quests.map(\.kind), [.ghost, .wandmaker, .blacksmith, .imp])
-        XCTAssertEqual(world.quests.map(\.variant), [.greatCrab, .rotberry, .crystal, .golem])
+        XCTAssertEqual(world.quests.map(\.variant), [.greatCrab, .rotberry, .crystal, .vault])
         XCTAssertEqual(world.quests.map(\.depth), [4, 8, 13, 18])
         XCTAssertEqual(world.quests.map(\.kind.giverLabel),
                        ["Sad ghost", "Wandmaker", "Blacksmith", "Imp"])
         XCTAssertEqual(world.quests.map(\.variant.label),
-                       ["Great crab", "Rotberry", "Crystal spire", "Golems"])
+                       ["Great crab", "Rotberry", "Crystal spire", "Vault"])
         XCTAssertTrue(try ScoutCodec.decode(questPacket()).quests.isEmpty)
+    }
+
+    /// v4.0.0's own wire values: the vault's item source, and the weapon
+    /// upgrade one above the ceiling every other family stops at.
+    func testScoutCodecReadsTheVaultSourceAndTheWeaponCeiling() throws {
+        func packet(_ id: String, upgrade: UInt8, source: ScoutItemSource) -> Data {
+            var bytes = Array("SSC2".utf8) + [11] + Array("AAA-AAA-AAA".utf8) + [0] + [0, 1]
+            let name = Array(id.utf8); bytes += [0, UInt8(name.count)] + name
+            bytes += [17, upgrade, 0, 0, 0, UInt8(source.rawValue), 0]
+            return Data(bytes)
+        }
+        let vault = try ScoutCodec.decode(packet("greatsword", upgrade: 5, source: .vaultTreasure)).items[0]
+        XCTAssertEqual(vault.upgrade, 5)
+        XCTAssertEqual(vault.source, .vaultTreasure)
+        XCTAssertEqual(vault.source.label, "Vault treasure")
+        XCTAssertThrowsError(try ScoutCodec.decode(packet("greatsword", upgrade: 6, source: .vaultTreasure)))
+        XCTAssertNoThrow(try ScoutCodec.decode(packet("plate_armor", upgrade: 4, source: .impReward)))
+        XCTAssertThrowsError(try ScoutCodec.decode(packet("plate_armor", upgrade: 5, source: .impReward)))
     }
 
     func testScoutCodecRejectsMalformedQuestBlocks() throws {
@@ -325,6 +343,8 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertThrowsError(try ScoutCodec.decode(questPacket([0, 1, 3])))
         XCTAssertThrowsError(try ScoutCodec.decode(questPacket([1, 0, 3])))
         XCTAssertThrowsError(try ScoutCodec.decode(questPacket([1, 4, 3])))
+        // v4.0.0 left the Imp one variant, the vault; the old golem code is gone.
+        XCTAssertThrowsError(try ScoutCodec.decode(questPacket([4, 2, 18])))
         XCTAssertThrowsError(try ScoutCodec.decode(questPacket([3, 3, 13])))
         // Depth outside the quest's floor range.
         XCTAssertThrowsError(try ScoutCodec.decode(questPacket([1, 1, 5])))
@@ -385,6 +405,14 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 0, kind: .armor, upgradeMatch: .exactly))
         XCTAssertNoThrow(try ItemRequirement(key: 1, item: nil, upgrade: 4, kind: .ring, upgradeMatch: .atLeast))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 5, kind: .ring, upgradeMatch: .atLeast))
+        // v4.0.0's ceilings: the vault's tier-4 prizes take weapons to +5,
+        // every other family to +4.
+        XCTAssertNoThrow(try ItemRequirement(key: 1, item: nil, upgrade: 5, kind: .weapon, upgradeMatch: .exactly))
+        XCTAssertNoThrow(try ItemRequirement(key: 1, item: nil, upgrade: 5, kind: .thrownWeapon, upgradeMatch: .exactly))
+        XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 6, kind: .weapon, upgradeMatch: .exactly))
+        XCTAssertNoThrow(try ItemRequirement(key: 1, item: nil, upgrade: 4, kind: .armor, upgradeMatch: .exactly))
+        XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 5, kind: .armor, upgradeMatch: .exactly))
+        XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 5, kind: .wand, upgradeMatch: .exactly))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 1, modifier: "Lucky", kind: .wand))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 1,
             modifier: "Displacing", kind: .weapon, requireUncursed: true))
@@ -469,8 +497,8 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertTrue(world.items.allSatisfy { (1...24).contains($0.depth) })
         XCTAssertEqual(world.quests.map(\.kind), [.ghost, .wandmaker, .blacksmith, .imp])
         XCTAssertEqual(world.quests.map(\.variant),
-                       [.greatCrab, .elementalEmbers, .crystal, .golem])
-        XCTAssertEqual(world.quests.map(\.depth), [4, 9, 13, 19])
+                       [.gnollTrickster, .elementalEmbers, .crystal, .vault])
+        XCTAssertEqual(world.quests.map(\.depth), [3, 9, 13, 19])
     }
 
     func testRealFFIStartCancelCloseLifecycle() async throws {

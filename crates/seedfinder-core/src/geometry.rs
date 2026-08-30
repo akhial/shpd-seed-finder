@@ -512,7 +512,7 @@ pub mod barray {
     }
 }
 
-/// Terrain IDs and bit flags from v3.3.8 `Terrain.java`.
+/// Terrain IDs and bit flags from v4.0.0 `Terrain.java`.
 pub mod terrain {
     pub const CHASM: i32 = 0;
     pub const EMPTY: i32 = 1;
@@ -553,6 +553,7 @@ pub mod terrain {
     pub const MINE_BOULDER: i32 = 36;
     pub const ENTRANCE_SP: i32 = 37;
     pub const HERO_LKD_DR: i32 = 38;
+    pub const CUSTOM_DECO_WTR: i32 = 39;
 
     pub const PASSABLE: i32 = 0x01;
     pub const LOS_BLOCKING: i32 = 0x02;
@@ -598,6 +599,7 @@ pub mod terrain {
         flags[ALCHEMY as usize] = SOLID;
         flags[CUSTOM_DECO_EMPTY as usize] = flags[EMPTY as usize];
         flags[CUSTOM_DECO as usize] = SOLID;
+        flags[CUSTOM_DECO_WTR as usize] = SOLID;
         flags[STATUE as usize] = SOLID;
         flags[STATUE_SP as usize] = flags[STATUE as usize];
         flags[REGION_DECO as usize] = flags[STATUE as usize];

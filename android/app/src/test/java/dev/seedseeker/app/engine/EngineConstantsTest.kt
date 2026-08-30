@@ -36,10 +36,13 @@ class EngineConstantsTest {
         assertEquals(limits.getInt("levelSumGroupMax"), SearchLimits.LEVEL_SUM_GROUP_MAX)
         assertEquals(limits.getInt("maxUpgradeDefault"), SearchLimits.MAX_UPGRADE_DEFAULT)
         assertEquals(limits.getInt("maxUpgradeRing"), SearchLimits.MAX_UPGRADE_RING)
-        // The families route to the right maximum, narrowed weapon kinds included.
-        assertEquals(limits.getInt("maxUpgradeRing"), ItemKind.RING.maximumSearchUpgrade)
-        for (kind in ItemKind.entries.filter { it != ItemKind.RING }) {
-            assertEquals(limits.getInt("maxUpgradeDefault"), kind.maximumSearchUpgrade)
+        assertEquals(limits.getInt("maxUpgradeWeapon"), SearchLimits.MAX_UPGRADE_WEAPON)
+        // The families route to the right maximum, narrowed weapon kinds
+        // included: the engine publishes one ceiling per family, and a kind
+        // takes its family's — so a melee weapon reaches the weapon's +5.
+        val byKind = limits.getJSONObject("maxUpgradeByKind")
+        for (kind in ItemKind.entries) {
+            assertEquals(kind.label, byKind.getInt(kind.family.name.lowercase()), kind.maximumSearchUpgrade)
         }
         assertEquals(SearchLimits.MAX_DEPTH, SearchRequest(listOf(anyWand)).maximumDepth)
     }
