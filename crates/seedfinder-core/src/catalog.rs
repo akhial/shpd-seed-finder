@@ -13,10 +13,14 @@ pub enum ItemKind {
 impl ItemKind {
     /// Highest exact upgrade accepted by the Android search UI for this family.
     #[must_use]
+    /// Highest upgrade any generated item of this kind can carry, and so the
+    /// highest value a requirement may ask for. v4.0.0's Imp vault sets the
+    /// ceilings: its final-room options reach +5 on a tier-4 weapon or thrown
+    /// weapon, +4 on plate armor, wands and rings.
     pub const fn maximum_search_upgrade(self) -> u8 {
         match self {
-            Self::Ring => 4,
-            Self::Weapon | Self::Armor | Self::Wand => 3,
+            Self::Weapon => 5,
+            Self::Armor | Self::Wand | Self::Ring => 4,
         }
     }
 }
@@ -703,12 +707,33 @@ pub enum WeaponEffect {
     Wayward,
     Polarized,
     Friendly,
+    // v4.0.0 additions. Codes are append-only (share links and results files
+    // persist them), so the new enchantments and curses follow the v3.3.8
+    // block instead of sitting beside their rarity peers.
+    Venomous,
+    Eldritch,
+    Vorpal,
+    Crystal,
+    Pressurized,
+    Wondrous,
 }
 
 impl WeaponEffect {
     #[must_use]
     pub const fn is_curse(self) -> bool {
-        (self as u8) >= (Self::Annoying as u8)
+        matches!(
+            self,
+            Self::Annoying
+                | Self::Displacing
+                | Self::Dazzling
+                | Self::Explosive
+                | Self::Sacrificial
+                | Self::Wayward
+                | Self::Polarized
+                | Self::Friendly
+                | Self::Pressurized
+                | Self::Wondrous
+        )
     }
 
     #[must_use]
@@ -735,6 +760,12 @@ impl WeaponEffect {
             Self::Wayward => "Wayward",
             Self::Polarized => "Polarized",
             Self::Friendly => "Friendly",
+            Self::Venomous => "Venomous",
+            Self::Eldritch => "Eldritch",
+            Self::Vorpal => "Vorpal",
+            Self::Crystal => "Crystal",
+            Self::Pressurized => "Pressurized",
+            Self::Wondrous => "Wondrous",
         }
     }
 }
@@ -866,6 +897,12 @@ pub const ALL_WEAPON_EFFECTS: &[WeaponEffect] = &[
     WeaponEffect::Wayward,
     WeaponEffect::Polarized,
     WeaponEffect::Friendly,
+    WeaponEffect::Venomous,
+    WeaponEffect::Eldritch,
+    WeaponEffect::Vorpal,
+    WeaponEffect::Crystal,
+    WeaponEffect::Pressurized,
+    WeaponEffect::Wondrous,
 ];
 
 pub const ALL_ARMOR_EFFECTS: &[ArmorEffect] = &[

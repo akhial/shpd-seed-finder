@@ -241,6 +241,7 @@ enum FileItemSource {
     WandmakerReward,
     BlacksmithReward,
     ImpReward,
+    VaultTreasure,
 }
 
 impl From<FileItemSource> for ItemSource {
@@ -263,6 +264,7 @@ impl From<FileItemSource> for ItemSource {
             FileItemSource::WandmakerReward => Self::WandmakerReward,
             FileItemSource::BlacksmithReward => Self::BlacksmithReward,
             FileItemSource::ImpReward => Self::ImpReward,
+            FileItemSource::VaultTreasure => Self::VaultTreasure,
         }
     }
 }
@@ -495,6 +497,7 @@ pub const fn source_name(source: ItemSource) -> &'static str {
         ItemSource::WandmakerReward => "wandmaker_reward",
         ItemSource::BlacksmithReward => "blacksmith_reward",
         ItemSource::ImpReward => "imp_reward",
+        ItemSource::VaultTreasure => "vault_treasure",
     }
 }
 

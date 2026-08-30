@@ -15,7 +15,7 @@ use shpd_seedfinder_core::model::{Accessibility, ItemSource, WorldItem};
 use shpd_seedfinder_core::probability::estimate_match_probability;
 use shpd_seedfinder_core::query::{SearchQuery, decide_start as decide_start_query, scout_matches};
 use shpd_seedfinder_core::quests::{
-    BlacksmithQuestType, GhostQuestType, ImpTarget, QuestSummary, WandmakerQuestType,
+    BlacksmithQuestType, GhostQuestType, ImpQuestType, QuestSummary, WandmakerQuestType,
 };
 use shpd_seedfinder_core::results_export;
 pub use shpd_seedfinder_core::results_export::MAX_RESULTS;
@@ -584,8 +584,7 @@ fn scout_quest_outputs(quests: QuestSummary) -> Vec<ScoutQuestOutput> {
         output.push(ScoutQuestOutput {
             quest: "imp",
             variant: match quest.variant {
-                ImpTarget::Monk => "monk",
-                ImpTarget::Golem => "golem",
+                ImpQuestType::Vault => "vault",
             },
             depth: quest.depth,
         });
@@ -639,6 +638,7 @@ const fn item_source_name(source: ItemSource) -> &'static str {
         ItemSource::WandmakerReward => "wandmaker_reward",
         ItemSource::BlacksmithReward => "blacksmith_reward",
         ItemSource::ImpReward => "imp_reward",
+        ItemSource::VaultTreasure => "vault_treasure",
     }
 }
 

@@ -69,15 +69,6 @@ impl Quest {
         }
     }
 
-    const fn item_source(self) -> ItemSource {
-        match self {
-            Self::Ghost => ItemSource::GhostReward,
-            Self::Wandmaker => ItemSource::WandmakerReward,
-            Self::Blacksmith => ItemSource::BlacksmithReward,
-            Self::Imp => ItemSource::ImpReward,
-        }
-    }
-
     const fn bit(self) -> u8 {
         1 << (self as u8)
     }
@@ -88,7 +79,8 @@ const fn quest_for_source(source: ItemSource) -> Option<Quest> {
         ItemSource::GhostReward => Some(Quest::Ghost),
         ItemSource::WandmakerReward => Some(Quest::Wandmaker),
         ItemSource::BlacksmithReward => Some(Quest::Blacksmith),
-        ItemSource::ImpReward => Some(Quest::Imp),
+        // Both vault sources are one pick: the Imp lets exactly one item leave.
+        ItemSource::ImpReward | ItemSource::VaultTreasure => Some(Quest::Imp),
         _ => None,
     }
 }
@@ -153,7 +145,18 @@ const fn source_profile(
         // Quest rewards.
         (S::GhostReward | S::BlacksmithReward, Weapon | Armor) => (0, 3, GoodOnly),
         (S::WandmakerReward, Wand) => (1, 3, Never),
-        (S::ImpReward, Ring) => (2, 4, Never),
+        // The Imp's final-room options (v4.0.0): every weapon, thrown weapon and
+        // the plate armor carry a good effect, wands and rings carry none,
+        // nothing is cursed. Tier-4 weapons and thrown weapons roll +3..+5,
+        // everything else +2..+4.
+        (S::ImpReward, Weapon) => (2, 5, GoodOnly),
+        (S::ImpReward, Armor) => (2, 4, GoodOnly),
+        (S::ImpReward, Wand | Ring) => (2, 4, Never),
+        // Vault treasure rooms: four loot tiers at +0..+3, plus one +4 tier-4
+        // melee weapon; effects are good or absent, never curses.
+        (S::VaultTreasure, Weapon) => (0, 4, GoodOnly),
+        (S::VaultTreasure, Armor) => (0, 3, GoodOnly),
+        (S::VaultTreasure, Wand | Ring) => (0, 3, Never),
         _ => return None,
     })
 }
@@ -200,7 +203,7 @@ fn source_feasible(requirement: &Requirement, source: ItemSource, fast_mode: boo
         EffectRequirement::OneOf(set) => set.is_curses_only(),
         EffectRequirement::Any => false,
     };
-    if requirement.require_uncursed && (source == ItemSource::ImpReward || curses_only) {
+    if requirement.require_uncursed && curses_only {
         return false;
     }
     // An explicit source pin is the user's claim, not ours: honor it verbatim
@@ -218,7 +221,7 @@ fn source_feasible(requirement: &Requirement, source: ItemSource, fast_mode: boo
     })
 }
 
-const ALL_SOURCES: [ItemSource; 17] = [
+const ALL_SOURCES: [ItemSource; 18] = [
     ItemSource::Heap,
     ItemSource::Chest,
     ItemSource::LockedChest,
@@ -236,6 +239,7 @@ const ALL_SOURCES: [ItemSource; 17] = [
     ItemSource::WandmakerReward,
     ItemSource::BlacksmithReward,
     ItemSource::ImpReward,
+    ItemSource::VaultTreasure,
 ];
 
 /// Depths carrying a shop, in order. Depth 20 is the Imp's pre-Halls shop.
@@ -475,10 +479,9 @@ impl QueryPlan {
         completed_depth: u8,
         items: &[WorldItem],
     ) -> bool {
-        let source = quest.item_source();
         let mut resolved = false;
         for item in items {
-            if item.source == source {
+            if quest_for_source(item.source) == Some(quest) {
                 if item.depth <= plan.max_depth && plan.requirement.matches(item) {
                     return true;
                 }
@@ -627,11 +630,15 @@ mod tests {
     }
 
     #[test]
-    fn uncursed_plus_four_ring_is_impossible() {
+    fn uncursed_plus_four_ring_comes_only_from_the_imp() {
+        // v4.0.0 vault prizes are never cursed, so the flag no longer kills
+        // the query; the ring is still quest-only and needs the Imp's floor.
         let mut ring = requirement(ItemKind::Ring, UpgradeRequirement::Exact(4));
         ring.require_uncursed = true;
 
-        assert!(QueryPlan::analyze(&query(vec![ring], 24)).is_unsatisfiable());
+        let plan = QueryPlan::analyze(&query(vec![ring], 24));
+        assert!(!plan.is_unsatisfiable());
+        assert_eq!(plan.generation_depth(), 19);
     }
 
     #[test]

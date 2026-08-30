@@ -10,7 +10,7 @@ use crate::query::{
     UpgradeRequirement,
 };
 use crate::quests::{
-    BlacksmithQuestType, GhostQuestType, ImpTarget, QuestSummary, ScheduledQuest,
+    BlacksmithQuestType, GhostQuestType, ImpQuestType, QuestSummary, ScheduledQuest,
     WandmakerQuestType,
 };
 use crate::seed::DungeonSeed;
@@ -527,8 +527,7 @@ fn decode_quest_summary(input: &mut Input<'_>) -> Result<QuestSummary, WireError
             }
             IMP_QUEST_WIRE_ID => {
                 let variant = match variant {
-                    1 => ImpTarget::Monk,
-                    2 => ImpTarget::Golem,
+                    1 => ImpQuestType::Vault,
                     _ => return Err(WireError::UnknownQuestVariant),
                 };
                 quests.imp = Some(ScheduledQuest { variant, depth });
@@ -544,10 +543,9 @@ const WANDMAKER_QUEST_WIRE_ID: u8 = 2;
 const BLACKSMITH_QUEST_WIRE_ID: u8 = 3;
 const IMP_QUEST_WIRE_ID: u8 = 4;
 
-const fn imp_target_wire_id(target: ImpTarget) -> u8 {
-    match target {
-        ImpTarget::Monk => 1,
-        ImpTarget::Golem => 2,
+const fn imp_target_wire_id(variant: ImpQuestType) -> u8 {
+    match variant {
+        ImpQuestType::Vault => 1,
     }
 }
 
@@ -673,6 +671,7 @@ const fn source_wire_id(source: ItemSource) -> u8 {
         ItemSource::WandmakerReward => 14,
         ItemSource::BlacksmithReward => 15,
         ItemSource::ImpReward => 16,
+        ItemSource::VaultTreasure => 17,
     }
 }
 
@@ -695,6 +694,7 @@ const fn source_from_wire_id(id: u8) -> Option<ItemSource> {
         14 => ItemSource::WandmakerReward,
         15 => ItemSource::BlacksmithReward,
         16 => ItemSource::ImpReward,
+        17 => ItemSource::VaultTreasure,
         _ => return None,
     })
 }
@@ -846,7 +846,7 @@ mod tests {
         empty_results, encode_query, encode_results, encode_scout_world,
     };
 
-    const SOURCES: [ItemSource; 17] = [
+    const SOURCES: [ItemSource; 18] = [
         ItemSource::Heap,
         ItemSource::Chest,
         ItemSource::LockedChest,
@@ -864,6 +864,7 @@ mod tests {
         ItemSource::WandmakerReward,
         ItemSource::BlacksmithReward,
         ItemSource::ImpReward,
+        ItemSource::VaultTreasure,
     ];
 
     fn field(output: &mut Vec<u8>, value: &str) {
@@ -1307,7 +1308,7 @@ mod tests {
     #[test]
     fn scout_packet_quest_block_has_a_fixed_big_endian_fixture() {
         use crate::quests::{
-            BlacksmithQuestType, GhostQuestType, ImpTarget, QuestSummary, ScheduledQuest,
+            BlacksmithQuestType, GhostQuestType, ImpQuestType, QuestSummary, ScheduledQuest,
             WandmakerQuestType,
         };
 
@@ -1326,7 +1327,7 @@ mod tests {
                     depth: 13,
                 }),
                 imp: Some(ScheduledQuest {
-                    variant: ImpTarget::Golem,
+                    variant: ImpQuestType::Vault,
                     depth: 18,
                 }),
             },
@@ -1340,7 +1341,7 @@ mod tests {
             1, 3, 4, // ghost: great crab on floor 4
             2, 3, 8, // wandmaker: rotberry on floor 8
             3, 1, 13, // blacksmith: crystal on floor 13
-            4, 2, 18, // imp: golem on floor 18
+            4, 1, 18, // imp: vault on floor 18
             0, 0, // item count
         ]);
         assert_eq!(packet, expected);
@@ -1477,7 +1478,7 @@ mod tests {
                     depth: 2,
                 }),
                 imp: Some(crate::quests::ScheduledQuest {
-                    variant: crate::quests::ImpTarget::Monk,
+                    variant: crate::quests::ImpQuestType::Vault,
                     depth: 17,
                 }),
                 ..crate::quests::QuestSummary::default()
@@ -1495,7 +1496,7 @@ mod tests {
     #[allow(clippy::too_many_lines)] // One golden packet: quests, then every official item.
     fn canonical_aaa_scout_response_contains_all_official_depth_twenty_four_items() {
         use crate::quests::{
-            BlacksmithQuestType, GhostQuestType, ImpTarget, QuestSummary, ScheduledQuest,
+            BlacksmithQuestType, GhostQuestType, ImpQuestType, QuestSummary, ScheduledQuest,
             WandmakerQuestType,
         };
 
@@ -1517,7 +1518,7 @@ mod tests {
                     depth: 13,
                 }),
                 imp: Some(ScheduledQuest {
-                    variant: ImpTarget::Golem,
+                    variant: ImpQuestType::Vault,
                     depth: 19,
                 }),
             }
@@ -1607,7 +1608,7 @@ mod tests {
         let world = GeneratedWorld {
             quests: crate::quests::QuestSummary {
                 imp: Some(crate::quests::ScheduledQuest {
-                    variant: crate::quests::ImpTarget::Golem,
+                    variant: crate::quests::ImpQuestType::Vault,
                     depth: 19,
                 }),
                 ..crate::quests::QuestSummary::default()

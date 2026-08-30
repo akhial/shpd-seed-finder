@@ -39,8 +39,18 @@ pub fn document() -> Value {
             "boundedTierMax": BOUNDED_TIER_MAX,
             "identityGroupMax": MAX_IDENTITY_GROUP,
             "levelSumGroupMax": MAX_LEVEL_SUM_GROUP,
-            "maxUpgradeDefault": ItemKind::Weapon.maximum_search_upgrade(),
+            // `maxUpgradeDefault` predates per-kind ceilings; it is the
+            // ceiling shared by armor, wands and rings, while weapons (melee
+            // and thrown) reach `maxUpgradeWeapon`.
+            "maxUpgradeDefault": ItemKind::Armor.maximum_search_upgrade(),
             "maxUpgradeRing": ItemKind::Ring.maximum_search_upgrade(),
+            "maxUpgradeWeapon": ItemKind::Weapon.maximum_search_upgrade(),
+            "maxUpgradeByKind": {
+                "weapon": ItemKind::Weapon.maximum_search_upgrade(),
+                "armor": ItemKind::Armor.maximum_search_upgrade(),
+                "wand": ItemKind::Wand.maximum_search_upgrade(),
+                "ring": ItemKind::Ring.maximum_search_upgrade(),
+            },
             "resultsFileMaxBytes": MAX_FILE_BYTES,
         },
         "emptyBossFloors": EMPTY_BOSS_FLOORS,
@@ -98,8 +108,13 @@ mod tests {
         assert_eq!(info["limits"]["boundedTierMax"], 4);
         assert_eq!(info["limits"]["identityGroupMax"], 4);
         assert_eq!(info["limits"]["levelSumGroupMax"], 4);
-        assert_eq!(info["limits"]["maxUpgradeDefault"], 3);
+        assert_eq!(info["limits"]["maxUpgradeDefault"], 4);
         assert_eq!(info["limits"]["maxUpgradeRing"], 4);
+        assert_eq!(info["limits"]["maxUpgradeWeapon"], 5);
+        assert_eq!(
+            info["limits"]["maxUpgradeByKind"],
+            serde_json::json!({"weapon": 5, "armor": 4, "wand": 4, "ring": 4})
+        );
         assert_eq!(info["limits"]["resultsFileMaxBytes"], 2 * 1_024 * 1_024);
         assert_eq!(
             info["limits"]
@@ -115,8 +130,10 @@ mod tests {
                 "identityGroupMax",
                 "levelSumGroupMax",
                 "maxDepth",
+                "maxUpgradeByKind",
                 "maxUpgradeDefault",
                 "maxUpgradeRing",
+                "maxUpgradeWeapon",
                 "resultsFileMaxBytes",
             ]
         );

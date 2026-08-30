@@ -173,6 +173,7 @@ pub const fn sources() -> &'static [ItemSource] {
         ItemSource::WandmakerReward,
         ItemSource::BlacksmithReward,
         ItemSource::ImpReward,
+        ItemSource::VaultTreasure,
     ]
 }
 
@@ -197,6 +198,7 @@ pub const fn source_index(source: ItemSource) -> usize {
         ItemSource::WandmakerReward => 14,
         ItemSource::BlacksmithReward => 15,
         ItemSource::ImpReward => 16,
+        ItemSource::VaultTreasure => 17,
     }
 }
 
@@ -273,6 +275,7 @@ pub const fn appears_once(source: ItemSource) -> bool {
             | ItemSource::WandmakerReward
             | ItemSource::BlacksmithReward
             | ItemSource::ImpReward
+            | ItemSource::VaultTreasure
     )
 }
 

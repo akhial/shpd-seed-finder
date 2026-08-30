@@ -66,7 +66,10 @@ pub mod special_forced;
 pub mod wire;
 
 /// Upstream generation line this engine targets.
-pub const SHPD_VERSION: &str = "3.3.8";
+pub const SHPD_VERSION: &str = "4.0.0-BETA-3";
 
-/// Exact upstream revision used while implementing and validating parity.
-pub const SHPD_COMMIT: &str = "7b8b845a76fe76c6b7c031ae9e570852411f56db";
+/// Exact upstream build used while implementing and validating parity. No
+/// 4.0.0 source revision has been published, so this is the SHA-256 digest of
+/// the official `ShatteredPD-v4.0.0-BETA-3-Java.jar` release asset that the
+/// parity oracle in `tooling/oracle-4.0` runs against.
+pub const SHPD_COMMIT: &str = "f62f8ac2ef6d36c72223c1a4e78f18e98d0bb1282cd4f1fca123082d43edccc9";

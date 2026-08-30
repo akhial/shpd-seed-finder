@@ -24,7 +24,12 @@ pub enum ItemSource {
     GhostReward,
     WandmakerReward,
     BlacksmithReward,
+    /// One of the Imp's six vault-prize options (v4.0.0), laid out in the
+    /// vault's final room; the player brings exactly one vault item home.
     ImpReward,
+    /// Equipment placed in the Imp's vault sub-level by its treasure rooms
+    /// (v4.0.0). Shares the Imp reward's single-pick choice group.
+    VaultTreasure,
 }
 
 impl ItemSource {
@@ -50,6 +55,7 @@ impl ItemSource {
         Self::WandmakerReward,
         Self::BlacksmithReward,
         Self::ImpReward,
+        Self::VaultTreasure,
     ];
 }
 

@@ -714,11 +714,13 @@ impl BlacksmithQuest {
     }
 }
 
-/// Mob class targeted by the old Imp quest.
+/// The Imp quest's variant. v4.0.0 replaced the Monk/Golem token hunts with
+/// a single vault expedition, so there is one variant; it stays an enum so
+/// every quest summary, codec and frontend keeps the same shape.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum ImpTarget {
-    Monk,
-    Golem,
+#[repr(u8)]
+pub enum ImpQuestType {
+    Vault = 1,
 }
 
 /// State owned by `Imp.Quest` for one run.
@@ -726,7 +728,6 @@ pub enum ImpTarget {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ImpQuest {
     pub spawned: bool,
-    pub target: Option<ImpTarget>,
     pub given: bool,
     pub completed: bool,
     pub depth: Option<u8>,
@@ -785,11 +786,6 @@ impl ImpQuest {
     ) -> Result<(), QuestError> {
         debug_assert!(self.room_in_current_build && self.spawned);
         let depth = self.depth.expect("scheduled Imp quest records its depth");
-        self.target = Some(match depth {
-            18 if random.int_bound(2) != 0 => ImpTarget::Golem,
-            19 => ImpTarget::Golem,
-            _ => ImpTarget::Monk,
-        });
         self.given = false;
         let (reward, rejected) = generate_imp_reward(random, generator, depth)?;
         self.reward = Some(reward);
@@ -809,16 +805,6 @@ impl ImpQuest {
     pub const fn give(&mut self) {
         self.given = true;
         self.completed = false;
-    }
-
-    /// Whether killing this mob drops a token for the active quest.
-    #[must_use]
-    pub const fn should_drop_token(&self, current_depth: u8, mob: ImpTarget) -> bool {
-        self.spawned
-            && self.given
-            && !self.completed
-            && current_depth != 20
-            && matches!(self.target, Some(target) if target as u8 == mob as u8)
     }
 
     /// Mirrors handing the required tokens to the Imp.
@@ -885,12 +871,11 @@ impl QuestState {
                 (true, Some(variant), Some(depth)) => Some(ScheduledQuest { variant, depth }),
                 _ => None,
             },
-            imp: match (
-                self.imp.spawned && self.imp.room_accessible,
-                self.imp.target,
-                self.imp.depth,
-            ) {
-                (true, Some(variant), Some(depth)) => Some(ScheduledQuest { variant, depth }),
+            imp: match (self.imp.spawned && self.imp.room_accessible, self.imp.depth) {
+                (true, Some(depth)) => Some(ScheduledQuest {
+                    variant: ImpQuestType::Vault,
+                    depth,
+                }),
                 _ => None,
             },
         }
@@ -915,7 +900,7 @@ pub struct QuestSummary {
     pub ghost: Option<ScheduledQuest<GhostQuestType>>,
     pub wandmaker: Option<ScheduledQuest<WandmakerQuestType>>,
     pub blacksmith: Option<ScheduledQuest<BlacksmithQuestType>>,
-    pub imp: Option<ScheduledQuest<ImpTarget>>,
+    pub imp: Option<ScheduledQuest<ImpQuestType>>,
 }
 
 const fn clean_roll(upgrade: u8) -> EquipmentRoll {
@@ -963,7 +948,7 @@ mod tests {
     use crate::run::{GeneratorCategory, RingKind, RunState};
 
     use super::{
-        BlacksmithQuest, GhostQuest, ImpQuest, ImpTarget, WandmakerQuest, generate_imp_reward,
+        BlacksmithQuest, GhostQuest, ImpQuest, WandmakerQuest, generate_imp_reward,
     };
 
     fn fixture(dungeon_seed: i64, outer_seed: i64) -> (RandomStack, crate::run::GeneratorState) {
@@ -1165,20 +1150,5 @@ mod tests {
                 option: 3
             }
         );
-    }
-
-    #[test]
-    fn imp_target_and_token_conditions_match_depth_rules() {
-        let mut quest = ImpQuest {
-            spawned: true,
-            target: Some(ImpTarget::Monk),
-            given: true,
-            ..ImpQuest::default()
-        };
-        assert!(quest.should_drop_token(17, ImpTarget::Monk));
-        assert!(!quest.should_drop_token(17, ImpTarget::Golem));
-        assert!(!quest.should_drop_token(20, ImpTarget::Monk));
-        quest.complete();
-        assert!(!quest.should_drop_token(17, ImpTarget::Monk));
     }
 }

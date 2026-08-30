@@ -14,7 +14,7 @@ use shpd_seedfinder_core::query::{
     UpgradeRequirement,
 };
 use shpd_seedfinder_core::quests::{
-    BlacksmithQuestType, GhostQuestType, ImpTarget, QuestSummary, WandmakerQuestType,
+    BlacksmithQuestType, GhostQuestType, ImpQuestType, QuestSummary, WandmakerQuestType,
 };
 
 use crate::relations::{self, BoardItem};
@@ -536,6 +536,7 @@ pub const fn source_label(source: ItemSource) -> &'static str {
         ItemSource::WandmakerReward => "Wandmaker reward",
         ItemSource::BlacksmithReward => "Blacksmith reward",
         ItemSource::ImpReward => "Imp reward",
+        ItemSource::VaultTreasure => "Vault treasure",
     }
 }
 
@@ -573,10 +574,9 @@ pub const fn blacksmith_quest_label(variant: BlacksmithQuestType) -> &'static st
     }
 }
 
-pub const fn imp_target_label(target: ImpTarget) -> &'static str {
-    match target {
-        ImpTarget::Monk => "Monks",
-        ImpTarget::Golem => "Golems",
+pub const fn imp_target_label(variant: ImpQuestType) -> &'static str {
+    match variant {
+        ImpQuestType::Vault => "Vault",
     }
 }
 
@@ -675,7 +675,7 @@ mod tests {
     use shpd_seedfinder_core::catalog::{ItemId, ItemKind};
     use shpd_seedfinder_core::query::{TierRequirement, UpgradeRequirement};
     use shpd_seedfinder_core::quests::{
-        BlacksmithQuestType, GhostQuestType, ImpTarget, QuestSummary, ScheduledQuest,
+        BlacksmithQuestType, GhostQuestType, ImpQuestType, QuestSummary, ScheduledQuest,
         WandmakerQuestType,
     };
 
@@ -832,8 +832,7 @@ mod tests {
             blacksmith_quest_label(BlacksmithQuestType::Gnoll),
             "Gnoll geomancer"
         );
-        assert_eq!(imp_target_label(ImpTarget::Monk), "Monks");
-        assert_eq!(imp_target_label(ImpTarget::Golem), "Golems");
+        assert_eq!(imp_target_label(ImpQuestType::Vault), "Vault");
     }
 
     #[test]
@@ -855,7 +854,7 @@ mod tests {
                 depth: 13,
             }),
             imp: Some(ScheduledQuest {
-                variant: ImpTarget::Golem,
+                variant: ImpQuestType::Vault,
                 depth: 19,
             }),
         };
@@ -879,7 +878,7 @@ mod tests {
                 },
                 QuestRow {
                     giver: "Imp",
-                    variant: "Golems",
+                    variant: "Vault",
                     depth: 19,
                 },
             ]
