@@ -184,8 +184,9 @@ pub fn find_neighbours(rooms: &mut [Room], order: &[RoomId]) {
     }
 }
 
-/// `Builder.findFreeSpace`. The cumulative `inside` and `curDiff` variables
-/// inside each pass intentionally reproduce quirks in the Java source.
+/// `Builder.findFreeSpace`. Since v4.0.0 the closest-collision scan resets
+/// `inside` and the `curDiff` point for every room and ranks rooms by the
+/// Euclidean `Point.length()` of that point in `float` arithmetic.
 pub fn find_free_space(
     start: Point,
     rooms: &[Room],
@@ -299,9 +300,8 @@ fn free_space_from_collisions(
         // survivors, in their original order.
         let mut kept = 0_usize;
         let mut closest_room = None;
-        let mut closest_difference = i32::MAX;
-        let mut inside = true;
-        let mut current_difference = 0_i32;
+        // Java initialises `closestDiff` to `(float) Integer.MAX_VALUE`.
+        let mut closest_difference = 2_147_483_648.0_f32;
         for index in 0..count {
             let bounds = colliding[index];
             // Everything below is predicated on `intersects` with conditional
@@ -313,36 +313,35 @@ fn free_space_from_collisions(
             colliding[kept] = bounds;
             kept += usize::from(intersects);
 
-            // Branch-free form of Java's axis checks: bounds are non-empty
-            // (left < right, top < bottom), so at most one term per axis is
-            // positive and equals exactly the summand the original branch
-            // chain would have added; boundary contact contributes zero but
-            // still clears `inside`, as the original `<=`/`>=` tests did.
-            // Rectangles the retain pass dropped contribute nothing.
-            let excess = bounds
+            // Branch-free form of Java's per-axis `curDiff` assignment: bounds
+            // are non-empty (left < right, top < bottom), so at most one term
+            // per axis is positive and equals exactly the value the original
+            // `<=`/`>=` branch chain would have stored; boundary contact
+            // stores zero but still clears `inside`.
+            let x_difference = bounds
                 .left
                 .wrapping_sub(start.x)
                 .max(0)
-                .wrapping_add(start.x.wrapping_sub(bounds.right).max(0))
-                .wrapping_add(bounds.top.wrapping_sub(start.y).max(0))
+                .wrapping_add(start.x.wrapping_sub(bounds.right).max(0));
+            let y_difference = bounds
+                .top
+                .wrapping_sub(start.y)
+                .max(0)
                 .wrapping_add(start.y.wrapping_sub(bounds.bottom).max(0));
-            current_difference =
-                current_difference.wrapping_add(if intersects { excess } else { 0 });
             #[allow(clippy::needless_bitwise_bool)]
             let strictly_inside = (start.x > bounds.left)
                 & (start.x < bounds.right)
                 & (start.y > bounds.top)
                 & (start.y < bounds.bottom);
-            #[allow(clippy::needless_bitwise_bool)]
-            {
-                inside &= strictly_inside | !intersects;
-            }
 
+            // `inside` is reset for every room, so any surviving room that
+            // strictly contains `start` collapses the space immediately.
             #[allow(clippy::needless_bitwise_bool)]
-            if inside & intersects {
+            if strictly_inside & intersects {
                 space.set(start.x, start.y, start.x, start.y);
                 return space;
             }
+            let current_difference = java_point_length(x_difference, y_difference);
             #[allow(clippy::needless_bitwise_bool)]
             let better = intersects & (current_difference < closest_difference);
             closest_difference = if better {
@@ -409,6 +408,14 @@ fn free_space_from_collisions(
             return space;
         }
     }
+}
+
+/// `Point.length()`: the squared sum is computed in Java `int` arithmetic,
+/// widened to `double` for `Math.sqrt`, then narrowed to `float`.
+#[allow(clippy::cast_possible_truncation)]
+fn java_point_length(x: i32, y: i32) -> f32 {
+    let squared = x.wrapping_mul(x).wrapping_add(y.wrapping_mul(y));
+    f64::from(squared).sqrt() as f32
 }
 
 /// Exact float/double operation ordering of `Builder.angleBetweenPoints`.
