@@ -22,11 +22,11 @@ for asset in \
     LICENSE.txt \
     ATTRIBUTION.md \
     ASSET_MANIFEST.json \
-    catalog-v3.3.8.json
+    catalog-v4.0.0.json
 do
     cp "$runtime_source/$asset" "$runtime_destination/$asset"
 done
-cp "$runtime_source/catalog-v3.3.8.json" "$repo_root/web/src/generated/catalog.json"
+cp "$runtime_source/catalog-v4.0.0.json" "$repo_root/web/src/generated/catalog.json"
 cp "$repo_root/COPYING" "$repo_root/web/public/licenses/COPYING.txt"
 cp "$repo_root/NOTICE" "$repo_root/web/public/licenses/NOTICE.txt"
 

@@ -14,7 +14,7 @@ use shpd_seedfinder_core::query::{
     UpgradeRequirement,
 };
 use shpd_seedfinder_core::quests::{
-    BlacksmithQuestType, GhostQuestType, ImpTarget, QuestSummary, WandmakerQuestType,
+    BlacksmithQuestType, GhostQuestType, ImpQuestType, QuestSummary, WandmakerQuestType,
 };
 
 use crate::relations::{self, BoardItem};
@@ -536,6 +536,7 @@ pub const fn source_label(source: ItemSource) -> &'static str {
         ItemSource::WandmakerReward => "Wandmaker reward",
         ItemSource::BlacksmithReward => "Blacksmith reward",
         ItemSource::ImpReward => "Imp reward",
+        ItemSource::VaultTreasure => "Vault treasure",
     }
 }
 
@@ -573,10 +574,9 @@ pub const fn blacksmith_quest_label(variant: BlacksmithQuestType) -> &'static st
     }
 }
 
-pub const fn imp_target_label(target: ImpTarget) -> &'static str {
-    match target {
-        ImpTarget::Monk => "Monks",
-        ImpTarget::Golem => "Golems",
+pub const fn imp_target_label(variant: ImpQuestType) -> &'static str {
+    match variant {
+        ImpQuestType::Vault => "Vault",
     }
 }
 
@@ -675,13 +675,13 @@ mod tests {
     use shpd_seedfinder_core::catalog::{ItemId, ItemKind};
     use shpd_seedfinder_core::query::{TierRequirement, UpgradeRequirement};
     use shpd_seedfinder_core::quests::{
-        BlacksmithQuestType, GhostQuestType, ImpTarget, QuestSummary, ScheduledQuest,
+        BlacksmithQuestType, GhostQuestType, ImpQuestType, QuestSummary, ScheduledQuest,
         WandmakerQuestType,
     };
 
     use super::{
         AppState, QuestRow, UiRequirement, blacksmith_quest_label, floor_limit_skip_target,
-        ghost_quest_label, imp_target_label, quest_rows, wandmaker_quest_label,
+        ghost_quest_label, imp_target_label, quest_rows, source_label, wandmaker_quest_label,
     };
 
     #[test]
@@ -832,8 +832,20 @@ mod tests {
             blacksmith_quest_label(BlacksmithQuestType::Gnoll),
             "Gnoll geomancer"
         );
-        assert_eq!(imp_target_label(ImpTarget::Monk), "Monks");
-        assert_eq!(imp_target_label(ImpTarget::Golem), "Golems");
+        assert_eq!(imp_target_label(ImpQuestType::Vault), "Vault");
+    }
+
+    #[test]
+    fn source_labels_name_every_item_source() {
+        use shpd_seedfinder_core::model::ItemSource;
+
+        // The source picker offers `ItemSource::ALL` verbatim, so every entry
+        // needs a label; a new engine source shows up here first.
+        for source in ItemSource::ALL {
+            assert!(!source_label(*source).is_empty());
+        }
+        assert_eq!(source_label(ItemSource::ImpReward), "Imp reward");
+        assert_eq!(source_label(ItemSource::VaultTreasure), "Vault treasure");
     }
 
     #[test]
@@ -855,7 +867,7 @@ mod tests {
                 depth: 13,
             }),
             imp: Some(ScheduledQuest {
-                variant: ImpTarget::Golem,
+                variant: ImpQuestType::Vault,
                 depth: 19,
             }),
         };
@@ -879,7 +891,7 @@ mod tests {
                 },
                 QuestRow {
                     giver: "Imp",
-                    variant: "Golems",
+                    variant: "Vault",
                     depth: 19,
                 },
             ]
@@ -962,6 +974,41 @@ mod tests {
         let code = link.strip_prefix(deep_link::WEB_LINK_PREFIX).unwrap();
         let uri = format!("{}://q/{code}", deep_link::URI_SCHEME);
         assert_eq!(deep_link::decode_text(&uri).unwrap(), query);
+    }
+
+    #[test]
+    fn share_links_carry_the_v4_effects_and_the_weapon_ceiling() {
+        use shpd_seedfinder_core::catalog::{Effect, WeaponEffect};
+        use shpd_seedfinder_core::deep_link;
+        use shpd_seedfinder_core::query::{EffectRequirement, EffectSet};
+
+        // A set naming Crystal only fits the wider effect mask of link format
+        // three, and +5 is the ceiling weapons alone reach.
+        let mut state = AppState::default();
+        let key = state.claim_key();
+        state.requirements.push(UiRequirement {
+            upgrade: UpgradeRequirement::Exact(5),
+            effect: EffectRequirement::OneOf(
+                EffectSet::from_effects([
+                    Effect::Weapon(WeaponEffect::Blazing),
+                    Effect::Weapon(WeaponEffect::Crystal),
+                ])
+                .unwrap(),
+            ),
+            ..UiRequirement::new(key)
+        });
+
+        let query = state.to_query().unwrap();
+        let link = deep_link::encode_link(&query).unwrap();
+        let decoded = deep_link::decode_text(&link).unwrap();
+        assert_eq!(decoded, query);
+
+        let restored = AppState::from_query(&decoded);
+        assert_eq!(restored.to_query().unwrap(), query);
+        assert_eq!(
+            restored.requirements[0].subtitle(),
+            "exactly +5 \u{b7} Blazing or Crystal"
+        );
     }
 
     #[test]

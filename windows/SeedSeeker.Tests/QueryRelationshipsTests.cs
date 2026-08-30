@@ -34,22 +34,24 @@ public sealed class QueryRelationshipsTests
         var exact = Ring(1); exact.LevelSum = new(2, 1);
         var any = new ItemRequirement { Kind = ItemKind.Ring, LevelSum = new(2, 1) };
         var atLeast = new ItemRequirement { Kind = ItemKind.Wand, UpgradeMatch = UpgradeMatch.AtLeast, Upgrade = 1, LevelSum = new(2, 1) };
+        // A weapon reaches the vault's +5, one past every other family's ceiling.
+        var weapon = new ItemRequirement { Kind = ItemKind.ThrownWeapon, LevelSum = new(2, 1) };
         var elsewhere = Ring(4); elsewhere.LevelSum = new(1, 4);
-        Assert.Equal(1, exact.MaximumUpgrade); Assert.Equal(4, any.MaximumUpgrade); Assert.Equal(3, atLeast.MaximumUpgrade);
+        Assert.Equal(1, exact.MaximumUpgrade); Assert.Equal(4, any.MaximumUpgrade); Assert.Equal(4, atLeast.MaximumUpgrade); Assert.Equal(5, weapon.MaximumUpgrade);
         // Every item counts its upgrade plus one.
-        Assert.Equal(2, exact.MaximumLevel); Assert.Equal(5, any.MaximumLevel); Assert.Equal(4, atLeast.MaximumLevel);
-        Assert.Equal(2 + 5 + 4, QueryRelationships.SumCapacity([exact, any, atLeast, elsewhere], 2));
+        Assert.Equal(2, exact.MaximumLevel); Assert.Equal(5, any.MaximumLevel); Assert.Equal(5, atLeast.MaximumLevel); Assert.Equal(6, weapon.MaximumLevel);
+        Assert.Equal(2 + 5 + 5 + 6, QueryRelationships.SumCapacity([exact, any, atLeast, weapon, elsewhere], 2));
         Assert.Equal(new LevelSum(1, 4), elsewhere.LevelSum);
     }
 
     [Fact]
     public void ValidationNamesTheGroupThatCannotReachItsTotal()
     {
-        // Two wands of any upgrade reach eight levels: +3 plus one each.
-        var a = Wand(); var b = Wand(); a.LevelSum = new(1, 9); b.LevelSum = new(1, 9);
+        // Two wands of any upgrade reach ten levels: +4 plus one each.
+        var a = Wand(); var b = Wand(); a.LevelSum = new(1, 11); b.LevelSum = new(1, 11);
         var query = new QuerySettings { Requirements = List(a, b) };
-        Assert.Equal("Combined level group A needs 9 levels but its items can reach at most 8.", QueryRelationships.Validate(query));
-        a.LevelSum = new(1, 8); b.LevelSum = new(1, 8);
+        Assert.Equal("Combined level group A needs 11 levels but its items can reach at most 10.", QueryRelationships.Validate(query));
+        a.LevelSum = new(1, 10); b.LevelSum = new(1, 10);
         Assert.Null(QueryRelationships.Validate(query));
         b.LevelSum = new(1, 5);
         Assert.Equal("Combined level group A has members that disagree on the total.", QueryRelationships.Validate(query));
@@ -545,5 +547,11 @@ public sealed class QueryRelationshipsTests
         Assert.Equal(
             "Spear\nany upgrade\nor Shuriken\nfrom the engine",
             QueryRelationships.ChipDetail(joined, 0, Entry(joined, 0), "from the engine"));
+        // v4.0.0's vault treasure reads as its own source, like every other one.
+        List<ItemRequirement> vault = [WeaponItem("longsword")];
+        vault[0].Source = ScoutItemSource.VaultTreasure;
+        Assert.Equal(
+            "Longsword\nany upgrade · Vault treasure",
+            QueryRelationships.ChipDetail(vault, 0, Entry(vault, 0), null));
     }
 }

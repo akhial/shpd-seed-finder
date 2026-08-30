@@ -71,6 +71,7 @@ export const sources: { value: ItemSource; label: string }[] = [
   ['golden_mimic', 'Golden Mimic'], ['crystal_mimic', 'Crystal Mimic'], ['statue', 'Statue'],
   ['armored_statue', 'Armored Statue'], ['shop', 'Shop'], ['ghost_reward', 'Ghost Reward'],
   ['wandmaker_reward', 'Wandmaker Reward'], ['blacksmith_reward', 'Blacksmith Reward'], ['imp_reward', 'Imp Reward'],
+  ['vault_treasure', 'Vault Treasure'],
 ].map(([value, label]) => ({ value: value as ItemSource, label }))
 export const sourceLabel = (source: ItemSource): string => sources.find((entry) => entry.value === source)?.label ?? source
 

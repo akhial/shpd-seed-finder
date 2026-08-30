@@ -22,13 +22,13 @@ public sealed class ScoutQuestsTests
     public void ParsesTheGoldenQuestBlock()
     {
         // The quest block of the SSC2 golden packet: four quests, one per giver.
-        var quests = Parse(0x04, 0x01, 0x03, 0x04, 0x02, 0x03, 0x08, 0x03, 0x01, 0x0D, 0x04, 0x02, 0x12);
+        var quests = Parse(0x04, 0x01, 0x03, 0x04, 0x02, 0x03, 0x08, 0x03, 0x01, 0x0D, 0x04, 0x01, 0x12);
         Assert.Equal(new ScoutQuest[]
         {
             new(QuestGiver.Ghost, QuestVariant.GreatCrab, 4),
             new(QuestGiver.Wandmaker, QuestVariant.Rotberry, 8),
             new(QuestGiver.Blacksmith, QuestVariant.Crystal, 13),
-            new(QuestGiver.Imp, QuestVariant.Golem, 18),
+            new(QuestGiver.Imp, QuestVariant.Vault, 18),
         }, quests);
     }
 
@@ -59,8 +59,8 @@ public sealed class ScoutQuestsTests
     [InlineData(2, 3, 9, QuestVariant.Rotberry)]
     [InlineData(3, 1, 12, QuestVariant.Crystal)]
     [InlineData(3, 2, 14, QuestVariant.Gnoll)]
-    [InlineData(4, 1, 17, QuestVariant.Monk)]
-    [InlineData(4, 2, 19, QuestVariant.Golem)]
+    [InlineData(4, 1, 17, QuestVariant.Vault)]
+    [InlineData(4, 1, 19, QuestVariant.Vault)]
     public void EntryMapsEveryQuestVariant(byte quest, byte variant, byte depth, QuestVariant expected)
     {
         var entry = ScoutQuests.Entry(quest, variant, depth, 0);
@@ -84,7 +84,8 @@ public sealed class ScoutQuestsTests
     [InlineData(2, 0)]
     [InlineData(2, 4)] // So does the Wandmaker.
     [InlineData(3, 3)] // The Blacksmith has two.
-    [InlineData(4, 3)] // So does the Imp.
+    [InlineData(4, 0)]
+    [InlineData(4, 2)] // v4.0.0 left the Imp a single vault expedition.
     public void EntryRejectsUnknownVariants(byte quest, byte variant)
     {
         var depth = quest switch { 1 => (byte)2, 2 => (byte)7, 3 => (byte)12, _ => (byte)17 };
@@ -156,7 +157,6 @@ public sealed class ScoutQuestsTests
         Assert.Equal("Rotberry", ScoutQuests.VariantLabel(QuestVariant.Rotberry));
         Assert.Equal("Crystal spire", ScoutQuests.VariantLabel(QuestVariant.Crystal));
         Assert.Equal("Gnoll geomancer", ScoutQuests.VariantLabel(QuestVariant.Gnoll));
-        Assert.Equal("Monks", ScoutQuests.VariantLabel(QuestVariant.Monk));
-        Assert.Equal("Golems", ScoutQuests.VariantLabel(QuestVariant.Golem));
+        Assert.Equal("Vault", ScoutQuests.VariantLabel(QuestVariant.Vault));
     }
 }

@@ -22,8 +22,7 @@ describe('questVariantLabel', () => {
     ['rotberry', 'Rotberry'],
     ['crystal', 'Crystal Spire'],
     ['gnoll', 'Gnoll Geomancer'],
-    ['monk', 'Monks'],
-    ['golem', 'Golems'],
+    ['vault', 'Vault'],
   ] as const)('labels %s as %s', (variant, label) => {
     expect(questVariantLabel(variant)).toBe(label)
   })

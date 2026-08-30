@@ -1,0 +1,379 @@
+{
+  "schema": "shpd-boss-transition-fixture/v3",
+  "game_version": "4.0.0-BETA-3",
+  "game_jar_sha256": "f62f8ac2ef6d36c72223c1a4e78f18e98d0bb1282cd4f1fca123082d43edccc9",
+  "runtime": {
+    "java_version": "21.0.11",
+    "java_vendor": "Oracle Corporation",
+    "java_vm": "Java HotSpot(TM) 64-Bit Server VM"
+  },
+  "challenges": 0,
+  "item_columns": [
+    "choice",
+    "class",
+    "kind",
+    "upgrade",
+    "cursed",
+    "quantity",
+    "effect"
+  ],
+  "seeds": {
+    "AAA-AAA-AAA": [
+      {
+        "depth": 5,
+        "class": "SewerBossLevel",
+        "generator_hash": [
+          -93543995,
+          -93543995
+        ],
+        "unchanged": {
+          "generator": true,
+          "limited_drops": true,
+          "quests": true,
+          "room_queues": true,
+          "shop_state": true
+        },
+        "items": []
+      },
+      {
+        "depth": 10,
+        "class": "PrisonBossLevel",
+        "generator_hash": [
+          -1562739026,
+          -1562739026
+        ],
+        "unchanged": {
+          "generator": true,
+          "limited_drops": true,
+          "quests": true,
+          "room_queues": true,
+          "shop_state": true
+        },
+        "items": []
+      },
+      {
+        "depth": 15,
+        "class": "CavesBossLevel",
+        "generator_hash": [
+          -2111138786,
+          -2111138786
+        ],
+        "unchanged": {
+          "generator": true,
+          "limited_drops": true,
+          "quests": true,
+          "room_queues": true,
+          "shop_state": true
+        },
+        "items": []
+      },
+      {
+        "depth": 20,
+        "class": "CityBossLevel",
+        "generator_hash": [
+          -50636863,
+          -1050420611
+        ],
+        "unchanged": {
+          "generator": false,
+          "limited_drops": true,
+          "quests": true,
+          "room_queues": true,
+          "shop_state": true
+        },
+        "items": [
+          [
+            2,
+            "PlateArmor",
+            "armor",
+            0,
+            false,
+            1,
+            null
+          ],
+          [
+            3,
+            "ThrowingHammer",
+            "weapon",
+            0,
+            false,
+            3,
+            null
+          ],
+          [
+            7,
+            "WarHammer",
+            "weapon",
+            0,
+            false,
+            1,
+            null
+          ],
+          [
+            16,
+            "IncendiaryDart",
+            "weapon",
+            0,
+            false,
+            2,
+            null
+          ]
+        ]
+      },
+      {
+        "depth": 25,
+        "class": "HallsBossLevel",
+        "generator_hash": [
+          -1478525431,
+          -1478525431
+        ],
+        "unchanged": {
+          "generator": true,
+          "limited_drops": true,
+          "quests": true,
+          "room_queues": true,
+          "shop_state": true
+        },
+        "items": []
+      }
+    ],
+    "AAA-AAA-AAB": [
+      {
+        "depth": 5,
+        "class": "SewerBossLevel",
+        "generator_hash": [
+          -1054347894,
+          -1054347894
+        ],
+        "unchanged": {
+          "generator": true,
+          "limited_drops": true,
+          "quests": true,
+          "room_queues": true,
+          "shop_state": true
+        },
+        "items": []
+      },
+      {
+        "depth": 10,
+        "class": "PrisonBossLevel",
+        "generator_hash": [
+          -1379720351,
+          -1379720351
+        ],
+        "unchanged": {
+          "generator": true,
+          "limited_drops": true,
+          "quests": true,
+          "room_queues": true,
+          "shop_state": true
+        },
+        "items": []
+      },
+      {
+        "depth": 15,
+        "class": "CavesBossLevel",
+        "generator_hash": [
+          1652502520,
+          1652502520
+        ],
+        "unchanged": {
+          "generator": true,
+          "limited_drops": true,
+          "quests": true,
+          "room_queues": true,
+          "shop_state": true
+        },
+        "items": []
+      },
+      {
+        "depth": 20,
+        "class": "CityBossLevel",
+        "generator_hash": [
+          1736502888,
+          557935746
+        ],
+        "unchanged": {
+          "generator": false,
+          "limited_drops": true,
+          "quests": true,
+          "room_queues": true,
+          "shop_state": true
+        },
+        "items": [
+          [
+            13,
+            "Trident",
+            "weapon",
+            0,
+            false,
+            3,
+            null
+          ],
+          [
+            14,
+            "HolyDart",
+            "weapon",
+            0,
+            false,
+            2,
+            null
+          ],
+          [
+            18,
+            "Greatsword",
+            "weapon",
+            0,
+            false,
+            1,
+            null
+          ],
+          [
+            19,
+            "PlateArmor",
+            "armor",
+            0,
+            false,
+            1,
+            null
+          ]
+        ]
+      },
+      {
+        "depth": 25,
+        "class": "HallsBossLevel",
+        "generator_hash": [
+          -1927869291,
+          -1927869291
+        ],
+        "unchanged": {
+          "generator": true,
+          "limited_drops": true,
+          "quests": true,
+          "room_queues": true,
+          "shop_state": true
+        },
+        "items": []
+      }
+    ],
+    "ABC-DEF-GHI": [
+      {
+        "depth": 5,
+        "class": "SewerBossLevel",
+        "generator_hash": [
+          594001175,
+          594001175
+        ],
+        "unchanged": {
+          "generator": true,
+          "limited_drops": true,
+          "quests": true,
+          "room_queues": true,
+          "shop_state": true
+        },
+        "items": []
+      },
+      {
+        "depth": 10,
+        "class": "PrisonBossLevel",
+        "generator_hash": [
+          1168254752,
+          1168254752
+        ],
+        "unchanged": {
+          "generator": true,
+          "limited_drops": true,
+          "quests": true,
+          "room_queues": true,
+          "shop_state": true
+        },
+        "items": []
+      },
+      {
+        "depth": 15,
+        "class": "CavesBossLevel",
+        "generator_hash": [
+          -1972664426,
+          -1972664426
+        ],
+        "unchanged": {
+          "generator": true,
+          "limited_drops": true,
+          "quests": true,
+          "room_queues": true,
+          "shop_state": true
+        },
+        "items": []
+      },
+      {
+        "depth": 20,
+        "class": "CityBossLevel",
+        "generator_hash": [
+          386677459,
+          -1199265901
+        ],
+        "unchanged": {
+          "generator": false,
+          "limited_drops": true,
+          "quests": true,
+          "room_queues": true,
+          "shop_state": true
+        },
+        "items": [
+          [
+            3,
+            "ThrowingHammer",
+            "weapon",
+            0,
+            false,
+            3,
+            null
+          ],
+          [
+            10,
+            "PlateArmor",
+            "armor",
+            0,
+            false,
+            1,
+            null
+          ],
+          [
+            15,
+            "Greatshield",
+            "weapon",
+            0,
+            false,
+            1,
+            null
+          ],
+          [
+            17,
+            "ParalyticDart",
+            "weapon",
+            0,
+            false,
+            2,
+            null
+          ]
+        ]
+      },
+      {
+        "depth": 25,
+        "class": "HallsBossLevel",
+        "generator_hash": [
+          1692265753,
+          1692265753
+        ],
+        "unchanged": {
+          "generator": true,
+          "limited_drops": true,
+          "quests": true,
+          "room_queues": true,
+          "shop_state": true
+        },
+        "items": []
+      }
+    ]
+  }
+}

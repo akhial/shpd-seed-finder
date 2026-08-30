@@ -385,8 +385,8 @@ export function QueryPanel({
                 <strong className="d1-impossible-title">Impossible query</strong>
                 <p>
                   No seed can satisfy these requirements within the current floor limit. Quest-reward-only items
-                  need their quest floors in range: +3 wands and the Wandmaker's quest floors 7–9,
-                  +3/+4 rings floors 17–19.
+                  need their quest floors in range: +3 wands the Wandmaker's quest on floors 7–9 or the Imp's
+                  vault on 17–19; +3/+4 rings, +4 armor and +4/+5 weapons the Imp's vault on floors 17–19.
                 </p>
               </div>
             )}

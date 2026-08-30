@@ -1,0 +1,1127 @@
+{
+  "schema": "shpd-prison-parity-fixture/v3",
+  "game_version": "4.0.0-BETA-3",
+  "game_jar_sha256": "f62f8ac2ef6d36c72223c1a4e78f18e98d0bb1282cd4f1fca123082d43edccc9",
+  "runtime": {
+    "java_version": "21.0.11",
+    "java_vendor": "Oracle Corporation",
+    "java_vm": "Java HotSpot(TM) 64-Bit Server VM"
+  },
+  "generator_checkpoint_columns": [
+    "depth",
+    "level_class",
+    "hash"
+  ],
+  "mob_columns": [
+    "class",
+    "cell"
+  ],
+  "item_columns": [
+    "depth",
+    "source",
+    "choice",
+    "cell",
+    "container",
+    "class",
+    "kind",
+    "upgrade",
+    "cursed",
+    "effect",
+    "accessibility"
+  ],
+  "seeds": {
+    "AAA-AAA-AAA": {
+      "seed": 0,
+      "challenges": 0,
+      "requested_depths": [
+        6,
+        7,
+        8,
+        9
+      ],
+      "generator_checkpoints": [
+        [
+          1,
+          "SewerLevel",
+          945315459
+        ],
+        [
+          2,
+          "SewerLevel",
+          1549623977
+        ],
+        [
+          3,
+          "SewerLevel",
+          2126426236
+        ],
+        [
+          4,
+          "SewerLevel",
+          -93543995
+        ],
+        [
+          5,
+          "SewerBossLevel",
+          -93543995
+        ],
+        [
+          6,
+          "PrisonLevel",
+          646555977
+        ],
+        [
+          7,
+          "PrisonLevel",
+          -1779608914
+        ],
+        [
+          8,
+          "PrisonLevel",
+          483177192
+        ],
+        [
+          9,
+          "PrisonLevel",
+          -1562739026
+        ]
+      ],
+      "levels": [
+        {
+          "depth": 6,
+          "class": "PrisonLevel",
+          "feeling": "LARGE",
+          "size": [
+            46,
+            53
+          ],
+          "map_hash": 1223218598,
+          "entrance": 297,
+          "exit": 1450,
+          "generator_state_hash": 646555977,
+          "mobs": [
+            [
+              "Shopkeeper",
+              259
+            ],
+            [
+              "Thief",
+              489
+            ],
+            [
+              "Skeleton",
+              931
+            ],
+            [
+              "SentryRoom$Sentry",
+              1420
+            ],
+            [
+              "Swarm",
+              1633
+            ],
+            [
+              "Skeleton",
+              1768
+            ],
+            [
+              "CrystalMimic",
+              1773
+            ],
+            [
+              "Swarm",
+              1860
+            ],
+            [
+              "Skeleton",
+              2318
+            ]
+          ]
+        },
+        {
+          "depth": 7,
+          "class": "PrisonLevel",
+          "feeling": "LARGE",
+          "size": [
+            41,
+            54
+          ],
+          "map_hash": -2025558282,
+          "entrance": 1221,
+          "exit": 995,
+          "generator_state_hash": -1779608914,
+          "mobs": [
+            [
+              "Thief",
+              217
+            ],
+            [
+              "Statue",
+              224
+            ],
+            [
+              "Skeleton",
+              296
+            ],
+            [
+              "Skeleton",
+              538
+            ],
+            [
+              "Skeleton",
+              848
+            ],
+            [
+              "DM100",
+              919
+            ],
+            [
+              "Skeleton",
+              1038
+            ],
+            [
+              "Guard",
+              1173
+            ],
+            [
+              "Mimic",
+              1197
+            ],
+            [
+              "Skeleton",
+              1241
+            ],
+            [
+              "DM100",
+              1320
+            ],
+            [
+              "Skeleton",
+              1331
+            ]
+          ]
+        },
+        {
+          "depth": 8,
+          "class": "PrisonLevel",
+          "feeling": "NONE",
+          "size": [
+            40,
+            35
+          ],
+          "map_hash": -1261455225,
+          "entrance": 1235,
+          "exit": 489,
+          "generator_state_hash": 483177192,
+          "mobs": [
+            [
+              "Guard",
+              212
+            ],
+            [
+              "Skeleton",
+              452
+            ],
+            [
+              "DM100",
+              504
+            ],
+            [
+              "Guard",
+              655
+            ],
+            [
+              "Necromancer",
+              702
+            ],
+            [
+              "Piranha",
+              768
+            ],
+            [
+              "Thief",
+              812
+            ],
+            [
+              "DM100",
+              822
+            ],
+            [
+              "Skeleton",
+              886
+            ]
+          ]
+        },
+        {
+          "depth": 9,
+          "class": "PrisonLevel",
+          "feeling": "NONE",
+          "size": [
+            27,
+            45
+          ],
+          "map_hash": -782393744,
+          "entrance": 462,
+          "exit": 856,
+          "generator_state_hash": -1562739026,
+          "mobs": [
+            [
+              "Thief",
+              252
+            ],
+            [
+              "DM100",
+              321
+            ],
+            [
+              "Wandmaker",
+              465
+            ],
+            [
+              "Necromancer",
+              499
+            ],
+            [
+              "Guard",
+              872
+            ],
+            [
+              "Skeleton",
+              922
+            ],
+            [
+              "DM100",
+              937
+            ],
+            [
+              "Necromancer",
+              1131
+            ]
+          ]
+        }
+      ],
+      "items": [
+        [
+          6,
+          "chest",
+          0,
+          1192,
+          "CHEST",
+          "Katana",
+          "weapon",
+          1,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          6,
+          "crystal_chest",
+          0,
+          1865,
+          "CRYSTAL_CHEST",
+          "WandOfBlastWave",
+          "wand",
+          0,
+          false,
+          null,
+          {
+            "kind": "choice",
+            "group": "crystal_vault@6",
+            "option": 0
+          }
+        ],
+        [
+          6,
+          "locked_chest",
+          0,
+          1044,
+          "LOCKED_CHEST",
+          "HandAxe",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          6,
+          "mimic",
+          0,
+          1773,
+          null,
+          "RingOfTenacity",
+          "ring",
+          1,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          6,
+          "shop",
+          0,
+          170,
+          "FOR_SALE",
+          "Quarterstaff",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          6,
+          "shop",
+          0,
+          302,
+          "FOR_SALE",
+          "ThrowingClub",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          6,
+          "shop",
+          0,
+          398,
+          "FOR_SALE",
+          "LeatherArmor",
+          "armor",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          6,
+          "shop",
+          0,
+          399,
+          "FOR_SALE",
+          "HolyDart",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          7,
+          "chest",
+          0,
+          1561,
+          "CHEST",
+          "Scimitar",
+          "weapon",
+          1,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          7,
+          "heap",
+          0,
+          1329,
+          "HEAP",
+          "LeatherArmor",
+          "armor",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          7,
+          "heap",
+          0,
+          1409,
+          "HEAP",
+          "Scimitar",
+          "weapon",
+          1,
+          true,
+          "Wondrous",
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          7,
+          "mimic",
+          1,
+          1197,
+          null,
+          "Tomahawk",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          7,
+          "skeleton",
+          3,
+          1503,
+          "SKELETON",
+          "Sickle",
+          "weapon",
+          0,
+          true,
+          "Polarized",
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          7,
+          "statue",
+          0,
+          224,
+          null,
+          "AssassinsBlade",
+          "weapon",
+          1,
+          false,
+          "Vorpal",
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          8,
+          "chest",
+          0,
+          186,
+          "CHEST",
+          "RingOfEnergy",
+          "ring",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          8,
+          "heap",
+          0,
+          1185,
+          "HEAP",
+          "LeatherArmor",
+          "armor",
+          0,
+          true,
+          "Corrosion",
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          9,
+          "wandmaker_quest",
+          0,
+          null,
+          null,
+          "WandOfTransfusion",
+          "wand",
+          3,
+          false,
+          null,
+          {
+            "kind": "choice",
+            "group": "wandmaker_quest@9",
+            "option": 0
+          }
+        ],
+        [
+          9,
+          "wandmaker_quest",
+          1,
+          null,
+          null,
+          "WandOfFrost",
+          "wand",
+          3,
+          false,
+          null,
+          {
+            "kind": "choice",
+            "group": "wandmaker_quest@9",
+            "option": 1
+          }
+        ]
+      ]
+    },
+    "AAA-AAA-AAB": {
+      "seed": 1,
+      "challenges": 0,
+      "requested_depths": [
+        6
+      ],
+      "generator_checkpoints": [
+        [
+          1,
+          "SewerLevel",
+          1560161625
+        ],
+        [
+          2,
+          "SewerLevel",
+          -821938475
+        ],
+        [
+          3,
+          "SewerLevel",
+          -1025901295
+        ],
+        [
+          4,
+          "SewerLevel",
+          -1054347894
+        ],
+        [
+          5,
+          "SewerBossLevel",
+          -1054347894
+        ],
+        [
+          6,
+          "PrisonLevel",
+          -647641529
+        ]
+      ],
+      "levels": [
+        {
+          "depth": 6,
+          "class": "PrisonLevel",
+          "feeling": "NONE",
+          "size": [
+            43,
+            40
+          ],
+          "map_hash": -903102768,
+          "entrance": 627,
+          "exit": 994,
+          "generator_state_hash": -647641529,
+          "mobs": [
+            [
+              "Swarm",
+              152
+            ],
+            [
+              "Statue",
+              484
+            ],
+            [
+              "Shopkeeper",
+              811
+            ],
+            [
+              "Skeleton",
+              1006
+            ],
+            [
+              "Skeleton",
+              1078
+            ],
+            [
+              "Skeleton",
+              1093
+            ],
+            [
+              "SentryRoom$Sentry",
+              1102
+            ],
+            [
+              "Thief",
+              1341
+            ],
+            [
+              "Skeleton",
+              1387
+            ]
+          ]
+        }
+      ],
+      "items": [
+        [
+          6,
+          "chest",
+          0,
+          846,
+          "CHEST",
+          "Longsword",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          6,
+          "heap",
+          0,
+          779,
+          "HEAP",
+          "ThrowingClub",
+          "weapon",
+          1,
+          true,
+          "Displacing",
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          6,
+          "shop",
+          0,
+          728,
+          "FOR_SALE",
+          "Shuriken",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          6,
+          "shop",
+          0,
+          895,
+          "FOR_SALE",
+          "Sickle",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          6,
+          "shop",
+          0,
+          899,
+          "FOR_SALE",
+          "HolyDart",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          6,
+          "shop",
+          0,
+          900,
+          "FOR_SALE",
+          "LeatherArmor",
+          "armor",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          6,
+          "statue",
+          0,
+          484,
+          null,
+          "Mace",
+          "weapon",
+          1,
+          false,
+          "Venomous",
+          {
+            "kind": "independent"
+          }
+        ]
+      ]
+    },
+    "ABC-DEF-GHI": {
+      "seed": 8687205886,
+      "challenges": 0,
+      "requested_depths": [
+        6
+      ],
+      "generator_checkpoints": [
+        [
+          1,
+          "SewerLevel",
+          -754941930
+        ],
+        [
+          2,
+          "SewerLevel",
+          -1429889502
+        ],
+        [
+          3,
+          "SewerLevel",
+          67939167
+        ],
+        [
+          4,
+          "SewerLevel",
+          594001175
+        ],
+        [
+          5,
+          "SewerBossLevel",
+          594001175
+        ],
+        [
+          6,
+          "PrisonLevel",
+          -233573476
+        ]
+      ],
+      "levels": [
+        {
+          "depth": 6,
+          "class": "PrisonLevel",
+          "feeling": "WATER",
+          "size": [
+            31,
+            54
+          ],
+          "map_hash": -226466149,
+          "entrance": 1253,
+          "exit": 335,
+          "generator_state_hash": -233573476,
+          "mobs": [
+            [
+              "Thief",
+              424
+            ],
+            [
+              "Skeleton",
+              443
+            ],
+            [
+              "Skeleton",
+              476
+            ],
+            [
+              "Mimic",
+              570
+            ],
+            [
+              "Skeleton",
+              670
+            ],
+            [
+              "Skeleton",
+              709
+            ],
+            [
+              "Swarm",
+              902
+            ],
+            [
+              "Shopkeeper",
+              1290
+            ],
+            [
+              "Piranha",
+              1502
+            ],
+            [
+              "Piranha",
+              1504
+            ],
+            [
+              "Piranha",
+              1569
+            ]
+          ]
+        }
+      ],
+      "items": [
+        [
+          6,
+          "chest",
+          0,
+          1598,
+          "CHEST",
+          "ScaleArmor",
+          "armor",
+          1,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          6,
+          "heap",
+          0,
+          654,
+          "HEAP",
+          "ThrowingSpear",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          6,
+          "mimic",
+          1,
+          570,
+          null,
+          "MailArmor",
+          "armor",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          6,
+          "shop",
+          0,
+          1225,
+          "FOR_SALE",
+          "FishingSpear",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          6,
+          "shop",
+          0,
+          1228,
+          "FOR_SALE",
+          "ParalyticDart",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          6,
+          "shop",
+          0,
+          1230,
+          "FOR_SALE",
+          "HandAxe",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          6,
+          "shop",
+          0,
+          1381,
+          "FOR_SALE",
+          "LeatherArmor",
+          "armor",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ]
+      ]
+    },
+    "ZZZ-ZZZ-ZZZ": {
+      "seed": 5429503678975,
+      "challenges": 0,
+      "requested_depths": [
+        6
+      ],
+      "generator_checkpoints": [
+        [
+          1,
+          "SewerLevel",
+          1493019902
+        ],
+        [
+          2,
+          "SewerLevel",
+          1203640052
+        ],
+        [
+          3,
+          "SewerLevel",
+          1628710395
+        ],
+        [
+          4,
+          "SewerLevel",
+          -1149802971
+        ],
+        [
+          5,
+          "SewerBossLevel",
+          -1149802971
+        ],
+        [
+          6,
+          "PrisonLevel",
+          1893087005
+        ]
+      ],
+      "levels": [
+        {
+          "depth": 6,
+          "class": "PrisonLevel",
+          "feeling": "NONE",
+          "size": [
+            39,
+            45
+          ],
+          "map_hash": 774748808,
+          "entrance": 1146,
+          "exit": 223,
+          "generator_state_hash": 1893087005,
+          "mobs": [
+            [
+              "Skeleton",
+              487
+            ],
+            [
+              "Thief",
+              565
+            ],
+            [
+              "Skeleton",
+              918
+            ],
+            [
+              "Swarm",
+              923
+            ],
+            [
+              "Shopkeeper",
+              1526
+            ]
+          ]
+        }
+      ],
+      "items": [
+        [
+          6,
+          "shop",
+          0,
+          1406,
+          "FOR_SALE",
+          "PoisonDart",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          6,
+          "shop",
+          0,
+          1642,
+          "FOR_SALE",
+          "ThrowingClub",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          6,
+          "shop",
+          0,
+          1645,
+          "FOR_SALE",
+          "Dirk",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          6,
+          "shop",
+          0,
+          1646,
+          "FOR_SALE",
+          "LeatherArmor",
+          "armor",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ]
+      ]
+    }
+  }
+}

@@ -2,7 +2,11 @@
 
 Shattered Pixel Dungeon generation changes between versions. Every engine result
 must therefore carry the target version, commit, and run profile. This project
-targets v3.3.8 at commit
+targets v4.0.0 as shipped in the official `4.0.0-BETA-3` release JAR. No
+source revision of 4.0.0 has been published, so `SHPD_COMMIT` holds the
+SHA-256 digest of that JAR instead of a commit hash, and the 4.0.0 parity
+oracle (`tooling/oracle-4.0`) runs against the JAR itself. The v3.3.8 fixtures
+that still exist were pinned at commit
 `7b8b845a76fe76c6b7c031ae9e570852411f56db`.
 
 ## What “exact” means
@@ -69,16 +73,39 @@ therefore executes this transition between depths 19 and 21 and includes its
 shop records. Rewards generated only after fighting a boss remain excluded as
 later gameplay loot.
 
-The Imp quest ring is generated when its accessible City quest room is created,
-including the two deterministic reward upgrades. It is therefore searchable and
-reported with source `ImpReward`, even though collecting it requires completing
-the quest. This is the canonical source of searchable `+4` rings.
+The Imp quest no longer rewards a single ring. When its accessible City quest
+room (floors 17–19) is created, the quest rolls six vault prizes — an artifact
+or ring, a ring, a tier-5 weapon with a tier-4 thrown weapon or the reverse,
+plate armor, and a wand, at +2..+4 (the tier-4 weapons +3..+5), never cursed,
+with a good enchantment or glyph on every weapon and armor — and opens a
+Vault sub-level whose treasure rooms hold further equipment at +0..+3 plus one
++4 tier-4 melee weapon, uncursed, with good or no effects. All of it is
+generated with the world and is therefore searchable, reported with source
+`ImpReward` (the six prizes) or `VaultTreasure` (the treasure rooms), even
+though collecting it requires completing the quest. The player may carry
+exactly one item out of the vault, so every Imp-reward and vault-treasure
+record of a world shares one mutually exclusive choice group, and a query can
+be satisfied by at most one of them. These are the only sources of `+4` armor,
+wands and rings and of `+4`/`+5` weapons.
+
+The vault sub-level is generated from `seedForDepth(depth, 1)` — a seed derived
+from the Imp's floor and the branch number — independently of the main run's
+generator state, so its contents depend only on the dungeon seed and the floor
+the quest landed on, not on anything the player did before entering. The
+engine builds it immediately after the City floor that schedules the quest.
+A search skips that extra level whenever no requirement could be satisfied by
+vault treasure (`FloorGate::wants_vault_treasure`, answered by the query
+plan), which is exact because unmatched items never change a verdict;
+scouting and probability calibration always generate it. Which consumable
+sits in a given vault heap is decided by an unseeded shuffle upstream and is
+not modelled; every weapon, armor, wand and ring is.
 
 Scroll-of-Transmutation outcomes are not searchable. Run setup resets the RNG
 stack to an unseeded gameplay generator; floor creation temporarily pushes a
-depth-seeded RNG, then pops it before gameplay. A scroll used on the collected
-ring draws from the live gameplay RNG instead, so the dungeon seed does not fix
-the result and intervening attacks or other RNG-consuming actions can change it.
+depth-seeded RNG, then pops it before gameplay. A scroll used on a collected
+prize draws from the live gameplay RNG instead, so the dungeon seed does not
+fix the result and intervening attacks or other RNG-consuming actions can
+change it.
 
 ## Why floors are simulated sequentially
 

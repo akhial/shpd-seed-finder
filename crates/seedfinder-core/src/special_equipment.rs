@@ -40,15 +40,18 @@ const ARMOR_CURSES: [ArmorEffect; 8] = [
     ArmorEffect::Bulk,
 ];
 
-const WEAPON_CURSES: [WeaponEffect; 8] = [
+/// `Weapon.Enchantment.curses` in v4.0.0 declaration order.
+const WEAPON_CURSES: [WeaponEffect; 10] = [
     WeaponEffect::Annoying,
     WeaponEffect::Displacing,
     WeaponEffect::Dazzling,
     WeaponEffect::Explosive,
+    WeaponEffect::Friendly,
+    WeaponEffect::Polarized,
+    WeaponEffect::Pressurized,
     WeaponEffect::Sacrificial,
     WeaponEffect::Wayward,
-    WeaponEffect::Polarized,
-    WeaponEffect::Friendly,
+    WeaponEffect::Wondrous,
 ];
 
 /// Directly constructed items which are not represented by `Generator`.
@@ -2385,7 +2388,7 @@ mod tests {
             SpecialRoomKind::Statue => vec![world_item(
                 ItemId::Crossbow,
                 1,
-                Some(Effect::Weapon(WeaponEffect::Lucky)),
+                Some(Effect::Weapon(WeaponEffect::Blocking)),
                 false,
                 ItemSource::Statue,
                 Accessibility::Independent,
@@ -2415,7 +2418,7 @@ mod tests {
             SpecialRoomKind::Sacrifice => vec![world_item(
                 ItemId::Greatshield,
                 1,
-                Some(Effect::Weapon(WeaponEffect::Wayward)),
+                Some(Effect::Weapon(WeaponEffect::Polarized)),
                 true,
                 ItemSource::SacrificialFire,
                 Accessibility::Independent,
@@ -2562,7 +2565,7 @@ mod tests {
                 world_item(
                     ItemId::Crossbow,
                     0,
-                    Some(Effect::Weapon(WeaponEffect::Grim)),
+                    Some(Effect::Weapon(WeaponEffect::Corrupting)),
                     false,
                     ItemSource::ArmoredStatue,
                     Accessibility::Independent,
@@ -2614,7 +2617,7 @@ mod tests {
             world_item(
                 ItemId::Sai,
                 0,
-                Some(Effect::Weapon(WeaponEffect::Explosive)),
+                Some(Effect::Weapon(WeaponEffect::Wondrous)),
                 true,
                 ItemSource::Heap,
                 Accessibility::Independent,

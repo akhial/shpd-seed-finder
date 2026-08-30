@@ -531,10 +531,12 @@ pub struct SearchQuery {
     /// change nothing but the fight, and are reported rather than filtered.
     pub wandmaker_quest: Option<WandmakerQuestType>,
     /// Trades exhaustiveness for speed: +3 weapon/armor requirements are
-    /// assumed to come from quest rewards, ignoring the far rarer Crypt and
-    /// Sacrificial-fire prizes. Matches are still always genuine, but seeds
-    /// whose only qualifying item comes from those rooms are skipped. See
-    /// [`crate::feasibility`].
+    /// assumed to come from quest rewards — the Ghost, the Blacksmith and the
+    /// Imp's vault prizes, which stay exact — ignoring the far rarer Crypt,
+    /// Sacrificial-fire and special-room chest prizes, so such a search ends
+    /// at the Imp's floor 19 instead of the floor limit. Matches are still
+    /// always genuine, but seeds whose only qualifying item comes from those
+    /// rooms are skipped. See [`crate::feasibility`].
     pub fast_mode: bool,
 }
 
@@ -1420,7 +1422,9 @@ impl fmt::Display for QueryError {
         let message = match self {
             Self::Empty => "at least one item requirement is needed",
             Self::InvalidDepth => "maximum depth must be between 1 and 24",
-            Self::InvalidUpgrade => "upgrade must be +1, +2, or +3 (+4 for rings)",
+            Self::InvalidUpgrade => {
+                "upgrade must be between +1 and +5 for weapons, or +1 and +4 for armor, wands, and rings"
+            }
             Self::InvalidTier => {
                 "tier filters require a wildcard weapon or armor and a non-redundant tier"
             }
@@ -2046,7 +2050,7 @@ mod tests {
     }
 
     #[test]
-    fn plus_four_is_valid_only_for_rings() {
+    fn upgrade_ceilings_follow_the_item_kind() {
         let ring = Requirement {
             kind: ItemKind::Ring,
             weapon_category: None,
@@ -2077,7 +2081,33 @@ mod tests {
             alternative_group: None,
             level_sum: None,
         };
-        assert_eq!(wand.validate(), Err(QueryError::InvalidUpgrade));
+        assert_eq!(wand.validate(), Ok(()));
+        let five_wand = Requirement {
+            upgrade: UpgradeRequirement::Exact(5),
+            ..wand
+        };
+        assert_eq!(five_wand.validate(), Err(QueryError::InvalidUpgrade));
+
+        let sword = Requirement {
+            kind: ItemKind::Weapon,
+            item: Some(ItemId::Sword),
+            upgrade: UpgradeRequirement::AtLeast(5),
+            ..wand
+        };
+        assert_eq!(sword.validate(), Ok(()));
+        let six_sword = Requirement {
+            upgrade: UpgradeRequirement::Exact(6),
+            ..sword
+        };
+        assert_eq!(six_sword.validate(), Err(QueryError::InvalidUpgrade));
+
+        let armor = Requirement {
+            kind: ItemKind::Armor,
+            item: Some(ItemId::PlateArmor),
+            upgrade: UpgradeRequirement::Exact(5),
+            ..wand
+        };
+        assert_eq!(armor.validate(), Err(QueryError::InvalidUpgrade));
     }
 
     #[test]

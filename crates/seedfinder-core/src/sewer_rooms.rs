@@ -310,11 +310,17 @@ impl<C: SewerRoomContent> RoomPaintDispatch for SewerRoomDispatcher<C> {
             {
                 terrain::EMPTY_SP
             }
+            // PlatformRoom.merge: only a connected Platform or Chasm-family
+            // neighbour (including Chasm entrance/exit rooms) is bridged with
+            // chasm and an EMPTY_SP door.
             RoomKind::Standard(StandardRoomKind::Platform)
                 if merge_terrain != terrain::CHASM
+                    && rooms[room].connection_to(other).is_some()
                     && matches!(
                         other_kind,
                         RoomKind::Standard(StandardRoomKind::Platform | StandardRoomKind::Chasm)
+                            | RoomKind::Entrance(StandardRoomKind::Chasm)
+                            | RoomKind::Exit(StandardRoomKind::Chasm)
                     ) =>
             {
                 terrain::CHASM

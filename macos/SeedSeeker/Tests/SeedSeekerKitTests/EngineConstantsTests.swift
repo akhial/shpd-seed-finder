@@ -27,10 +27,15 @@ final class EngineConstantsTests: XCTestCase {
         XCTAssertEqual(SearchLimits.levelSumGroupMax, limit("levelSumGroupMax"))
         XCTAssertEqual(SearchLimits.maxUpgradeDefault, limit("maxUpgradeDefault"))
         XCTAssertEqual(SearchLimits.maxUpgradeRing, limit("maxUpgradeRing"))
-        // The families route to the right maximum, narrowed weapon kinds included.
-        XCTAssertEqual(ItemKind.ring.maximumSearchUpgrade, limit("maxUpgradeRing"))
-        for kind in ItemKind.allCases where kind != .ring {
-            XCTAssertEqual(kind.maximumSearchUpgrade, limit("maxUpgradeDefault"), "\(kind)")
+        XCTAssertEqual(SearchLimits.maxUpgradeWeapon, limit("maxUpgradeWeapon"))
+        // The families route to the right maximum, narrowed weapon kinds
+        // included: the engine publishes one ceiling per family.
+        let byKind = limits["maxUpgradeByKind"] as! [String: Int]
+        let names: [ItemKind: String] = [.weapon: "weapon", .armor: "armor", .wand: "wand",
+                                         .ring: "ring", .meleeWeapon: "weapon",
+                                         .thrownWeapon: "weapon"]
+        for kind in ItemKind.allCases {
+            XCTAssertEqual(kind.maximumSearchUpgrade, byKind[names[kind]!], "\(kind)")
         }
     }
 

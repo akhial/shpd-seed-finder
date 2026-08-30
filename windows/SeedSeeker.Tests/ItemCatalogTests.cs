@@ -16,7 +16,7 @@ public sealed class ItemCatalogTests
         var root = NativeEngineLibrary.WorkspaceRoot()
             ?? throw new InvalidOperationException("Could not locate the workspace root.");
         var path = Path.Combine(root, "android", "app", "src", "main", "assets", "third_party",
-            "shattered-pixel-dungeon", "catalog-v3.3.8.json");
+            "shattered-pixel-dungeon", "catalog-v4.0.0.json");
         return JsonDocument.Parse(File.ReadAllText(path)).RootElement;
     }
 

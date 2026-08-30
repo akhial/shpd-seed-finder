@@ -128,7 +128,7 @@ fn co_obtainable(masks: &[u64]) -> u64 {
         .max(1)
 }
 
-const MAX_SOURCES: usize = 17;
+const MAX_SOURCES: usize = sources().len();
 
 /// Melee weapons, thrown weapons, and tipped darts are tallied into separate
 /// bands of every table.
@@ -291,7 +291,7 @@ fn render(tally: &Tally) -> String {
     let mut output = String::new();
     let _ = writeln!(
         output,
-        "//! Equipment supply measured from the canonical v3.3.8 generator.\n\
+        "//! Equipment supply measured from the canonical v4.0.0-BETA-3 generator.\n\
          //!\n\
          //! Generated over {} sampled worlds by\n\
          //! `cargo run --release --example calibrate_probability`. Rerun that\n\
