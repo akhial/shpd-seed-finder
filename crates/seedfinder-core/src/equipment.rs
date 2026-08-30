@@ -3,14 +3,14 @@
 use crate::catalog::{ArmorEffect, Effect, WeaponEffect};
 use crate::rng::RandomStack;
 
-const WEAPON_COMMON: [WeaponEffect; 5] = [
+pub(crate) const WEAPON_COMMON: [WeaponEffect; 5] = [
     WeaponEffect::Blazing,
     WeaponEffect::Chilling,
     WeaponEffect::Kinetic,
     WeaponEffect::Shocking,
     WeaponEffect::Venomous,
 ];
-const WEAPON_UNCOMMON: [WeaponEffect; 8] = [
+pub(crate) const WEAPON_UNCOMMON: [WeaponEffect; 8] = [
     WeaponEffect::Blocking,
     WeaponEffect::Blooming,
     WeaponEffect::Eldritch,
@@ -20,13 +20,13 @@ const WEAPON_UNCOMMON: [WeaponEffect; 8] = [
     WeaponEffect::Unstable,
     WeaponEffect::Vorpal,
 ];
-const WEAPON_RARE: [WeaponEffect; 4] = [
+pub(crate) const WEAPON_RARE: [WeaponEffect; 4] = [
     WeaponEffect::Corrupting,
     WeaponEffect::Crystal,
     WeaponEffect::Grim,
     WeaponEffect::Vampiric,
 ];
-const WEAPON_CURSES: [WeaponEffect; 10] = [
+pub(crate) const WEAPON_CURSES: [WeaponEffect; 10] = [
     WeaponEffect::Annoying,
     WeaponEffect::Displacing,
     WeaponEffect::Dazzling,
@@ -39,13 +39,13 @@ const WEAPON_CURSES: [WeaponEffect; 10] = [
     WeaponEffect::Wondrous,
 ];
 
-const ARMOR_COMMON: [ArmorEffect; 4] = [
+pub(crate) const ARMOR_COMMON: [ArmorEffect; 4] = [
     ArmorEffect::Obfuscation,
     ArmorEffect::Swiftness,
     ArmorEffect::Viscosity,
     ArmorEffect::Potential,
 ];
-const ARMOR_UNCOMMON: [ArmorEffect; 6] = [
+pub(crate) const ARMOR_UNCOMMON: [ArmorEffect; 6] = [
     ArmorEffect::Brimstone,
     ArmorEffect::Stone,
     ArmorEffect::Entanglement,
@@ -53,12 +53,12 @@ const ARMOR_UNCOMMON: [ArmorEffect; 6] = [
     ArmorEffect::Camouflage,
     ArmorEffect::Flow,
 ];
-const ARMOR_RARE: [ArmorEffect; 3] = [
+pub(crate) const ARMOR_RARE: [ArmorEffect; 3] = [
     ArmorEffect::Affection,
     ArmorEffect::AntiMagic,
     ArmorEffect::Thorns,
 ];
-const ARMOR_CURSES: [ArmorEffect; 8] = [
+pub(crate) const ARMOR_CURSES: [ArmorEffect; 8] = [
     ArmorEffect::AntiEntropy,
     ArmorEffect::Corrosion,
     ArmorEffect::Displacement,

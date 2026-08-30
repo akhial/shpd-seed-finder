@@ -36,6 +36,10 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use crate::catalog::{Effect, ItemId, ItemKind, WeaponCategory, item};
+use crate::equipment::{
+    ARMOR_COMMON, ARMOR_CURSES, ARMOR_RARE, ARMOR_UNCOMMON, WEAPON_COMMON, WEAPON_CURSES,
+    WEAPON_RARE, WEAPON_UNCOMMON,
+};
 use crate::generator::{
     ARMOR_ITEMS, RING_ITEMS, WAND_ITEMS, WEAPON_TIER_1_ITEMS, WEAPON_TIER_2_ITEMS,
     WEAPON_TIER_3_ITEMS, WEAPON_TIER_4_ITEMS, WEAPON_TIER_5_ITEMS,
@@ -1049,13 +1053,9 @@ impl Predicate {
         set.effects()
             .map(|effect| {
                 if effect.is_curse() {
-                    f64::from(supply.cursed) / f64::from(CURSE_COUNT)
+                    f64::from(supply.cursed) / curse_count(effect)
                 } else {
-                    let index = match effect {
-                        Effect::Weapon(effect) => effect as u8,
-                        Effect::Armor(effect) => effect as u8,
-                    };
-                    f64::from(supply.enchanted) * rarity_probability(index)
+                    f64::from(supply.enchanted) * rarity_probability(effect)
                 }
             })
             .sum()
@@ -1177,17 +1177,32 @@ const fn fast_mode_skips(source: ItemSource, kind: ItemKind) -> bool {
     )
 }
 
-/// Curses are drawn uniformly; both families define exactly eight.
-const CURSE_COUNT: u32 = 8;
-
-/// Enchantments and glyphs share one rarity split: four common, six uncommon,
-/// three rare.
-fn rarity_probability(effect: u8) -> f64 {
+/// Curses are drawn uniformly from the family's list.
+fn curse_count(effect: Effect) -> f64 {
     match effect {
-        0..=3 => 0.50 / 4.0,
-        4..=9 => 0.40 / 6.0,
-        10..=12 => 0.10 / 3.0,
-        _ => 0.0,
+        Effect::Weapon(_) => tally(WEAPON_CURSES.len()),
+        Effect::Armor(_) => tally(ARMOR_CURSES.len()),
+    }
+}
+
+/// Chance that one positive-effect draw lands on `effect`: rarities come up
+/// 50/40/10 and each rarity picks uniformly from its list.
+fn rarity_probability(effect: Effect) -> f64 {
+    fn bucket_share<T: Copy + PartialEq>(effect: T, buckets: [&[T]; 3]) -> f64 {
+        const RARITY_SHARES: [f64; 3] = [0.50, 0.40, 0.10];
+        buckets
+            .iter()
+            .zip(RARITY_SHARES)
+            .find(|(bucket, _)| bucket.contains(&effect))
+            .map_or(0.0, |(bucket, share)| share / tally(bucket.len()))
+    }
+    match effect {
+        Effect::Weapon(effect) => {
+            bucket_share(effect, [&WEAPON_COMMON, &WEAPON_UNCOMMON, &WEAPON_RARE])
+        }
+        Effect::Armor(effect) => {
+            bucket_share(effect, [&ARMOR_COMMON, &ARMOR_UNCOMMON, &ARMOR_RARE])
+        }
     }
 }
 
@@ -1246,7 +1261,7 @@ mod tests {
         UpgradeRequirement,
     };
 
-    use super::estimate_match_probability;
+    use super::{estimate_match_probability, rarity_probability};
 
     fn requirement(kind: ItemKind) -> Requirement {
         Requirement {
@@ -1524,13 +1539,16 @@ mod tests {
 
     #[test]
     fn broader_effect_sets_are_likelier_than_their_members() {
+        // Shallow on purpose: by depth 24 the broadest of these queries rounds
+        // to exactly 1.0 in `f64` and the strict orderings collapse.
+        let depth = 6;
         let single = |effect| {
             query(
                 vec![Requirement {
                     effect: EffectRequirement::exactly(Effect::Armor(effect)),
                     ..requirement(ItemKind::Armor)
                 }],
-                24,
+                depth,
             )
         };
         let both = query(
@@ -1544,14 +1562,14 @@ mod tests {
                 ),
                 ..requirement(ItemKind::Armor)
             }],
-            24,
+            depth,
         );
         let any_glyph = query(
             vec![Requirement {
                 effect: EffectRequirement::OneOf(EffectSet::enchantments(ItemKind::Armor).unwrap()),
                 ..requirement(ItemKind::Armor)
             }],
-            24,
+            depth,
         );
         let viscosity = estimate_match_probability(&single(ArmorEffect::Viscosity));
         let thorns = estimate_match_probability(&single(ArmorEffect::Thorns));
@@ -1559,7 +1577,27 @@ mod tests {
         let any = estimate_match_probability(&any_glyph);
         assert!(pair > viscosity && pair > thorns, "{pair:e}");
         assert!(any > pair, "{any:e} vs {pair:e}");
-        assert!(any < estimate_match_probability(&query(vec![requirement(ItemKind::Armor)], 24)));
+        assert!(
+            any < estimate_match_probability(&query(vec![requirement(ItemKind::Armor)], depth))
+        );
+    }
+
+    #[test]
+    fn every_enchantment_is_reachable_and_each_family_sums_to_one() {
+        for effects in [
+            EffectSet::enchantments(ItemKind::Weapon).unwrap(),
+            EffectSet::enchantments(ItemKind::Armor).unwrap(),
+        ] {
+            let total: f64 = effects
+                .effects()
+                .map(|effect| {
+                    let chance = rarity_probability(effect);
+                    assert!(chance > 0.0, "{effect:?} can never be drawn");
+                    chance
+                })
+                .sum();
+            assert!((total - 1.0).abs() < 1e-12, "{total:e}");
+        }
     }
 
     #[test]
