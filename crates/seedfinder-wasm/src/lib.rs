@@ -865,7 +865,7 @@ mod tests {
         assert_eq!(
             output["quests"],
             serde_json::json!([
-                { "quest": "ghost", "variant": "great_crab", "depth": 4 },
+                { "quest": "ghost", "variant": "gnoll_trickster", "depth": 3 },
                 { "quest": "wandmaker", "variant": "elemental_embers", "depth": 9 },
                 { "quest": "blacksmith", "variant": "crystal", "depth": 13 },
                 { "quest": "imp", "variant": "vault", "depth": 19 },
