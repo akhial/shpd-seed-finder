@@ -826,10 +826,11 @@ mod tests {
         assert_eq!(invalid["valid"], false);
         assert!(invalid["error"].as_str().unwrap().contains("invalid JSON"));
 
-        // +4 rings come only from the Imp's vault (floors 17-19), so a floor
-        // limit that ends before the quest window can never be satisfied.
+        // A +4 ring exists only in the Imp's vault (floors 17-19), so a
+        // search that stops before it can never match. (An uncursed +4 ring
+        // is possible since 4.0.0: vault prizes are never cursed.)
         let impossible: Value = serde_json::from_str(&analyze_query(
-            r#"{"requirements":[{"kind":"ring","upgrade":4}],"max_depth":16}"#,
+            r#"{"requirements":[{"kind":"ring","upgrade":4,"uncursed":true}],"max_depth":16}"#,
         ))
         .unwrap();
         assert_eq!(impossible["valid"], true);
@@ -872,7 +873,7 @@ mod tests {
         );
 
         let catalog: AndroidCatalog = serde_json::from_str(include_str!(
-            "../../../android/app/src/main/assets/third_party/shattered-pixel-dungeon/catalog-v4.0.0.json"
+            "../../../android/app/src/main/assets/third_party/shattered-pixel-dungeon/catalog-v3.3.8.json"
         ))
         .unwrap();
         let sprites = catalog
