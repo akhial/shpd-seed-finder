@@ -44,6 +44,11 @@ public static class ItemGlow
         ["Corrupting"] = new(Rgb(0x440066), DefaultPeriod),
         ["Grim"] = new(Rgb(0x000000), DefaultPeriod),
         ["Vampiric"] = new(Rgb(0x660022), DefaultPeriod),
+        // v4.0.0's weapon enchantments
+        ["Venomous"] = new(Rgb(0x4400aa), DefaultPeriod),
+        ["Eldritch"] = new(Rgb(0x222222), DefaultPeriod),
+        ["Vorpal"] = new(Rgb(0xaa6666), DefaultPeriod),
+        ["Crystal"] = new(Rgb(0x0088ff), DefaultPeriod),
         // Armor glyphs
         ["Obfuscation"] = new(Rgb(0x888888), DefaultPeriod),
         ["Swiftness"] = new(Rgb(0xffff00), DefaultPeriod),
