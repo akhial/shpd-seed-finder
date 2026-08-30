@@ -14,6 +14,11 @@ public struct DeepLinkError: Error, LocalizedError, Equatable {
 /// `https://shpd-seed-seeker.web.app/#q=EAGWhMA`. Decoding accepts any link
 /// form the core recognizes: the full web link, a `seedseeker://` link, or
 /// the bare code.
+///
+/// The code's format version is the core's business: it writes the oldest
+/// version a query fits — version 3 only when an effect set names one of the
+/// weapon enchantments v4.0.0 appended — and reads versions 1 through 3, so
+/// links shared by older releases keep opening here.
 public enum DeepLink {
     /// Custom URL scheme registered by the app bundle's Info.plist.
     public static let scheme = "seedseeker"

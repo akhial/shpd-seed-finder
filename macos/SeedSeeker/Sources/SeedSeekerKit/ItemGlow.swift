@@ -61,6 +61,10 @@ public let enchantmentGlows: [String: ItemGlow] = [
     "Corrupting": ItemGlow(hex: "#440066"),
     "Grim": ItemGlow(hex: "#000000"),
     "Vampiric": ItemGlow(hex: "#660022"),
+    "Venomous": ItemGlow(hex: "#4400aa"),
+    "Eldritch": ItemGlow(hex: "#222222"),
+    "Vorpal": ItemGlow(hex: "#aa6666"),
+    "Crystal": ItemGlow(hex: "#0088ff"),
     // Armor glyphs
     "Obfuscation": ItemGlow(hex: "#888888"),
     "Swiftness": ItemGlow(hex: "#ffff00"),
