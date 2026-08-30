@@ -1153,7 +1153,7 @@ public static class ItemCatalog
     public static IReadOnlyList<string> Glyphs => Catalog.Modifiers.ArmorGlyphs;
     public static IReadOnlyList<string> ArmorCurses => Catalog.Modifiers.ArmorCurses;
     private static Root Load() =>
-        JsonSerializer.Deserialize<Root>(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Assets", "catalog-v3.3.8.json")), new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
+        JsonSerializer.Deserialize<Root>(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Assets", "catalog-v4.0.0.json")), new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
     /// <summary>
     /// The items offered when picking one fresh. Tier-1 items are hidden: they
     /// are the starting gear, never worth searching for.

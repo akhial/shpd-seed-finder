@@ -865,12 +865,12 @@ mod tests {
                 { "quest": "ghost", "variant": "great_crab", "depth": 4 },
                 { "quest": "wandmaker", "variant": "elemental_embers", "depth": 9 },
                 { "quest": "blacksmith", "variant": "crystal", "depth": 13 },
-                { "quest": "imp", "variant": "golem", "depth": 19 },
+                { "quest": "imp", "variant": "vault", "depth": 19 },
             ])
         );
 
         let catalog: AndroidCatalog = serde_json::from_str(include_str!(
-            "../../../android/app/src/main/assets/third_party/shattered-pixel-dungeon/catalog-v3.3.8.json"
+            "../../../android/app/src/main/assets/third_party/shattered-pixel-dungeon/catalog-v4.0.0.json"
         ))
         .unwrap();
         let sprites = catalog
