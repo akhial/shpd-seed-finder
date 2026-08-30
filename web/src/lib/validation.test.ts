@@ -14,6 +14,22 @@ describe('query validation', () => {
   it('rejects ring upgrade +5', () => {
     expect(validateQuery(state(requirement({ kind: 'ring', item: 'ring_haste', upgrade: { mode: 'exact', value: 5 } }))).valid).toBe(false)
   })
+  it('accepts the v4.0.0 ceilings and rejects one step above each', () => {
+    // The Imp's vault reaches +5 on weapons and +4 on everything else.
+    const upgrade = (kind: RequirementState['kind'], value: number) =>
+      validateQuery(state(requirement({ kind, upgrade: { mode: 'exact', value } }))).valid
+    expect([upgrade('weapon', 5), upgrade('melee_weapon', 5), upgrade('thrown_weapon', 5)]).toEqual([true, true, true])
+    expect([upgrade('armor', 4), upgrade('wand', 4), upgrade('ring', 4)]).toEqual([true, true, true])
+    expect([upgrade('weapon', 6), upgrade('armor', 5), upgrade('wand', 5)]).toEqual([false, false, false])
+    // An "at least" bound answers to the same ceiling.
+    expect(validateQuery(state(requirement({ upgrade: { mode: 'at_least', value: 5 } }))).valid).toBe(true)
+    expect(validateQuery(state(requirement({ kind: 'armor', upgrade: { mode: 'at_least', value: 5 } }))).errors.join(' ')).toMatch(/0 through \+4/)
+  })
+  it('accepts the enchantments v4.0.0 added on a weapon and refuses them on armor', () => {
+    expect(validateQuery(state(requirement({ effect: ['Venomous', 'Eldritch', 'Vorpal', 'Crystal'] })))).toEqual({ valid: true, errors: [] })
+    expect(validateQuery(state(requirement({ effect: ['Pressurized', 'Wondrous'], uncursed: true }))).errors.join(' ')).toMatch(/only curse/)
+    expect(validateQuery(state(requirement({ kind: 'armor', effect: 'Vorpal' }))).errors.join(' ')).toMatch(/Vorpal does not belong/)
+  })
   it('rejects curse with uncursed', () => {
     expect(validateQuery(state(requirement({ effect: 'Annoying', uncursed: true }))).errors.join(' ')).toMatch(/curse/)
   })
