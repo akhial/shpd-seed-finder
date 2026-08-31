@@ -114,8 +114,8 @@ entry at the first member's position with the members in requirement order;
 readers assign the groups fresh sequential ids. Effect sets are written as a
 bare name when one effect is chosen, as `"any_enchantment"` when the set is
 the full non-curse family, and otherwise as a list in the shared catalog
-asset's order: enchantments (glyphs) alphabetically, then curses
-alphabetically.
+asset's order — the game journal's: enchantments (glyphs) by rarity, then
+the curses.
 
 ## Compatibility direction
 

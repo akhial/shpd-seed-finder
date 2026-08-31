@@ -183,7 +183,7 @@ public sealed class ResultsExportTests
         Assert.Equal(new LevelSum(2, 4), imported.Requirements[3].LevelSum);
         Assert.Equal(new LevelSum(2, 4), imported.Requirements[4].LevelSum);
         Assert.Equal([null, null, null, null, null, 1, 1], imported.Requirements.Select(r => r.IdentityGroup));
-        // The share-link codec carries the same structures (a v3 link).
+        // The share-link codec carries the same structures.
         var link = NativeEngine.TryEncodeShareLink(document);
         Assert.NotNull(link);
         var shared = ResultsExport.DecodeQueryDocument(NativeEngine.TryDecodeShareText(link!)!);
@@ -207,7 +207,7 @@ public sealed class ResultsExportTests
             ]),
         };
         // The effect sets are written in catalog order, whatever order they were picked in.
-        const string expected = """{"requirements":[{"kind":"melee_weapon","upgrade":5},{"kind":"armor","upgrade":3,"source":"vault_treasure"},{"kind":"weapon","effect":["Crystal","Eldritch","Venomous","Vorpal"]},{"kind":"thrown_weapon","effect":["Pressurized","Wondrous"]},{"kind":"wand","upgrade":4}]}""";
+        const string expected = """{"requirements":[{"kind":"melee_weapon","upgrade":5},{"kind":"armor","upgrade":3,"source":"vault_treasure"},{"kind":"weapon","effect":["Venomous","Eldritch","Vorpal","Crystal"]},{"kind":"thrown_weapon","effect":["Pressurized","Wondrous"]},{"kind":"wand","upgrade":4}]}""";
         var document = ResultsExport.EncodeQueryDocument(query);
         Assert.Equal(expected, document);
 
@@ -216,7 +216,7 @@ public sealed class ResultsExportTests
         Assert.Equal(document, ResultsExport.EncodeQueryDocument(imported));
         Assert.Equal(ScoutItemSource.VaultTreasure, imported.Requirements[1].Source);
         Assert.Equal(5, imported.Requirements[0].Upgrade);
-        // A v3 share link, whose 32-bit effect masks are what the new effects need.
+        // A share link, whose 32-bit effect masks carry the new effects.
         var link = NativeEngine.TryEncodeShareLink(document);
         Assert.NotNull(link);
         var shared = ResultsExport.DecodeQueryDocument(NativeEngine.TryDecodeShareText(link!)!);

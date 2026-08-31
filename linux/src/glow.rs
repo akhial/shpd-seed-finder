@@ -62,26 +62,24 @@ pub const CURSE: Glow = Glow::new(0x0000_0000, DEFAULT_PERIOD);
 /// frontend's table so the two can be diffed line by line. Curses are absent;
 /// they all use [`CURSE`].
 const ENCHANTMENTS: &[(&str, Glow)] = &[
-    // Weapon enchantments
+    // Weapon enchantments, in the catalog's journal order
     ("Blazing", Glow::new(0x00ff_4400, DEFAULT_PERIOD)),
     ("Chilling", Glow::new(0x0000_ffff, DEFAULT_PERIOD)),
     ("Kinetic", Glow::new(0x00ff_ff00, DEFAULT_PERIOD)),
     ("Shocking", Glow::new(0x00ff_ffff, 0.5)),
+    ("Venomous", Glow::new(0x0044_00aa, DEFAULT_PERIOD)),
     ("Blocking", Glow::new(0x0000_00ff, DEFAULT_PERIOD)),
     ("Blooming", Glow::new(0x0000_8800, DEFAULT_PERIOD)),
+    ("Eldritch", Glow::new(0x0022_2222, DEFAULT_PERIOD)),
     ("Elastic", Glow::new(0x00ff_00ff, DEFAULT_PERIOD)),
     ("Lucky", Glow::new(0x0000_ff00, DEFAULT_PERIOD)),
     ("Projecting", Glow::new(0x0088_44cc, DEFAULT_PERIOD)),
     ("Unstable", Glow::new(0x0099_9999, DEFAULT_PERIOD)),
+    ("Vorpal", Glow::new(0x00aa_6666, DEFAULT_PERIOD)),
     ("Corrupting", Glow::new(0x0044_0066, DEFAULT_PERIOD)),
+    ("Crystal", Glow::new(0x0000_88ff, DEFAULT_PERIOD)),
     ("Grim", Glow::new(0x0000_0000, DEFAULT_PERIOD)),
     ("Vampiric", Glow::new(0x0066_0022, DEFAULT_PERIOD)),
-    // v4.0.0 weapon enchantments. They follow the v3.3.8 block for the same
-    // reason the catalog appends them there: the wire codes are append-only.
-    ("Venomous", Glow::new(0x0044_00aa, DEFAULT_PERIOD)),
-    ("Eldritch", Glow::new(0x0022_2222, DEFAULT_PERIOD)),
-    ("Vorpal", Glow::new(0x00aa_6666, DEFAULT_PERIOD)),
-    ("Crystal", Glow::new(0x0000_88ff, DEFAULT_PERIOD)),
     // Armor glyphs
     ("Obfuscation", Glow::new(0x0088_8888, DEFAULT_PERIOD)),
     ("Swiftness", Glow::new(0x00ff_ff00, DEFAULT_PERIOD)),
