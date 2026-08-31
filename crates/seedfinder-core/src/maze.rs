@@ -63,55 +63,78 @@ fn direction(
     y: i32,
     generator: &mut JavaRandom,
 ) -> Option<(i32, i32)> {
-    if generator.next_i32_bound(4) == 0 && valid_move(cols, width, height, x, y, 0, -1) {
+    if generator.next_i32_bound(4) == 0 && valid_move_vertical(cols, width, height, x, y, -1) {
         return Some((0, -1));
     }
-    if generator.next_i32_bound(3) == 0 && valid_move(cols, width, height, x, y, 1, 0) {
+    if generator.next_i32_bound(3) == 0 && valid_move_horizontal(cols, width, height, x, y, 1) {
         return Some((1, 0));
     }
-    if generator.next_i32_bound(2) == 0 && valid_move(cols, width, height, x, y, 0, 1) {
+    if generator.next_i32_bound(2) == 0 && valid_move_vertical(cols, width, height, x, y, 1) {
         return Some((0, 1));
     }
-    valid_move(cols, width, height, x, y, -1, 0).then_some((-1, 0))
+    valid_move_horizontal(cols, width, height, x, y, -1).then_some((-1, 0))
 }
 
 /// Two steps along `(dx, dy)`, each requiring the stepped cell and both side
-/// cells clear: for a horizontal move the three cells share one column
-/// (a 3-bit mask), for a vertical move they share one row (one bit of three
-/// columns). Whether a probe passes is close to a coin flip, so the whole
-/// test is evaluated branch-free — out-of-bounds steps clamp their probe
+/// cells clear. Whether a probe passes is close to a coin flip, so each test
+/// is evaluated branch-free — out-of-bounds steps clamp their probe
 /// coordinates to a valid cell, do the (now meaningless) loads anyway, and
 /// are vetoed by the bounds bit. The probes draw nothing, so the missing
 /// early exits are unobservable.
-fn valid_move(
+///
+/// The two axes are separate functions because the axis is a constant at
+/// every call site and each one only needs its own side cells: the shared
+/// form loaded four columns per step to pick one of two answers, and this
+/// runs tens of thousands of times per generated seed.
+fn valid_move(cols: &[u64], width: i32, height: i32, x: i32, y: i32, dx: i32, dy: i32) -> bool {
+    if dy == 0 {
+        valid_move_horizontal(cols, width, height, x, y, dx)
+    } else {
+        valid_move_vertical(cols, width, height, x, y, dy)
+    }
+}
+
+/// A vertical step's three cells share one row of three columns, and `x` is
+/// the same for both steps, so the columns merge once.
+fn valid_move_vertical(cols: &[u64], width: i32, height: i32, x: i32, mut y: i32, dy: i32) -> bool {
+    let column =
+        usize::try_from(x.clamp(1, width - 2)).expect("clamped maze probe column is non-negative");
+    let merged = cols[column - 1] | cols[column] | cols[column + 1];
+    #[allow(clippy::needless_bitwise_bool)]
+    let mut ok = (x > 0) & (x < width - 1);
+    for _ in 0..2_u32 {
+        y += dy;
+        let row = y.clamp(1, height - 2);
+        let occupied = (merged >> row) & 1;
+        #[allow(clippy::needless_bitwise_bool)]
+        {
+            ok &= (y > 0) & (y < height - 1) & (occupied == 0);
+        }
+    }
+    ok
+}
+
+/// A horizontal step's three cells share one column, and `y` is the same for
+/// both steps, so the 3-bit mask reads the same row of two columns.
+fn valid_move_horizontal(
     cols: &[u64],
     width: i32,
     height: i32,
     mut x: i32,
-    mut y: i32,
+    y: i32,
     dx: i32,
-    dy: i32,
 ) -> bool {
-    let vertical = dy != 0;
-    let mut ok = true;
+    let row = y.clamp(1, height - 2);
+    #[allow(clippy::needless_bitwise_bool)]
+    let mut ok = (y > 0) & (y < height - 1);
     for _ in 0..2_u32 {
         x += dx;
-        y += dy;
-        #[allow(clippy::needless_bitwise_bool)]
-        let in_bounds = (x > 0) & (x < width - 1) & (y > 0) & (y < height - 1);
         let column = usize::try_from(x.clamp(1, width - 2))
             .expect("clamped maze probe column is non-negative");
-        let row = y.clamp(1, height - 2);
-        let horizontal_occupied = (cols[column] >> (row - 1)) & 0b111;
-        let vertical_occupied = ((cols[column - 1] | cols[column] | cols[column + 1]) >> row) & 1;
-        let occupied = if vertical {
-            vertical_occupied
-        } else {
-            horizontal_occupied
-        };
+        let occupied = (cols[column] >> (row - 1)) & 0b111;
         #[allow(clippy::needless_bitwise_bool)]
         {
-            ok &= in_bounds & (occupied == 0);
+            ok &= (x > 0) & (x < width - 1) & (occupied == 0);
         }
     }
     ok

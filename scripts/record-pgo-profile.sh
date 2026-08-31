@@ -62,10 +62,10 @@ JSON
 
 # One worker: the IR counters are not atomic, so a multi-threaded run would
 # record slightly different numbers on every pass for no extra coverage.
-"$SEEKER" --benchmark 1500 --workers 1 > /dev/null
-"$SEEKER" --items "$WORK/deep-wand.json" --benchmark 600 --workers 1 > /dev/null
-"$SEEKER" --items "$WORK/imp-ring.json" --benchmark 600 --workers 1 > /dev/null
-"$SEEKER" --items "$WORK/halls-armor.json" --benchmark 400 --workers 1 > /dev/null
+"$SEEKER" --benchmark 4000 --workers 1 > /dev/null
+"$SEEKER" --items "$WORK/deep-wand.json" --benchmark 1600 --workers 1 > /dev/null
+"$SEEKER" --items "$WORK/imp-ring.json" --benchmark 1600 --workers 1 > /dev/null
+"$SEEKER" --items "$WORK/halls-armor.json" --benchmark 1000 --workers 1 > /dev/null
 
 echo "==> merging into $PROFILE"
 "$PROFDATA" merge -o "$PROFILE" "$RAW"/*.profraw
