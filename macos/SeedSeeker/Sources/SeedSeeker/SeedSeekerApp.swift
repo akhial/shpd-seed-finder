@@ -116,6 +116,13 @@ private struct ContentView: View {
                           onDeletePreset: deletePreset,
                           controller: controller)
                     .navigationSplitViewColumnWidth(min: 440, ideal: 540, max: 900)
+                    // A sidebar column is hosted in Tahoe's concentric glass,
+                    // which paints a hard specular streak across the pane —
+                    // a highlight Finder and System Settings do not show. The
+                    // results column escapes it because its List brings an
+                    // opaque background of its own; the query pane is a plain
+                    // ScrollView, so it has to supply one.
+                    .background(Color(nsColor: .windowBackgroundColor))
             } content: {
                 ResultsView(controller: controller) { seed in scout.scout(seed, challenges: challenges) }
                     .navigationSplitViewColumnWidth(min: 300, ideal: 380)
