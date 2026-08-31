@@ -75,7 +75,12 @@ public struct QueryPreset: Codable, Hashable, Identifiable, Sendable {
 extension SavedQuery: Hashable {}
 
 public enum BuiltInPresets {
-    public static let all: [QueryPreset] = [staff21, wandBonanza, ringOfWealth21]
+    public static let all: [QueryPreset] = [staff21, staff22, wandBonanza, ringOfWealth21, tier4Weapon26]
+
+    /// The floor limit the vault presets carry: floor 19 is the last floor the
+    /// Imp — and so the vault holding its levelled prizes — can appear on, so a
+    /// deeper scan only costs time.
+    private static let vaultFloorLimit = 19
 
     public static let staff21 = QueryPreset(
         id: UUID(uuidString: "C3DB688D-3D7D-43F0-B10E-9BCBEA272101")!,
@@ -90,6 +95,22 @@ public enum BuiltInPresets {
             try! ItemRequirement(key: 4, item: nil, upgrade: 1, kind: .wand,
                                  upgradeMatch: .atLeast),
         ]))
+
+    /// The +21 stack anchored one level higher, on the +4 wand v4.0.0's Imp
+    /// vault lays out among its prizes.
+    public static let staff22 = QueryPreset(
+        id: UUID(uuidString: "C3DB688D-3D7D-43F0-B10E-9BCBEA272104")!,
+        name: "+22 Staff",
+        query: SavedQuery(requirements: [
+            try! ItemRequirement(key: 1, item: nil, upgrade: 4, kind: .wand,
+                                 upgradeMatch: .exactly, identityGroup: 1),
+            try! ItemRequirement(key: 2, item: nil, upgrade: 0, kind: .wand,
+                                 upgradeMatch: .any, identityGroup: 1),
+            try! ItemRequirement(key: 3, item: nil, upgrade: 0, kind: .wand,
+                                 upgradeMatch: .any, identityGroup: 1),
+            try! ItemRequirement(key: 4, item: nil, upgrade: 1, kind: .wand,
+                                 upgradeMatch: .atLeast),
+        ], maximumDepth: vaultFloorLimit))
 
     public static let wandBonanza = QueryPreset(
         id: UUID(uuidString: "C3DB688D-3D7D-43F0-B10E-9BCBEA272103")!,
@@ -116,6 +137,21 @@ public enum BuiltInPresets {
             try! ItemRequirement(key: 3, item: ItemCatalog.findById("ring_wealth"), upgrade: 0,
                                  kind: .ring, upgradeMatch: .any),
         ]))
+
+    /// A tier-4 weapon at the +5 only the vault reaches, with two more of the
+    /// same weapon to pour into it.
+    public static let tier4Weapon26 = QueryPreset(
+        id: UUID(uuidString: "C3DB688D-3D7D-43F0-B10E-9BCBEA272105")!,
+        name: "+26 Tier 4 Weapon",
+        query: SavedQuery(requirements: [
+            try! ItemRequirement(key: 1, item: nil, upgrade: 5, kind: .weapon,
+                                 tier: 4, tierMatch: .exactly, upgradeMatch: .exactly,
+                                 identityGroup: 1),
+            try! ItemRequirement(key: 2, item: nil, upgrade: 0, kind: .weapon,
+                                 upgradeMatch: .any, identityGroup: 1),
+            try! ItemRequirement(key: 3, item: nil, upgrade: 0, kind: .weapon,
+                                 upgradeMatch: .any, identityGroup: 1),
+        ], maximumDepth: vaultFloorLimit))
 }
 
 public enum QueryPersistence {

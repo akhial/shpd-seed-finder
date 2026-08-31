@@ -22,6 +22,13 @@ data class QueryPreset(
 )
 
 object BuiltInPresets {
+    /**
+     * The floor limit the vault presets carry: floor 19 is the last floor the
+     * Imp — and so the vault holding its levelled prizes — can appear on, so a
+     * deeper scan only costs time.
+     */
+    private const val VAULT_FLOOR_LIMIT = 19
+
     val staff21 = QueryPreset(
         id = "staff-21",
         name = "+21 Staff",
@@ -33,6 +40,25 @@ object BuiltInPresets {
                 ItemRequirement(3, null, 0, kind = ItemKind.WAND, upgradeMatch = UpgradeMatch.ANY, identityGroup = 1),
                 ItemRequirement(4, null, 1, kind = ItemKind.WAND, upgradeMatch = UpgradeMatch.AT_LEAST),
             ),
+        ),
+    )
+
+    /**
+     * The +21 stack anchored one level higher, on the +4 wand v4.0.0's Imp
+     * vault lays out among its prizes.
+     */
+    val staff22 = QueryPreset(
+        id = "staff-22",
+        name = "+22 Staff",
+        isBuiltIn = true,
+        query = PresetQuery(
+            requirements = listOf(
+                ItemRequirement(1, null, 4, kind = ItemKind.WAND, upgradeMatch = UpgradeMatch.EXACT, identityGroup = 1),
+                ItemRequirement(2, null, 0, kind = ItemKind.WAND, upgradeMatch = UpgradeMatch.ANY, identityGroup = 1),
+                ItemRequirement(3, null, 0, kind = ItemKind.WAND, upgradeMatch = UpgradeMatch.ANY, identityGroup = 1),
+                ItemRequirement(4, null, 1, kind = ItemKind.WAND, upgradeMatch = UpgradeMatch.AT_LEAST),
+            ),
+            maximumDepth = VAULT_FLOOR_LIMIT,
         ),
     )
 
@@ -82,5 +108,32 @@ object BuiltInPresets {
         ),
     )
 
-    val all = listOf(staff21, wandBonanza, ringOfWealth21)
+    /**
+     * A tier-4 weapon at the +5 only the vault reaches, with two more of the
+     * same weapon to pour into it.
+     */
+    val tier4Weapon26 = QueryPreset(
+        id = "tier-4-weapon-26",
+        name = "+26 Tier 4 Weapon",
+        isBuiltIn = true,
+        query = PresetQuery(
+            requirements = listOf(
+                ItemRequirement(
+                    1,
+                    null,
+                    5,
+                    kind = ItemKind.WEAPON,
+                    tier = 4,
+                    tierMatch = TierMatch.EXACT,
+                    upgradeMatch = UpgradeMatch.EXACT,
+                    identityGroup = 1,
+                ),
+                ItemRequirement(2, null, 0, kind = ItemKind.WEAPON, upgradeMatch = UpgradeMatch.ANY, identityGroup = 1),
+                ItemRequirement(3, null, 0, kind = ItemKind.WEAPON, upgradeMatch = UpgradeMatch.ANY, identityGroup = 1),
+            ),
+            maximumDepth = VAULT_FLOOR_LIMIT,
+        ),
+    )
+
+    val all = listOf(staff21, staff22, wandBonanza, ringOfWealth21, tier4Weapon26)
 }
