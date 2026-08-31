@@ -246,15 +246,15 @@ pub const fn kind_index(kind: ItemKind) -> usize {
 /// rather than as scattered drops, so their floor slot counts are the bundle
 /// size times the probability that the quest or shop landed on that floor.
 /// Sources that scatter independent drops return `0` and are treated as
-/// Poisson.
+/// Poisson, which is the one thing this still decides for a quest: only a
+/// shop's bundle scales anything, since [`prize_group`] sources are lifted
+/// out of the per-family supply and spent as one pick each.
 ///
 /// The Imp's City-floor prizes are a fixed six: a tier-5 weapon with a
 /// tier-4 thrown weapon or the reverse (two weapon slots, one per line), the
 /// plate armor, the wand, and one ring slot for the ring beside the
-/// artifact-or-ring option. The vault's treasure rooms vary; their bundles
-/// are the counts a typical vault places, rounded up so the estimator's
-/// `available / bundle` appearances scale each slot down rather than losing
-/// the mass above a rounded-down count: about eight weapons and thrown
+/// artifact-or-ring option. The vault's treasure rooms vary; their counts are
+/// what a typical vault places, rounded up: about eight weapons and thrown
 /// weapons, three to four armors, and two to three wands and rings.
 #[must_use]
 pub const fn bundle_size(source: ItemSource, kind: ItemKind) -> u8 {
@@ -274,22 +274,44 @@ pub const fn bundle_size(source: ItemSource, kind: ItemKind) -> u8 {
     }
 }
 
-/// Whether a source places all of its items on a single floor of a window.
+/// The quest whose single prize a source belongs to.
 ///
-/// Quests run once per dungeon, so their per-floor counts are alternatives:
-/// a Ghost that appeared on floor two cannot also appear on floor three. Shops
-/// restock on every shop floor and are therefore not exclusive.
+/// A quest giver lays its prizes out as one mutually exclusive choice and the
+/// player carries exactly one away, whatever family it belongs to: the Ghost
+/// offers a weapon or an armor, the Wandmaker two wands, the Blacksmith a
+/// reforge or one of its rack. The Imp's rewards and its vault's treasure
+/// share a group because the Escape Crystal lets one item out between them.
+///
+/// This is the same rule [`crate::feasibility`] plans against, and it spans
+/// families, so the estimator has to resolve every family at once to honour
+/// it — see [`crate::probability`].
 #[must_use]
-pub const fn appears_once(source: ItemSource) -> bool {
-    matches!(
-        source,
-        ItemSource::GhostReward
-            | ItemSource::WandmakerReward
-            | ItemSource::BlacksmithReward
-            | ItemSource::ImpReward
-            | ItemSource::VaultTreasure
-    )
+pub const fn prize_group(source: ItemSource) -> Option<PrizeGroup> {
+    match source {
+        ItemSource::GhostReward => Some(PrizeGroup::Ghost),
+        ItemSource::WandmakerReward => Some(PrizeGroup::Wandmaker),
+        ItemSource::BlacksmithReward => Some(PrizeGroup::Blacksmith),
+        ItemSource::ImpReward | ItemSource::VaultTreasure => Some(PrizeGroup::Imp),
+        _ => None,
+    }
 }
+
+/// A quest's prize pool: everything it lays out, of which one item leaves.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum PrizeGroup {
+    Ghost,
+    Wandmaker,
+    Blacksmith,
+    Imp,
+}
+
+/// Every prize group, in table order.
+pub const PRIZE_GROUPS: [PrizeGroup; 4] = [
+    PrizeGroup::Ghost,
+    PrizeGroup::Wandmaker,
+    PrizeGroup::Blacksmith,
+    PrizeGroup::Imp,
+];
 
 /// Row of [`SLOT_SPREAD`] covering one family's line.
 #[must_use]
