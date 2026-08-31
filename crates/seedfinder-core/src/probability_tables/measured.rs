@@ -33,6 +33,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.199_288_04, 0.398_411_45, 0.402_300_5],
             [0.0, 0.0, 0.0, 0.200_720_09, 0.799_279_9],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -63,6 +64,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.043_484_706, 0.245_675_16, 0.710_840_17],
             [0.0, 0.0, 0.0, 0.201_988_04, 0.798_011_96],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -86,6 +88,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.200_215_64, 0.398_843_38, 0.400_940_98],
             [0.0, 0.0, 0.0, 0.202_318_73, 0.797_681_3],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -109,6 +112,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.205_128_21, 0.400_665_5, 0.394_206_32],
             [0.0, 0.0, 0.0, 0.204_698_56, 0.795_301_44],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -138,6 +142,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.202_906_73, 0.394_007_8, 0.403_085_47],
             [0.0, 0.0, 0.0, 0.197_605_86, 0.802_394_15],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -168,6 +173,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.201_604_62, 0.798_395_4],
             [0.0, 0.0, 0.0, 0.201_300_53, 0.798_699_44],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -191,6 +197,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.201_287_37, 0.395_681_05, 0.403_031_56],
             [0.0, 0.0, 0.0, 0.198_571_34, 0.801_428_7],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -214,6 +221,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.193_074_5, 0.399_658_98, 0.407_266_53],
             [0.0, 0.0, 0.0, 0.194_193_54, 0.805_806_46],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -237,6 +245,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.202_013_78, 0.399_578_5, 0.398_407_7],
             [0.0, 0.0, 0.0, 0.200_126_3, 0.799_873_7],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -260,6 +269,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.195_187_97, 0.398_797, 0.406_015_04],
             [0.0, 0.0, 0.0, 0.200_469_17, 0.799_530_86],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -282,6 +292,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.5, 0.5],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -304,6 +315,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -326,6 +338,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -348,6 +361,13 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.501_015, 0.498_985],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: Some(&[
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.335_219_5, 0.332_754_52, 0.332_025_97],
+            [0.0, 0.0, 0.330_951_84, 0.334_569_2, 0.334_479, 0.0],
+        ]),
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -377,6 +397,13 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.450_220_94, 0.212_941, 0.219_020_49, 0.117_817_566],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: Some(&[
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [0.666_666_7, 0.0, 0.333_333_34, 0.0, 0.0, 0.0],
+            [0.0, 0.484_946_2, 0.0, 0.515_053_8, 0.0, 0.0],
+            [0.0, 0.0, 0.414_154_26, 0.0, 0.585_845_77, 0.0],
+            [0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+        ]),
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -400,6 +427,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.199_623_5, 0.398_144_84, 0.402_231_66],
             [0.0, 0.0, 0.0, 0.199_811_71, 0.800_188_3],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -430,6 +458,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.089_045_435, 0.288_928_87, 0.622_025_67],
             [0.0, 0.0, 0.0, 0.201_721_89, 0.798_278_1],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -453,6 +482,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.197_342, 0.403_183_43, 0.399_474_6],
             [0.0, 0.0, 0.0, 0.202_700_99, 0.797_299],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -482,6 +512,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.210_499_36, 0.401_024_34, 0.388_476_3],
             [0.0, 0.0, 0.0, 0.193_650_8, 0.806_349_2],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -505,6 +536,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.202_380_02, 0.391_362_6, 0.406_257_4],
             [0.0, 0.0, 0.0, 0.194_002_58, 0.805_997_43],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -534,6 +566,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.199_865_22, 0.400_513_02, 0.399_621_75],
             [0.0, 0.0, 0.0, 0.195_211_49, 0.804_788_53],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -563,6 +596,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.201_290_71, 0.400_891_2, 0.397_818_06],
             [0.0, 0.0, 0.0, 0.207_237_35, 0.792_762_64],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -585,6 +619,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.5, 0.5],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -607,6 +642,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -629,6 +665,13 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.498_985, 0.501_015],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: Some(&[
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.333_446_9, 0.333_677_35, 0.332_875_73],
+            [0.0, 0.0, 0.332_554_9, 0.333_493, 0.333_952_07, 0.0],
+        ]),
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -658,6 +701,13 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.409_409_05, 0.086_897_07, 0.209_279_67, 0.294_414_22],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: Some(&[
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+        ]),
     },
     Supply {
         kind: ItemKind::Weapon,
@@ -680,6 +730,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 1.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Armor,
@@ -703,6 +754,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.200_035_14, 0.402_497_95, 0.397_466_93],
             [0.0, 0.0, 0.0, 0.198_961_15, 0.801_038_86],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Armor,
@@ -733,6 +785,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.035_034_273, 0.234_785_02, 0.730_180_7],
             [0.0, 0.0, 0.0, 0.203_031_6, 0.796_968_4],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Armor,
@@ -756,6 +809,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.198_721_78, 0.402_613_6, 0.398_664_62],
             [0.0, 0.0, 0.0, 0.197_953_16, 0.802_046_84],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Armor,
@@ -786,6 +840,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.007_145_677, 0.209_131_45, 0.783_722_9],
             [0.0, 0.0, 0.0, 0.200_034_92, 0.799_965_1],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Armor,
@@ -809,6 +864,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.198_048_83, 0.401_641_96, 0.400_309_2],
             [0.0, 0.0, 0.0, 0.200_489_97, 0.799_51],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Armor,
@@ -832,6 +888,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.202_309_25, 0.400_726_26, 0.396_964_5],
             [0.0, 0.0, 0.0, 0.200_123_77, 0.799_876_2],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Armor,
@@ -861,6 +918,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.200_723_32, 0.392_254_38, 0.407_022_3],
             [0.0, 0.0, 0.0, 0.200_570_91, 0.799_429_06],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Armor,
@@ -884,6 +942,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.200_100_26, 0.404_411_02, 0.395_488_7],
             [0.0, 0.0, 0.0, 0.198_123_35, 0.801_876_66],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Armor,
@@ -906,6 +965,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.5, 0.5],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Armor,
@@ -928,6 +988,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Armor,
@@ -950,6 +1011,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Armor,
@@ -972,6 +1034,13 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 1.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: Some(&[
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.332_605, 0.333_67, 0.333_725, 0.0],
+        ]),
     },
     Supply {
         kind: ItemKind::Armor,
@@ -1001,6 +1070,13 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.466_463_6, 0.011_512_321, 0.213_243_83, 0.308_780_25],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: Some(&[
+            [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+        ]),
     },
     Supply {
         kind: ItemKind::Wand,
@@ -1024,6 +1100,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Wand,
@@ -1047,6 +1124,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Wand,
@@ -1070,6 +1148,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Wand,
@@ -1093,6 +1172,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Wand,
@@ -1116,6 +1196,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Wand,
@@ -1139,6 +1220,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Wand,
@@ -1162,6 +1244,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Wand,
@@ -1185,6 +1268,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Wand,
@@ -1208,6 +1292,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Wand,
@@ -1230,6 +1315,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Wand,
@@ -1252,6 +1338,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Wand,
@@ -1274,6 +1361,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Wand,
@@ -1303,6 +1391,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Ring,
@@ -1326,6 +1415,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Ring,
@@ -1349,6 +1439,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Ring,
@@ -1372,6 +1463,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Ring,
@@ -1395,6 +1487,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Ring,
@@ -1418,6 +1511,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Ring,
@@ -1441,6 +1535,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Ring,
@@ -1464,6 +1559,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Ring,
@@ -1487,6 +1583,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Ring,
@@ -1510,6 +1607,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Ring,
@@ -1532,6 +1630,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Ring,
@@ -1554,6 +1653,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
     Supply {
         kind: ItemKind::Ring,
@@ -1583,6 +1683,7 @@ pub static SUPPLY: &[Supply] = &[
             [0.0, 0.0, 0.0, 0.0, 0.0],
             [0.0, 0.0, 0.0, 0.0, 0.0],
         ],
+        levels: None,
     },
 ];
 

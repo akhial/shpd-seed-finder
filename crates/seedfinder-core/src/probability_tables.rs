@@ -149,6 +149,37 @@ pub struct Supply {
     pub enchanted: f32,
     /// Probability of each tier per floor set, zero for untiered families.
     pub tiers: [[f32; TIERS]; FLOOR_SETS],
+    /// Upgrade shares per tier, for the sources that settle both at once, or
+    /// `None` where a tier and a level are rolled apart and [`Supply::tiers`]
+    /// and [`Supply::upgrades`] can simply be multiplied.
+    ///
+    /// See [`locks_levels_to_tiers`]. Which tiers a source reaches varies by
+    /// depth, but the lock itself does not, so this is conditioned on tier
+    /// alone: read `levels[tier - 1][upgrade]` as the share of that tier's
+    /// items carrying that level.
+    pub levels: Option<&'static TierLevels>,
+}
+
+/// The upgrade level an item of each tier carries, for a source that fixes the
+/// two together.
+pub type TierLevels = [[f32; MAX_TABLED_UPGRADE + 1]; TIERS];
+
+/// Whether a source settles an item's tier and its upgrade level with one
+/// draw rather than two.
+///
+/// Both of the Imp's hoards do. Its vault stocks four fixed shelves and hands
+/// items off them one at a time, so which shelf an item came from fixes both
+/// numbers: the tier-4 armor is always the third shelf's, and always `+2`. Its
+/// own reward flips a coin between a tier-5 melee at `+2..=+4` beside a tier-4
+/// thrown at `+3..=+5`, and the same pair with the lines swapped — so whichever
+/// weapon is tier 4 is the one levelled furthest.
+///
+/// Scoring a tier and a level apart at either invents items neither ever
+/// hands out: a `+3` armor below tier 5, or a `+5` tier-5 weapon. Every other
+/// source does draw the two apart, and the marginals describe those exactly.
+#[must_use]
+pub const fn locks_levels_to_tiers(source: ItemSource) -> bool {
+    matches!(source, ItemSource::VaultTreasure | ItemSource::ImpReward)
 }
 
 /// Every source that can hold searchable equipment, in table order.

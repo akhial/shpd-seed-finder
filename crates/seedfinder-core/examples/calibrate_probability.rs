@@ -24,11 +24,11 @@ use std::sync::Mutex;
 use shpd_seedfinder_core::catalog::{ItemId, ItemKind, item};
 use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::main_world::CanonicalMainWorldGenerator;
-use shpd_seedfinder_core::model::GeneratedWorld;
+use shpd_seedfinder_core::model::{GeneratedWorld, ItemSource};
 use shpd_seedfinder_core::probability_tables::{
     DEEPEST_FLOOR, DEPTHS, FLOOR_SETS, IDENTITY_REPEAT_LIMIT, KINDS, KINDS_ORDER, LINES,
     LINES_ORDER, Line, MAX_TABLED_UPGRADE, TIERS, TIPPED_DARTS, bundle_size, kind_index,
-    line_index, line_of, source_index, sources,
+    line_index, line_of, locks_levels_to_tiers, source_index, sources,
 };
 use shpd_seedfinder_core::search::WorldGenerator;
 use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
@@ -55,6 +55,10 @@ struct Tally {
     totals: Vec<u64>,
     /// [kind][source][floor set][tier]
     tiers: Vec<u64>,
+    /// [kind][source][tier][upgrade], for the sources that fix the two
+    /// together. Not split by floor set: the lock is a property of how the
+    /// source builds an item, not of where it is met.
+    levels: Vec<u64>,
     /// [kind][repeats][depth]: ways of choosing `repeats + 1` items of one
     /// identity within the depth prefix, summed over identities and worlds.
     repeats: Vec<u64>,
@@ -79,6 +83,7 @@ impl Tally {
             enchanted: vec![0; KINDS * FAMILIES * MAX_SOURCES],
             totals: vec![0; KINDS * FAMILIES * MAX_SOURCES],
             tiers: vec![0; KINDS * FAMILIES * MAX_SOURCES * FLOOR_SETS * TIERS],
+            levels: vec![0; KINDS * FAMILIES * MAX_SOURCES * TIERS * (MAX_TABLED_UPGRADE + 1)],
             repeats: vec![0; KINDS * FAMILIES * IDENTITY_REPEAT_LIMIT * DEPTHS],
             identity_counts: vec![0; KINDS * FAMILIES * MAX_IDENTITIES * DEPTHS],
             grouped: vec![0; KINDS * FAMILIES * MAX_SOURCES],
@@ -98,6 +103,7 @@ impl Tally {
             (&mut self.enchanted, &other.enchanted),
             (&mut self.totals, &other.totals),
             (&mut self.tiers, &other.tiers),
+            (&mut self.levels, &other.levels),
             (&mut self.repeats, &other.repeats),
             (&mut self.identity_counts, &other.identity_counts),
             (&mut self.grouped, &other.grouped),
@@ -199,6 +205,10 @@ impl Tally {
             if let Some(tier) = definition.tier {
                 let floor_set = (depth / 5).min(FLOOR_SETS - 1);
                 self.tiers[(row * FLOOR_SETS + floor_set) * TIERS + usize::from(tier) - 1] += 1;
+                if locks_levels_to_tiers(candidate.source) {
+                    let tier_row = row * TIERS + usize::from(tier) - 1;
+                    self.levels[tier_row * (MAX_TABLED_UPGRADE + 1) + upgrade] += 1;
+                }
             }
             // Rewards that exclude one another share a slot: a query can only
             // ever claim one of them.
@@ -407,10 +417,56 @@ fn render_supply(tally: &Tally, output: &mut String) {
                 let _ = writeln!(output, "            [{}],", row.join(", "));
             }
             let _ = writeln!(output, "        ],");
+            render_levels(tally, kind_slot, source_slot, source, output);
             let _ = writeln!(output, "    }},");
         }
     }
     let _ = writeln!(output, "];");
+}
+
+/// Emits the upgrade-per-tier table for a source that fixes the two together,
+/// or `None` for the sources that draw them apart.
+///
+/// Each tier's row is normalised over that tier's own items, so it reads as
+/// `P(upgrade | tier)` and multiplies straight onto [`Supply::tiers`].
+#[allow(clippy::cast_precision_loss)]
+fn render_levels(
+    tally: &Tally,
+    kind_slot: usize,
+    source_slot: usize,
+    source: ItemSource,
+    output: &mut String,
+) {
+    let row = kind_slot * MAX_SOURCES + source_slot;
+    let start = row * TIERS * (MAX_TABLED_UPGRADE + 1);
+    let observations: u64 = tally.levels[start..start + TIERS * (MAX_TABLED_UPGRADE + 1)]
+        .iter()
+        .sum();
+    // An untiered family has no tier to condition on, so it keeps the plain
+    // upgrade marginal however its source builds items.
+    if !locks_levels_to_tiers(source) || observations == 0 {
+        let _ = writeln!(output, "        levels: None,");
+        return;
+    }
+    let _ = writeln!(output, "        levels: Some(&[");
+    for tier in 0..TIERS {
+        let observed: Vec<u64> = (0..=MAX_TABLED_UPGRADE)
+            .map(|upgrade| tally.levels[(row * TIERS + tier) * (MAX_TABLED_UPGRADE + 1) + upgrade])
+            .collect();
+        let total: u64 = observed.iter().sum();
+        let shares: Vec<String> = observed
+            .iter()
+            .map(|value| {
+                format_number(if total == 0 {
+                    0.0
+                } else {
+                    *value as f64 / total as f64
+                })
+            })
+            .collect();
+        let _ = writeln!(output, "            [{}],", shares.join(", "));
+    }
+    let _ = writeln!(output, "        ]),");
 }
 
 #[allow(clippy::cast_precision_loss)]
