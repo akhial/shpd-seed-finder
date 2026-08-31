@@ -903,15 +903,17 @@ impl PathFinder {
         self.width = width;
         self.size = size;
         // Java allocates fresh primitive arrays here, so their observable
-        // state immediately after `setMapSize` is all-zero/all-false.
+        // state immediately after `setMapSize` is all-zero/all-false. Clearing
+        // before the resize keeps the capacity but writes each element once
+        // instead of twice; `set_map_size` runs on every generated floor.
+        self.distance.clear();
         self.distance.resize(size, 0);
-        self.distance.fill(0);
+        self.goals.clear();
         self.goals.resize(size, false);
-        self.goals.fill(false);
+        self.queue.clear();
         self.queue.resize(size, 0);
-        self.queue.fill(0);
+        self.queued.clear();
         self.queued.resize(size, false);
-        self.queued.fill(false);
 
         self.direction = [
             -1,
