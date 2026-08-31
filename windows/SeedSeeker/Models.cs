@@ -1139,12 +1139,31 @@ public sealed class QueryPreset
 
 public static class BuiltInPresets
 {
+    /// <summary>
+    /// The floor limit the vault presets carry: floor 19 is the last floor the
+    /// Imp — and so the vault holding its levelled prizes — can appear on, so a
+    /// deeper scan only costs time.
+    /// </summary>
+    public const int VaultFloorLimit = 19;
+
     public static IReadOnlyList<QueryPreset> All { get; } = [
         new()
         {
             Id = "staff-21", Name = "+21 Staff", IsBuiltIn = true,
             Query = new QuerySettings { Requirements = [
                 new() { Kind = ItemKind.Wand, Upgrade = 3, UpgradeMatch = UpgradeMatch.Exactly, IdentityGroup = 1 },
+                new() { Kind = ItemKind.Wand, UpgradeMatch = UpgradeMatch.Any, IdentityGroup = 1 },
+                new() { Kind = ItemKind.Wand, UpgradeMatch = UpgradeMatch.Any, IdentityGroup = 1 },
+                new() { Kind = ItemKind.Wand, Upgrade = 1, UpgradeMatch = UpgradeMatch.AtLeast },
+            ] },
+        },
+        // The same stack anchored one level higher, on the +4 wand v4.0.0's Imp
+        // vault lays out among its prizes.
+        new()
+        {
+            Id = "staff-22", Name = "+22 Staff", IsBuiltIn = true,
+            Query = new QuerySettings { MaximumDepth = VaultFloorLimit, Requirements = [
+                new() { Kind = ItemKind.Wand, Upgrade = 4, UpgradeMatch = UpgradeMatch.Exactly, IdentityGroup = 1 },
                 new() { Kind = ItemKind.Wand, UpgradeMatch = UpgradeMatch.Any, IdentityGroup = 1 },
                 new() { Kind = ItemKind.Wand, UpgradeMatch = UpgradeMatch.Any, IdentityGroup = 1 },
                 new() { Kind = ItemKind.Wand, Upgrade = 1, UpgradeMatch = UpgradeMatch.AtLeast },
@@ -1167,6 +1186,17 @@ public static class BuiltInPresets
                 new() { Kind = ItemKind.Ring, Item = ItemCatalog.Find("ring_wealth"), Upgrade = 4, UpgradeMatch = UpgradeMatch.Exactly, Source = ScoutItemSource.ImpReward },
                 new() { Kind = ItemKind.Ring, Item = ItemCatalog.Find("ring_wealth"), Upgrade = 2, UpgradeMatch = UpgradeMatch.Exactly },
                 new() { Kind = ItemKind.Ring, Item = ItemCatalog.Find("ring_wealth"), UpgradeMatch = UpgradeMatch.Any },
+            ] },
+        },
+        // A tier-4 weapon at the +5 only the vault reaches, with two more of the
+        // same weapon to pour into it.
+        new()
+        {
+            Id = "tier-4-weapon-26", Name = "+26 Tier 4 Weapon", IsBuiltIn = true,
+            Query = new QuerySettings { MaximumDepth = VaultFloorLimit, Requirements = [
+                new() { Kind = ItemKind.Weapon, Tier = 4, TierMatch = TierMatch.Exactly, Upgrade = 5, UpgradeMatch = UpgradeMatch.Exactly, IdentityGroup = 1 },
+                new() { Kind = ItemKind.Weapon, UpgradeMatch = UpgradeMatch.Any, IdentityGroup = 1 },
+                new() { Kind = ItemKind.Weapon, UpgradeMatch = UpgradeMatch.Any, IdentityGroup = 1 },
             ] },
         },
     ];
