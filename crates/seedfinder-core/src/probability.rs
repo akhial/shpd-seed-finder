@@ -13,24 +13,42 @@
 //! chances rather than a Poisson process, because the generator deals item
 //! categories from a decrementing deck, and they all come out of that one run —
 //! which is what stops two requirements from each being handed an item when only
-//! one was ever produced. Quests and shops place a fixed number of slots on a
-//! single floor instead, and a slot holding mutually exclusive prizes counts
-//! once, since a run can only carry one of them out.
+//! one was ever produced. A shop places a fixed number of slots on a single
+//! floor instead, and a shelf holding mutually exclusive stock counts once,
+//! since a run can only carry one of them out.
 //!
 //! Requirements are then matched one-to-one onto slots, so three wands are not
-//! scored as one wand three times and the Wandmaker's single prize is not spent
-//! twice. Requirements linked to one identity are summed over the identities
-//! they could share and resolved alongside the rest of their family, discounted
-//! by the deck-driven scarcity of duplicates.
+//! scored as one wand three times and one shelf is not spent twice. Requirements
+//! linked to one identity are summed over the identities they could share and
+//! resolved alongside the rest of their family, discounted by the deck-driven
+//! scarcity of duplicates.
 //!
-//! Known simplifications: challenges shift item placement but are ignored;
-//! rewards that exclude one another across families, like the Ghost's
-//! weapon-or-armor choice, are counted as independently obtainable; and a family
-//! carrying more requirements than one matching resolves keeps only its scarcest
-//! ones. Those make the estimate optimistic. Against them, duplicate scarcity is
-//! measured over a whole line at once, so a linked group whose members want very
-//! different items — one `+3` alongside two plain ones — is discounted as
-//! heavily as one wanting three alike, and reads low.
+//! A slot's tier and its upgrade level are tabled apart and multiplied, which
+//! holds wherever the generator rolls them apart. The Imp's two hoards do not:
+//! its vault stocks four fixed shelves and its reward flips a coin over which
+//! of two weapons is levelled furthest, so at both a tier names the levels it
+//! can carry — including the `+5` that only ever lands on a tier-4 weapon.
+//! Those sources carry a measured upgrade-per-tier table instead, and are
+//! scored against it; every other source multiplies its two marginals.
+//!
+//! Quest prizes are not supply like that, and they are the whole reason
+//! families cannot be resolved apart. A giver lays out a pool spanning every
+//! family — the Imp's five reward options beside its vault's treasure rooms —
+//! and the player carries exactly one item away, so the Imp's haul can answer
+//! the `+4` ring a query wants or its `+3` armor, never both. Each pool is
+//! therefore lifted out of the per-family matching and spent once across the
+//! whole query, on whichever requirement it reaches that helps most.
+//!
+//! Known simplifications: challenges shift item placement but are ignored, and
+//! a query carrying more requirements than one matching resolves keeps only its
+//! scarcest ones, which read high. Against them, a pool is spent on its single
+//! best use rather than on whichever of them the seed left open; a pool that
+//! reaches two unrelated requirements is read as reaching the easier whenever
+//! it reaches the harder, which understates how often it ends up spent on the
+//! lesser; and duplicate scarcity is measured over a whole line at once, so a
+//! linked group whose members want very different items — one `+3` alongside
+//! two plain ones — is discounted as heavily as one wanting three alike. Those
+//! read low.
 
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -47,9 +65,9 @@ use crate::generator::{
 use crate::model::ItemSource;
 use crate::probability_tables::{
     DEEPEST_FLOOR, DEPTHS, FLOOR_SETS, HIGHEST_TABLED_UPGRADE, HIGHEST_TIER, IDENTITY_REPEAT_LIMIT,
-    IDENTITY_REPEATS, LINES_ORDER, Line, SLOT_SPREAD, Supply, TIERS, TIPPED_DARTS, TIPPED_SHARES,
-    appears_once, kind_index, line_of, missile_tier, missile_tier_items, source_index,
-    spread_index, supply_for, tipped_index,
+    IDENTITY_REPEATS, LINES_ORDER, Line, PRIZE_GROUPS, PrizeGroup, SLOT_SPREAD, Supply, TIERS,
+    TIPPED_DARTS, TIPPED_SHARES, kind_index, line_of, missile_tier, missile_tier_items,
+    prize_group, source_index, spread_index, supply_for, tipped_index,
 };
 use crate::query::{EffectRequirement, Requirement, SearchQuery, UpgradeRequirement};
 use crate::quests::WandmakerQuestType;
@@ -93,16 +111,12 @@ pub fn estimate_match_probability(query: &SearchQuery) -> f64 {
         }
     }
     for members in groups {
-        // Requirements of the same family draw on the same items whether or not
-        // they are linked, so they are resolved together rather than as though
-        // the group and the rest of the family never met.
-        let kind = members.first().map(|member| member.kind);
-        let others: Vec<Requirement> = independent
-            .iter()
-            .filter(|other| Some(other.kind) == kind)
-            .copied()
-            .collect();
-        independent.retain(|other| Some(other.kind) != kind);
+        // Requirements draw on the same items whether or not they are linked,
+        // and a quest prize is one pick across every family, so the group is
+        // resolved alongside everything left rather than as though they never
+        // met. Later groups are then resolved on their own: nesting the sums
+        // over the identities each could take would cost their product.
+        let others = std::mem::take(&mut independent);
         probability *= linked_probability(query, &members, &others);
     }
     probability *= competing_probability(query, &independent);
@@ -245,7 +259,7 @@ fn linked_probability(query: &SearchQuery, members: &[Requirement], others: &[Re
     };
     let mut none = 1.0;
     for (identity, alike) in identities(kind) {
-        let shared = family_probability(query, members, Some(identity), others);
+        let shared = together_probability(query, members, Some(identity), others);
         none *= (1.0 - shared.clamp(0.0, 1.0)).powi(alike);
     }
     1.0 - none
@@ -269,12 +283,13 @@ fn linked_probability(query: &SearchQuery, members: &[Requirement], others: &[Re
 /// filters a query puts on top. [`thinned_by`] puts the matching's answer on
 /// the same footing, applies the scarcity there, and reads it back.
 fn repeat_correction(ordered: &[Predicate], holding: f64, copies: usize) -> f64 {
-    let Some(kind) = ordered.first().map(|predicate| predicate.kind) else {
-        return holding;
-    };
     let Some((repeated, _)) = repeated_identity(ordered) else {
         return holding;
     };
+    // The filters can span families now, so the scarcity is read off the
+    // family the repeated identity belongs to rather than whichever filter
+    // sorted first.
+    let kind = item(repeated).kind;
     let depth = ordered
         .iter()
         .map(|predicate| predicate.max_depth)
@@ -380,35 +395,19 @@ fn line_for(kind: ItemKind, item: ItemId) -> Line {
 /// Probability that every requirement outside a linked group is satisfied at
 /// once.
 ///
-/// Items of different families never compete, so each family is resolved on its
-/// own and the answers multiply.
+/// Families are resolved together rather than one at a time: they draw on
+/// separate supply, but a quest lays its prizes out across all of them and
+/// lets exactly one leave, so a ring and an armor both wanting the Imp's haul
+/// are competitors.
 fn competing_probability(query: &SearchQuery, requirements: &[Requirement]) -> f64 {
-    let mut families: BTreeMap<usize, Vec<Requirement>> = BTreeMap::new();
-    for requirement in requirements {
-        families
-            .entry(kind_index(requirement.kind))
-            .or_default()
-            .push(*requirement);
-    }
-    families
-        .into_values()
-        .map(|family| family_probability(query, &family, None, &[]))
-        .product()
+    together_probability(query, requirements, None, &[])
 }
 
-/// Probability that every requirement on one equipment family is satisfied by a
-/// distinct item.
+/// Probability that every requirement is satisfied by a distinct item.
 ///
-/// Each reward slot in the dungeon covers some set of the requirements, and the
-/// query succeeds exactly when the slots can be matched one-to-one onto the
-/// requirements. By Hall's theorem that holds precisely when no set of
-/// requirements outnumbers the slots covering it, which is what
-/// [`covers_every_requirement`] checks.
-///
-/// Working in coverage sets rather than per requirement is what stops one slot
-/// from being spent twice: the Wandmaker's single prize can be the `+3` wand a
-/// query asks for or one of its plain wands, never both.
-fn family_probability(
+/// The quest prizes are spent across the whole query and the rest of the
+/// supply is matched family by family; see [`matching_chance`].
+fn together_probability(
     query: &SearchQuery,
     requirements: &[Requirement],
     identity: Option<ItemId>,
@@ -434,9 +433,9 @@ fn family_probability(
     (together * scarcer).clamp(0.0, 1.0)
 }
 
-/// The requirements of one family reduced to filters, scarcest first.
+/// The requirements reduced to filters, scarcest first.
 ///
-/// Keeping the scarcest first makes truncation lose the least: a family carrying
+/// Keeping the scarcest first makes truncation lose the least: a query carrying
 /// more requirements than one matching resolves keeps the ones that decide it.
 fn filters(
     query: &SearchQuery,
@@ -463,14 +462,132 @@ fn filters(
 }
 
 /// Probability that the supply can serve every filter with a distinct item.
+///
+/// The dungeon offers two kinds of supply. Scattered drops, chests and shop
+/// shelves belong to one family each, so families never compete over them and
+/// their answers multiply. A quest prize does not: the giver lays out a pool
+/// spanning every family and the player carries exactly one item away, so the
+/// Imp's haul can answer the `+4` ring a query wants or its `+3` armor, never
+/// both.
+///
+/// So the prize pools are lifted out and resolved across the whole query,
+/// while the supply that stays inside a family is still matched family by
+/// family. Conditioning on what each pool reaches turns the estimate into a
+/// sum over those reaches of the best use the query can make of them.
 fn matching_chance(ordered: &[Predicate]) -> f64 {
+    if ordered.is_empty() {
+        return 1.0;
+    }
+    let deepest = ordered
+        .iter()
+        .map(|predicate| usize::from(predicate.max_depth).clamp(1, DEPTHS))
+        .max()
+        .unwrap_or(DEPTHS);
+    let pools: Vec<Vec<f64>> = PRIZE_GROUPS
+        .into_iter()
+        .filter_map(|group| prize_reach(group, ordered, deepest))
+        .collect();
+    let mut open = OpenSupply {
+        ordered,
+        answered: BTreeMap::new(),
+    };
+    prize_chance(&pools, 0, 0, &mut open).clamp(0.0, 1.0)
+}
+
+/// The chance every requirement is served once the prize pools from `group`
+/// onwards have been spent, given the requirements `discharged` by the pools
+/// already spent.
+///
+/// A pool leaves one item, so it answers at most one requirement. Which one is
+/// the query's choice, so the pool is spent on the requirement whose removal
+/// helps most and that it can actually reach, walking them best-first: the
+/// pool takes the best it reaches, and only misses out entirely when it
+/// reaches none of them.
+///
+/// Whether the pool reaches one requirement is read as nested with whether it
+/// reaches another — a pool that can answer the harder of two can answer the
+/// easier. That is exact for the case that matters, several requirements on
+/// one item, where a pool holding the item answers all of them and still only
+/// leaves with one. Where two requirements really are unrelated it understates
+/// how often the pool ends up spent on the lesser of them, which reads low.
+fn prize_chance(pools: &[Vec<f64>], group: usize, discharged: usize, open: &mut OpenSupply) -> f64 {
+    let Some(reach) = pools.get(group) else {
+        return open.chance(discharged);
+    };
+    // Best-first over the requirements this pool could still be spent on.
+    let mut spending: Vec<(f64, f64)> = (0..reach.len())
+        .filter(|requirement| discharged & (1 << requirement) == 0 && reach[*requirement] > 0.0)
+        .map(|requirement| {
+            (
+                reach[requirement],
+                prize_chance(pools, group + 1, discharged | (1 << requirement), open),
+            )
+        })
+        .collect();
+    spending.sort_by(|left, right| right.1.partial_cmp(&left.1).unwrap_or(Ordering::Equal));
+
+    // Nesting the reaches makes the walk a partition: each requirement claims
+    // only what the better ones it is nested inside left over, and whatever no
+    // requirement reaches falls through to the next pool.
+    let mut claimed = 0.0_f64;
+    let mut total = 0.0;
+    for (reached, served) in spending {
+        total += (reached - claimed).max(0.0) * served;
+        claimed = claimed.max(reached);
+    }
+    total + (1.0 - claimed) * prize_chance(pools, group + 1, discharged, open)
+}
+
+/// The family-by-family matching over everything a quest prize is not, with
+/// the answers it has already worked out.
+struct OpenSupply<'a> {
+    ordered: &'a [Predicate],
+    answered: BTreeMap<usize, f64>,
+}
+
+impl OpenSupply<'_> {
+    /// Chance the supply outside the prize pools serves every requirement
+    /// except the `discharged` ones, which the pools have already answered.
+    fn chance(&mut self, discharged: usize) -> f64 {
+        if let Some(answer) = self.answered.get(&discharged) {
+            return *answer;
+        }
+        let mut families: BTreeMap<usize, Vec<Predicate>> = BTreeMap::new();
+        for (requirement, predicate) in self.ordered.iter().enumerate() {
+            if discharged & (1 << requirement) == 0 {
+                families
+                    .entry(kind_index(predicate.kind))
+                    .or_default()
+                    .push(*predicate);
+            }
+        }
+        let answer: f64 = families
+            .into_values()
+            .map(|family| open_chance(&family))
+            .product();
+        self.answered.insert(discharged, answer);
+        answer
+    }
+}
+
+/// Probability that one family's own supply serves every one of its filters
+/// with a distinct item.
+///
+/// Each reward slot in the dungeon covers some set of the requirements, and the
+/// query succeeds exactly when the slots can be matched one-to-one onto the
+/// requirements. By Hall's theorem that holds precisely when no set of
+/// requirements outnumbers the slots covering it, which is what
+/// [`covers_every_requirement`] checks.
+///
+/// Working in coverage sets rather than per requirement is what stops one slot
+/// from being spent twice: a shop shelf can hold the `+0` wand a query asks for
+/// or one of its plain wands, never both.
+fn open_chance(ordered: &[Predicate]) -> f64 {
     let Some(kind) = ordered.first().map(|predicate| predicate.kind) else {
         return 1.0;
     };
     let wanted = ordered.len();
     let coverages = 1 << wanted;
-    // Every set of requirements narrows to one filter, matched by the items
-    // that could serve all of them at once.
     let shared: Vec<Option<Predicate>> = (0..coverages)
         .map(|coverage| narrow(ordered, coverage))
         .collect();
@@ -488,11 +605,11 @@ fn matching_chance(ordered: &[Predicate]) -> f64 {
 
     let steady = repeated_identity(ordered).is_none();
     let mut streams: Vec<Stream> = Vec::new();
-    // A shop's shelf and a quest's prize hold one item whichever line it comes
-    // from, so their lines are pooled into a single slot rather than each being
-    // offered a slot of its own. Quest floors are alternatives — a Ghost that
-    // appeared on floor two cannot also appear on floor three — so a quest pools
-    // its depths too, while a shop restocks on every shop floor.
+    // A shop's shelf holds one item whichever line it comes from, so its lines
+    // are pooled into a single slot rather than each being offered one of their
+    // own. A shop restocks on every shop floor, so its floors are not
+    // alternatives the way a quest's are — and a quest's prizes are not here at
+    // all, having been lifted out to [`prize_reach`].
     let mut bundles: BTreeMap<(usize, usize), (u8, Vec<f64>)> = BTreeMap::new();
     for (line, (from, until)) in LINES_ORDER
         .into_iter()
@@ -501,6 +618,9 @@ fn matching_chance(ordered: &[Predicate]) -> f64 {
         let mut placed = 0.0;
         let mut covered = vec![0.0; coverages];
         for supply in supply_for(kind).filter(|supply| supply.line == line) {
+            if prize_group(supply.source).is_some() {
+                continue;
+            }
             for depth in from..=until {
                 let available = f64::from(supply.depth_slots[depth - 1]);
                 if available <= 0.0 {
@@ -520,13 +640,8 @@ fn matching_chance(ordered: &[Predicate]) -> f64 {
                     continue;
                 }
                 let appearances = available / f64::from(supply.bundle);
-                let floor = if appears_once(supply.source) {
-                    0
-                } else {
-                    depth
-                };
                 let bundle = bundles
-                    .entry((source_index(supply.source), floor))
+                    .entry((source_index(supply.source), depth))
                     .or_insert_with(|| (supply.bundle, vec![0.0; coverages]));
                 for (coverage, share) in covered_by.iter().enumerate().skip(1) {
                     bundle.1[coverage] += appearances * share;
@@ -555,6 +670,56 @@ fn matching_chance(ordered: &[Predicate]) -> f64 {
         }
     }
     matching_probability(wanted, &streams, &slots).clamp(0.0, 1.0)
+}
+
+/// How likely one quest's prize pool is to be able to serve each requirement.
+///
+/// The giver lays out a whole pool — the Imp's five reward options beside its
+/// vault's treasure rooms — and the player leaves with one item, so what
+/// matters per requirement is whether anything in the pool would answer it.
+/// Working that union out per floor and weighting it by the chance the quest
+/// landed there keeps a floor limit that cuts the quest's window from claiming
+/// the prize.
+///
+/// Returns `None` when nothing the pool holds can serve the query.
+fn prize_reach(group: PrizeGroup, ordered: &[Predicate], deepest: usize) -> Option<Vec<f64>> {
+    let mut kinds: Vec<ItemKind> = ordered.iter().map(|predicate| predicate.kind).collect();
+    kinds.sort_unstable_by_key(|kind| kind_index(*kind));
+    kinds.dedup();
+    let mut reach = vec![0.0; ordered.len()];
+    for depth in 1..=deepest {
+        // Every row of one quest shares its giver's floor distribution, so any
+        // of them reports the chance the prize is waiting on this floor.
+        let mut appeared = 0.0_f64;
+        let mut missing = vec![1.0; ordered.len()];
+        for supply in kinds
+            .iter()
+            .flat_map(|kind| supply_for(*kind))
+            .filter(|supply| prize_group(supply.source) == Some(group))
+        {
+            let available = f64::from(supply.depth_slots[depth - 1]);
+            if available <= 0.0 {
+                continue;
+            }
+            appeared = appeared.max(available);
+            for (requirement, predicate) in ordered.iter().enumerate() {
+                missing[requirement] *= 1.0 - predicate.slot_probability(supply, depth);
+            }
+        }
+        if appeared <= 0.0 {
+            continue;
+        }
+        for (requirement, missed) in missing.into_iter().enumerate() {
+            reach[requirement] += appeared * (1.0 - missed);
+        }
+    }
+    if reach.iter().all(|chance| *chance <= 0.0) {
+        return None;
+    }
+    for chance in &mut reach {
+        *chance = chance.clamp(0.0, 1.0);
+    }
+    Some(reach)
 }
 
 /// The stretches of floors the query's limits carve out, as inclusive ranges.
@@ -686,15 +851,23 @@ fn narrow(ordered: &[Predicate], coverage: usize) -> Option<Predicate> {
 
 /// Chance that one slot of `supply` at `depth` covers exactly each set of
 /// requirements.
-///
-/// The filters overlap, so the chance of satisfying a given set is not the
-/// chance of satisfying that set and nothing more. Inverting over the subset
-/// lattice turns the first into the second.
 fn coverage_shares(shared: &[Option<Predicate>], supply: &Supply, depth: usize) -> Vec<f64> {
-    let mut exact: Vec<f64> = shared
-        .iter()
-        .map(|narrowed| narrowed.map_or(0.0, |narrowed| narrowed.slot_probability(supply, depth)))
-        .collect();
+    exact_shares(
+        shared
+            .iter()
+            .map(|narrowed| {
+                narrowed.map_or(0.0, |narrowed| narrowed.slot_probability(supply, depth))
+            })
+            .collect(),
+    )
+}
+
+/// Turns "satisfies at least this set" into "satisfies exactly this set".
+///
+/// The filters overlap, so one slot's chance of covering a set is not its
+/// chance of covering that set and nothing more. Inverting over the subset
+/// lattice turns the first into the second.
+fn exact_shares(mut exact: Vec<f64>) -> Vec<f64> {
     exact[0] = 1.0;
     for requirement in 0..exact.len().trailing_zeros() {
         let bit = 1_usize << requirement;
@@ -945,7 +1118,8 @@ impl Predicate {
     /// Blacksmith upgrades its whole weapon rack together, so a `+3` there is a
     /// single chance however many weapons it lays out.
     fn slot_probability(self, supply: &Supply, depth: usize) -> f64 {
-        if usize::from(self.max_depth) < depth
+        if self.kind != supply.kind
+            || usize::from(self.max_depth) < depth
             || self.source.is_some_and(|wanted| wanted != supply.source)
             || (self.exclude_blacksmith && supply.source == ItemSource::BlacksmithReward)
         {
@@ -956,20 +1130,56 @@ impl Predicate {
         }) {
             return 0.0;
         }
-        let identity = self.identity_probability(supply, depth);
-        let rolled = self.upgrade_probability(supply)
-            * self.effect_probability(supply)
-            * self.uncursed_probability(supply);
+        let tiers = &supply.tiers[((depth - 1) / 5).min(FLOOR_SETS - 1)];
+        let identity = self.identity_probability(supply, tiers);
+        let modifiers = self.effect_probability(supply) * self.uncursed_probability(supply);
         let options = f64::from(supply.options);
         if supply.shared_roll {
+            // No source that rolls its alternatives as one locks their levels
+            // to their tiers, so the identity keeps the tabled tier shares.
+            let rolled = self.upgrade_probability(supply) * modifiers;
             rolled * (1.0 - (1.0 - identity).powf(options))
         } else {
-            1.0 - (1.0 - identity * rolled).powf(options)
+            let matched = self.identity_and_upgrade_probability(supply, tiers) * modifiers;
+            1.0 - (1.0 - matched).powf(options)
         }
     }
 
-    fn identity_probability(self, supply: &Supply, depth: usize) -> f64 {
-        let tiers = &supply.tiers[((depth - 1) / 5).min(FLOOR_SETS - 1)];
+    /// Probability that one alternative of `supply` is an item this filter
+    /// accepts, identity and upgrade together.
+    ///
+    /// Tiers and upgrades are tabled apart and multiply, save at a source that
+    /// [locks the two together](crate::probability_tables::locks_levels_to_tiers):
+    /// those carry their own upgrade-per-tier table and are scored against it.
+    /// Every level the generator ties to one tier is stocked by such a source,
+    /// which `only_a_locked_row_reaches_the_level_tied_to_one_tier` holds the
+    /// tables to, so nothing outside them needs a tier and a level reconciled.
+    fn identity_and_upgrade_probability(self, supply: &Supply, tiers: &[f32; TIERS]) -> f64 {
+        let tiered = matches!(supply.kind, ItemKind::Weapon | ItemKind::Armor);
+        let Some(levels) = supply.levels.filter(|_| tiered) else {
+            return self.upgrade_probability(supply) * self.identity_probability(supply, tiers);
+        };
+        // Each tier is worth only its own share of the levels this filter
+        // accepts, not the whole source's: asking for a tier and a level that
+        // never came off the same shelf has to score zero.
+        let allowed = self.allowed_upgrades(supply);
+        let mut reachable = [0.0_f32; TIERS];
+        for ((share, tabled), carried) in reachable.iter_mut().zip(tiers).zip(levels) {
+            let held: f64 = carried
+                .iter()
+                .enumerate()
+                .filter(|(upgrade, _)| allowed & (1 << upgrade) != 0)
+                .map(|(_, chance)| f64::from(*chance))
+                .sum();
+            #[allow(clippy::cast_possible_truncation)]
+            {
+                *share = (f64::from(*tabled) * held) as f32;
+            }
+        }
+        self.identity_probability(supply, &reachable)
+    }
+
+    fn identity_probability(self, supply: &Supply, tiers: &[f32; TIERS]) -> f64 {
         match (self.kind, self.item) {
             (ItemKind::Weapon, Some(wanted)) => {
                 if line_of(wanted) != supply.line {
@@ -1021,18 +1231,24 @@ impl Predicate {
             .sum()
     }
 
+    /// The tabled share of the upgrade levels this filter accepts, over a
+    /// source's items as a whole rather than one of its tiers.
     fn upgrade_probability(self, supply: &Supply) -> f64 {
+        let allowed = self.allowed_upgrades(supply);
+        (0..supply.upgrades.len())
+            .filter(|upgrade| allowed & (1 << upgrade) != 0)
+            .map(|upgrade| f64::from(supply.upgrades[upgrade]))
+            .sum()
+    }
+
+    /// The upgrade levels this filter accepts, as a bit set, once fast mode
+    /// has given up the ones it skips.
+    fn allowed_upgrades(self, supply: &Supply) -> u8 {
         let mut allowed = self.upgrades;
         if self.fast_mode && fast_mode_skips(supply.source, self.kind) {
             allowed &= (1 << (FAST_MODE_UPGRADE_CAP + 1)) - 1;
         }
-        supply
-            .upgrades
-            .iter()
-            .enumerate()
-            .filter(|(upgrade, _)| allowed & (1 << upgrade) != 0)
-            .map(|(_, share)| f64::from(*share))
-            .sum()
+        allowed
     }
 
     fn effect_probability(self, supply: &Supply) -> f64 {
@@ -1290,6 +1506,87 @@ mod tests {
             wandmaker_quest: None,
             fast_mode: false,
         }
+    }
+
+    /// A `+4` armor and a `+4` ring are each common enough — the Imp hands one
+    /// of each out about a third of the time — but only the Imp reaches `+4`
+    /// in those families, and the Escape Crystal lets exactly one item leave.
+    /// Wanting both is therefore impossible, however plentiful each looks
+    /// alone. Scoring the families apart put it at one seed in nine.
+    #[test]
+    fn one_quest_prize_cannot_answer_two_families_at_once() {
+        let plus_four = |kind| Requirement {
+            upgrade: UpgradeRequirement::AtLeast(4),
+            ..requirement(kind)
+        };
+        let armor = estimate_match_probability(&query(vec![plus_four(ItemKind::Armor)], 24));
+        let ring = estimate_match_probability(&query(vec![plus_four(ItemKind::Ring)], 24));
+        assert!(armor > 0.2, "{armor:e}");
+        assert!(ring > 0.2, "{ring:e}");
+        let both = estimate_match_probability(&query(
+            vec![plus_four(ItemKind::Armor), plus_four(ItemKind::Ring)],
+            24,
+        ));
+        assert!(both <= 1e-9, "{both:e} for a pair no seed can satisfy");
+    }
+
+    /// The same pick cannot be spent twice within one family either: the Imp's
+    /// reward armor and its vault's treasure armors are one choice, not two.
+    #[test]
+    fn one_quest_prize_cannot_answer_two_requirements_of_a_family() {
+        let plus_three = || Requirement {
+            upgrade: UpgradeRequirement::AtLeast(3),
+            ..requirement(ItemKind::Armor)
+        };
+        let one = estimate_match_probability(&query(vec![plus_three()], 24));
+        let two = estimate_match_probability(&query(vec![plus_three(), plus_three()], 24));
+        // Sampled over 200000 seeds: 0.909 and 0.173, so the pair is far below
+        // the 0.83 that scoring the two independently would give. The bands are
+        // the sweep's own factor-of-two tolerance around those rates.
+        assert!((0.45..=1.0).contains(&one), "{one:e}");
+        assert!((0.086..=0.346).contains(&two), "{two:e}");
+        assert!(two < one / 2.0, "{two:e} against {one:e}");
+    }
+
+    /// The Imp's hoards hand a tier and a level out together, so a source
+    /// filter pinned to one of them has to score the pairs they never build at
+    /// nothing, however plentiful each half looks on its own.
+    #[test]
+    fn a_locked_source_supplies_no_tier_and_level_it_never_pairs() {
+        let from = |source, requirement| {
+            estimate_match_probability(&query(
+                vec![Requirement {
+                    source: Some(source),
+                    ..requirement
+                }],
+                24,
+            ))
+        };
+        // The vault's armor is +0 at tier 2 and climbs one level a tier, so it
+        // stocks tier-5 armor at +3 and nothing below tier 5 at +3.
+        let armor = |tier| Requirement {
+            tier,
+            upgrade: UpgradeRequirement::Exact(3),
+            ..requirement(ItemKind::Armor)
+        };
+        let stocked = from(ItemSource::VaultTreasure, armor(TierRequirement::Exact(5)));
+        let never = from(ItemSource::VaultTreasure, armor(TierRequirement::AtMost(3)));
+        assert!(stocked > 0.05, "{stocked:e}");
+        assert!(never <= 1e-9, "{never:e} for armor the vault never shelves");
+        // Whichever of the Imp's two weapons is tier 5 is the one levelled
+        // +2..=+4, so its tier-4 weapon is never the +2 one.
+        let weapon = |upgrade| Requirement {
+            tier: TierRequirement::Exact(4),
+            upgrade,
+            ..requirement(ItemKind::Weapon)
+        };
+        let rolled = from(ItemSource::ImpReward, weapon(UpgradeRequirement::Exact(3)));
+        let skipped = from(ItemSource::ImpReward, weapon(UpgradeRequirement::Exact(2)));
+        assert!(rolled > 0.05, "{rolled:e}");
+        assert!(
+            skipped <= 1e-9,
+            "{skipped:e} for a level the Imp keeps for tier 5"
+        );
     }
 
     #[test]

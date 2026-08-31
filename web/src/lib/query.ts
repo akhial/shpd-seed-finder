@@ -47,6 +47,46 @@ export const MAX_UPGRADE_WEAPON = 5
 export const maxUpgradeFor = (family: string | undefined): number =>
   (family === 'weapon' ? MAX_UPGRADE_WEAPON : family === 'ring' ? MAX_UPGRADE_RING : MAX_UPGRADE_DEFAULT)
 
+/** The highest upgrade the generator puts on any item, whatever its tier. */
+export const MAX_UPGRADE_ANY_TIER = 4
+
+/** The one weapon tier levelled past {@link MAX_UPGRADE_ANY_TIER}, a
+ * v4.0.0-BETA-3 quirk: the Imp's vault lays out one tier-4 and one tier-5
+ * weapon and rolls the tier-4 one at +3…+5 while the tier-5 one stops at +4.
+ * So a +5 exists only on a tier-4 weapon, melee or thrown. When upstream
+ * levels the two ranges this and its callers go away and every family caps
+ * at {@link MAX_UPGRADE_ANY_TIER}. */
+export const EXTRA_UPGRADE_TIER = 4
+
+/** Whether a requirement can still land on {@link EXTRA_UPGRADE_TIER}. */
+const reachesExtraUpgradeTier = (requirement: Pick<RequirementState, 'item' | 'tier'>): boolean => {
+  if (requirement.item) return getItem(requirement.item)?.tier === EXTRA_UPGRADE_TIER
+  const { mode, value } = requirement.tier
+  return mode === 'exact' ? value === EXTRA_UPGRADE_TIER
+    : mode === 'at_least' ? value <= EXTRA_UPGRADE_TIER
+    : mode === 'at_most' ? value >= EXTRA_UPGRADE_TIER
+    : true
+}
+
+/** The highest upgrade one requirement may name, its tier filter included. */
+export const maxUpgradeOf = (requirement: Pick<RequirementState, 'kind' | 'item' | 'tier'>): number => {
+  const ceiling = maxUpgradeFor(requirementFamily(requirement))
+  return ceiling > MAX_UPGRADE_ANY_TIER && !reachesExtraUpgradeTier(requirement)
+    ? MAX_UPGRADE_ANY_TIER
+    : ceiling
+}
+
+/** The requirement with its upgrade pulled back under {@link maxUpgradeOf},
+ * for edits — a narrowed tier, a named item — that lower the ceiling. */
+export const clampUpgrade = (requirement: RequirementState): RequirementState => {
+  if (requirement.upgrade.mode === 'any') return requirement
+  const maximum = maxUpgradeOf(requirement)
+  const ceiling = Math.max(1, requirement.upgrade.mode === 'at_least' ? maximum - 1 : maximum)
+  return requirement.upgrade.value <= ceiling
+    ? requirement
+    : { ...requirement, upgrade: { ...requirement.upgrade, value: ceiling } }
+}
+
 /** The broad family a requirement belongs to, from its kind or its item. */
 export const requirementFamily = (requirement: Pick<RequirementState, 'kind' | 'item'>): string | undefined =>
   (requirement.kind ? kindFamily(requirement.kind) : requirement.item ? getItem(requirement.item)?.type : undefined)
@@ -57,7 +97,7 @@ export const requirementFamily = (requirement: Pick<RequirementState, 'kind' | '
  * the family cap.
  */
 export const maxLevelOf = (requirement: RequirementState): number =>
-  (requirement.upgrade.mode === 'exact' ? requirement.upgrade.value : maxUpgradeFor(requirementFamily(requirement))) + 1
+  (requirement.upgrade.mode === 'exact' ? requirement.upgrade.value : maxUpgradeOf(requirement)) + 1
 
 /** The highest combined level a group's members can reach together. */
 export const levelSumCapacity = (members: RequirementState[]): number =>
@@ -367,9 +407,13 @@ export function validateRequirement(requirement: RequirementState): string[] {
     if ((mode === 'at_least' || mode === 'at_most') && (value < BOUNDED_TIER_MIN || value > BOUNDED_TIER_MAX)) errors.push(`Tier bounds must be ${BOUNDED_TIER_MIN} or ${BOUNDED_TIER_MAX}.`)
   }
   if (requirement.upgrade.mode !== 'any') {
-    const maximum = maxUpgradeFor(family)
+    const maximum = maxUpgradeOf(requirement)
     const minimum = requirement.upgrade.mode === 'exact' ? 1 : 0
-    if (requirement.upgrade.value < minimum || requirement.upgrade.value > maximum) errors.push(`Upgrade must be ${minimum} through +${maximum}.`)
+    if (requirement.upgrade.value < minimum || requirement.upgrade.value > maximum) {
+      errors.push(maximum < maxUpgradeFor(family)
+        ? `Upgrade must be ${minimum} through +${maximum}; only a tier-${EXTRA_UPGRADE_TIER} weapon reaches +${MAX_UPGRADE_WEAPON}.`
+        : `Upgrade must be ${minimum} through +${maximum}.`)
+    }
   }
   if (requirement.maxDepth !== undefined && (requirement.maxDepth < 1 || requirement.maxDepth > MAX_DEPTH)) errors.push(`Requirement floor must be 1 through ${MAX_DEPTH}.`)
   if (requirement.effect !== undefined) {

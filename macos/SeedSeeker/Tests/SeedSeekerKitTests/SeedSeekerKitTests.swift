@@ -14,6 +14,30 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertNotNil(preset.query.validated())
     }
 
+    func testBundledStaff22Preset() throws {
+        let preset = BuiltInPresets.staff22
+        XCTAssertEqual(preset.name, "+22 Staff")
+        XCTAssertEqual(preset.query.maximumDepth, 19)
+        XCTAssertEqual(preset.query.requirements.map(\.kind), [.wand, .wand, .wand, .wand])
+        XCTAssertEqual(preset.query.requirements.map(\.upgradeMatch), [.exactly, .any, .any, .atLeast])
+        XCTAssertEqual(preset.query.requirements.map(\.upgrade), [4, 0, 0, 1])
+        XCTAssertEqual(preset.query.requirements.map(\.identityGroup), [1, 1, 1, nil])
+        XCTAssertNotNil(preset.query.validated())
+    }
+
+    func testBundledTier4WeaponPreset() throws {
+        let preset = BuiltInPresets.tier4Weapon26
+        XCTAssertEqual(preset.name, "+26 Tier 4 Weapon")
+        XCTAssertEqual(preset.query.maximumDepth, 19)
+        XCTAssertEqual(preset.query.requirements.map(\.kind), [.weapon, .weapon, .weapon])
+        XCTAssertEqual(preset.query.requirements.map(\.tierMatch), [.exactly, .any, .any])
+        XCTAssertEqual(preset.query.requirements.map(\.tier), [4, 0, 0])
+        XCTAssertEqual(preset.query.requirements.map(\.upgradeMatch), [.exactly, .any, .any])
+        XCTAssertEqual(preset.query.requirements.map(\.upgrade), [5, 0, 0])
+        XCTAssertEqual(preset.query.requirements.map(\.identityGroup), [1, 1, 1])
+        XCTAssertNotNil(preset.query.validated())
+    }
+
     func testBundledWandBonanzaPreset() throws {
         let preset = BuiltInPresets.wandBonanza
         XCTAssertEqual(preset.name, "Wand Bonanza")
@@ -406,10 +430,20 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertNoThrow(try ItemRequirement(key: 1, item: nil, upgrade: 4, kind: .ring, upgradeMatch: .atLeast))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 5, kind: .ring, upgradeMatch: .atLeast))
         // v4.0.0's ceilings: the vault's tier-4 prizes take weapons to +5,
-        // every other family to +4.
+        // every other family — and every other tier — to +4.
         XCTAssertNoThrow(try ItemRequirement(key: 1, item: nil, upgrade: 5, kind: .weapon, upgradeMatch: .exactly))
         XCTAssertNoThrow(try ItemRequirement(key: 1, item: nil, upgrade: 5, kind: .thrownWeapon, upgradeMatch: .exactly))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 6, kind: .weapon, upgradeMatch: .exactly))
+        XCTAssertNoThrow(try ItemRequirement(key: 1, item: nil, upgrade: 5, kind: .weapon, tier: 4,
+                                             tierMatch: .exactly, upgradeMatch: .exactly))
+        XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 5, kind: .weapon, tier: 5,
+                                                 tierMatch: .exactly, upgradeMatch: .exactly))
+        XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 5, kind: .weapon, tier: 3,
+                                                 tierMatch: .atMost, upgradeMatch: .exactly))
+        XCTAssertNoThrow(try ItemRequirement(key: 1, item: ItemCatalog.findById("battle_axe"), upgrade: 5,
+                                             kind: .weapon, upgradeMatch: .exactly))
+        XCTAssertThrowsError(try ItemRequirement(key: 1, item: ItemCatalog.findById("greatsword"), upgrade: 5,
+                                                 kind: .weapon, upgradeMatch: .exactly))
         XCTAssertNoThrow(try ItemRequirement(key: 1, item: nil, upgrade: 4, kind: .armor, upgradeMatch: .exactly))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 5, kind: .armor, upgradeMatch: .exactly))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 5, kind: .wand, upgradeMatch: .exactly))

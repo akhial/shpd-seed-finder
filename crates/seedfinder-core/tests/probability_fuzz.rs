@@ -321,6 +321,8 @@ fn query(requirements: Vec<Requirement>, max_depth: u8) -> SearchQuery {
 fn curated_queries() -> Vec<(String, SearchQuery)> {
     let mut queries = depth_queries();
     queries.extend(modifier_queries());
+    queries.extend(vault_upgrade_queries());
+    queries.extend(locked_level_queries());
     queries.extend(competition_queries());
     queries
 }
@@ -455,6 +457,87 @@ fn modifier_queries() -> Vec<(String, SearchQuery)> {
         ),
     ));
     queries
+}
+
+/// Tiers and levels that only ever arrive together.
+///
+/// The Imp's vault stocks four fixed shelves, so a tier there names the level
+/// it carries. Scoring the two apart invents items the vault never stocks, and
+/// since it is the deepest and best-stocked source in the dungeon, the
+/// invented ones swamp the real answer. The Imp's own reward locks the two the
+/// same way; its impossible pairs are the ones
+/// [`Requirement::upgrade_ceiling`] rejects outright, so they cannot be
+/// sampled here.
+fn locked_level_queries() -> Vec<(String, SearchQuery)> {
+    vec![
+        (
+            // The vault's armor is +0 at tier 2 and climbs one level a tier, so
+            // no vault armor below tier 5 is ever +3.
+            "a +3 armor of tier 3 or lower".to_owned(),
+            query(
+                vec![Requirement {
+                    tier: TierRequirement::AtMost(3),
+                    upgrade: UpgradeRequirement::Exact(3),
+                    ..base(ItemKind::Armor)
+                }],
+                22,
+            ),
+        ),
+        (
+            // The vault's thrown weapons follow the same shelf rule, so a +3
+            // Kunai — tier 4 — can only come from elsewhere.
+            "a +3 uncursed Kunai".to_owned(),
+            query(
+                vec![Requirement {
+                    item: Some(ItemId::Kunai),
+                    upgrade: UpgradeRequirement::Exact(3),
+                    require_uncursed: true,
+                    ..base(ItemKind::Weapon)
+                }],
+                24,
+            ),
+        ),
+    ]
+}
+
+/// The top of the upgrade range, which only the Imp's vault reaches — and
+/// whose highest level only its tier-4 weapon carries, so the estimator has
+/// to score that level against tier 4 alone.
+fn vault_upgrade_queries() -> Vec<(String, SearchQuery)> {
+    vec![
+        (
+            "any weapon at exactly +5".to_owned(),
+            query(
+                vec![Requirement {
+                    upgrade: UpgradeRequirement::Exact(5),
+                    ..base(ItemKind::Weapon)
+                }],
+                24,
+            ),
+        ),
+        (
+            "any tier 4 weapon at exactly +5".to_owned(),
+            query(
+                vec![Requirement {
+                    tier: TierRequirement::Exact(4),
+                    upgrade: UpgradeRequirement::Exact(5),
+                    ..base(ItemKind::Weapon)
+                }],
+                24,
+            ),
+        ),
+        (
+            "any melee weapon at +4 or better".to_owned(),
+            query(
+                vec![Requirement {
+                    weapon_category: Some(WeaponCategory::Melee),
+                    upgrade: UpgradeRequirement::AtLeast(4),
+                    ..base(ItemKind::Weapon)
+                }],
+                24,
+            ),
+        ),
+    ]
 }
 
 /// Requirements that have to be met by distinct items.

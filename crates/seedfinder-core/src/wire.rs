@@ -943,13 +943,18 @@ mod tests {
             upgrade("ring_sharpshooting", 4).unwrap().requirements[0].upgrade,
             UpgradeRequirement::Exact(4)
         );
+        // Only the tier-4 weapons reach +5, melee and thrown alike.
         assert_eq!(
-            upgrade("sword", 5).unwrap().requirements[0].upgrade,
+            upgrade("battle_axe", 5).unwrap().requirements[0].upgrade,
             UpgradeRequirement::Exact(5)
         );
         assert_eq!(
-            upgrade("shuriken", 5).unwrap().requirements[0].upgrade,
+            upgrade("javelin", 5).unwrap().requirements[0].upgrade,
             UpgradeRequirement::Exact(5)
+        );
+        assert_eq!(
+            upgrade("sword", 4).unwrap().requirements[0].upgrade,
+            UpgradeRequirement::Exact(4)
         );
         assert_eq!(
             upgrade("plate_armor", 4).unwrap().requirements[0].upgrade,
@@ -960,7 +965,15 @@ mod tests {
             Err(WireError::InvalidQueryDocument(_))
         ));
         assert!(matches!(
-            upgrade("sword", 6),
+            upgrade("sword", 5),
+            Err(WireError::InvalidQueryDocument(_))
+        ));
+        assert!(matches!(
+            upgrade("shuriken", 5),
+            Err(WireError::InvalidQueryDocument(_))
+        ));
+        assert!(matches!(
+            upgrade("battle_axe", 6),
             Err(WireError::InvalidQueryDocument(_))
         ));
     }

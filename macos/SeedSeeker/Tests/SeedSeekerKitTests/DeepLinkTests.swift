@@ -69,7 +69,7 @@ final class DeepLinkTests: XCTestCase {
     /// decoding all the same, so both eras stay shareable from this build.
     func testAQueryOfV4EffectsAndTheVaultSourceRoundTripsThroughALink() throws {
         let query = SavedQuery(requirements: [
-            try ItemRequirement(key: 1, item: ItemCatalog.findById("greatsword"), upgrade: 5,
+            try ItemRequirement(key: 1, item: ItemCatalog.findById("battle_axe"), upgrade: 5,
                                 effect: .oneOf(["Vorpal", "Crystal"]), kind: .weapon,
                                 upgradeMatch: .exactly, source: .vaultTreasure),
         ])

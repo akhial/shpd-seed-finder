@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::catalog::{
-    ALL_ARMOR_EFFECTS, ALL_WEAPON_EFFECTS, Effect, ItemId, ItemKind, WeaponCategory, item,
+    ALL_ARMOR_EFFECTS, ALL_WEAPON_EFFECTS, EXTRA_UPGRADE_TIER, Effect, ItemId, ItemKind,
+    MAX_GENERATED_UPGRADE, WeaponCategory, item,
 };
 use crate::challenges::Challenges;
 use crate::model::{GeneratedWorld, ItemSource, WorldItem};
@@ -358,22 +359,41 @@ impl Requirement {
         .then_some(identity)
     }
 
+    /// The highest upgrade an item of the kind, identity and tier this
+    /// requirement asks for can carry, whatever its upgrade filter says.
+    ///
+    /// Only a tier-[`EXTRA_UPGRADE_TIER`] weapon is levelled past
+    /// [`MAX_GENERATED_UPGRADE`], so a requirement that rules that tier out —
+    /// by naming an item of another tier, or by filtering the tier away —
+    /// stops there.
+    #[must_use]
+    pub fn upgrade_ceiling(self) -> u8 {
+        let reaches_the_extra_tier = match self.item {
+            Some(item_id) => item(item_id).tier == Some(EXTRA_UPGRADE_TIER),
+            None => self.tier.matches(Some(EXTRA_UPGRADE_TIER)),
+        };
+        if reaches_the_extra_tier {
+            self.kind
+                .maximum_search_upgrade_for_tier(EXTRA_UPGRADE_TIER)
+        } else {
+            MAX_GENERATED_UPGRADE
+        }
+    }
+
     /// The highest upgrade level an item satisfying this requirement can
     /// carry.
     #[must_use]
-    pub const fn maximum_upgrade(self) -> u8 {
+    pub fn maximum_upgrade(self) -> u8 {
         match self.upgrade {
             UpgradeRequirement::Exact(wanted) => wanted,
-            UpgradeRequirement::Any | UpgradeRequirement::AtLeast(_) => {
-                self.kind.maximum_search_upgrade()
-            }
+            UpgradeRequirement::Any | UpgradeRequirement::AtLeast(_) => self.upgrade_ceiling(),
         }
     }
 
     /// The most *levels* — upgrade plus one — an item satisfying this
     /// requirement can contribute to a combined-level group.
     #[must_use]
-    pub const fn maximum_level(self) -> u8 {
+    pub fn maximum_level(self) -> u8 {
         self.maximum_upgrade() + 1
     }
 
@@ -467,7 +487,7 @@ impl Requirement {
         if !valid_tier {
             return Err(QueryError::InvalidTier);
         }
-        let maximum = self.kind.maximum_search_upgrade();
+        let maximum = self.upgrade_ceiling();
         let valid_upgrade = match self.upgrade {
             UpgradeRequirement::Any => true,
             UpgradeRequirement::Exact(upgrade) => (1..=maximum).contains(&upgrade),
@@ -1423,7 +1443,7 @@ impl fmt::Display for QueryError {
             Self::Empty => "at least one item requirement is needed",
             Self::InvalidDepth => "maximum depth must be between 1 and 24",
             Self::InvalidUpgrade => {
-                "upgrade must be between +1 and +5 for weapons, or +1 and +4 for armor, wands, and rings"
+                "upgrade must be between +1 and +4; only a tier-4 weapon, melee or thrown, reaches +5"
             }
             Self::InvalidTier => {
                 "tier filters require a wildcard weapon or armor and a non-redundant tier"
@@ -1459,7 +1479,7 @@ impl std::error::Error for QueryError {}
 
 #[cfg(test)]
 mod tests {
-    use crate::catalog::{Effect, ItemId, ItemKind, WeaponEffect};
+    use crate::catalog::{Effect, ItemId, ItemKind, WeaponCategory, WeaponEffect};
     use crate::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
     use crate::run::RingGems;
     use crate::seed::DungeonSeed;
@@ -2058,7 +2078,7 @@ mod tests {
     }
 
     #[test]
-    fn upgrade_ceilings_follow_the_item_kind() {
+    fn upgrade_ceilings_follow_the_item_kind_and_tier() {
         let ring = Requirement {
             kind: ItemKind::Ring,
             weapon_category: None,
@@ -2096,19 +2116,6 @@ mod tests {
         };
         assert_eq!(five_wand.validate(), Err(QueryError::InvalidUpgrade));
 
-        let sword = Requirement {
-            kind: ItemKind::Weapon,
-            item: Some(ItemId::Sword),
-            upgrade: UpgradeRequirement::AtLeast(5),
-            ..wand
-        };
-        assert_eq!(sword.validate(), Ok(()));
-        let six_sword = Requirement {
-            upgrade: UpgradeRequirement::Exact(6),
-            ..sword
-        };
-        assert_eq!(six_sword.validate(), Err(QueryError::InvalidUpgrade));
-
         let armor = Requirement {
             kind: ItemKind::Armor,
             item: Some(ItemId::PlateArmor),
@@ -2116,6 +2123,95 @@ mod tests {
             ..wand
         };
         assert_eq!(armor.validate(), Err(QueryError::InvalidUpgrade));
+    }
+
+    /// Only the tier-4 weapons are levelled past `+4`, melee and thrown
+    /// alike; every other tier stops one short.
+    #[test]
+    fn only_a_tier_four_weapon_reaches_the_top_upgrade() {
+        let wand = Requirement {
+            kind: ItemKind::Wand,
+            weapon_category: None,
+            item: Some(ItemId::WandFrost),
+            tier: TierRequirement::Any,
+            upgrade: UpgradeRequirement::Exact(4),
+            effect: EffectRequirement::Any,
+            require_uncursed: false,
+            source: None,
+            identity_group: None,
+            max_depth: None,
+            alternative_group: None,
+            level_sum: None,
+        };
+        let battle_axe = Requirement {
+            kind: ItemKind::Weapon,
+            item: Some(ItemId::BattleAxe),
+            upgrade: UpgradeRequirement::AtLeast(5),
+            ..wand
+        };
+        assert_eq!(battle_axe.validate(), Ok(()));
+        let six_battle_axe = Requirement {
+            upgrade: UpgradeRequirement::Exact(6),
+            ..battle_axe
+        };
+        assert_eq!(six_battle_axe.validate(), Err(QueryError::InvalidUpgrade));
+        let javelin = Requirement {
+            item: Some(ItemId::Javelin),
+            weapon_category: Some(WeaponCategory::Thrown),
+            upgrade: UpgradeRequirement::Exact(5),
+            ..battle_axe
+        };
+        assert_eq!(javelin.validate(), Ok(()));
+
+        let sword = Requirement {
+            item: Some(ItemId::Sword),
+            upgrade: UpgradeRequirement::Exact(5),
+            ..battle_axe
+        };
+        assert_eq!(sword.validate(), Err(QueryError::InvalidUpgrade));
+        assert_eq!(
+            Requirement {
+                upgrade: UpgradeRequirement::Exact(4),
+                ..sword
+            }
+            .validate(),
+            Ok(())
+        );
+        let trident = Requirement {
+            item: Some(ItemId::Trident),
+            ..sword
+        };
+        assert_eq!(trident.validate(), Err(QueryError::InvalidUpgrade));
+
+        // A wildcard weapon reaches +5 unless its tier filter rules tier 4 out.
+        let any_weapon = Requirement {
+            item: None,
+            upgrade: UpgradeRequirement::Exact(5),
+            ..battle_axe
+        };
+        assert_eq!(any_weapon.validate(), Ok(()));
+        for tier in [
+            TierRequirement::Exact(4),
+            TierRequirement::AtLeast(4),
+            TierRequirement::AtMost(4),
+        ] {
+            assert_eq!(
+                Requirement { tier, ..any_weapon }.validate(),
+                Ok(()),
+                "{tier:?}"
+            );
+        }
+        for tier in [
+            TierRequirement::Exact(5),
+            TierRequirement::Exact(2),
+            TierRequirement::AtMost(3),
+        ] {
+            assert_eq!(
+                Requirement { tier, ..any_weapon }.validate(),
+                Err(QueryError::InvalidUpgrade),
+                "{tier:?}"
+            );
+        }
     }
 
     #[test]

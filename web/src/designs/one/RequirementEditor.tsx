@@ -16,9 +16,10 @@ import {
   FLOOR_LIMIT_OPTIONS,
   STACK_MAX,
   canonicalEffect,
+  clampUpgrade,
   effectNamesOf,
   isAnyEnchantment,
-  maxUpgradeFor,
+  maxUpgradeOf,
   validateRequirement,
 } from '../../lib/query'
 import { ANY_ENCHANTMENT } from '../../lib/wasm/types'
@@ -100,9 +101,15 @@ export function RequirementEditor({
   // filter, so it lives outside the draft; saving it means "any".
   const [choosingEffects, setChoosingEffects] = useState(false)
 
+  // Every draft edit runs through the upgrade ceiling: naming an item or
+  // narrowing the tier can put a +5 out of reach, since only a tier-4 weapon
+  // is ever levelled that far.
+  const reviseDraft = (revise: (current: RequirementState) => RequirementState) =>
+    setDraft((current) => clampUpgrade(revise(current)))
+
   const kind = draft.kind ?? 'weapon'
   const family = kindFamily(kind)
-  const maxUpgrade = maxUpgradeFor(family)
+  const maxUpgrade = maxUpgradeOf(draft)
   const wildcardGear = !draft.item && (family === 'weapon' || family === 'armor')
   const enchantments = family === 'weapon' ? weaponEnchantments : armorGlyphs
   const curses = family === 'weapon' ? weaponCurses : armorCurses
@@ -117,7 +124,7 @@ export function RequirementEditor({
 
   const setEffectMode = (mode: EffectMode) => {
     setChoosingEffects(mode === 'specific')
-    setDraft((current) => ({
+    reviseDraft((current) => ({
       ...current,
       effect: mode === 'any' ? undefined : mode === 'any_enchantment' ? ANY_ENCHANTMENT
         : isAnyEnchantment(current.effect) ? undefined : current.effect,
@@ -125,7 +132,7 @@ export function RequirementEditor({
   }
 
   const toggleEffect = (name: string) => {
-    setDraft((current) => {
+    reviseDraft((current) => {
       const names = effectNamesOf(isAnyEnchantment(current.effect) ? undefined : current.effect, kind)
       const next = names.includes(name) ? names.filter((entry) => entry !== name) : [...names, name]
       return { ...current, effect: canonicalEffect(next, kind) }
@@ -144,25 +151,18 @@ export function RequirementEditor({
     // Re-clicking the already-selected family must not widen a narrowed
     // weapon kind or wipe the item, tier, and effect selections.
     if (kindFamily(nextKind) === family) return
-    setDraft((current) => {
-      const nextMax = maxUpgradeFor(kindFamily(nextKind))
-      let upgrade = { ...current.upgrade }
-      if (upgrade.mode === 'exact') upgrade = { ...upgrade, value: clamp(upgrade.value, 1, nextMax) }
-      if (upgrade.mode === 'at_least') upgrade = { ...upgrade, value: clamp(upgrade.value, 1, nextMax - 1) }
-      return {
-        ...current,
-        kind: nextKind,
-        item: undefined,
-        tier: { mode: 'any', value: 3 },
-        effect: undefined,
-        upgrade,
-      }
-    })
+    reviseDraft((current) => ({
+      ...current,
+      kind: nextKind,
+      item: undefined,
+      tier: { mode: 'any', value: 3 },
+      effect: undefined,
+    }))
     setChoosingEffects(false)
   }
 
   const setTierMode = (mode: (typeof TIER_OPTIONS)[number]['value']) => {
-    setDraft((current) => {
+    reviseDraft((current) => {
       let value = current.tier.value
       if (mode === 'exact') value = clamp(value, EXACT_TIER_MIN, EXACT_TIER_MAX)
       if (mode === 'at_least' || mode === 'at_most') value = clamp(value, BOUNDED_TIER_MIN, BOUNDED_TIER_MAX)
@@ -171,13 +171,7 @@ export function RequirementEditor({
   }
 
   const setUpgradeMode = (mode: (typeof UPGRADE_OPTIONS)[number]['value']) => {
-    setDraft((current) => {
-      const max = maxUpgradeFor(kindFamily(current.kind ?? 'weapon'))
-      let value = current.upgrade.value
-      if (mode === 'exact') value = clamp(value, 1, max)
-      if (mode === 'at_least') value = clamp(value, 1, max - 1)
-      return { ...current, upgrade: { mode, value } }
-    })
+    reviseDraft((current) => ({ ...current, upgrade: { ...current.upgrade, mode } }))
   }
 
   return (
@@ -206,7 +200,7 @@ export function RequirementEditor({
                   value={kind}
                   options={WEAPON_TYPE_OPTIONS}
                   onChange={(nextKind) => {
-                    setDraft((current) => {
+                    reviseDraft((current) => {
                       const keepItem = current.item !== undefined
                         && itemsForKind(nextKind).some((item) => item.id === current.item)
                       return { ...current, kind: nextKind, item: keepItem ? current.item : undefined }
@@ -223,7 +217,7 @@ export function RequirementEditor({
                 onChange={(event) => {
                   const id = event.currentTarget.value || undefined
                   if (!id) setTotal(undefined)
-                  setDraft((current) => ({
+                  reviseDraft((current) => ({
                     ...current,
                     item: id,
                     tier: id ? { mode: 'any', value: current.tier.value } : current.tier,
@@ -260,7 +254,7 @@ export function RequirementEditor({
                     min={2}
                     max={5}
                     value={draft.tier.value}
-                    onChange={(value) => setDraft((current) => ({ ...current, tier: { ...current.tier, value } }))}
+                    onChange={(value) => reviseDraft((current) => ({ ...current, tier: { ...current.tier, value } }))}
                   />
                 )}
                 {(draft.tier.mode === 'at_least' || draft.tier.mode === 'at_most') && (
@@ -270,7 +264,7 @@ export function RequirementEditor({
                       value={draft.tier.value}
                       onChange={(event) => {
                         const value = Number(event.currentTarget.value)
-                        setDraft((current) => ({ ...current, tier: { ...current.tier, value } }))
+                        reviseDraft((current) => ({ ...current, tier: { ...current.tier, value } }))
                       }}
                     >
                       {range(BOUNDED_TIER_MIN, BOUNDED_TIER_MAX).map((tier) => (
@@ -296,7 +290,7 @@ export function RequirementEditor({
                 min={1}
                 max={maxUpgrade}
                 value={draft.upgrade.value}
-                onChange={(value) => setDraft((current) => ({ ...current, upgrade: { ...current.upgrade, value } }))}
+                onChange={(value) => reviseDraft((current) => ({ ...current, upgrade: { ...current.upgrade, value } }))}
               />
             )}
             {draft.upgrade.mode === 'at_least' && (
@@ -308,7 +302,7 @@ export function RequirementEditor({
                 min={1}
                 max={maxUpgrade - 1}
                 value={draft.upgrade.value}
-                onChange={(value) => setDraft((current) => ({ ...current, upgrade: { ...current.upgrade, value } }))}
+                onChange={(value) => reviseDraft((current) => ({ ...current, upgrade: { ...current.upgrade, value } }))}
               />
             )}
           </section>
@@ -428,7 +422,7 @@ export function RequirementEditor({
                 onChange={(event) => {
                   const uncursed = event.currentTarget.checked
                   // Curses leave the selection as they leave the grid.
-                  setDraft((current) => {
+                  reviseDraft((current) => {
                     if (!uncursed || current.effect === undefined || isAnyEnchantment(current.effect)) return { ...current, uncursed }
                     const kept = effectNamesOf(current.effect, kind).filter((name) => !curses.includes(name))
                     return { ...current, uncursed, effect: canonicalEffect(kept, kind) }
@@ -443,7 +437,7 @@ export function RequirementEditor({
                 value={draft.source ?? ''}
                 onChange={(event) => {
                   const source = (event.currentTarget.value || undefined) as ItemSource | undefined
-                  setDraft((current) => ({ ...current, source }))
+                  reviseDraft((current) => ({ ...current, source }))
                 }}
               >
                 <option value="">Any</option>
@@ -458,7 +452,7 @@ export function RequirementEditor({
                 checked={draft.maxDepth !== undefined}
                 onChange={(event) => {
                   const limited = event.currentTarget.checked
-                  setDraft((current) => ({ ...current, maxDepth: limited ? 4 : undefined }))
+                  reviseDraft((current) => ({ ...current, maxDepth: limited ? 4 : undefined }))
                 }}
               />
               <span>Limit this item to a floor</span>
@@ -470,7 +464,7 @@ export function RequirementEditor({
                 values={FLOOR_LIMIT_OPTIONS}
                 value={draft.maxDepth}
                 fill
-                onChange={(value) => setDraft((current) => ({ ...current, maxDepth: value }))}
+                onChange={(value) => reviseDraft((current) => ({ ...current, maxDepth: value }))}
               />
             )}
           </section>

@@ -40,12 +40,30 @@ if (typeof localStorage !== 'undefined') {
 }
 
 export interface Preset { name: string; query: QueryState }
+
+/**
+ * The floor limit the vault presets carry: floor 19 is the last floor the Imp —
+ * and so the vault holding its levelled prizes — can appear on, so a deeper
+ * scan only costs time.
+ */
+export const VAULT_FLOOR_LIMIT = 19
+
 export const builtInPresets: Preset[] = [
   {
     // A stack of three same-kind wands anchored on a +3, plus one more: upgrade transfer fuses them into a +21 staff.
     name: '+21 Staff',
     query: { ...defaultQueryState(), requirements: [
       { kind: 'wand', tier: { mode: 'any', value: 3 }, upgrade: { mode: 'exact', value: 3 }, uncursed: false, identityGroup: 1 },
+      { kind: 'wand', tier: { mode: 'any', value: 3 }, upgrade: { mode: 'any', value: 1 }, uncursed: false, identityGroup: 1 },
+      { kind: 'wand', tier: { mode: 'any', value: 3 }, upgrade: { mode: 'any', value: 1 }, uncursed: false, identityGroup: 1 },
+      { kind: 'wand', tier: { mode: 'any', value: 3 }, upgrade: { mode: 'at_least', value: 1 }, uncursed: false },
+    ] },
+  },
+  {
+    // The same stack anchored one level higher, on the +4 wand v4.0.0's Imp vault lays out among its prizes.
+    name: '+22 Staff',
+    query: { ...defaultQueryState(), maxDepth: VAULT_FLOOR_LIMIT, requirements: [
+      { kind: 'wand', tier: { mode: 'any', value: 3 }, upgrade: { mode: 'exact', value: 4 }, uncursed: false, identityGroup: 1 },
       { kind: 'wand', tier: { mode: 'any', value: 3 }, upgrade: { mode: 'any', value: 1 }, uncursed: false, identityGroup: 1 },
       { kind: 'wand', tier: { mode: 'any', value: 3 }, upgrade: { mode: 'any', value: 1 }, uncursed: false, identityGroup: 1 },
       { kind: 'wand', tier: { mode: 'any', value: 3 }, upgrade: { mode: 'at_least', value: 1 }, uncursed: false },
@@ -65,6 +83,15 @@ export const builtInPresets: Preset[] = [
     query: { ...defaultQueryState(), requirements: [
       { kind: 'ring', item: 'ring_wealth', tier: { mode: 'any', value: 3 }, upgrade: { mode: 'exact', value: 4 }, uncursed: false, source: 'imp_reward' },
       { kind: 'ring', item: 'ring_wealth', tier: { mode: 'any', value: 3 }, upgrade: { mode: 'exact', value: 2 }, uncursed: false, maxDepth: 4 },
+    ] },
+  },
+  {
+    // A tier-4 weapon at the +5 only the vault reaches, with two more of the same weapon to pour into it.
+    name: '+26 Tier 4 Weapon',
+    query: { ...defaultQueryState(), maxDepth: VAULT_FLOOR_LIMIT, requirements: [
+      { kind: 'weapon', tier: { mode: 'exact', value: 4 }, upgrade: { mode: 'exact', value: 5 }, uncursed: false, identityGroup: 1 },
+      { kind: 'weapon', tier: { mode: 'any', value: 3 }, upgrade: { mode: 'any', value: 1 }, uncursed: false, identityGroup: 1 },
+      { kind: 'weapon', tier: { mode: 'any', value: 3 }, upgrade: { mode: 'any', value: 1 }, uncursed: false, identityGroup: 1 },
     ] },
   },
 ]

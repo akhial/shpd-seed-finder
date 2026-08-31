@@ -116,6 +116,13 @@ private struct ContentView: View {
                           onDeletePreset: deletePreset,
                           controller: controller)
                     .navigationSplitViewColumnWidth(min: 440, ideal: 540, max: 900)
+                    // A sidebar column is hosted in Tahoe's concentric glass,
+                    // which paints a hard specular streak across the pane —
+                    // a highlight Finder and System Settings do not show. The
+                    // results column escapes it because its List brings an
+                    // opaque background of its own; the query pane is a plain
+                    // ScrollView, so it has to supply one.
+                    .background(Color(nsColor: .windowBackgroundColor))
             } content: {
                 ResultsView(controller: controller) { seed in scout.scout(seed, challenges: challenges) }
                     .navigationSplitViewColumnWidth(min: 300, ideal: 380)
@@ -1335,7 +1342,7 @@ private struct RequirementEditor: View {
         _tierMatch = State(initialValue: requirement.tierMatch)
         _tier = State(initialValue: max(SearchLimits.exactTiers.lowerBound, requirement.tier))
         _match = State(initialValue: requirement.upgradeMatch)
-        let maximumUpgrade = requirement.kind.maximumSearchUpgrade
+        let maximumUpgrade = requirement.maximumUpgrade
         let initialUpgrade = switch requirement.upgradeMatch {
         case .any: 0
         case .exactly: max(1, min(requirement.upgrade, maximumUpgrade))
@@ -1406,6 +1413,7 @@ private struct RequirementEditor: View {
                     }
                     .onChange(of: itemID) { _, value in
                         if value.isEmpty { total = nil } else { tierMatch = .any }
+                        normalizeUpgrade()
                     }
                     if itemID.isEmpty && (kind.family == .weapon || kind.family == .armor) {
                         Picker("Tier", selection: $tierMatch) {
@@ -1416,7 +1424,9 @@ private struct RequirementEditor: View {
                             if value == .atLeast || value == .atMost {
                                 tier = max(SearchLimits.boundedTiers.lowerBound, min(tier, SearchLimits.boundedTiers.upperBound))
                             }
+                            normalizeUpgrade()
                         }
+                        .onChange(of: tier) { normalizeUpgrade() }
                         if tierMatch == .exactly {
                             VStack(alignment: .leading, spacing: 2) {
                                 LabeledContent("Exact tier") {
@@ -1454,7 +1464,7 @@ private struct RequirementEditor: View {
                                     Text("+\(upgrade)").monospacedDigit().foregroundStyle(.secondary)
                                 }
                                 Slider(value: intBinding($upgrade),
-                                       in: 1...Double(kind.maximumSearchUpgrade), step: 1)
+                                       in: 1...Double(maximumUpgrade), step: 1)
                             }
                         } else if match == .atLeast {
                             if kind == .ring {
@@ -1463,11 +1473,11 @@ private struct RequirementEditor: View {
                                         Text("+\(upgrade)").monospacedDigit().foregroundStyle(.secondary)
                                     }
                                     Slider(value: intBinding($upgrade),
-                                           in: 1...Double(kind.maximumSearchUpgrade - 1), step: 1)
+                                           in: 1...Double(maximumUpgrade - 1), step: 1)
                                 }
                             } else {
                                 Picker("Minimum upgrade", selection: $upgrade) {
-                                    ForEach(1..<kind.maximumSearchUpgrade, id: \.self) { option in
+                                    ForEach(1..<maximumUpgrade, id: \.self) { option in
                                         Text("+\(option) or higher").tag(option)
                                     }
                                 }
@@ -1596,7 +1606,15 @@ private struct RequirementEditor: View {
     private var effectiveTotal: Int? { totalable ? total : nil }
     /// The most levels the stack could add up to, its members taking any
     /// upgrade: each counts the family's cap plus one.
-    private var totalCapacity: Int { count * (kind.maximumSearchUpgrade + 1) }
+    private var totalCapacity: Int { count * (maximumUpgrade + 1) }
+
+    /// The highest upgrade the draft can name: only a tier-4 weapon is
+    /// levelled past `SearchLimits.maxUpgradeAnyTier`, so naming an item of
+    /// another tier or filtering tier 4 away lowers the ceiling.
+    private var maximumUpgrade: Int {
+        SearchLimits.maximumUpgrade(kind: kind, item: itemID.isEmpty ? nil : ItemCatalog.findById(itemID),
+                                    tier: tier, tierMatch: tierMatch)
+    }
 
     private func effectGrid(_ title: String, names: [String]) -> some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -1618,9 +1636,9 @@ private struct RequirementEditor: View {
         case .any:
             upgrade = 0
         case .exactly:
-            upgrade = max(1, min(upgrade, kind.maximumSearchUpgrade))
+            upgrade = max(1, min(upgrade, maximumUpgrade))
         case .atLeast:
-            upgrade = max(1, min(upgrade, kind.maximumSearchUpgrade - 1))
+            upgrade = max(1, min(upgrade, maximumUpgrade - 1))
         }
     }
     private func save() {
