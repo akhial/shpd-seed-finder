@@ -367,20 +367,24 @@ fn build(
     let mut init_rooms = init_rooms(random);
     random.shuffle_list(&mut init_rooms);
     let mut attempts = 0_u32;
+    // Nearly half of all vaults need a second builder pass and a few need ten,
+    // so the candidate list is kept across attempts: `clone_from` reuses both
+    // its own buffer and each room's neighbour and connection vectors.
+    let mut candidate: Vec<VaultRoom> = Vec::new();
     let mut rooms = loop {
         attempts = attempts.wrapping_add(1);
         for room in &mut init_rooms {
             room.neighbours.clear();
             room.connected.clear();
         }
-        let mut candidate = init_rooms.clone();
+        candidate.clone_from(&init_rooms);
         if crate::grid_builder::build_grid(&mut candidate, random) {
             break candidate;
         }
         // Java keeps the same room objects: failed placement leaves their
         // sizes behind, which setEmpty() resets on the next attempt, and
         // the long rooms' `wide` fields persist through the clone.
-        init_rooms = candidate;
+        std::mem::swap(&mut init_rooms, &mut candidate);
     };
     paint(state, &mut rooms, random)?;
     Ok((rooms, attempts))

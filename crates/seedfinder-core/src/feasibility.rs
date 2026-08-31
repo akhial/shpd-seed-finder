@@ -318,12 +318,15 @@ impl QueryPlan {
                     if query.exclude_blacksmith_rewards && source == ItemSource::BlacksmithReward {
                         continue;
                     }
-                    if source == ItemSource::VaultTreasure {
-                        needs_vault_treasure = true;
-                    }
                     if let Some(quest) = quest_for_source(source) {
                         let (window_start, window_end) = quest.window();
                         if window_start <= requirement_max_depth {
+                            // The vault only exists inside the Imp's window,
+                            // so a requirement that stops short of it never
+                            // needs the sub-level generated.
+                            if source == ItemSource::VaultTreasure {
+                                needs_vault_treasure = true;
+                            }
                             quests |= quest.bit();
                             generation_depth =
                                 generation_depth.max(window_end.min(requirement_max_depth));
@@ -1331,5 +1334,40 @@ mod tests {
         assert!(viable(&plan, 5, &in_time));
         let too_late = [item(ItemId::Sword, 0, 6, ItemSource::Heap)];
         assert!(!viable(&plan, 6, &too_late));
+    }
+
+    #[test]
+    fn the_vault_sub_level_is_only_requested_inside_the_imps_window() {
+        use crate::search::FloorGate as _;
+
+        // A weapon anywhere in the run can come out of the vault.
+        let deep = QueryPlan::analyze(&query(
+            vec![requirement(ItemKind::Weapon, UpgradeRequirement::Any)],
+            24,
+        ));
+        assert!(deep.wants_vault_treasure());
+
+        // The same weapon capped above the run still reaches depth 17.
+        let edge = QueryPlan::analyze(&query(
+            vec![requirement(ItemKind::Weapon, UpgradeRequirement::Any)],
+            17,
+        ));
+        assert!(edge.wants_vault_treasure());
+
+        // One floor short of the window, the vault can supply nothing, so
+        // the generator must not pay for the sub-level.
+        let shallow = QueryPlan::analyze(&query(
+            vec![requirement(ItemKind::Weapon, UpgradeRequirement::Any)],
+            16,
+        ));
+        assert!(!shallow.wants_vault_treasure());
+
+        // A per-requirement cap prunes it even when the run goes deeper.
+        let capped = Requirement {
+            max_depth: Some(16),
+            ..requirement(ItemKind::Weapon, UpgradeRequirement::Any)
+        };
+        let mixed = QueryPlan::analyze(&query(vec![capped], 24));
+        assert!(!mixed.wants_vault_treasure());
     }
 }
