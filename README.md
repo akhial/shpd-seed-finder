@@ -248,6 +248,11 @@ Compared with [Elektrochecker's Java finder](https://github.com/Elektrochecker/s
 - **Planning:** exact shortcuts on; lossy `fast_mode` off
 - **Depth 9 Java comparison:** 283 seeds/s; Seed Seeker is still 5.5× faster per core
 
+These figures are from the v3.3.8 engine, against the v3.3.8 Java finder. They
+are not comparable with the current engine's: in v4.0.0 the Imp can also hand
+out a +3 wand, so the same query now generates every floor down to 19 plus the
+vault sub-level instead of stopping at depth 9.
+
 Reproduce: `cargo run --release -p shpd-seedfinder-cli -- --benchmark`
 
 ## Development<a id="development"></a>
@@ -299,14 +304,21 @@ bash scripts/build-macos-app.sh
 ```
 
 The native build applies the profile-guided optimisation profile checked in at
-`pgo/seed-seeker.profdata`, worth roughly 4% of search throughput. rustc matches
-a profile by mangled symbol name and silently ignores one that does not match,
-so re-record it whenever the engine's hot paths change shape:
+`pgo/seed-seeker-aarch64-apple-darwin.profdata`, worth roughly 4% of search
+throughput. rustc matches a profile by mangled symbol name and silently ignores
+one that does not match, so re-record it whenever the engine's hot paths change
+shape:
 
 ```sh
 bash scripts/check-pgo-profile.sh                            # CI runs this
 rustup component add llvm-tools && bash scripts/record-pgo-profile.sh
 ```
+
+The mangled name carries the target triple, so profiles cannot be shared
+between targets and each one is checked in under its own
+`pgo/seed-seeker-<target>.profdata`. Both scripts take the triple from
+`PGO_TARGET`, and recording needs a standard library that carries
+`profiler_builtins` — the MSVC targets do, the `*-windows-gnu` ones do not.
 
 ### Linux
 
@@ -333,6 +345,17 @@ The Windows app requires Visual Studio with the WinUI application development an
 ```
 
 The script builds for the host architecture; pass `-Platform ARM64` or `-Platform x64` to cross-build, and `-Configuration Debug` for a debug build. To build and run, open `windows\SeedSeeker\SeedSeeker.slnx` in Visual Studio and press F5, or launch the built `SeedSeeker.exe` under `windows\SeedSeeker\bin\`.
+
+#### Profile-guided optimization
+
+The app's engine build applies `pgo\seed-seeker-<rust-target>.profdata` when
+that file is present and builds without it when it is not, so a target with no
+profile checked in still builds. Record one with the same scripts macOS uses:
+
+```sh
+PGO_TARGET=x86_64-pc-windows-msvc bash scripts/record-pgo-profile.sh
+PGO_TARGET=x86_64-pc-windows-msvc bash scripts/check-pgo-profile.sh
+```
 
 ### Testing
 

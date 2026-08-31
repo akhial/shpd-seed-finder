@@ -31,6 +31,14 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <RustTarget>x86_64-pc-windows-msvc</RustTarget>
   </PropertyGroup>
+  <!-- The engine build applies a profile-guided profile when pgo/ carries one
+       recorded for this exact target. Profiles are keyed by mangled symbol
+       name and the crate disambiguator differs per target, so one file cannot
+       serve several targets; a missing file falls back to a plain build. -->
+  <PropertyGroup>
+    <EnginePgoProfile>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..\pgo\seed-seeker-$(RustTarget).profdata'))</EnginePgoProfile>
+    <EngineRustFlags Condition="Exists('$(EnginePgoProfile)')">-Cprofile-use=$(EnginePgoProfile)</EngineRustFlags>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
     <!-- The exe icon covers Explorer; AppWindow.SetIcon needs the .ico on
@@ -46,7 +54,7 @@
   </ItemGroup>
   <Target Name="BuildRustEngine" BeforeTargets="Build">
     <Error Condition="'$(RustTarget)' == ''" Text="Build with -p:Platform=ARM64 or -p:Platform=x64; platform '$(Platform)' has no Rust target mapping." />
-    <Exec WorkingDirectory="..\.." Command="cargo build --release -p shpd-seedfinder-ffi --target $(RustTarget)" />
+    <Exec WorkingDirectory="..\.." Command="cargo build --release -p shpd-seedfinder-ffi --target $(RustTarget)" EnvironmentVariables="RUSTFLAGS=$(EngineRustFlags)" />
     <Copy SourceFiles="..\..\target\$(RustTarget)\release\shpd_seedfinder_ffi.dll" DestinationFolder="$(OutDir)" />
   </Target>
 </Project>
