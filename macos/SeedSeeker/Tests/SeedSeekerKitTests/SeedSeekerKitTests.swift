@@ -93,6 +93,10 @@ final class SeedSeekerKitTests: XCTestCase {
             XCTAssertEqual(item.name, entry["name"] as? String, id)
             XCTAssertEqual(item.spriteIndex, entry["sprite"] as? Int, id)
             XCTAssertEqual(item.tier, entry["tier"] as? Int, id)
+            // The ring glyph is stated by the asset, not derived from `sprite`:
+            // a scouted ring's cell is its run's gem and says nothing about
+            // which ring it is.
+            XCTAssertEqual(item.typeIconIndex, entry["typeIcon"] as? Int, id)
             XCTAssertEqual(item.kind, kinds[try XCTUnwrap(entry["type"] as? String)], id)
             switch entry["class"] as? String {
             case "melee": XCTAssertEqual(ItemCatalog.weaponClass(of: id), .melee, id)
@@ -148,6 +152,25 @@ final class SeedSeekerKitTests: XCTestCase {
         let decoded = QueryPersistence.decode(encoded)
         XCTAssertEqual(decoded.maximumDepth, 14)
         XCTAssertEqual(decoded.requirements.first?.maximumDepth, 9)
+    }
+
+    func testSavedQueriesWrittenBeforeTheRingGlyphStillLoad() throws {
+        let wealth = try XCTUnwrap(ItemCatalog.findById("ring_wealth"))
+        let requirement = try ItemRequirement(key: 1, item: wealth, upgrade: 2, kind: .ring)
+        let encoded = try XCTUnwrap(QueryPersistence.encode(SavedQuery(requirements: [requirement])))
+        XCTAssertTrue(encoded.contains("\"typeIconIndex\":11"), encoded)
+
+        // An older build wrote every other field but not the glyph, which is
+        // the catalog's rather than the query's. Filling it back in from the
+        // named entry keeps `validated()` — which drops a query whose item no
+        // longer equals its catalog entry — from discarding the whole thing.
+        let older = encoded.replacingOccurrences(of: ",\"typeIconIndex\":11", with: "")
+            .replacingOccurrences(of: "\"typeIconIndex\":11,", with: "")
+        XCTAssertFalse(older.contains("typeIconIndex"), older)
+        let decoded = QueryPersistence.decode(older)
+        XCTAssertEqual(decoded.requirements.count, 1)
+        XCTAssertEqual(decoded.requirements.first?.item, wealth)
+        XCTAssertEqual(decoded.requirements.first?.item?.typeIconIndex, 11)
     }
 
     func testPresetPersistenceDropsInvalidEntries() throws {
@@ -347,7 +370,7 @@ final class SeedSeekerKitTests: XCTestCase {
     /// upgrade one above the ceiling every other family stops at.
     func testScoutCodecReadsTheVaultSourceAndTheWeaponCeiling() throws {
         func packet(_ id: String, upgrade: UInt8, source: ScoutItemSource) -> Data {
-            var bytes = Array("SSC2".utf8) + [11] + Array("AAA-AAA-AAA".utf8) + [0] + [0, 1]
+            var bytes = SeedSeekerKitTests.scoutHeader + [0] + [0, 1]
             let name = Array(id.utf8); bytes += [0, UInt8(name.count)] + name
             bytes += [17, upgrade, 0, 0, 0, UInt8(source.rawValue), 0]
             return Data(bytes)
@@ -380,8 +403,7 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertThrowsError(try ScoutCodec.decode(questPacket(
             count: 5, [1, 1, 2], [2, 1, 7], [3, 1, 12], [4, 1, 17], [4, 2, 18])))
         // Truncated quest block.
-        XCTAssertThrowsError(try ScoutCodec.decode(Data(
-            Array("SSC2".utf8) + [11] + Array("AAA-AAA-AAA".utf8) + [1, 1, 3])))
+        XCTAssertThrowsError(try ScoutCodec.decode(Data(Self.scoutHeader + [1, 1, 3])))
     }
 
     /// The as-you-type masker is `seedfinder_seed_format`: non-letters are
@@ -591,8 +613,15 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertTrue(terminal, "native session should reach a terminal state promptly")
     }
 
+    /// Everything an `SSC3` packet carries before its quest block: the magic,
+    /// the seed, and the run's twelve ring gems. None of these fixtures is
+    /// about the gems, so they use the unshuffled table.
+    private static let scoutHeader: [UInt8] =
+        Array("SSC3".utf8) + [11] + Array("AAA-AAA-AAA".utf8)
+            + RingGems.catalogDefault.ordinals.map { UInt8($0) }
+
     private func scoutPacket(depth: UInt8, flags: UInt8, effect: String, option: UInt8) -> Data {
-        var bytes = Array("SSC2".utf8) + [11] + Array("AAA-AAA-AAA".utf8) + [0] + [0, 1]
+        var bytes = Self.scoutHeader + [0] + [0, 1]
         let id = Array("dagger".utf8); bytes += [0, UInt8(id.count)] + id
         bytes += [depth, 2, flags, 0, UInt8(effect.utf8.count)] + Array(effect.utf8)
         bytes += [UInt8(ScoutItemSource.chest.rawValue), 1, 0, 3, option]
@@ -600,16 +629,16 @@ final class SeedSeekerKitTests: XCTestCase {
     }
 
     private func scenarioPacket(mask: UInt64) -> Data {
-        var bytes = Array("SSC2".utf8) + [11] + Array("AAA-AAA-AAA".utf8) + [0] + [0, 1]
+        var bytes = Self.scoutHeader + [0] + [0, 1]
         let id = Array("ring_haste".utf8); bytes += [0, UInt8(id.count)] + id
         bytes += [4, 1, 0, 0, 0, UInt8(ScoutItemSource.heap.rawValue), 2, 0, 2]
         bytes += (0..<8).reversed().map { UInt8((mask >> UInt64($0 * 8)) & 0xff) }
         return Data(bytes)
     }
 
-    /// An SSC2 packet with the given raw quest triples and zero items.
+    /// An SSC3 packet with the given raw quest triples and zero items.
     private func questPacket(count: UInt8? = nil, _ quests: [UInt8]...) -> Data {
-        var bytes = Array("SSC2".utf8) + [11] + Array("AAA-AAA-AAA".utf8)
+        var bytes = Self.scoutHeader
         bytes += [count ?? UInt8(quests.count)] + quests.flatMap { $0 } + [0, 0]
         return Data(bytes)
     }

@@ -910,7 +910,9 @@ private struct ChipView: View {
     var body: some View {
         HStack(spacing: 5) {
             HStack(spacing: 5) {
-                ItemSpriteView(spriteIndex: requirement.item?.spriteIndex,
+                // No seed here: a chip names an item class the search is to
+                // look for, so its ring keeps the catalog's own cell.
+                ItemSpriteView(item: requirement.item,
                                glow: effectGlow(requirement.effect.glowName), pointSize: 16)
                 Text(chipName(requirement))
                     .font(.system(size: 12, weight: .semibold))
@@ -1398,7 +1400,7 @@ private struct RequirementEditor: View {
                                 Section("Tier \(tier)") {
                                     ForEach(ItemCatalog.forKind(kind).filter { $0.tier == tier }) { item in
                                         Label { Text(item.name) } icon: {
-                                            ItemSpriteIcon(spriteIndex: item.spriteIndex)
+                                            ItemSpriteIcon(item: item)
                                         }.tag(item.id)
                                     }
                                 }
@@ -1406,7 +1408,7 @@ private struct RequirementEditor: View {
                         } else {
                             ForEach(ItemCatalog.forKind(kind).filter { $0.tier != 1 }) { item in
                                 Label { Text(item.name) } icon: {
-                                    ItemSpriteIcon(spriteIndex: item.spriteIndex)
+                                    ItemSpriteIcon(item: item)
                                 }.tag(item.id)
                             }
                         }
@@ -1953,7 +1955,8 @@ private struct SeedDetailView: View {
                 ForEach(depths, id: \.self) { depth in
                     Section {
                         ForEach(Array(world.items.enumerated()).filter { $0.element.depth == depth }, id: \.offset) { entry in
-                            ScoutItemRow(item: entry.element, matches: matches.contains(entry.offset))
+                            ScoutItemRow(item: entry.element, ringGems: world.ringGems,
+                                         matches: matches.contains(entry.offset))
                         }
                     } header: {
                         HStack {
@@ -2111,11 +2114,14 @@ private struct FlowLayout: Layout {
 
 private struct ScoutItemRow: View {
     let item: ScoutItem
+    /// The scouted run's gems: this row shows an item that seed actually
+    /// holds, so a ring must be drawn in the gem that run gave its class.
+    let ringGems: RingGems
     let matches: Bool
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            ItemSpriteView(spriteIndex: item.item.spriteIndex,
+            ItemSpriteView(item: item.item, ringGems: ringGems,
                            glow: itemGlow(item), pointSize: 32, label: item.item.name)
                 .padding(.top, 1)
             VStack(alignment: .leading, spacing: 3) {

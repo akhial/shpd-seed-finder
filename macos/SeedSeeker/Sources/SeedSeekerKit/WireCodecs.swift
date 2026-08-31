@@ -119,9 +119,16 @@ public enum ScoutCodec {
 
     public static func decode(_ packet: Data) throws -> ScoutWorld {
         var input = Reader(data: packet)
-        guard try input.bytes(4) == Data("SSC2".utf8) else { throw WireCodecError.badMagic }
+        guard try input.bytes(4) == Data("SSC3".utf8) else { throw WireCodecError.badMagic }
         let seed = try input.ascii(Int(input.u8()))
         guard SeedCode.isCanonical(seed) else { throw WireCodecError.invalidValue("Malformed seed from native scout") }
+        // Twelve gem ordinals, one per ring class in the order the catalog
+        // lists rings, sitting between the seed and the quests: like them it is
+        // a property of this one run rather than of anything an item carries.
+        let gemOrdinals = try input.bytes(RingGems.count).map { Int($0) }
+        guard let ringGems = RingGems(ordinals: gemOrdinals) else {
+            throw WireCodecError.invalidValue("Malformed ring gem table from native scout")
+        }
         let questCount = Int(try input.u8())
         guard questCount <= 4 else { throw WireCodecError.invalidValue("Scout quest count must be 0..4") }
         var previousQuestID = 0
@@ -171,6 +178,6 @@ public enum ScoutCodec {
                              secret: flags & 2 != 0)
         }
         guard input.remaining == 0 else { throw WireCodecError.trailingBytes }
-        return ScoutWorld(seed: seed, quests: quests, items: items)
+        return ScoutWorld(seed: seed, quests: quests, items: items, ringGems: ringGems)
     }
 }

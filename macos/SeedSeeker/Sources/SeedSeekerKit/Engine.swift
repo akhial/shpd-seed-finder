@@ -238,6 +238,9 @@ public struct ProductionSeedFinderEngine: SeedFinderEngine {
             guard code == 0 else { throw ffiError(code) }
             return try copiedPacket(pointer, length)
         }.value
+        // The manifest says which items the run holds and the gem block says
+        // what its rings look like; both ride in the one SSC3 packet, so the
+        // decoded world is already whole.
         let world = try ScoutCodec.decode(packet)
         guard world.seed == seed else { throw SeedFinderEngineError.invalidResponse }
         return world
