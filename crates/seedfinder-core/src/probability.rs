@@ -23,6 +23,13 @@
 //! resolved alongside the rest of their family, discounted by the deck-driven
 //! scarcity of duplicates.
 //!
+//! A slot's tier and its upgrade level are tabled apart and multiplied, which
+//! holds wherever the generator rolls them apart. The Imp's two hoards do not:
+//! its vault stocks four fixed shelves and its reward flips a coin over which
+//! of two weapons is levelled furthest, so at both a tier names the levels it
+//! can carry. Those sources carry a measured upgrade-per-tier table instead,
+//! and are scored against it.
+//!
 //! Quest prizes are not supply like that, and they are the whole reason
 //! families cannot be resolved apart. A giver lays out a pool spanning every
 //! family — the Imp's five reward options beside its vault's treasure rooms —
@@ -1142,12 +1149,36 @@ impl Predicate {
     /// Probability that one alternative of `supply` is an item this filter
     /// accepts, identity and upgrade together.
     ///
-    /// Tiers and upgrades are tabled apart and roll independently, save for
-    /// the one place they do not: [`EXTRA_UPGRADE_MAXIMUM`] lands only on a
-    /// tier-4 weapon. That level is therefore scored against tier 4 alone,
-    /// and the levels below it against the tier shares that remain — which
-    /// leaves every source that never reaches it scored exactly as before.
+    /// Tiers and upgrades are tabled apart and roll independently, save in two
+    /// places. A source that locks the two together carries its own
+    /// upgrade-per-tier table and is scored against that; see
+    /// [`locks_levels_to_tiers`](crate::probability_tables::locks_levels_to_tiers).
+    /// Everywhere else, [`EXTRA_UPGRADE_MAXIMUM`] lands only on a tier-4
+    /// weapon, so that level is scored against tier 4 alone and the levels
+    /// below it against the tier shares that remain — which leaves every
+    /// source that never reaches it scored exactly as before.
     fn identity_and_upgrade_probability(self, supply: &Supply, tiers: &[f32; TIERS]) -> f64 {
+        let tiered = matches!(supply.kind, ItemKind::Weapon | ItemKind::Armor);
+        if let Some(levels) = supply.levels.filter(|_| tiered) {
+            // Each tier is worth only its own share of the levels this filter
+            // accepts, not the whole source's: asking for a tier and a level
+            // that never came off the same shelf has to score zero.
+            let allowed = self.allowed_upgrades(supply);
+            let mut reachable = [0.0_f32; TIERS];
+            for ((share, tabled), carried) in reachable.iter_mut().zip(tiers).zip(levels) {
+                let held: f64 = carried
+                    .iter()
+                    .enumerate()
+                    .filter(|(upgrade, _)| allowed & (1 << upgrade) != 0)
+                    .map(|(_, chance)| f64::from(*chance))
+                    .sum();
+                #[allow(clippy::cast_possible_truncation)]
+                {
+                    *share = (f64::from(*tabled) * held) as f32;
+                }
+            }
+            return self.identity_probability(supply, &reachable);
+        }
         let (extra, ordinary) = self.upgrade_probabilities(supply);
         let tabled_extra = f64::from(supply.upgrades[usize::from(EXTRA_UPGRADE_MAXIMUM)]);
         if tabled_extra <= 0.0 {
@@ -1236,10 +1267,7 @@ impl Predicate {
     /// [`EXTRA_UPGRADE_MAXIMUM`] — the one level tied to a single tier — and
     /// everything below it.
     fn upgrade_probabilities(self, supply: &Supply) -> (f64, f64) {
-        let mut allowed = self.upgrades;
-        if self.fast_mode && fast_mode_skips(supply.source, self.kind) {
-            allowed &= (1 << (FAST_MODE_UPGRADE_CAP + 1)) - 1;
-        }
+        let allowed = self.allowed_upgrades(supply);
         let extra_level = usize::from(EXTRA_UPGRADE_MAXIMUM);
         let share = |upgrade: usize| {
             if allowed & (1 << upgrade) == 0 {
@@ -1253,6 +1281,16 @@ impl Predicate {
             .map(share)
             .sum();
         (share(extra_level), ordinary)
+    }
+
+    /// The upgrade levels this filter accepts, as a bit set, once fast mode
+    /// has given up the ones it skips.
+    fn allowed_upgrades(self, supply: &Supply) -> u8 {
+        let mut allowed = self.upgrades;
+        if self.fast_mode && fast_mode_skips(supply.source, self.kind) {
+            allowed &= (1 << (FAST_MODE_UPGRADE_CAP + 1)) - 1;
+        }
+        allowed
     }
 
     fn effect_probability(self, supply: &Supply) -> f64 {
@@ -1550,6 +1588,47 @@ mod tests {
         assert!((0.45..=1.0).contains(&one), "{one:e}");
         assert!((0.086..=0.346).contains(&two), "{two:e}");
         assert!(two < one / 2.0, "{two:e} against {one:e}");
+    }
+
+    /// The Imp's hoards hand a tier and a level out together, so a source
+    /// filter pinned to one of them has to score the pairs they never build at
+    /// nothing, however plentiful each half looks on its own.
+    #[test]
+    fn a_locked_source_supplies_no_tier_and_level_it_never_pairs() {
+        let from = |source, requirement| {
+            estimate_match_probability(&query(
+                vec![Requirement {
+                    source: Some(source),
+                    ..requirement
+                }],
+                24,
+            ))
+        };
+        // The vault's armor is +0 at tier 2 and climbs one level a tier, so it
+        // stocks tier-5 armor at +3 and nothing below tier 5 at +3.
+        let armor = |tier| Requirement {
+            tier,
+            upgrade: UpgradeRequirement::Exact(3),
+            ..requirement(ItemKind::Armor)
+        };
+        let stocked = from(ItemSource::VaultTreasure, armor(TierRequirement::Exact(5)));
+        let never = from(ItemSource::VaultTreasure, armor(TierRequirement::AtMost(3)));
+        assert!(stocked > 0.05, "{stocked:e}");
+        assert!(never <= 1e-9, "{never:e} for armor the vault never shelves");
+        // Whichever of the Imp's two weapons is tier 5 is the one levelled
+        // +2..=+4, so its tier-4 weapon is never the +2 one.
+        let weapon = |upgrade| Requirement {
+            tier: TierRequirement::Exact(4),
+            upgrade,
+            ..requirement(ItemKind::Weapon)
+        };
+        let rolled = from(ItemSource::ImpReward, weapon(UpgradeRequirement::Exact(3)));
+        let skipped = from(ItemSource::ImpReward, weapon(UpgradeRequirement::Exact(2)));
+        assert!(rolled > 0.05, "{rolled:e}");
+        assert!(
+            skipped <= 1e-9,
+            "{skipped:e} for a level the Imp keeps for tier 5"
+        );
     }
 
     #[test]
