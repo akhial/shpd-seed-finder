@@ -321,6 +321,7 @@ fn query(requirements: Vec<Requirement>, max_depth: u8) -> SearchQuery {
 fn curated_queries() -> Vec<(String, SearchQuery)> {
     let mut queries = depth_queries();
     queries.extend(modifier_queries());
+    queries.extend(vault_upgrade_queries());
     queries.extend(competition_queries());
     queries
 }
@@ -455,6 +456,46 @@ fn modifier_queries() -> Vec<(String, SearchQuery)> {
         ),
     ));
     queries
+}
+
+/// The top of the upgrade range, which only the Imp's vault reaches — and
+/// whose highest level only its tier-4 weapon carries, so the estimator has
+/// to score that level against tier 4 alone.
+fn vault_upgrade_queries() -> Vec<(String, SearchQuery)> {
+    vec![
+        (
+            "any weapon at exactly +5".to_owned(),
+            query(
+                vec![Requirement {
+                    upgrade: UpgradeRequirement::Exact(5),
+                    ..base(ItemKind::Weapon)
+                }],
+                24,
+            ),
+        ),
+        (
+            "any tier 4 weapon at exactly +5".to_owned(),
+            query(
+                vec![Requirement {
+                    tier: TierRequirement::Exact(4),
+                    upgrade: UpgradeRequirement::Exact(5),
+                    ..base(ItemKind::Weapon)
+                }],
+                24,
+            ),
+        ),
+        (
+            "any melee weapon at +4 or better".to_owned(),
+            query(
+                vec![Requirement {
+                    weapon_category: Some(WeaponCategory::Melee),
+                    upgrade: UpgradeRequirement::AtLeast(4),
+                    ..base(ItemKind::Weapon)
+                }],
+                24,
+            ),
+        ),
+    ]
 }
 
 /// Requirements that have to be met by distinct items.

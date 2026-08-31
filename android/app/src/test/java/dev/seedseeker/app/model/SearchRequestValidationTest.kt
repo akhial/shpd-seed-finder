@@ -19,6 +19,9 @@ class SearchRequestValidationTest {
     private val might = ItemCatalog.findById("ring_might")
     private val sword = ItemCatalog.findById("sword")
 
+    /** A tier-4 weapon: the one thing the vault levels past +4. */
+    private val battleAxe = ItemCatalog.findById("battle_axe")
+
     private fun ring(key: Long, atLeast: Int, upgrade: Int? = null, group: Int = 1) = ItemRequirement(
         key = key,
         item = might,
@@ -46,10 +49,10 @@ class SearchRequestValidationTest {
         val failure = assertThrows(IllegalArgumentException::class.java) { SearchRequest(members) }
         assertEquals("A combined level of 8 needs more items: these 2 can reach 7.", failure.message)
 
-        // A weapon pair uses the weapon cap of 5, so 6 levels each.
+        // A tier-4 weapon pair uses the weapon cap of 5, so 6 levels each.
         val weapons = listOf(
-            ItemRequirement(1, sword, 0, upgradeMatch = UpgradeMatch.ANY, levelSum = LevelSum(2, 13)),
-            ItemRequirement(2, sword, 0, upgradeMatch = UpgradeMatch.ANY, levelSum = LevelSum(2, 13)),
+            ItemRequirement(1, battleAxe, 0, upgradeMatch = UpgradeMatch.ANY, levelSum = LevelSum(2, 13)),
+            ItemRequirement(2, battleAxe, 0, upgradeMatch = UpgradeMatch.ANY, levelSum = LevelSum(2, 13)),
         )
         assertEquals(
             "A combined level of 13 needs more items: these 2 can reach 12.",
@@ -153,11 +156,23 @@ class SearchRequestValidationTest {
             ItemRequirement(1, sword, 0, kind = ItemKind.THROWN_WEAPON, upgradeMatch = UpgradeMatch.ANY)
         }
         assertEquals("Any melee weapon", anyWeapon.copy(kind = ItemKind.MELEE_WEAPON).title)
-        // Weapons reach the vault's +5; every other family stops at +4.
-        assertEquals(5, ItemRequirement(1, sword, 5).upgrade)
+        // The vault's +5 lands on a tier-4 weapon and nothing else: another
+        // tier, another family, and a tier filter that rules tier 4 out all
+        // stop at +4.
+        assertEquals(5, ItemRequirement(1, battleAxe, 5).upgrade)
+        assertEquals(5, ItemRequirement(1, ItemCatalog.findById("javelin"), 5).upgrade)
+        assertEquals(4, ItemRequirement(1, sword, 4).upgrade)
         assertEquals(4, ItemRequirement(1, might, 4).upgrade)
-        assertThrows(IllegalArgumentException::class.java) { ItemRequirement(1, sword, 6) }
+        assertThrows(IllegalArgumentException::class.java) { ItemRequirement(1, battleAxe, 6) }
+        assertThrows(IllegalArgumentException::class.java) { ItemRequirement(1, sword, 5) }
         assertThrows(IllegalArgumentException::class.java) { ItemRequirement(1, ItemCatalog.findById("wand_frost"), 5) }
+        assertEquals(5, anyWeapon.copy(upgrade = 5, upgradeMatch = UpgradeMatch.EXACT, tier = 4, tierMatch = TierMatch.EXACT).upgrade)
+        assertThrows(IllegalArgumentException::class.java) {
+            anyWeapon.copy(upgrade = 5, upgradeMatch = UpgradeMatch.EXACT, tier = 5, tierMatch = TierMatch.EXACT)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            anyWeapon.copy(upgrade = 5, upgradeMatch = UpgradeMatch.EXACT, tier = 3, tierMatch = TierMatch.AT_MOST)
+        }
         // Uncursed with a curses-only set.
         assertThrows(IllegalArgumentException::class.java) {
             ItemRequirement(1, sword, 1, effect = EffectFilter.named("Displacing"), requireUncursed = true)

@@ -132,8 +132,8 @@ fun RequirementSheet(
     var upgradeMatch by remember(identity) { mutableStateOf(editing?.upgradeMatch ?: UpgradeMatch.EXACT) }
     var upgrade by remember(identity) {
         val initialMatch = editing?.upgradeMatch ?: UpgradeMatch.EXACT
-        val initialKind = editing?.kind ?: ItemKind.WEAPON
-        mutableStateOf(normalizedUpgrade(editing?.upgrade ?: 1, initialMatch, initialKind))
+        val initialCeiling = editing?.upgradeCeiling ?: ItemKind.WEAPON.maximumSearchUpgrade
+        mutableStateOf(normalizedUpgrade(editing?.upgrade ?: 1, initialMatch, initialCeiling))
     }
     var upgradeMenuExpanded by remember(identity) { mutableStateOf(false) }
     var tierMatch by remember(identity) { mutableStateOf(editing?.tierMatch ?: TierMatch.ANY) }
@@ -165,13 +165,19 @@ fun RequirementSheet(
 
     // A member of an either/or cluster leaves the stack to the cluster itself.
     val inAlternativeGroup = editing?.alternativeGroup != null
-    val draftMaximumUpgrade = if (upgradeMatch == UpgradeMatch.EXACT) upgrade else kind.maximumSearchUpgrade
+    // Only a tier-4 weapon is levelled past `MAX_UPGRADE_ANY_TIER`, so the
+    // draft's ceiling follows the item and tier it is asking for, not just
+    // its family.
+    val upgradeCeiling = SearchLimits.maximumUpgrade(kind, selectedItem, tierMatch, tier)
+    val draftMaximumUpgrade = if (upgradeMatch == UpgradeMatch.EXACT) upgrade else upgradeCeiling
     // Every item of a stack that counts levels is a copy of the anchor, and each
     // contributes its upgrade plus one.
     val levelCapacity = (draftMaximumUpgrade + 1) * stackCount
 
-    fun clampUpgrade(match: UpgradeMatch, forKind: ItemKind) {
-        upgrade = normalizedUpgrade(upgrade, match, forKind)
+    // The edit that lowers the ceiling has to pass the ceiling it leaves
+    // behind: the state it reads has not recomposed yet.
+    fun clampUpgrade(match: UpgradeMatch, ceiling: Int) {
+        upgrade = normalizedUpgrade(upgrade, match, ceiling)
     }
 
     fun resetEffects() {
@@ -252,12 +258,16 @@ fun RequirementSheet(
                                     checked = kind.family == entry,
                                     onCheckedChange = { checked ->
                                         if (checked && kind.family != entry) {
+                                            val first = ItemCatalog.forKind(entry).first { it.tier != 1 }
                                             kind = entry
-                                            selectedItem = ItemCatalog.forKind(entry).first { it.tier != 1 }
+                                            selectedItem = first
                                             tierMatch = TierMatch.ANY
                                             tier = 2
                                             resetEffects()
-                                            clampUpgrade(upgradeMatch, entry)
+                                            clampUpgrade(
+                                                upgradeMatch,
+                                                SearchLimits.maximumUpgrade(entry, first, TierMatch.ANY, 2),
+                                            )
                                         }
                                     },
                                     modifier = Modifier.weight(1f),
@@ -291,11 +301,15 @@ fun RequirementSheet(
                                     selected = kind == weaponKind,
                                     onClick = {
                                         if (kind != weaponKind) {
+                                            val kept = selectedItem?.takeIf(weaponKind::accepts)
+                                            val chosen = kept
+                                                ?: ItemCatalog.forKind(weaponKind).first { it.tier != 1 }
                                             kind = weaponKind
-                                            if (selectedItem?.let(weaponKind::accepts) == false) {
-                                                selectedItem = ItemCatalog.forKind(weaponKind)
-                                                    .first { it.tier != 1 }
-                                            }
+                                            selectedItem = chosen
+                                            clampUpgrade(
+                                                upgradeMatch,
+                                                SearchLimits.maximumUpgrade(weaponKind, chosen, tierMatch, tier),
+                                            )
                                         }
                                     },
                                     label = { Text(label) },
@@ -321,6 +335,10 @@ fun RequirementSheet(
                                 onClick = {
                                     selectedItem = item
                                     tierMatch = TierMatch.ANY
+                                    clampUpgrade(
+                                        upgradeMatch,
+                                        SearchLimits.maximumUpgrade(kind, item, TierMatch.ANY, tier),
+                                    )
                                 },
                             )
                         }
@@ -363,6 +381,10 @@ fun RequirementSheet(
                                                 tier = tier.coerceIn(SearchLimits.BOUNDED_TIERS.first, SearchLimits.BOUNDED_TIERS.last)
                                             }
                                             tierMenuExpanded = false
+                                            clampUpgrade(
+                                                upgradeMatch,
+                                                SearchLimits.maximumUpgrade(kind, selectedItem, match, tier),
+                                            )
                                         },
                                         label = { Text(match.label) },
                                     )
@@ -383,7 +405,13 @@ fun RequirementSheet(
                                     }
                                     Slider(
                                         value = tier.toFloat(),
-                                        onValueChange = { tier = it.roundToInt() },
+                                        onValueChange = {
+                                            tier = it.roundToInt()
+                                            clampUpgrade(
+                                                upgradeMatch,
+                                                SearchLimits.maximumUpgrade(kind, selectedItem, tierMatch, tier),
+                                            )
+                                        },
                                         valueRange = SearchLimits.EXACT_TIERS.first.toFloat()..
                                             SearchLimits.EXACT_TIERS.last.toFloat(),
                                         steps = SearchLimits.EXACT_TIERS.count() - 2,
@@ -424,6 +452,10 @@ fun RequirementSheet(
                                                 onClick = {
                                                     tier = option
                                                     tierMenuExpanded = false
+                                                    clampUpgrade(
+                                                        upgradeMatch,
+                                                        SearchLimits.maximumUpgrade(kind, selectedItem, tierMatch, option),
+                                                    )
                                                 },
                                             )
                                         }
@@ -445,7 +477,7 @@ fun RequirementSheet(
                                     onCheckedChange = { checked ->
                                         if (checked) {
                                             upgradeMatch = match
-                                            clampUpgrade(match, kind)
+                                            clampUpgrade(match, upgradeCeiling)
                                             upgradeMenuExpanded = false
                                         }
                                     },
@@ -476,8 +508,8 @@ fun RequirementSheet(
                                 Slider(
                                     value = upgrade.toFloat(),
                                     onValueChange = { upgrade = it.roundToInt() },
-                                    valueRange = 1f..kind.maximumSearchUpgrade.toFloat(),
-                                    steps = kind.maximumSearchUpgrade - 2,
+                                    valueRange = 1f..upgradeCeiling.toFloat(),
+                                    steps = upgradeCeiling - 2,
                                 )
                             }
                         } else if (upgradeMatch == UpgradeMatch.AT_LEAST) {
@@ -485,7 +517,7 @@ fun RequirementSheet(
                             // A slider needs three stops to beat a dropdown, and
                             // since v4.0.0 raised the ceilings every family has
                             // them (+1..+4 for weapons, +1..+3 for the rest).
-                            if (kind.maximumSearchUpgrade - 1 >= 3) {
+                            if (upgradeCeiling - 1 >= 3) {
                                 Column {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -501,8 +533,8 @@ fun RequirementSheet(
                                     Slider(
                                         value = upgrade.toFloat(),
                                         onValueChange = { upgrade = it.roundToInt() },
-                                        valueRange = 1f..(kind.maximumSearchUpgrade - 1).toFloat(),
-                                        steps = kind.maximumSearchUpgrade - 3,
+                                        valueRange = 1f..(upgradeCeiling - 1).toFloat(),
+                                        steps = upgradeCeiling - 3,
                                     )
                                 }
                             } else {
@@ -527,7 +559,7 @@ fun RequirementSheet(
                                         expanded = upgradeMenuExpanded,
                                         onDismissRequest = { upgradeMenuExpanded = false },
                                     ) {
-                                        (1..<kind.maximumSearchUpgrade).forEach { option ->
+                                        (1..<upgradeCeiling).forEach { option ->
                                             DropdownMenuItem(
                                                 text = { Text("+$option or higher") },
                                                 onClick = {
@@ -882,10 +914,10 @@ fun RequirementSheet(
     }
 }
 
-private fun normalizedUpgrade(value: Int, match: UpgradeMatch, kind: ItemKind): Int = when (match) {
+private fun normalizedUpgrade(value: Int, match: UpgradeMatch, ceiling: Int): Int = when (match) {
     UpgradeMatch.ANY -> 0
-    UpgradeMatch.EXACT -> value.coerceIn(1, kind.maximumSearchUpgrade)
-    UpgradeMatch.AT_LEAST -> value.coerceIn(1, kind.maximumSearchUpgrade - 1)
+    UpgradeMatch.EXACT -> value.coerceIn(1, ceiling)
+    UpgradeMatch.AT_LEAST -> value.coerceIn(1, ceiling - 1)
 }
 
 /** A compact −/+ stepper for the small bounded counts the board deals in. */

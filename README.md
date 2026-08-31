@@ -147,8 +147,9 @@ cargo run --release -p shpd-seedfinder-cli -- -i requirements.json -b 1000 --wor
         { "at_most": 3..4 }
         = "any",
 
-      // Weapons (melee and thrown) reach +5; armor, wands and rings reach +4.
-      // Everything above +3 comes only from the Imp's vault (floors 17-19).
+      // Everything reaches +4; a tier-4 weapon, melee or thrown, reaches +5,
+      // so +5 is rejected for any other tier, item, or family. Everything
+      // above +3 comes only from the Imp's vault (floors 17-19).
       // "any" and effect names are case-insensitive.
       "upgrade"?:
         "any" | 1..5 |

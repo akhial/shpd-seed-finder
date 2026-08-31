@@ -556,7 +556,7 @@ public sealed partial class MainWindow : Window
         if (item.Total is int total)
         {
             // Never a total the stack cannot reach: each item counts its upgrade plus one.
-            var capacity = QueryRelationships.StackCapacity(requirements[item.Anchor].Kind, item.StackCount);
+            var capacity = QueryRelationships.StackCapacity(requirements[item.Anchor].UpgradeCeiling, item.StackCount);
             badges.Add(StackBadge($"\u03a3 \u2265 {total}", CautionInk, CautionFill,
                 "Combined level", total, 1, Math.Max(1, capacity),
                 value => { if (Locate(anchorKey).Item is { } entry) SetRequirements(QueryRelationships.SetStackTotal(query.Requirements, entry, value)); }));
@@ -904,7 +904,7 @@ public sealed partial class MainWindow : Window
         // list hides.
         var itemChoices = new List<CatalogItem>();
         var tierMatch = Combo(["Any tier", "Exactly", "At least", "At most"], (int)r.TierMatch); var selectedTier = r.Tier is >= SearchLimits.ExactTierMin and <= SearchLimits.ExactTierMax ? r.Tier : SearchLimits.ExactTierMin; var tier = Number("Tier", selectedTier, SearchLimits.ExactTierMin, SearchLimits.ExactTierMax); var tierBound = Combo(Enumerable.Range(SearchLimits.BoundedTierMin, SearchLimits.BoundedTierMax - SearchLimits.BoundedTierMin + 1).Select(value => $"Tier {value}"), Math.Clamp(selectedTier, SearchLimits.BoundedTierMin, SearchLimits.BoundedTierMax) - SearchLimits.BoundedTierMin);
-        var maximumUpgrade = r.Kind.MaximumSearchUpgrade(); var selectedMinimumUpgrade = Math.Clamp(r.Upgrade, 1, maximumUpgrade - 1);
+        var maximumUpgrade = r.UpgradeCeiling; var selectedMinimumUpgrade = Math.Clamp(r.Upgrade, 1, maximumUpgrade - 1);
         var upgradeMatch = Combo(["Any", "Exactly", "At least"], (int)r.UpgradeMatch); var upgrade = Number("Upgrade level", Math.Clamp(r.Upgrade, 1, maximumUpgrade), 1, maximumUpgrade); var upgradeBound = Combo(Enumerable.Range(1, maximumUpgrade - 1).Select(value => $"+{value} or higher"), selectedMinimumUpgrade - 1);
         // Effect: any / any enchantment / a specific set picked from a per-family
         // checkbox grid (enchantments or glyphs, then curses).
@@ -1023,19 +1023,26 @@ public sealed partial class MainWindow : Window
             // Never a total the stack cannot reach: each item counts its upgrade plus one.
             if (counting)
             {
-                total.Maximum = Math.Max(1, QueryRelationships.StackCapacity((ItemKind)Math.Max(0, kind.SelectedIndex), Counted()));
+                total.Maximum = Math.Max(1, QueryRelationships.StackCapacity(maximumUpgrade, Counted()));
                 total.Value = Math.Clamp(double.IsNaN(total.Value) ? 1 : total.Value, 1, total.Maximum);
             }
             total.Header = $"Levels reach \u2265 {(int)total.Value} across up to {Counted()}";
             copyDepth.Header = $"Copies within first {FloorOf(copyDepth)} floor{(FloorOf(copyDepth) == 1 ? "" : "s")}";
             SyncVisibility();
         }
+        // Only a tier-4 weapon reaches the top of the weapon range, so naming
+        // an item or narrowing the tier can lower the ceiling under the value
+        // already picked.
         void NormalizeUpgrade()
         {
-            var k = (ItemKind)Math.Max(0, kind.SelectedIndex); maximumUpgrade = k.MaximumSearchUpgrade();
+            var k = (ItemKind)Math.Max(0, kind.SelectedIndex);
+            var chosen = item.SelectedIndex > 0 && item.SelectedIndex <= itemChoices.Count ? itemChoices[item.SelectedIndex - 1] : null;
+            maximumUpgrade = k.MaximumSearchUpgrade(chosen, (TierMatch)Math.Max(0, tierMatch.SelectedIndex), selectedTier);
             var atLeast = upgradeMatch.SelectedIndex == (int)UpgradeMatch.AtLeast;
             upgrade.Maximum = atLeast ? maximumUpgrade - 1 : maximumUpgrade;
             upgrade.Value = Math.Clamp(double.IsNaN(upgrade.Value) ? 1 : upgrade.Value, 1, upgrade.Maximum);
+            selectedMinimumUpgrade = Math.Clamp(selectedMinimumUpgrade, 1, maximumUpgrade - 1);
+            upgradeBound.Items.Clear(); foreach (var value in Enumerable.Range(1, maximumUpgrade - 1)) upgradeBound.Items.Add($"+{value} or higher"); upgradeBound.SelectedIndex = selectedMinimumUpgrade - 1;
         }
         // Curses are hidden — and dropped from the selection — while the item
         // must be uncursed; the grid itself shows only for "Specific".
@@ -1064,10 +1071,9 @@ public sealed partial class MainWindow : Window
         {
             var k = (ItemKind)Math.Max(0, kind.SelectedIndex); var oldId = r.Item?.Id; itemChoices.Clear(); itemChoices.AddRange(ItemCatalog.EditorItems(k, r.Item)); item.Items.Clear(); item.Items.Add($"Any {Labels.Singular(k)}"); foreach (var value in itemChoices) item.Items.Add(value.Name); item.SelectedIndex = Math.Max(0, itemChoices.FindIndex(x => x.Id == oldId) + 1);
             PopulateEffects(r.Effect.Effects);
-            maximumUpgrade = k.MaximumSearchUpgrade(); NormalizeUpgrade();
-            selectedMinimumUpgrade = Math.Clamp(selectedMinimumUpgrade, 1, maximumUpgrade - 1); upgradeBound.Items.Clear(); foreach (var value in Enumerable.Range(1, maximumUpgrade - 1)) upgradeBound.Items.Add($"+{value} or higher"); upgradeBound.SelectedIndex = selectedMinimumUpgrade - 1; SyncStack();
+            NormalizeUpgrade(); SyncStack();
         }
-        kind.SelectionChanged += (_, _) => { r.Item = null; r.Effect = EffectFilter.Any(); effectMode.SelectedIndex = 0; Populate(); }; item.SelectionChanged += (_, _) => SyncStack(); tier.ValueChanged += (_, _) => { if (!double.IsNaN(tier.Value)) selectedTier = (int)tier.Value; }; tierBound.SelectionChanged += (_, _) => { if (tierBound.SelectedIndex >= 0) selectedTier = tierBound.SelectedIndex + SearchLimits.BoundedTierMin; }; tierMatch.SelectionChanged += (_, _) => { NormalizeTier(); SyncVisibility(); }; upgradeMatch.SelectionChanged += (_, _) => { NormalizeUpgrade(); SyncVisibility(); }; upgradeBound.SelectionChanged += (_, _) => { if (upgradeBound.SelectedIndex >= 0) selectedMinimumUpgrade = upgradeBound.SelectedIndex + 1; }; effectMode.SelectionChanged += (_, _) => SyncEffects(); uncursed.Checked += (_, _) => SyncEffects(); uncursed.Unchecked += (_, _) => SyncEffects(); depthToggle.Toggled += (_, _) => depth.Visibility = depthToggle.IsOn ? Visibility.Visible : Visibility.Collapsed;
+        kind.SelectionChanged += (_, _) => { r.Item = null; r.Effect = EffectFilter.Any(); effectMode.SelectedIndex = 0; Populate(); }; item.SelectionChanged += (_, _) => { NormalizeUpgrade(); SyncStack(); }; tier.ValueChanged += (_, _) => { if (!double.IsNaN(tier.Value)) selectedTier = (int)tier.Value; NormalizeUpgrade(); }; tierBound.SelectionChanged += (_, _) => { if (tierBound.SelectedIndex >= 0) selectedTier = tierBound.SelectedIndex + SearchLimits.BoundedTierMin; NormalizeUpgrade(); }; tierMatch.SelectionChanged += (_, _) => { NormalizeTier(); NormalizeUpgrade(); SyncVisibility(); }; upgradeMatch.SelectionChanged += (_, _) => { NormalizeUpgrade(); SyncVisibility(); }; upgradeBound.SelectionChanged += (_, _) => { if (upgradeBound.SelectedIndex >= 0) selectedMinimumUpgrade = upgradeBound.SelectedIndex + 1; }; effectMode.SelectionChanged += (_, _) => SyncEffects(); uncursed.Checked += (_, _) => SyncEffects(); uncursed.Unchecked += (_, _) => SyncEffects(); depthToggle.Toggled += (_, _) => depth.Visibility = depthToggle.IsOn ? Visibility.Visible : Visibility.Collapsed;
         count.ValueChanged += (_, _) => SyncStack(); totalToggle.Checked += (_, _) => SyncStack(); totalToggle.Unchecked += (_, _) => SyncStack(); copyDepthToggle.Checked += (_, _) => SyncStack(); copyDepthToggle.Unchecked += (_, _) => SyncStack();
         total.ValueChanged += (_, _) => total.Header = $"Levels reach \u2265 {(int)total.Value} across up to {Counted()}";
         copyDepth.ValueChanged += (_, _) => copyDepth.Header = $"Copies within first {FloorOf(copyDepth)} floor{(FloorOf(copyDepth) == 1 ? "" : "s")}";

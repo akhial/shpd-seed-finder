@@ -40,7 +40,29 @@ public sealed class EngineConstantsTests
         foreach (var (name, kind) in new[] {
             ("weapon", ItemKind.Weapon), ("armor", ItemKind.Armor), ("wand", ItemKind.Wand), ("ring", ItemKind.Ring) })
             Assert.Equal((int)((JsonObject)Limits["maxUpgradeByKind"]!)[name]!, kind.MaximumSearchUpgrade());
+        Assert.Equal(SearchLimits.MaxUpgradeAnyTier, Limit("maxUpgradeAnyTier"));
+        Assert.Equal(SearchLimits.ExtraUpgradeTier, Limit("extraUpgradeTier"));
         Assert.Equal(SearchLimits.MaxDepth, new QuerySettings().MaximumDepth);
+    }
+
+    /// <summary>
+    /// Only a tier-4 weapon is levelled past the shared ceiling, so a
+    /// requirement that rules that tier out loses the top of its range.
+    /// </summary>
+    [Fact]
+    public void TopWeaponUpgradeNeedsTheTierThatReachesIt()
+    {
+        var ceiling = Limit("maxUpgradeWeapon");
+        var capped = Limit("maxUpgradeAnyTier");
+        var extraTier = Limit("extraUpgradeTier");
+        Assert.Equal(ceiling, ItemKind.Weapon.MaximumSearchUpgrade(null, TierMatch.Any, 0));
+        Assert.Equal(ceiling, ItemKind.Weapon.MaximumSearchUpgrade(null, TierMatch.Exactly, extraTier));
+        Assert.Equal(capped, ItemKind.Weapon.MaximumSearchUpgrade(null, TierMatch.Exactly, 5));
+        Assert.Equal(capped, ItemKind.Weapon.MaximumSearchUpgrade(null, TierMatch.AtMost, 3));
+        Assert.Equal(ceiling, ItemKind.Weapon.MaximumSearchUpgrade(ItemCatalog.Find("battle_axe"), TierMatch.Any, 0));
+        Assert.Equal(ceiling, ItemKind.ThrownWeapon.MaximumSearchUpgrade(ItemCatalog.Find("javelin"), TierMatch.Any, 0));
+        Assert.Equal(capped, ItemKind.Weapon.MaximumSearchUpgrade(ItemCatalog.Find("sword"), TierMatch.Any, 0));
+        Assert.Equal(capped, ItemKind.Armor.MaximumSearchUpgrade(null, TierMatch.Exactly, extraTier));
     }
 
     [Fact]

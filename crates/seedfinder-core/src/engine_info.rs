@@ -9,7 +9,7 @@
 
 use serde_json::{Value, json};
 
-use crate::catalog::ItemKind;
+use crate::catalog::{EXTRA_UPGRADE_TIER, ItemKind, MAX_GENERATED_UPGRADE};
 use crate::feasibility::Quest;
 use crate::json_query::CHALLENGE_NAMES;
 use crate::main_world::EMPTY_BOSS_FLOORS;
@@ -51,6 +51,13 @@ pub fn document() -> Value {
                 "wand": ItemKind::Wand.maximum_search_upgrade(),
                 "ring": ItemKind::Ring.maximum_search_upgrade(),
             },
+            // The per-kind ceilings above are what a weapon reaches at its
+            // best tier. Only tier `extraUpgradeTier` gets there: every other
+            // tier, and every other family, stops at `maxUpgradeAnyTier`, so
+            // an editor offering the top level has to know the tier the
+            // requirement is asking for.
+            "maxUpgradeAnyTier": MAX_GENERATED_UPGRADE,
+            "extraUpgradeTier": EXTRA_UPGRADE_TIER,
             "resultsFileMaxBytes": MAX_FILE_BYTES,
         },
         "emptyBossFloors": EMPTY_BOSS_FLOORS,
@@ -115,6 +122,8 @@ mod tests {
             info["limits"]["maxUpgradeByKind"],
             serde_json::json!({"weapon": 5, "armor": 4, "wand": 4, "ring": 4})
         );
+        assert_eq!(info["limits"]["maxUpgradeAnyTier"], 4);
+        assert_eq!(info["limits"]["extraUpgradeTier"], 4);
         assert_eq!(info["limits"]["resultsFileMaxBytes"], 2 * 1_024 * 1_024);
         assert_eq!(
             info["limits"]
@@ -127,9 +136,11 @@ mod tests {
                 "boundedTierMin",
                 "exactTierMax",
                 "exactTierMin",
+                "extraUpgradeTier",
                 "identityGroupMax",
                 "levelSumGroupMax",
                 "maxDepth",
+                "maxUpgradeAnyTier",
                 "maxUpgradeByKind",
                 "maxUpgradeDefault",
                 "maxUpgradeRing",

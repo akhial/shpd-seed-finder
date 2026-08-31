@@ -11,7 +11,7 @@
 //! This module owns the shape of that data; the generated file owns the
 //! values.
 
-use crate::catalog::{ItemId, ItemKind};
+use crate::catalog::{EXTRA_UPGRADE_MAXIMUM, ItemId, ItemKind};
 use crate::generator::{
     MISSILE_TIER_1_ITEMS, MISSILE_TIER_2_ITEMS, MISSILE_TIER_3_ITEMS, MISSILE_TIER_4_ITEMS,
     MISSILE_TIER_5_ITEMS, MissileKind,
@@ -110,13 +110,12 @@ pub const HIGHEST_TIER: u8 = 5;
 
 const _: () = assert!(TIERS == HIGHEST_TIER as usize);
 
-/// Highest upgrade level with its own tabled probability.
-pub const MAX_TABLED_UPGRADE: usize = 4;
+/// Highest upgrade level with its own tabled probability. It is the highest
+/// the generator rolls, so no bucket has to absorb the levels above it.
+pub const HIGHEST_TABLED_UPGRADE: u8 = EXTRA_UPGRADE_MAXIMUM;
 
-/// [`MAX_TABLED_UPGRADE`] as an upgrade level.
-pub const HIGHEST_TABLED_UPGRADE: u8 = 4;
-
-const _: () = assert!(MAX_TABLED_UPGRADE == HIGHEST_TABLED_UPGRADE as usize);
+/// [`HIGHEST_TABLED_UPGRADE`] as a table width.
+pub const MAX_TABLED_UPGRADE: usize = HIGHEST_TABLED_UPGRADE as usize;
 
 /// Highest number of same-identity duplicates the repeat table covers.
 pub const IDENTITY_REPEAT_LIMIT: usize = 4;
@@ -142,7 +141,7 @@ pub struct Supply {
     pub shared_roll: bool,
     /// Expected number of reward slots on each floor `1..=24`.
     pub depth_slots: [f32; DEPTHS],
-    /// Probability of each upgrade level `+0..=+4`.
+    /// Probability of each upgrade level `+0..=+5`.
     pub upgrades: [f32; MAX_TABLED_UPGRADE + 1],
     /// Probability the item is cursed.
     pub cursed: f32,
