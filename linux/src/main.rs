@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+// The search worker threads allocate thousands of short-lived buffers per
+// seed; glibc's allocator is a measurable fraction of the run time.
+#[global_allocator]
+static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 mod application;
 mod challenges_dialog;
 mod config;
