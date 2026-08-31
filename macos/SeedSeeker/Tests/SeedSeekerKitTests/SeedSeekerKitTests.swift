@@ -14,6 +14,30 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertNotNil(preset.query.validated())
     }
 
+    func testBundledStaff22Preset() throws {
+        let preset = BuiltInPresets.staff22
+        XCTAssertEqual(preset.name, "+22 Staff")
+        XCTAssertEqual(preset.query.maximumDepth, 19)
+        XCTAssertEqual(preset.query.requirements.map(\.kind), [.wand, .wand, .wand, .wand])
+        XCTAssertEqual(preset.query.requirements.map(\.upgradeMatch), [.exactly, .any, .any, .atLeast])
+        XCTAssertEqual(preset.query.requirements.map(\.upgrade), [4, 0, 0, 1])
+        XCTAssertEqual(preset.query.requirements.map(\.identityGroup), [1, 1, 1, nil])
+        XCTAssertNotNil(preset.query.validated())
+    }
+
+    func testBundledTier4WeaponPreset() throws {
+        let preset = BuiltInPresets.tier4Weapon26
+        XCTAssertEqual(preset.name, "+26 Tier 4 Weapon")
+        XCTAssertEqual(preset.query.maximumDepth, 19)
+        XCTAssertEqual(preset.query.requirements.map(\.kind), [.weapon, .weapon, .weapon])
+        XCTAssertEqual(preset.query.requirements.map(\.tierMatch), [.exactly, .any, .any])
+        XCTAssertEqual(preset.query.requirements.map(\.tier), [4, 0, 0])
+        XCTAssertEqual(preset.query.requirements.map(\.upgradeMatch), [.exactly, .any, .any])
+        XCTAssertEqual(preset.query.requirements.map(\.upgrade), [5, 0, 0])
+        XCTAssertEqual(preset.query.requirements.map(\.identityGroup), [1, 1, 1])
+        XCTAssertNotNil(preset.query.validated())
+    }
+
     func testBundledWandBonanzaPreset() throws {
         let preset = BuiltInPresets.wandBonanza
         XCTAssertEqual(preset.name, "Wand Bonanza")
