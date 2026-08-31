@@ -27,8 +27,9 @@
 //! holds wherever the generator rolls them apart. The Imp's two hoards do not:
 //! its vault stocks four fixed shelves and its reward flips a coin over which
 //! of two weapons is levelled furthest, so at both a tier names the levels it
-//! can carry. Those sources carry a measured upgrade-per-tier table instead,
-//! and are scored against it.
+//! can carry — including the `+5` that only ever lands on a tier-4 weapon.
+//! Those sources carry a measured upgrade-per-tier table instead, and are
+//! scored against it; every other source multiplies its two marginals.
 //!
 //! Quest prizes are not supply like that, and they are the whole reason
 //! families cannot be resolved apart. A giver lays out a pool spanning every
@@ -52,9 +53,7 @@
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
-use crate::catalog::{
-    EXTRA_UPGRADE_MAXIMUM, EXTRA_UPGRADE_TIER, Effect, ItemId, ItemKind, WeaponCategory, item,
-};
+use crate::catalog::{Effect, ItemId, ItemKind, WeaponCategory, item};
 use crate::equipment::{
     ARMOR_COMMON, ARMOR_CURSES, ARMOR_RARE, ARMOR_UNCOMMON, WEAPON_COMMON, WEAPON_CURSES,
     WEAPON_RARE, WEAPON_UNCOMMON,
@@ -1136,8 +1135,8 @@ impl Predicate {
         let modifiers = self.effect_probability(supply) * self.uncursed_probability(supply);
         let options = f64::from(supply.options);
         if supply.shared_roll {
-            // No source that rolls its alternatives as one reaches the extra
-            // upgrade, so the identity keeps the tabled tier shares here.
+            // No source that rolls its alternatives as one locks their levels
+            // to their tiers, so the identity keeps the tabled tier shares.
             let rolled = self.upgrade_probability(supply) * modifiers;
             rolled * (1.0 - (1.0 - identity).powf(options))
         } else {
@@ -1149,61 +1148,35 @@ impl Predicate {
     /// Probability that one alternative of `supply` is an item this filter
     /// accepts, identity and upgrade together.
     ///
-    /// Tiers and upgrades are tabled apart and roll independently, save in two
-    /// places. A source that locks the two together carries its own
-    /// upgrade-per-tier table and is scored against that; see
-    /// [`locks_levels_to_tiers`](crate::probability_tables::locks_levels_to_tiers).
-    /// Everywhere else, [`EXTRA_UPGRADE_MAXIMUM`] lands only on a tier-4
-    /// weapon, so that level is scored against tier 4 alone and the levels
-    /// below it against the tier shares that remain — which leaves every
-    /// source that never reaches it scored exactly as before.
+    /// Tiers and upgrades are tabled apart and multiply, save at a source that
+    /// [locks the two together](crate::probability_tables::locks_levels_to_tiers):
+    /// those carry their own upgrade-per-tier table and are scored against it.
+    /// Every level the generator ties to one tier is stocked by such a source,
+    /// which `only_a_locked_row_reaches_the_level_tied_to_one_tier` holds the
+    /// tables to, so nothing outside them needs a tier and a level reconciled.
     fn identity_and_upgrade_probability(self, supply: &Supply, tiers: &[f32; TIERS]) -> f64 {
         let tiered = matches!(supply.kind, ItemKind::Weapon | ItemKind::Armor);
-        if let Some(levels) = supply.levels.filter(|_| tiered) {
-            // Each tier is worth only its own share of the levels this filter
-            // accepts, not the whole source's: asking for a tier and a level
-            // that never came off the same shelf has to score zero.
-            let allowed = self.allowed_upgrades(supply);
-            let mut reachable = [0.0_f32; TIERS];
-            for ((share, tabled), carried) in reachable.iter_mut().zip(tiers).zip(levels) {
-                let held: f64 = carried
-                    .iter()
-                    .enumerate()
-                    .filter(|(upgrade, _)| allowed & (1 << upgrade) != 0)
-                    .map(|(_, chance)| f64::from(*chance))
-                    .sum();
-                #[allow(clippy::cast_possible_truncation)]
-                {
-                    *share = (f64::from(*tabled) * held) as f32;
-                }
-            }
-            return self.identity_probability(supply, &reachable);
-        }
-        let (extra, ordinary) = self.upgrade_probabilities(supply);
-        let tabled_extra = f64::from(supply.upgrades[usize::from(EXTRA_UPGRADE_MAXIMUM)]);
-        if tabled_extra <= 0.0 {
-            return ordinary * self.identity_probability(supply, tiers);
-        }
-        // The tier shares an item carries once its level is known not to be
-        // the extra one: tier 4 gives up that whole share, and the rest are
-        // renormalised over what is left.
-        let mut without_extra = [0.0_f32; TIERS];
-        for (tier, share) in (1..).zip(tiers) {
-            let held_back = if tier == EXTRA_UPGRADE_TIER {
-                tabled_extra
-            } else {
-                0.0
-            };
+        let Some(levels) = supply.levels.filter(|_| tiered) else {
+            return self.upgrade_probability(supply) * self.identity_probability(supply, tiers);
+        };
+        // Each tier is worth only its own share of the levels this filter
+        // accepts, not the whole source's: asking for a tier and a level that
+        // never came off the same shelf has to score zero.
+        let allowed = self.allowed_upgrades(supply);
+        let mut reachable = [0.0_f32; TIERS];
+        for ((share, tabled), carried) in reachable.iter_mut().zip(tiers).zip(levels) {
+            let held: f64 = carried
+                .iter()
+                .enumerate()
+                .filter(|(upgrade, _)| allowed & (1 << upgrade) != 0)
+                .map(|(_, chance)| f64::from(*chance))
+                .sum();
             #[allow(clippy::cast_possible_truncation)]
             {
-                without_extra[usize::from(tier) - 1] =
-                    ((f64::from(*share) - held_back) / (1.0 - tabled_extra)).max(0.0) as f32;
+                *share = (f64::from(*tabled) * held) as f32;
             }
         }
-        let mut only_the_extra_tier = [0.0; TIERS];
-        only_the_extra_tier[usize::from(EXTRA_UPGRADE_TIER) - 1] = 1.0;
-        extra * self.identity_probability(supply, &only_the_extra_tier)
-            + ordinary * self.identity_probability(supply, &without_extra)
+        self.identity_probability(supply, &reachable)
     }
 
     fn identity_probability(self, supply: &Supply, tiers: &[f32; TIERS]) -> f64 {
@@ -1258,29 +1231,14 @@ impl Predicate {
             .sum()
     }
 
+    /// The tabled share of the upgrade levels this filter accepts, over a
+    /// source's items as a whole rather than one of its tiers.
     fn upgrade_probability(self, supply: &Supply) -> f64 {
-        let (extra, ordinary) = self.upgrade_probabilities(supply);
-        extra + ordinary
-    }
-
-    /// The tabled share of the upgrade levels this filter accepts, split into
-    /// [`EXTRA_UPGRADE_MAXIMUM`] — the one level tied to a single tier — and
-    /// everything below it.
-    fn upgrade_probabilities(self, supply: &Supply) -> (f64, f64) {
         let allowed = self.allowed_upgrades(supply);
-        let extra_level = usize::from(EXTRA_UPGRADE_MAXIMUM);
-        let share = |upgrade: usize| {
-            if allowed & (1 << upgrade) == 0 {
-                0.0
-            } else {
-                f64::from(supply.upgrades[upgrade])
-            }
-        };
-        let ordinary = (0..supply.upgrades.len())
-            .filter(|upgrade| *upgrade != extra_level)
-            .map(share)
-            .sum();
-        (share(extra_level), ordinary)
+        (0..supply.upgrades.len())
+            .filter(|upgrade| allowed & (1 << upgrade) != 0)
+            .map(|upgrade| f64::from(supply.upgrades[upgrade]))
+            .sum()
     }
 
     /// The upgrade levels this filter accepts, as a bit set, once fast mode

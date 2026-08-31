@@ -6,7 +6,7 @@
 //! source's output no longer resembles what the table claims, which is the cue
 //! to rerun `cargo run --release --example calibrate_probability`.
 
-use shpd_seedfinder_core::catalog::{ItemKind, item};
+use shpd_seedfinder_core::catalog::{EXTRA_UPGRADE_MAXIMUM, ItemKind, item};
 use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::main_world::CanonicalMainWorldGenerator;
 use shpd_seedfinder_core::model::Accessibility;
@@ -179,6 +179,36 @@ fn measure() -> Vec<Row> {
             slots: count / worlds,
         })
         .collect()
+}
+
+/// The estimator keeps no special case for a level the generator ties to a
+/// single tier: it multiplies a row's two marginals unless the row carries a
+/// levels table. That is only sound while every such level belongs to a locked
+/// row — otherwise the level would be spread over every tier the row stocks.
+///
+/// `+5` is the one the generator ties this way, to a tier-4 weapon, and both
+/// rows reaching it are the Imp's. This is the check that lets the estimator
+/// treat every other row as a plain product.
+#[test]
+fn only_a_locked_row_reaches_the_level_tied_to_one_tier() {
+    let mut reached = 0;
+    for supply in SUPPLY {
+        let extra = f64::from(supply.upgrades[usize::from(EXTRA_UPGRADE_MAXIMUM)]);
+        if extra <= 0.0 {
+            continue;
+        }
+        reached += 1;
+        assert!(
+            supply.levels.is_some(),
+            "{:?} {:?} {:?} levels {extra} of its items to \
+             +{EXTRA_UPGRADE_MAXIMUM} with no levels table to say which tier \
+             carries it; rerun the calibrate_probability example",
+            supply.kind,
+            supply.line,
+            supply.source
+        );
+    }
+    assert!(reached >= 2, "only {reached} rows reached the level at all");
 }
 
 /// A tier and an upgrade level are tabled apart and multiplied, which is only
