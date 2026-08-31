@@ -23,6 +23,20 @@ custom-seed run under the canonical profile:
   floor, source, container, secret-room placement, and mutually exclusive choice
   group.
 
+Item appearances are part of that reproduced state. `Dungeon.init()` shuffles
+`Ring.gems` once per run and hands each ring class the gem at its own index, so
+which gem — and therefore which colour — a ring shows is fixed by the seed
+alone, before any floor is generated and before any challenge is read. The
+engine reproduces that shuffle and hands it to frontends beside the item
+manifest: `GeneratedWorld::ring_gems` in process, the twelve-byte table in the
+`SSC3` scout packet, and the scout document's `ringGems` (wasm). A ring's
+`items.png` cell is
+`RING_SPRITE_BASE` plus its class's gem, while the catalog's own per-ring cell
+is the class's identity — what a seedless surface such as the query editor
+draws, and what indexes the class's glyph in `item_icons.png`. A frontend that
+renders a scouted ring from the catalog cell alone shows the same twelve
+colours for every seed, which is not what the run holds.
+
 Normal monster death loot is excluded. It is rolled during play after the level
 generator has been popped and is generally based on the unseeded base RNG.
 The seed scout reports this same static, searchable set rather than claiming to

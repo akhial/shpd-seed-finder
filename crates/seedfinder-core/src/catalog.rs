@@ -1,5 +1,18 @@
 //! Stable, version-pinned catalog for searchable equipment.
 
+use crate::run::{RingGems, RingKind};
+
+/// Atlas cell of the first ring sprite (`ItemSpriteSheet.RINGS`).
+///
+/// The twelve cells from here on are the twelve gems in `Ring.gems` order, not
+/// the twelve ring classes: which cell a ring shows in is a property of the
+/// run, not of the class. The catalog still gives each class its own cell in
+/// this block — `RING_SPRITE_BASE` plus the class's own index — because
+/// seedless surfaces such as the query editor have no run to ask, and because
+/// that index is the class's glyph in `item_icons.png`. Use
+/// [`ItemDefinition::sprite_index_in`] wherever a run *is* known.
+pub const RING_SPRITE_BASE: u16 = 224;
+
 /// Broad item family exposed by the query UI.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(u8)]
@@ -127,6 +140,27 @@ pub enum ItemId {
 }
 
 impl ItemId {
+    /// The ring class this item is, in `Generator.Category.RING.classes`
+    /// order; `None` for everything that is not a ring.
+    #[must_use]
+    pub const fn ring_kind(self) -> Option<RingKind> {
+        match self {
+            Self::RingAccuracy => Some(RingKind::Accuracy),
+            Self::RingArcana => Some(RingKind::Arcana),
+            Self::RingElements => Some(RingKind::Elements),
+            Self::RingEnergy => Some(RingKind::Energy),
+            Self::RingEvasion => Some(RingKind::Evasion),
+            Self::RingForce => Some(RingKind::Force),
+            Self::RingFuror => Some(RingKind::Furor),
+            Self::RingHaste => Some(RingKind::Haste),
+            Self::RingMight => Some(RingKind::Might),
+            Self::RingSharpshooting => Some(RingKind::Sharpshooting),
+            Self::RingTenacity => Some(RingKind::Tenacity),
+            Self::RingWealth => Some(RingKind::Wealth),
+            _ => None,
+        }
+    }
+
     /// Whether a weapon is wielded (melee) or thrown (missile weapons and
     /// tipped darts). `None` for armor, wands, and rings.
     #[must_use]
@@ -244,6 +278,38 @@ impl ItemDefinition {
     #[must_use]
     pub const fn weapon_category(&self) -> Option<WeaponCategory> {
         self.id.weapon_category()
+    }
+
+    /// Which ring class this is; `None` for everything else.
+    #[must_use]
+    pub const fn ring_kind(&self) -> Option<RingKind> {
+        self.id.ring_kind()
+    }
+
+    /// The ring's cell in the 8x8 `item_icons.png` glyph atlas, which is what
+    /// tells one ring from another on screen; `None` for non-rings.
+    ///
+    /// The glyph belongs to the ring *class*, so it is the same in every run —
+    /// unlike [`Self::sprite_index_in`], which the run's gems decide.
+    #[must_use]
+    pub const fn ring_glyph_index(&self) -> Option<u8> {
+        match self.ring_kind() {
+            Some(kind) => Some(kind as u8),
+            None => None,
+        }
+    }
+
+    /// The `items.png` cell this item is drawn in during a run with `gems`.
+    ///
+    /// Identical to [`Self::sprite_index`] for everything but rings, whose cell
+    /// is the run's gem for their class. Frontends that render a scouted world
+    /// must go through here, or every seed shows the same twelve ring colors.
+    #[must_use]
+    pub const fn sprite_index_in(&self, gems: RingGems) -> u16 {
+        match self.ring_kind() {
+            Some(kind) => RING_SPRITE_BASE + gems.gem(kind) as u16,
+            None => self.sprite_index,
+        }
     }
 }
 
@@ -934,7 +1000,64 @@ pub fn item(item_id: ItemId) -> &'static ItemDefinition {
 
 #[cfg(test)]
 mod tests {
-    use super::{ITEMS, ItemId, item, item_by_stable_id};
+    use super::{ITEMS, ItemId, RING_SPRITE_BASE, item, item_by_stable_id};
+    use crate::run::{RingGem, RingGems, RingKind};
+
+    #[test]
+    fn ring_classes_own_the_gem_block_in_their_own_order() {
+        // The catalog's per-class cells are the gem block read as if the run
+        // had not shuffled it, which is exactly what a seedless surface wants
+        // and what makes the class index double as its glyph index.
+        for (offset, kind) in [
+            RingKind::Accuracy,
+            RingKind::Arcana,
+            RingKind::Elements,
+            RingKind::Energy,
+            RingKind::Evasion,
+            RingKind::Force,
+            RingKind::Furor,
+            RingKind::Haste,
+            RingKind::Might,
+            RingKind::Sharpshooting,
+            RingKind::Tenacity,
+            RingKind::Wealth,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let definition = ITEMS
+                .iter()
+                .find(|definition| definition.ring_kind() == Some(kind))
+                .expect("every ring class is in the catalog");
+            let offset = u16::try_from(offset).expect("twelve ring classes fit u16");
+            assert_eq!(definition.sprite_index, RING_SPRITE_BASE + offset);
+            assert_eq!(
+                definition.ring_glyph_index(),
+                Some(u8::try_from(offset).expect("twelve ring classes fit u8"))
+            );
+            assert_eq!(
+                definition.sprite_index_in(RingGems::UNSHUFFLED),
+                definition.sprite_index
+            );
+        }
+    }
+
+    #[test]
+    fn only_rings_move_with_the_run_gems() {
+        // A run that gives every class the last gem must move every ring onto
+        // that one cell and leave everything else exactly where it was.
+        let all_diamond = RingGems::from_ordinals([RingGem::Diamond as u8; 12]);
+        assert!(all_diamond.is_none(), "a gem table must be a permutation");
+        let reversed = RingGems::from_ordinals([11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0])
+            .expect("a reversed table is still a permutation");
+        for definition in ITEMS {
+            let drawn = definition.sprite_index_in(reversed);
+            match definition.ring_glyph_index() {
+                Some(glyph) => assert_eq!(drawn, RING_SPRITE_BASE + 11 - u16::from(glyph)),
+                None => assert_eq!(drawn, definition.sprite_index),
+            }
+        }
+    }
 
     #[test]
     fn compact_ids_are_catalog_indices() {

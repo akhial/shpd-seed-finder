@@ -106,7 +106,8 @@ pub enum RingKind {
     Wealth,
 }
 
-/// Ring gems in the insertion order of `Ring.gems`.
+/// Ring gems in the insertion order of `Ring.gems`, which is also the order
+/// `ItemSpriteSheet.RINGS` lays their sprites out in.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(u8)]
 pub enum RingGem {
@@ -124,6 +125,81 @@ pub enum RingGem {
     Diamond,
 }
 
+impl RingGem {
+    /// Every gem in `Ring.gems` order, so an ordinal maps back to its gem.
+    pub const ALL: [Self; APPEARANCE_COUNT] = [
+        Self::Garnet,
+        Self::Ruby,
+        Self::Topaz,
+        Self::Emerald,
+        Self::Onyx,
+        Self::Opal,
+        Self::Tourmaline,
+        Self::Sapphire,
+        Self::Amethyst,
+        Self::Quartz,
+        Self::Agate,
+        Self::Diamond,
+    ];
+}
+
+/// The gems one run assigns to the twelve ring classes.
+///
+/// Upstream's `ItemStatusHandler` shuffles `Ring.gems` once per run and hands
+/// each ring class the gem at its own index, so the gem is what the player
+/// actually sees: `ItemSpriteSheet.RINGS` is laid out in `Ring.gems` order, and
+/// a ring's atlas cell is therefore [`crate::catalog::RING_SPRITE_BASE`] plus
+/// its gem's ordinal. Ring *classes* keep their own contiguous cells in the
+/// catalog for seedless surfaces such as the query editor; this table is what
+/// turns a class into the cell a given run draws it in.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RingGems([RingGem; APPEARANCE_COUNT]);
+
+impl RingGems {
+    /// `Ring.gems` in insertion order — the table before any run shuffles it.
+    /// Every ring class lands on the cell the catalog gives it, which is what
+    /// a seedless surface renders.
+    pub const UNSHUFFLED: Self = Self(RingGem::ALL);
+
+    /// The gem this run gave `kind`.
+    #[must_use]
+    pub const fn gem(&self, kind: RingKind) -> RingGem {
+        self.0[kind as usize]
+    }
+
+    /// The twelve gem ordinals in [`RingKind`] order — the wire and bridge
+    /// form of the table.
+    #[must_use]
+    pub const fn ordinals(&self) -> [u8; APPEARANCE_COUNT] {
+        let mut ordinals = [0; APPEARANCE_COUNT];
+        let mut index = 0;
+        while index < APPEARANCE_COUNT {
+            ordinals[index] = self.0[index] as u8;
+            index += 1;
+        }
+        ordinals
+    }
+
+    /// Reads a table back from its [`Self::ordinals`] form.
+    ///
+    /// Returns `None` unless the ordinals are a permutation of `0..12`: a
+    /// shuffle gives every class a distinct gem, so anything else is a
+    /// corrupt table rather than an unusual run.
+    #[must_use]
+    pub fn from_ordinals(ordinals: [u8; APPEARANCE_COUNT]) -> Option<Self> {
+        let mut seen = [false; APPEARANCE_COUNT];
+        let mut gems = [RingGem::Garnet; APPEARANCE_COUNT];
+        for (gem, &ordinal) in gems.iter_mut().zip(ordinals.iter()) {
+            let slot = seen.get_mut(usize::from(ordinal))?;
+            if std::mem::replace(slot, true) {
+                return None;
+            }
+            *gem = RingGem::ALL[usize::from(ordinal)];
+        }
+        Some(Self(gems))
+    }
+}
+
 /// The three per-run item-appearance permutations.
 ///
 /// Each array is indexed by its corresponding `*Kind` enum and contains the
@@ -132,7 +208,7 @@ pub enum RingGem {
 pub struct ItemAppearanceState {
     pub scroll_labels: [ScrollLabel; APPEARANCE_COUNT],
     pub potion_colors: [PotionColor; APPEARANCE_COUNT],
-    pub ring_gems: [RingGem; APPEARANCE_COUNT],
+    pub ring_gems: RingGems,
 }
 
 impl ItemAppearanceState {
@@ -151,7 +227,7 @@ impl ItemAppearanceState {
     /// Returns the gem assigned to a ring class.
     #[must_use]
     pub const fn ring_gem(&self, kind: RingKind) -> RingGem {
-        self.ring_gems[kind as usize]
+        self.ring_gems.gem(kind)
     }
 }
 
@@ -588,23 +664,7 @@ fn init_appearances(random: &mut RandomStack) -> ItemAppearanceState {
             PotionColor::Ivory,
         ],
     );
-    let ring_gems = draw_item_status_permutation(
-        random,
-        [
-            RingGem::Garnet,
-            RingGem::Ruby,
-            RingGem::Topaz,
-            RingGem::Emerald,
-            RingGem::Onyx,
-            RingGem::Opal,
-            RingGem::Tourmaline,
-            RingGem::Sapphire,
-            RingGem::Amethyst,
-            RingGem::Quartz,
-            RingGem::Agate,
-            RingGem::Diamond,
-        ],
-    );
+    let ring_gems = RingGems(draw_item_status_permutation(random, RingGem::ALL));
     ItemAppearanceState {
         scroll_labels,
         potion_colors,
@@ -802,7 +862,48 @@ const GOLD_PROBS: [f32; 1] = [1.0];
 
 #[cfg(test)]
 mod tests {
-    use super::{GeneratorCategory, RunState};
+    use super::{GeneratorCategory, RingGem, RingGems, RingKind, RunState};
+
+    /// The seed whose haste ring the game draws as a diamond.
+    const DIAMOND_HASTE_SEED: i64 = 5_094_463_672_158;
+
+    #[test]
+    fn a_run_draws_the_gems_the_game_shows() {
+        // Checked against the Java oracle for YKH-LGJ-WDQ, whose haste ring
+        // the game draws as a diamond — the case that showed every frontend
+        // was painting ring classes instead of run gems.
+        let gems = RunState::new(DIAMOND_HASTE_SEED).appearances.ring_gems;
+        assert_eq!(gems.gem(RingKind::Accuracy), RingGem::Sapphire);
+        assert_eq!(gems.gem(RingKind::Haste), RingGem::Diamond);
+        assert_eq!(gems.ordinals(), [7, 8, 3, 5, 4, 6, 2, 11, 10, 1, 0, 9]);
+    }
+
+    #[test]
+    fn a_gem_table_survives_its_ordinals_and_rejects_corruption() {
+        let gems = RunState::new(DIAMOND_HASTE_SEED).appearances.ring_gems;
+        assert_eq!(RingGems::from_ordinals(gems.ordinals()), Some(gems));
+        assert_eq!(
+            RingGems::from_ordinals(RingGems::UNSHUFFLED.ordinals()),
+            Some(RingGems::UNSHUFFLED)
+        );
+        // A repeat and an out-of-range gem are both corruption, not a run.
+        assert!(RingGems::from_ordinals([0, 0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]).is_none());
+        assert!(RingGems::from_ordinals([12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]).is_none());
+    }
+
+    #[test]
+    fn challenges_do_not_move_the_gems() {
+        // The appearances are drawn before Dungeon.init() looks at a single
+        // challenge, so a challenged world's rings look like the plain one's.
+        let challenged = RunState::with_challenges(
+            DIAMOND_HASTE_SEED,
+            crate::challenges::Challenges::new(crate::challenges::Challenges::MAX_VALUE).unwrap(),
+        );
+        assert_eq!(
+            challenged.appearances.ring_gems,
+            RunState::new(DIAMOND_HASTE_SEED).appearances.ring_gems
+        );
+    }
 
     const ABC_SEED: i64 = 8_687_205_886;
 
@@ -818,7 +919,7 @@ mod tests {
             [10, 9, 5, 0, 4, 11, 7, 2, 8, 3, 6, 1]
         );
         assert_eq!(
-            state.appearances.ring_gems.map(|value| value as u8),
+            state.appearances.ring_gems.ordinals(),
             [7, 3, 9, 0, 2, 1, 5, 4, 8, 11, 6, 10]
         );
     }

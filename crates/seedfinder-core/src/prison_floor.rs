@@ -304,6 +304,7 @@ fn generate_prison_world_with_roots(
         seed,
         items,
         quests: quests.summary(),
+        ring_gems: run.appearances.ring_gems,
     })
 }
 

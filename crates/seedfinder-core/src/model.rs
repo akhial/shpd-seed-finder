@@ -3,6 +3,7 @@
 use crate::catalog::{Effect, ItemId};
 use crate::equipment::EquipmentRoll;
 use crate::quests::QuestSummary;
+use crate::run::RingGems;
 use crate::seed::DungeonSeed;
 
 /// Where an item can be obtained in the generated world.
@@ -152,4 +153,10 @@ pub struct GeneratedWorld {
     pub items: Vec<WorldItem>,
     /// Quest variants rolled while generating the requested prefix.
     pub quests: QuestSummary,
+    /// The gem this run gave each ring class, and so the `items.png` cell every
+    /// ring in [`Self::items`] is drawn in. Like [`Self::quests`] this belongs
+    /// to the run rather than to any one item: `Dungeon.init()` shuffles
+    /// `Ring.gems` once, before the first floor exists. Resolve a cell with
+    /// [`crate::catalog::ItemDefinition::sprite_index_in`].
+    pub ring_gems: RingGems,
 }

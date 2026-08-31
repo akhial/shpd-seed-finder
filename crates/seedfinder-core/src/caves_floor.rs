@@ -328,6 +328,7 @@ fn generate_caves_world_with_roots(
         seed,
         items,
         quests: quests.summary(),
+        ring_gems: run.appearances.ring_gems,
     })
 }
 
