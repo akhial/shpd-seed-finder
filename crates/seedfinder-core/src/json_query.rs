@@ -552,14 +552,12 @@ pub fn encode(query: &SearchQuery) -> Value {
     Value::Object(document)
 }
 
-/// The order effect lists are written in: the shared catalog asset's —
-/// enchantments (glyphs) alphabetically, then curses alphabetically — which
+/// The order effect lists are written in: the shared catalog asset's — the
+/// game journal's, enchantments (glyphs) by rarity, then the curses — which
 /// every frontend already holds, so documents stay byte-identical across
-/// platforms without any of them learning the engine's upstream ordering.
+/// platforms. [`EffectSet::effects`] already iterates in that order.
 fn document_effect_order(set: EffectSet) -> Vec<Effect> {
-    let mut effects: Vec<Effect> = set.effects().collect();
-    effects.sort_by_key(|effect| (effect.is_curse(), effect.wire_name().to_ascii_lowercase()));
-    effects
+    set.effects().collect()
 }
 
 fn encode_requirement(requirement: &Requirement) -> Value {
@@ -993,7 +991,7 @@ mod tests {
                 "requirements": [
                     {"any_of": [
                         {"kind": "weapon", "item": "spear", "upgrade": 3},
-                        // Enchantments alphabetically, then curses alphabetically.
+                        // Journal order: enchantments by rarity, then the curses.
                         {"kind": "thrown_weapon",
                          "effect": ["Blazing", "Blocking", "Projecting", "Annoying", "Sacrificial"]},
                     ]},

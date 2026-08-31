@@ -22,25 +22,24 @@ const DEFAULT_PERIOD = 1
 // `wire_name` in seedfinder-core). Only non-curse effects live here; every curse
 // glows black and is handled by CURSE_GLOW below.
 const ENCHANT_GLOW: Record<string, Glow> = {
-  // Weapon enchantments
+  // Weapon enchantments, in the catalog's journal order
   Blazing: { color: '#ff4400', period: DEFAULT_PERIOD },
   Chilling: { color: '#00ffff', period: DEFAULT_PERIOD },
   Kinetic: { color: '#ffff00', period: DEFAULT_PERIOD },
   Shocking: { color: '#ffffff', period: 0.5 },
+  Venomous: { color: '#4400aa', period: DEFAULT_PERIOD },
   Blocking: { color: '#0000ff', period: DEFAULT_PERIOD },
   Blooming: { color: '#008800', period: DEFAULT_PERIOD },
+  Eldritch: { color: '#222222', period: DEFAULT_PERIOD },
   Elastic: { color: '#ff00ff', period: DEFAULT_PERIOD },
   Lucky: { color: '#00ff00', period: DEFAULT_PERIOD },
   Projecting: { color: '#8844cc', period: DEFAULT_PERIOD },
   Unstable: { color: '#999999', period: DEFAULT_PERIOD },
+  Vorpal: { color: '#aa6666', period: DEFAULT_PERIOD },
   Corrupting: { color: '#440066', period: DEFAULT_PERIOD },
+  Crystal: { color: '#0088ff', period: DEFAULT_PERIOD },
   Grim: { color: '#000000', period: DEFAULT_PERIOD },
   Vampiric: { color: '#660022', period: DEFAULT_PERIOD },
-  // Weapon enchantments v4.0.0 added, after the block above.
-  Venomous: { color: '#4400aa', period: DEFAULT_PERIOD },
-  Eldritch: { color: '#222222', period: DEFAULT_PERIOD },
-  Vorpal: { color: '#aa6666', period: DEFAULT_PERIOD },
-  Crystal: { color: '#0088ff', period: DEFAULT_PERIOD },
   // Armor glyphs
   Obfuscation: { color: '#888888', period: DEFAULT_PERIOD },
   Swiftness: { color: '#ffff00', period: DEFAULT_PERIOD },

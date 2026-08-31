@@ -3,8 +3,9 @@ import XCTest
 
 final class DeepLinkTests: XCTestCase {
     /// Cross-platform pinned vector: this query and this link must stay
-    /// interchangeable on every platform, forever. Never edit the link.
-    private static let pinnedLink = "https://shpd-seed-seeker.web.app/#q=EAGWhMA"
+    /// interchangeable on every platform. Re-frozen when the retired link
+    /// formats were dropped alongside the journal-order effect table.
+    private static let pinnedLink = "https://shpd-seed-seeker.web.app/#q=MAGWhMAA"
 
     private func pinnedQuery() throws -> SavedQuery {
         SavedQuery(requirements: [
@@ -18,7 +19,7 @@ final class DeepLinkTests: XCTestCase {
     }
 
     func testPinnedVectorDecodesFromEveryLinkForm() throws {
-        for text in [Self.pinnedLink, "EAGWhMA", "seedseeker://q/EAGWhMA"] {
+        for text in [Self.pinnedLink, "MAGWhMAA", "seedseeker://q/MAGWhMAA"] {
             let query = try DeepLink.decode(text)
             XCTAssertEqual(query.requirements.count, 1, text)
             let requirement = try XCTUnwrap(query.requirements.first)
@@ -78,7 +79,7 @@ final class DeepLinkTests: XCTestCase {
         for index in expected.indices { expected[index].key = 0 }
         for index in actual.indices { actual[index].key = 0 }
         XCTAssertEqual(expected, actual)
-        XCTAssertEqual(actual.first?.effect, .oneOf(["Crystal", "Vorpal"]))
+        XCTAssertEqual(actual.first?.effect, .oneOf(["Vorpal", "Crystal"]))
         XCTAssertEqual(actual.first?.source, .vaultTreasure)
     }
 

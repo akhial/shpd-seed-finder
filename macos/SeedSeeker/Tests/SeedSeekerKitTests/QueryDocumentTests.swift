@@ -79,7 +79,7 @@ final class QueryDocumentTests: XCTestCase {
         let glyphs = try ItemRequirement(key: 2, item: nil, upgrade: 0,
                                          effect: .oneOf(["Viscosity", "Bulk", "Affection", "Anti-Entropy"]),
                                          kind: .armor, upgradeMatch: .any)
-        XCTAssertEqual(glyphs.effect, .oneOf(["Affection", "Viscosity", "Anti-Entropy", "Bulk"]))
+        XCTAssertEqual(glyphs.effect, .oneOf(["Viscosity", "Affection", "Anti-Entropy", "Bulk"]))
         try assertEngineAgrees(SavedQuery(requirements: [glyphs]))
     }
 

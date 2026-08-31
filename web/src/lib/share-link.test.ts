@@ -7,8 +7,8 @@ import type { QueryState } from './wasm/types'
 
 describe('share link fragments', () => {
   it('detects share codes in fragments', () => {
-    expect(hasShareCode('#q=EAGWhMA')).toBe(true)
-    expect(hasShareCode('#other&q=EAGWhMA')).toBe(true)
+    expect(hasShareCode('#q=MAGWhMAA')).toBe(true)
+    expect(hasShareCode('#other&q=MAGWhMAA')).toBe(true)
     expect(hasShareCode('')).toBe(false)
     expect(hasShareCode('#')).toBe(false)
     expect(hasShareCode('#squire')).toBe(false)
@@ -16,7 +16,7 @@ describe('share link fragments', () => {
   })
 
   it('strips the fragment from an href', () => {
-    expect(withoutFragment('https://x.app/#q=EAGWhMA')).toBe('https://x.app/')
+    expect(withoutFragment('https://x.app/#q=MAGWhMAA')).toBe('https://x.app/')
     expect(withoutFragment('https://x.app/')).toBe('https://x.app/')
   })
 })
@@ -42,10 +42,9 @@ describe('share link codes', () => {
     expect(JSON.parse(decode_share_text(link))).toEqual(JSON.parse(toQueryJson(state)))
   })
 
-  it('carries the effects v4.0.0 appended, which need format version 3', () => {
-    // Their codes sit above the 24-bit effect mask versions 1 and 2 use, so
-    // the engine writes version 3 for them; the app only has to keep the
-    // round trip lossless.
+  it('carries the effects v4.0.0 added', () => {
+    // The engine owns the link format; the app only has to keep the round
+    // trip lossless.
     const state = query({ requirements: [
       { ...base, kind: 'weapon', effect: ['Blazing', 'Venomous', 'Eldritch', 'Vorpal', 'Crystal'] },
       { ...base, kind: 'weapon', effect: ['Pressurized', 'Wondrous'] },
