@@ -3,10 +3,13 @@ param(
     # Defaults to the host architecture; pass ARM64 or x64 to cross-build.
     [ValidateSet('ARM64','x64')][string]$Platform = $(
         if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'ARM64' } else { 'x64' }
-    )
+    ),
+    # 'avx2' builds the engine for the x86-64-v3 microarchitecture level, which
+    # the release workflow publishes as a separate x64 download. x64 only.
+    [ValidateSet('baseline','avx2')][string]$EngineIsa = 'baseline'
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $env:DOTNET_CLI_HOME = Join-Path $root '.dotnet-home'
 $env:NUGET_PACKAGES = Join-Path $root '.nuget-packages'
-dotnet build "$root\windows\SeedSeeker\SeedSeeker.csproj" -c $Configuration -p:Platform=$Platform
+dotnet build "$root\windows\SeedSeeker\SeedSeeker.csproj" -c $Configuration -p:Platform=$Platform -p:EngineIsa=$EngineIsa

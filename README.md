@@ -54,14 +54,22 @@ Binaries are published on the [GitHub Releases page](https://github.com/akhial/s
 | Asset | Platforms |
 | --- | --- |
 | `seed-seeker-cli-<tag>-<target>.tar.gz` / `.zip` | CLI for Linux (x86_64, arm64), macOS (Apple Silicon, Intel), and Windows (x86_64, arm64) |
+| `seed-seeker-cli-<tag>-<target>-avx2.tar.gz` / `.zip` | Same CLI built for AVX2 x86-64 machines |
 | `seed-seeker-<tag>-<arch>.AppImage` | Native Linux app (x86_64, arm64) |
 | `seed-seeker-<tag>-macos-arm64.dmg` | Native macOS app (Apple Silicon, macOS 14+) |
 | `seed-seeker-<tag>-windows-<arch>.zip` | Native Windows app (x64, ARM64) |
+| `seed-seeker-<tag>-windows-x64-avx2.zip` | Same Windows app built for AVX2 x86-64 machines |
 | `seed-seeker-<tag>-android.apk` | Android app (arm64-v8a and x86_64) |
 
 - The Windows app requires the
   [Windows App SDK 1.8 runtime](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/downloads)
   to be installed.
+- The `-avx2` downloads are compiled for the **x86-64-v3** microarchitecture
+  level — Intel Haswell (2013) and AMD Excavator (2015) onwards — and search
+  roughly 9% faster. They crash with an illegal-instruction fault on older
+  x86-64 chips, so the unsuffixed downloads remain the portable default.
+  Nothing else differs: both find exactly the same seeds. ARM64 needs no
+  variant, as AArch64 mandates the equivalent instructions.
 
 ### CLI
 
@@ -345,6 +353,10 @@ The Windows app requires Visual Studio with the WinUI application development an
 ```
 
 The script builds for the host architecture; pass `-Platform ARM64` or `-Platform x64` to cross-build, and `-Configuration Debug` for a debug build. To build and run, open `windows\SeedSeeker\SeedSeeker.slnx` in Visual Studio and press F5, or launch the built `SeedSeeker.exe` under `windows\SeedSeeker\bin\`.
+
+Pass `-EngineIsa avx2` to build the engine for the x86-64-v3 microarchitecture
+level, which is what the release workflow publishes as the extra
+`-windows-x64-avx2.zip` download.
 
 #### Profile-guided optimization
 
