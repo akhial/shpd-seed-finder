@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package dev.seedseeker.app.engine
 
+import dev.seedseeker.app.catalog.ItemCatalog
+import dev.seedseeker.app.catalog.PackagedCatalog
+import dev.seedseeker.app.model.CatalogItem
 import dev.seedseeker.app.model.Challenge
 import dev.seedseeker.app.model.EMPTY_BOSS_FLOORS
 import dev.seedseeker.app.model.FLOOR_LIMIT_OPTIONS
@@ -9,6 +12,7 @@ import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.ScoutQuestGiver
 import dev.seedseeker.app.model.SearchLimits
 import dev.seedseeker.app.model.SearchRequest
+import dev.seedseeker.app.model.TierMatch
 import dev.seedseeker.app.model.UpgradeMatch
 import dev.seedseeker.app.ui.RESULT_CAP
 import org.json.JSONObject
@@ -23,6 +27,10 @@ import org.junit.Test
  * fails here rather than as a sheet offering a query the search refuses.
  */
 class EngineConstantsTest {
+    init {
+        PackagedCatalog.install()
+    }
+
     private val info = JSONObject(String(JniBindings.engineInfo(), Charsets.UTF_8))
     private val limits = info.getJSONObject("limits")
     private val anyWand = ItemRequirement(key = 1, item = null, upgrade = 0, kind = ItemKind.WAND, upgradeMatch = UpgradeMatch.ANY)
@@ -44,7 +52,31 @@ class EngineConstantsTest {
         for (kind in ItemKind.entries) {
             assertEquals(kind.label, byKind.getInt(kind.family.name.lowercase()), kind.maximumSearchUpgrade)
         }
+        assertEquals(limits.getInt("maxUpgradeAnyTier"), SearchLimits.MAX_UPGRADE_ANY_TIER)
+        assertEquals(limits.getInt("extraUpgradeTier"), SearchLimits.EXTRA_UPGRADE_TIER)
         assertEquals(SearchLimits.MAX_DEPTH, SearchRequest(listOf(anyWand)).maximumDepth)
+    }
+
+    /**
+     * Only a tier-4 weapon is levelled past the shared ceiling, so a
+     * requirement that rules that tier out loses the top of its range.
+     */
+    @Test
+    fun topWeaponUpgradeNeedsTheTierThatReachesIt() {
+        val ceiling = limits.getInt("maxUpgradeWeapon")
+        val capped = limits.getInt("maxUpgradeAnyTier")
+        val extraTier = limits.getInt("extraUpgradeTier")
+        val maximum = { item: CatalogItem?, match: TierMatch, tier: Int ->
+            SearchLimits.maximumUpgrade(ItemKind.WEAPON, item, match, tier)
+        }
+        assertEquals(ceiling, maximum(null, TierMatch.ANY, 0))
+        assertEquals(ceiling, maximum(null, TierMatch.EXACT, extraTier))
+        assertEquals(capped, maximum(null, TierMatch.EXACT, 5))
+        assertEquals(capped, maximum(null, TierMatch.AT_MOST, 3))
+        assertEquals(ceiling, maximum(ItemCatalog.findById("battle_axe"), TierMatch.ANY, 0))
+        assertEquals(ceiling, maximum(ItemCatalog.findById("javelin"), TierMatch.ANY, 0))
+        assertEquals(capped, maximum(ItemCatalog.findById("sword"), TierMatch.ANY, 0))
+        assertEquals(capped, SearchLimits.maximumUpgrade(ItemKind.ARMOR, null, TierMatch.EXACT, extraTier))
     }
 
     @Test

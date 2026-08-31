@@ -7,7 +7,8 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use shpd_seedfinder_core::catalog::{
-    ALL_ARMOR_EFFECTS, ALL_WEAPON_EFFECTS, Effect, ITEMS, ItemDefinition, ItemId, ItemKind,
+    ALL_ARMOR_EFFECTS, ALL_WEAPON_EFFECTS, EXTRA_UPGRADE_TIER, Effect, ITEMS, ItemDefinition,
+    ItemId, ItemKind, MAX_GENERATED_UPGRADE, item,
 };
 use shpd_seedfinder_core::main_world::normalize_floor_limit;
 use shpd_seedfinder_core::model::ItemSource;
@@ -319,11 +320,18 @@ fn connect(editor: &Rc<Editor>) {
                 // Only a named item can count its levels together.
                 editor.levels_switch.set_active(false);
             }
+            // The item's own tier decides how far its upgrade reaches.
+            normalize_upgrades(editor);
+            refresh_levels_range(editor);
             refresh_visibility(editor);
         }));
     editor
         .tier_row
-        .connect_selected_notify(hook(Rc::clone(editor), refresh_visibility));
+        .connect_selected_notify(hook(Rc::clone(editor), |editor| {
+            normalize_upgrades(editor);
+            refresh_levels_range(editor);
+            refresh_visibility(editor);
+        }));
     editor
         .exact_tier
         .connect_value_notify(hook(Rc::clone(editor), |editor| {
@@ -332,6 +340,8 @@ fn connect(editor: &Rc<Editor>) {
             editor
                 .bounded_tier
                 .set_selected(u32::from(tier.clamp(3, 4) - 3));
+            normalize_upgrades(editor);
+            refresh_levels_range(editor);
         }));
     editor
         .bounded_tier
@@ -339,6 +349,8 @@ fn connect(editor: &Rc<Editor>) {
             editor
                 .exact_tier
                 .set_value(f64::from(editor.bounded_tier.selected() + 3));
+            normalize_upgrades(editor);
+            refresh_levels_range(editor);
         }));
     editor
         .upgrade_row
@@ -425,7 +437,7 @@ fn restore(editor: &Rc<Editor>, requirement: &UiRequirement, stack: StackShape) 
         UpgradeRequirement::Any => editor.upgrade_row.set_selected(0),
         UpgradeRequirement::Exact(upgrade) => {
             editor.upgrade_row.set_selected(1);
-            let maximum = selected_kind(editor).maximum_search_upgrade();
+            let maximum = selected_upgrade_ceiling(editor);
             editor
                 .exact_upgrade
                 .set_value(f64::from(upgrade.clamp(1, maximum)));
@@ -471,19 +483,7 @@ fn restore(editor: &Rc<Editor>, requirement: &UiRequirement, stack: StackShape) 
 fn collect(editor: &Rc<Editor>) -> (UiRequirement, usize, Option<u8>, Option<u8>) {
     let (kind, weapon_category) = selected_choice(editor);
     let item = selected_item(editor);
-    let tier_eligible = item.is_none() && matches!(kind, ItemKind::Weapon | ItemKind::Armor);
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let exact_tier = editor.exact_tier.value().round() as u8;
-    let bounded_tier = u8::try_from(editor.bounded_tier.selected())
-        .map_or(BOUNDED_TIER_MIN, |offset| {
-            BOUNDED_TIER_MIN.saturating_add(offset)
-        });
-    let tier = match editor.tier_row.selected() {
-        1 if tier_eligible => TierRequirement::Exact(exact_tier),
-        2 if tier_eligible => TierRequirement::AtLeast(bounded_tier),
-        3 if tier_eligible => TierRequirement::AtMost(bounded_tier),
-        _ => TierRequirement::Any,
-    };
+    let tier = selected_tier(editor);
     let upgrade = selected_upgrade(editor);
     let source = match editor.source_row.selected() {
         0 => None,
@@ -568,6 +568,46 @@ fn selected_item(editor: &Rc<Editor>) -> Option<ItemId> {
         .flatten()
 }
 
+/// The tier predicate the pickers currently describe. A named item carries
+/// its own tier, so the filter only applies to wildcard equipment.
+fn selected_tier(editor: &Rc<Editor>) -> TierRequirement {
+    let kind = selected_kind(editor);
+    if selected_item(editor).is_some() || !matches!(kind, ItemKind::Weapon | ItemKind::Armor) {
+        return TierRequirement::Any;
+    }
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let exact_tier = editor.exact_tier.value().round() as u8;
+    let bounded_tier = u8::try_from(editor.bounded_tier.selected())
+        .map_or(BOUNDED_TIER_MIN, |offset| {
+            BOUNDED_TIER_MIN.saturating_add(offset)
+        });
+    match editor.tier_row.selected() {
+        1 => TierRequirement::Exact(exact_tier),
+        2 => TierRequirement::AtLeast(bounded_tier),
+        3 => TierRequirement::AtMost(bounded_tier),
+        _ => TierRequirement::Any,
+    }
+}
+
+/// The highest upgrade the current selection may name: only a tier-4 weapon
+/// is levelled past [`MAX_GENERATED_UPGRADE`], so naming an item of another
+/// tier — or filtering tier 4 away — lowers the ceiling.
+fn selected_upgrade_ceiling(editor: &Rc<Editor>) -> u8 {
+    let ceiling = selected_kind(editor).maximum_search_upgrade();
+    if ceiling <= MAX_GENERATED_UPGRADE {
+        return ceiling;
+    }
+    let reaches_the_extra_tier = match selected_item(editor) {
+        Some(id) => item(id).tier == Some(EXTRA_UPGRADE_TIER),
+        None => selected_tier(editor).matches(Some(EXTRA_UPGRADE_TIER)),
+    };
+    if reaches_the_extra_tier {
+        ceiling
+    } else {
+        MAX_GENERATED_UPGRADE
+    }
+}
+
 fn selected_upgrade(editor: &Rc<Editor>) -> UpgradeRequirement {
     let kind = selected_kind(editor);
     match editor.upgrade_row.selected() {
@@ -648,7 +688,7 @@ fn selected_total(editor: &Rc<Editor>) -> u8 {
 /// The most levels the stack could reach: every item counts its upgrade plus
 /// one, and a member of a combined-level stack may carry any upgrade.
 fn levels_capacity(editor: &Rc<Editor>) -> u8 {
-    let per_item = selected_kind(editor).maximum_search_upgrade() + 1;
+    let per_item = selected_upgrade_ceiling(editor) + 1;
     u8::try_from(selected_count(editor))
         .unwrap_or(1)
         .saturating_mul(per_item)
@@ -788,7 +828,7 @@ fn effect_label(name: &str, is_curse: bool) -> String {
 }
 
 fn normalize_upgrades(editor: &Rc<Editor>) {
-    let maximum_upgrade = selected_kind(editor).maximum_search_upgrade();
+    let maximum_upgrade = selected_upgrade_ceiling(editor);
     let maximum = f64::from(maximum_upgrade);
     let adjustment = editor.exact_upgrade.adjustment();
     adjustment.set_lower(1.0);
@@ -827,7 +867,7 @@ fn refresh_levels_range(editor: &Rc<Editor>) {
 }
 
 fn populate_minimum_upgrades(editor: &Rc<Editor>, selection: u8) {
-    let maximum = selected_kind(editor).maximum_search_upgrade();
+    let maximum = selected_upgrade_ceiling(editor);
     let labels = minimum_upgrade_labels(maximum);
     editor
         .minimum_upgrade
@@ -839,7 +879,7 @@ fn populate_minimum_upgrades(editor: &Rc<Editor>, selection: u8) {
 
 fn set_minimum_upgrade(editor: &Rc<Editor>, upgrade: u8) {
     populate_minimum_upgrades(editor, upgrade);
-    let maximum = selected_kind(editor).maximum_search_upgrade();
+    let maximum = selected_upgrade_ceiling(editor);
     editor
         .ring_minimum_upgrade
         .set_value(f64::from(upgrade.clamp(1, maximum - 1)));

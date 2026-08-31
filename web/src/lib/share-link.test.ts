@@ -36,7 +36,8 @@ describe('share link codes', () => {
   const base = { tier: { mode: 'any' as const, value: 3 }, upgrade: { mode: 'any' as const, value: 1 }, uncursed: false }
 
   it('round-trips a query through a shareable link', () => {
-    const state = query({ requirements: [{ ...base, kind: 'weapon', item: 'sword', upgrade: { mode: 'exact', value: 5 } }] })
+    // A +5 needs a tier-4 weapon; the Battle axe is one.
+    const state = query({ requirements: [{ ...base, kind: 'weapon', item: 'battle_axe', upgrade: { mode: 'exact', value: 5 } }] })
     const link = encode_share_link(toQueryJson(state))
     expect(hasShareCode(new URL(link).hash)).toBe(true)
     expect(JSON.parse(decode_share_text(link))).toEqual(JSON.parse(toQueryJson(state)))

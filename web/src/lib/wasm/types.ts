@@ -134,6 +134,8 @@ export interface EngineLimits {
   maxUpgradeDefault: number
   maxUpgradeRing: number
   maxUpgradeWeapon: number
+  maxUpgradeAnyTier: number
+  extraUpgradeTier: number
   resultsFileMaxBytes: number
 }
 

@@ -406,10 +406,20 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertNoThrow(try ItemRequirement(key: 1, item: nil, upgrade: 4, kind: .ring, upgradeMatch: .atLeast))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 5, kind: .ring, upgradeMatch: .atLeast))
         // v4.0.0's ceilings: the vault's tier-4 prizes take weapons to +5,
-        // every other family to +4.
+        // every other family — and every other tier — to +4.
         XCTAssertNoThrow(try ItemRequirement(key: 1, item: nil, upgrade: 5, kind: .weapon, upgradeMatch: .exactly))
         XCTAssertNoThrow(try ItemRequirement(key: 1, item: nil, upgrade: 5, kind: .thrownWeapon, upgradeMatch: .exactly))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 6, kind: .weapon, upgradeMatch: .exactly))
+        XCTAssertNoThrow(try ItemRequirement(key: 1, item: nil, upgrade: 5, kind: .weapon, tier: 4,
+                                             tierMatch: .exactly, upgradeMatch: .exactly))
+        XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 5, kind: .weapon, tier: 5,
+                                                 tierMatch: .exactly, upgradeMatch: .exactly))
+        XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 5, kind: .weapon, tier: 3,
+                                                 tierMatch: .atMost, upgradeMatch: .exactly))
+        XCTAssertNoThrow(try ItemRequirement(key: 1, item: ItemCatalog.findById("battle_axe"), upgrade: 5,
+                                             kind: .weapon, upgradeMatch: .exactly))
+        XCTAssertThrowsError(try ItemRequirement(key: 1, item: ItemCatalog.findById("greatsword"), upgrade: 5,
+                                                 kind: .weapon, upgradeMatch: .exactly))
         XCTAssertNoThrow(try ItemRequirement(key: 1, item: nil, upgrade: 4, kind: .armor, upgradeMatch: .exactly))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 5, kind: .armor, upgradeMatch: .exactly))
         XCTAssertThrowsError(try ItemRequirement(key: 1, item: nil, upgrade: 5, kind: .wand, upgradeMatch: .exactly))

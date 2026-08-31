@@ -1,5 +1,28 @@
 //! Stable, version-pinned catalog for searchable equipment.
 
+/// Highest upgrade the generator puts on any item, whatever its kind or tier.
+///
+/// v4.0.0's Imp vault sets the ceiling: its final-room options are levelled to
+/// `+2..=+4`, above anything the rest of the dungeon rolls.
+pub const MAX_GENERATED_UPGRADE: u8 = 4;
+
+/// The one weapon tier that reaches [`EXTRA_UPGRADE_MAXIMUM`], a
+/// v4.0.0-BETA-3 quirk of `Imp.Quest.rewardOptions`.
+///
+/// The vault lays out one melee and one thrown weapon, one of tier 4 and one
+/// of tier 5, and levels them by tier rather than alike: whichever is tier 4
+/// rolls `Random.IntRange(3, 5)` while the tier-5 one rolls
+/// `Random.IntRange(2, 4)`. So a `+5` exists in the game only on a tier-4
+/// weapon — melee or thrown — and nowhere else.
+///
+/// When upstream levels the two ranges, delete this constant together with
+/// [`EXTRA_UPGRADE_MAXIMUM`] and every `maximum_search_upgrade` caller falls
+/// back to [`MAX_GENERATED_UPGRADE`].
+pub const EXTRA_UPGRADE_TIER: u8 = 4;
+
+/// Highest upgrade a tier-4 weapon can carry; see [`EXTRA_UPGRADE_TIER`].
+pub const EXTRA_UPGRADE_MAXIMUM: u8 = 5;
+
 /// Broad item family exposed by the query UI.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(u8)]
@@ -12,14 +35,21 @@ pub enum ItemKind {
 
 impl ItemKind {
     /// Highest upgrade any generated item of this kind can carry, and so the
-    /// highest value a requirement may ask for. v4.0.0's Imp vault sets the
-    /// ceilings: its final-room options reach +5 on a tier-4 weapon or thrown
-    /// weapon, +4 on plate armor, wands and rings.
+    /// highest value a requirement of this kind alone may ask for. Only the
+    /// tier-4 weapons reach beyond [`MAX_GENERATED_UPGRADE`], so a
+    /// requirement that also names a tier is held to the tighter
+    /// [`ItemKind::maximum_search_upgrade_for_tier`].
     #[must_use]
     pub const fn maximum_search_upgrade(self) -> u8 {
+        self.maximum_search_upgrade_for_tier(EXTRA_UPGRADE_TIER)
+    }
+
+    /// Highest upgrade an item of this kind and `tier` can carry.
+    #[must_use]
+    pub const fn maximum_search_upgrade_for_tier(self, tier: u8) -> u8 {
         match self {
-            Self::Weapon => 5,
-            Self::Armor | Self::Wand | Self::Ring => 4,
+            Self::Weapon if tier == EXTRA_UPGRADE_TIER => EXTRA_UPGRADE_MAXIMUM,
+            _ => MAX_GENERATED_UPGRADE,
         }
     }
 }

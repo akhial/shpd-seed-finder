@@ -34,13 +34,34 @@ public static class ItemKindExtensions
     public static bool Accepts(this ItemKind kind, CatalogItem item) =>
         item.Kind == kind.Family() && (kind.WeaponClass() is not { } weaponClass || item.Class == weaponClass);
 
-    /// <summary>The highest upgrade a search may name for this family.</summary>
+    /// <summary>The highest upgrade a search may name for this family, at the tier that reaches it.</summary>
     public static int MaximumSearchUpgrade(this ItemKind kind) => kind.Family() switch
     {
         ItemKind.Weapon => SearchLimits.MaxUpgradeWeapon,
         ItemKind.Ring => SearchLimits.MaxUpgradeRing,
         _ => SearchLimits.MaxUpgradeDefault,
     };
+
+    /// <summary>
+    /// The highest upgrade a requirement may name once its item and tier
+    /// filter are known: only a tier-<see cref="SearchLimits.ExtraUpgradeTier"/>
+    /// weapon is levelled past <see cref="SearchLimits.MaxUpgradeAnyTier"/>.
+    /// </summary>
+    public static int MaximumSearchUpgrade(this ItemKind kind, CatalogItem? item, TierMatch tierMatch, int tier)
+    {
+        var ceiling = kind.MaximumSearchUpgrade();
+        if (ceiling <= SearchLimits.MaxUpgradeAnyTier) return ceiling;
+        var reachesExtraTier = item is not null
+            ? item.Tier == SearchLimits.ExtraUpgradeTier
+            : tierMatch switch
+            {
+                TierMatch.Exactly => tier == SearchLimits.ExtraUpgradeTier,
+                TierMatch.AtLeast => tier <= SearchLimits.ExtraUpgradeTier,
+                TierMatch.AtMost => tier >= SearchLimits.ExtraUpgradeTier,
+                _ => true,
+            };
+        return reachesExtraTier ? ceiling : SearchLimits.MaxUpgradeAnyTier;
+    }
 }
 
 /// <summary>
@@ -75,6 +96,17 @@ public static class SearchLimits
     public const int MaxUpgradeRing = 4;
     /// <summary>Highest upgrade a weapon requirement may name; the vault reaches +5 on a tier-4 weapon.</summary>
     public const int MaxUpgradeWeapon = 5;
+    /// <summary>Highest upgrade the generator puts on any item, whatever its tier.</summary>
+    public const int MaxUpgradeAnyTier = 4;
+    /// <summary>
+    /// The one weapon tier levelled past <see cref="MaxUpgradeAnyTier"/>, a
+    /// v4.0.0-BETA-3 quirk: the Imp's vault lays out one tier-4 and one tier-5
+    /// weapon and rolls the tier-4 one at +3..+5 while the tier-5 one stops at
+    /// +4, so a +5 exists only on a tier-4 weapon, melee or thrown. When
+    /// upstream levels the two ranges this goes away and every family caps at
+    /// <see cref="MaxUpgradeAnyTier"/>.
+    /// </summary>
+    public const int ExtraUpgradeTier = 4;
     /// <summary>How many results one run lists, and one import restores.</summary>
     public const int ResultCap = 1024;
 }
@@ -280,7 +312,9 @@ public sealed partial class ItemRequirement
     /// engine's own rule: an exact upgrade counts as itself, anything else as
     /// the family cap.
     /// </summary>
-    [JsonIgnore] public int MaximumUpgrade => UpgradeMatch == UpgradeMatch.Exactly ? Upgrade : Kind.MaximumSearchUpgrade();
+    [JsonIgnore] public int MaximumUpgrade => UpgradeMatch == UpgradeMatch.Exactly ? Upgrade : UpgradeCeiling;
+    /// <summary>The highest upgrade this requirement may name, its item and tier filter included.</summary>
+    [JsonIgnore] public int UpgradeCeiling => Kind.MaximumSearchUpgrade(Item, TierMatch, Tier);
     /// <summary>
     /// The most <em>levels</em> this requirement can contribute to a combined
     /// total: its highest upgrade plus one, since every matched item counts itself.
@@ -805,7 +839,7 @@ public static class QueryRelationships
     /// <paramref name="kind"/> can reach together: each counts its upgrade plus
     /// one, and the copies of a combined-level stack are unconstrained.
     /// </summary>
-    public static int StackCapacity(ItemKind kind, int count) => count * (kind.MaximumSearchUpgrade() + 1);
+    public static int StackCapacity(int upgradeCeiling, int count) => count * (upgradeCeiling + 1);
 
     /// <summary>
     /// Applies the editor's result: the anchor's own fields plus the stack's
