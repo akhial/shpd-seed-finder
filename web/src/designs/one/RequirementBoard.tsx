@@ -4,7 +4,7 @@ import { displayItemName, sourceLabel } from '../../lib/catalog'
 import { effectGlows } from '../../lib/glow'
 import type { Glow } from '../../lib/glow'
 import { PlusIcon, XIcon } from '../../lib/icons'
-import { STACK_MAX, isAnyEnchantment, levelSumCapacity, maxUpgradeFor, requirementFamily, validateRequirement } from '../../lib/query'
+import { STACK_MAX, isAnyEnchantment, levelSumCapacity, maxUpgradeOf, validateRequirement } from '../../lib/query'
 import type { RequirementState } from '../../lib/wasm/types'
 import { Sprite } from './parts'
 import {
@@ -398,7 +398,7 @@ export function RequirementBoard({
     const anchor = requirements[item.members[0]]
     const capacity = item.total !== undefined
       ? levelSumCapacity([anchor, ...item.extras.map((index) => requirements[index])])
-      : count * (maxUpgradeFor(requirementFamily(anchor)) + 1)
+      : count * (maxUpgradeOf(anchor) + 1)
     const editingCount = stepper?.key === item.key && stepper.which === 'count'
     const editingTotal = stepper?.key === item.key && stepper.which === 'total'
     return (

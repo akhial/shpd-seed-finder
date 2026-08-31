@@ -37,6 +37,28 @@ final class EngineConstantsTests: XCTestCase {
         for kind in ItemKind.allCases {
             XCTAssertEqual(kind.maximumSearchUpgrade, byKind[names[kind]!], "\(kind)")
         }
+        XCTAssertEqual(SearchLimits.maxUpgradeAnyTier, limit("maxUpgradeAnyTier"))
+        XCTAssertEqual(SearchLimits.extraUpgradeTier, limit("extraUpgradeTier"))
+    }
+
+    /// Only a tier-4 weapon is levelled past `maxUpgradeAnyTier`, so a
+    /// requirement that rules that tier out loses the top of its range.
+    @MainActor
+    func testTopWeaponUpgradeNeedsTheTierThatReachesIt() {
+        let extraTier = limit("extraUpgradeTier")
+        let ceiling = limit("maxUpgradeWeapon")
+        let capped = limit("maxUpgradeAnyTier")
+        let maximum = { (item: CatalogItem?, tier: Int, match: TierMatch) in
+            SearchLimits.maximumUpgrade(kind: .weapon, item: item, tier: tier, tierMatch: match)
+        }
+        XCTAssertEqual(maximum(nil, 0, .any), ceiling)
+        XCTAssertEqual(maximum(nil, extraTier, .exactly), ceiling)
+        XCTAssertEqual(maximum(nil, 5, .exactly), capped)
+        XCTAssertEqual(maximum(nil, 3, .atMost), capped)
+        XCTAssertEqual(maximum(ItemCatalog.findById("battle_axe"), 0, .any), ceiling)
+        XCTAssertEqual(maximum(ItemCatalog.findById("javelin"), 0, .any), ceiling)
+        XCTAssertEqual(maximum(ItemCatalog.findById("sword"), 0, .any), capped)
+        XCTAssertEqual(SearchLimits.maximumUpgrade(kind: .armor, item: nil, tier: extraTier, tierMatch: .exactly), capped)
     }
 
     @MainActor

@@ -28,6 +28,34 @@ public enum SearchLimits {
     /// reaches +5 on a tier-4 weapon or thrown weapon, one above every other
     /// family's ceiling.
     public static let maxUpgradeWeapon = 5
+    /// Highest upgrade the generator puts on any item, whatever its tier.
+    public static let maxUpgradeAnyTier = 4
+    /// The one weapon tier levelled past `maxUpgradeAnyTier`, a
+    /// v4.0.0-BETA-3 quirk: the Imp's vault lays out one tier-4 and one
+    /// tier-5 weapon and rolls the tier-4 one at +3...+5 while the tier-5 one
+    /// stops at +4, so a +5 exists only on a tier-4 weapon, melee or thrown.
+    /// When upstream levels the two ranges this goes away and every family
+    /// caps at `maxUpgradeAnyTier`.
+    public static let extraUpgradeTier = 4
+
+    /// The highest upgrade a requirement may name once its item and tier
+    /// filter are known: everything that cannot be a tier-`extraUpgradeTier`
+    /// weapon stops at `maxUpgradeAnyTier`.
+    public static func maximumUpgrade(kind: ItemKind, item: CatalogItem?, tier: Int, tierMatch: TierMatch) -> Int {
+        let ceiling = kind.maximumSearchUpgrade
+        guard ceiling > maxUpgradeAnyTier else { return ceiling }
+        let reachesExtraTier = if let item {
+            item.tier == extraUpgradeTier
+        } else {
+            switch tierMatch {
+            case .any: true
+            case .exactly: tier == extraUpgradeTier
+            case .atLeast: tier <= extraUpgradeTier
+            case .atMost: tier >= extraUpgradeTier
+            }
+        }
+        return reachesExtraTier ? ceiling : maxUpgradeAnyTier
+    }
     /// Every challenge bit together: the largest legal challenge mask.
     public static let challengeMask = 511
 }
@@ -298,10 +326,11 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
         case .atLeast, .atMost: tierable && SearchLimits.boundedTiers.contains(tier)
         }
         guard validTier else { throw ModelValidationError.tier }
+        let maximumUpgrade = SearchLimits.maximumUpgrade(kind: kind, item: item, tier: tier, tierMatch: tierMatch)
         let valid = switch upgradeMatch {
         case .any: upgrade == 0
-        case .exactly: (1...kind.maximumSearchUpgrade).contains(upgrade)
-        case .atLeast: (0...kind.maximumSearchUpgrade).contains(upgrade)
+        case .exactly: (1...maximumUpgrade).contains(upgrade)
+        case .atLeast: (0...maximumUpgrade).contains(upgrade)
         }
         guard valid else { throw ModelValidationError.upgrade }
         // `modifier` is the classic single-effect spelling; `effect` wins when both are given.
@@ -333,7 +362,13 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
     /// to a combined total: an exact upgrade counts as itself, anything else as
     /// the family's cap.
     public var maximumContributedUpgrade: Int {
-        upgradeMatch == .exactly ? upgrade : kind.maximumSearchUpgrade
+        upgradeMatch == .exactly ? upgrade : maximumUpgrade
+    }
+
+    /// The highest upgrade this requirement may name, its item and tier
+    /// filter included.
+    public var maximumUpgrade: Int {
+        SearchLimits.maximumUpgrade(kind: kind, item: item, tier: tier, tierMatch: tierMatch)
     }
 
     /// The most *levels* an item matching this requirement can contribute to

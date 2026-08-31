@@ -90,7 +90,7 @@ final class ResultsExportTests: XCTestCase {
     /// enchantments, and the weapon ceiling one above the other families'.
     func testVaultSourceAndNewEnchantmentsSurviveTheDocument() throws {
         let query = SavedQuery(requirements: [
-            try ItemRequirement(key: 1, item: ItemCatalog.findById("greatsword"), upgrade: 5,
+            try ItemRequirement(key: 1, item: ItemCatalog.findById("battle_axe"), upgrade: 5,
                                 effect: .oneOf(["Vorpal", "Venomous"]), kind: .weapon,
                                 upgradeMatch: .exactly, source: .vaultTreasure),
         ])

@@ -40,6 +40,40 @@ object SearchLimits {
      * family can reach.
      */
     const val MAX_UPGRADE_WEAPON = 5
+
+    /** Highest upgrade the generator puts on any item, whatever its tier. */
+    const val MAX_UPGRADE_ANY_TIER = 4
+
+    /**
+     * The one weapon tier levelled past [MAX_UPGRADE_ANY_TIER], a
+     * v4.0.0-BETA-3 quirk: the Imp's vault lays out one tier-4 and one tier-5
+     * weapon and rolls the tier-4 one at +3..+5 while the tier-5 one stops at
+     * +4, so a +5 exists only on a tier-4 weapon, melee or thrown. When
+     * upstream levels the two ranges this goes away and every family caps at
+     * [MAX_UPGRADE_ANY_TIER].
+     */
+    const val EXTRA_UPGRADE_TIER = 4
+
+    /**
+     * The highest upgrade a requirement may name once its item and tier
+     * filter are known: anything that cannot be a tier-[EXTRA_UPGRADE_TIER]
+     * weapon stops at [MAX_UPGRADE_ANY_TIER].
+     */
+    fun maximumUpgrade(kind: ItemKind, item: CatalogItem?, tierMatch: TierMatch, tier: Int): Int {
+        val ceiling = kind.maximumSearchUpgrade
+        if (ceiling <= MAX_UPGRADE_ANY_TIER) return ceiling
+        val reachesExtraTier = if (item != null) {
+            item.tier == EXTRA_UPGRADE_TIER
+        } else {
+            when (tierMatch) {
+                TierMatch.ANY -> true
+                TierMatch.EXACT -> tier == EXTRA_UPGRADE_TIER
+                TierMatch.AT_LEAST -> tier <= EXTRA_UPGRADE_TIER
+                TierMatch.AT_MOST -> tier >= EXTRA_UPGRADE_TIER
+            }
+        }
+        return if (reachesExtraTier) ceiling else MAX_UPGRADE_ANY_TIER
+    }
 }
 
 enum class ItemKind(
@@ -179,10 +213,11 @@ data class ItemRequirement(
         require(validTier) {
             "Tier predicate requires a wildcard weapon or armor and a non-redundant tier"
         }
+        val upgradeCeiling = SearchLimits.maximumUpgrade(kind, item, tierMatch, tier)
         val validUpgrade = when (upgradeMatch) {
             UpgradeMatch.ANY -> upgrade == 0
-            UpgradeMatch.EXACT -> upgrade in 1..kind.maximumSearchUpgrade
-            UpgradeMatch.AT_LEAST -> upgrade in 0..kind.maximumSearchUpgrade
+            UpgradeMatch.EXACT -> upgrade in 1..upgradeCeiling
+            UpgradeMatch.AT_LEAST -> upgrade in 0..upgradeCeiling
         }
         require(validUpgrade) {
             "Upgrade predicate is invalid for ${kind.label}"
@@ -218,7 +253,11 @@ data class ItemRequirement(
 
     /** The highest upgrade an item satisfying this requirement can carry. */
     val maximumUpgrade: Int
-        get() = if (upgradeMatch == UpgradeMatch.EXACT) upgrade else kind.maximumSearchUpgrade
+        get() = if (upgradeMatch == UpgradeMatch.EXACT) upgrade else upgradeCeiling
+
+    /** The highest upgrade this requirement may name, its item and tier filter included. */
+    val upgradeCeiling: Int
+        get() = SearchLimits.maximumUpgrade(kind, item, tierMatch, tier)
 
     /**
      * The most *levels* this requirement can contribute to a combined total:

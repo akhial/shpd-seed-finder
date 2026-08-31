@@ -1016,7 +1016,7 @@ fn menu_item(label: &str, action: &str, target: &glib::Variant) -> gio::MenuItem
 /// upgrade plus one, and its members may carry any upgrade.
 fn levels_capacity(state: &AppState, item: &BoardItem) -> u8 {
     let anchor = state.requirements[item.anchor()];
-    let per_item = anchor.kind.maximum_search_upgrade() + 1;
+    let per_item = anchor.to_core().upgrade_ceiling() + 1;
     u8::try_from(item.stack_count())
         .unwrap_or(1)
         .saturating_mul(per_item)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { defaultQueryState, validateQuery, validateRequirement } from './query'
+import { clampUpgrade, defaultQueryState, validateQuery, validateRequirement } from './query'
 import type { QueryState, RequirementState } from './wasm/types'
 
 const requirement = (patch: Partial<RequirementState> = {}): RequirementState => ({
@@ -25,6 +25,35 @@ describe('query validation', () => {
     expect(validateQuery(state(requirement({ upgrade: { mode: 'at_least', value: 5 } }))).valid).toBe(true)
     expect(validateQuery(state(requirement({ kind: 'armor', upgrade: { mode: 'at_least', value: 5 } }))).errors.join(' ')).toMatch(/0 through \+4/)
   })
+  it('reserves the top weapon upgrade for the tier that reaches it', () => {
+    // The vault levels its tier-4 weapon past every other prize, so a +5 is
+    // only meaningful while tier 4 is still in reach.
+    const plus5 = (patch: Partial<RequirementState>) =>
+      validateQuery(state(requirement({ upgrade: { mode: 'exact', value: 5 }, ...patch }))).valid
+    expect(plus5({})).toBe(true)
+    expect(plus5({ tier: { mode: 'exact', value: 4 } })).toBe(true)
+    expect(plus5({ tier: { mode: 'at_least', value: 4 } })).toBe(true)
+    expect(plus5({ item: 'battle_axe' })).toBe(true)
+    expect(plus5({ item: 'javelin' })).toBe(true)
+    expect(plus5({ tier: { mode: 'exact', value: 5 } })).toBe(false)
+    expect(plus5({ tier: { mode: 'at_most', value: 3 } })).toBe(false)
+    expect(plus5({ item: 'sword' })).toBe(false)
+    expect(validateQuery(state(requirement({ item: 'sword', upgrade: { mode: 'exact', value: 5 } }))).errors.join(' '))
+      .toMatch(/only a tier-4 weapon/)
+  })
+
+  it('pulls an out-of-reach upgrade back when the tier narrows', () => {
+    const plus5 = requirement({ upgrade: { mode: 'exact', value: 5 } })
+    expect(clampUpgrade(plus5)).toBe(plus5)
+    expect(clampUpgrade({ ...plus5, tier: { mode: 'exact', value: 5 } }).upgrade).toEqual({ mode: 'exact', value: 4 })
+    expect(clampUpgrade({ ...plus5, item: 'sword' }).upgrade).toEqual({ mode: 'exact', value: 4 })
+    expect(clampUpgrade({ ...plus5, item: 'battle_axe' }).upgrade).toEqual({ mode: 'exact', value: 5 })
+    // An "at least" bound stops one below the ceiling: the top level is what
+    // "exactly" already says.
+    const atLeast4 = requirement({ upgrade: { mode: 'at_least', value: 4 } })
+    expect(clampUpgrade({ ...atLeast4, tier: { mode: 'exact', value: 5 } }).upgrade).toEqual({ mode: 'at_least', value: 3 })
+  })
+
   it('accepts the enchantments v4.0.0 added on a weapon and refuses them on armor', () => {
     expect(validateQuery(state(requirement({ effect: ['Venomous', 'Eldritch', 'Vorpal', 'Crystal'] })))).toEqual({ valid: true, errors: [] })
     expect(validateQuery(state(requirement({ effect: ['Pressurized', 'Wondrous'], uncursed: true }))).errors.join(' ')).toMatch(/only curse/)
