@@ -1,5 +1,7 @@
 import { displayItemName, getItem, kindFamily, sourceLabel, wildcardSpriteForKind, wildcardSprites } from '../../lib/catalog'
 import { effectNamesOf, isAnyEnchantment } from '../../lib/query'
+import type { ItemArt } from '../../lib/sprites'
+import { itemArt } from '../../lib/sprites'
 import type { ItemCategory, RequirementKind, RequirementState } from '../../lib/wasm/types'
 
 export const categoryLabel: Record<ItemCategory, string> = {
@@ -35,13 +37,19 @@ export function requirementKind(requirement: RequirementState): ItemCategory | u
   return requirement.item ? getItem(requirement.item)?.type : undefined
 }
 
-export function requirementSprite(requirement: RequirementState): number {
+/**
+ * The art for a requirement's chip. A requirement describes what to search for
+ * rather than what some run holds, so it is resolved without a gem table and a
+ * ring keeps the catalog's per-class cell — the same picture whatever seed is
+ * on screen.
+ */
+export function requirementArt(requirement: RequirementState): ItemArt {
   if (requirement.item) {
     const item = getItem(requirement.item)
-    if (item) return item.sprite
+    if (item) return itemArt(item.sprite)
   }
-  if (requirement.kind) return wildcardSpriteForKind(requirement.kind)
-  return wildcardSprites[requirementKind(requirement) ?? 'weapon']
+  if (requirement.kind) return itemArt(wildcardSpriteForKind(requirement.kind))
+  return itemArt(wildcardSprites[requirementKind(requirement) ?? 'weapon'])
 }
 
 export function requirementTitle(requirement: RequirementState): string {

@@ -4,6 +4,7 @@ import { fromQueryJson, toQueryDocument, toQueryJson, validateQuery } from '../.
 import { resultPosition, stepResult } from '../../lib/scout-nav'
 import { SearchCoordinator, scoutSeed, searchStore } from '../../lib/search/coordinator'
 import { hasShareCode, withoutFragment } from '../../lib/share-link'
+import { itemArt } from '../../lib/sprites'
 import { queryStore, workerCountStore } from '../../lib/store'
 import { analyzeQuery, decodeShareText, formatSeedCode, getEngineInfo, parseSeedCode } from '../../lib/wasm'
 import type { AnalysisResult, EngineInfo, ScoutResult } from '../../lib/wasm/types'
@@ -328,7 +329,7 @@ export default function App() {
     <div className="d1-app">
       <header className="d1-topbar">
         <div className="d1-wordmark">
-          <Sprite index={112} size={20} />
+          <Sprite art={itemArt(112)} size={20} />
           <DownloadMenu />
         </div>
         <div className="d1-topbar-right">

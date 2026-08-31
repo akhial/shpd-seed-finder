@@ -1,15 +1,22 @@
 import type { CSSProperties, ReactNode } from 'react'
 import type { Glow } from '../../lib/glow'
 import { nearestOptionIndex } from '../../lib/query'
+import type { ItemArt } from '../../lib/sprites'
 import { ringIconCss, spriteBoxCss, spriteGlowCss } from '../../lib/sprites'
 
 export function Sprite({
-  index,
+  art,
   size = 24,
   label,
   glow,
 }: {
-  index: number
+  /**
+   * What to draw, from `itemArt`. It is an `ItemArt` rather than a bare sheet
+   * index so that callers have to say whether they hold a run: pass the scout
+   * document's `ringGems` and a ring shows the gem that seed gave it, omit them
+   * and it shows the catalog's per-class cell.
+   */
+  art: ItemArt
   size?: number
   label?: string
   /**
@@ -18,8 +25,8 @@ export function Sprite({
    */
   glow?: Glow | Glow[] | null
 }) {
-  const box = spriteBoxCss(index, size)
-  const ringIcon = ringIconCss(index, size)
+  const box = spriteBoxCss(art.cell, size)
+  const ringIcon = ringIconCss(art.ringGlyph, size)
   const glows = glow ? (Array.isArray(glow) ? glow : [glow]) : []
   return (
     <span
@@ -33,7 +40,7 @@ export function Sprite({
         {glows.length > 0 && (
           <span
             className={glows.length > 1 ? 'd1-sprite-glow d1-sprite-glow-seq' : 'd1-sprite-glow'}
-            style={spriteGlowCss(index, size, glows)}
+            style={spriteGlowCss(art.cell, size, glows)}
           />
         )}
       </span>
