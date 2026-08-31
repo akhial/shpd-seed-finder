@@ -11,14 +11,13 @@ public struct DeepLinkError: Error, LocalizedError, Equatable {
 /// Shareable-link codec for search queries, backed by the Rust core.
 ///
 /// A deep link carries a whole query as a compact code in a web link like
-/// `https://shpd-seed-seeker.web.app/#q=EAGWhMA`. Decoding accepts any link
+/// `https://shpd-seed-seeker.web.app/#q=MAGWhMAA`. Decoding accepts any link
 /// form the core recognizes: the full web link, a `seedseeker://` link, or
 /// the bare code.
 ///
-/// The code's format version is the core's business: it writes the oldest
-/// version a query fits — version 3 only when an effect set names one of the
-/// weapon enchantments v4.0.0 appended — and reads versions 1 through 3, so
-/// links shared by older releases keep opening here.
+/// The code's format version is the core's business. There is a single live
+/// version; the retired pre-v4.0.0 formats are rejected with a message
+/// naming the version mismatch.
 public enum DeepLink {
     /// Custom URL scheme registered by the app bundle's Info.plist.
     public static let scheme = "seedseeker"

@@ -33,17 +33,17 @@ class DeepLinkTest {
         ),
     )
 
-    private val pinnedLink = "https://shpd-seed-seeker.web.app/#q=EAGWhMA"
+    private val pinnedLink = "https://shpd-seed-seeker.web.app/#q=MAGWhMAA"
 
     /**
      * The cross-platform pinned vector: a known code must decode identically
      * forever on every platform. This mirrors the Rust core's
-     * `version_one_codes_are_stable` test.
+     * `codes_are_stable` test.
      */
     @Test
-    fun versionOneCodesAreStable() {
+    fun pinnedCodesAreStable() {
         assertEquals(pinnedLink, DeepLink.encodeLink(pinnedQuery))
-        assertEquals(pinnedQuery.normalized(), DeepLink.decode("EAGWhMA").normalized())
+        assertEquals(pinnedQuery.normalized(), DeepLink.decode("MAGWhMAA").normalized())
         assertEquals(pinnedQuery.normalized(), DeepLink.decode(pinnedLink).normalized())
         // The same query expressed as the canonical JSON query document.
         val document = """
@@ -241,14 +241,14 @@ class DeepLinkTest {
         assertDecodeFails("no share code", "https://example.com/")
         assertDecodeFails("not part of a share link", "!!!")
         assertDecodeFails("truncated", "A")
-        assertDecodeFails("truncated", "EAGWhM")
-        assertDecodeFails("trailing data", "EAGWhMAAAAA")
+        assertDecodeFails("truncated", "MAGWhM")
+        assertDecodeFails("trailing data", "MAGWhMAAAAAA")
         // Unsupported future version (bits 0100 in the top nibble).
         val versioned = assertThrows(IllegalArgumentException::class.java) {
             DeepLink.decode("QAAA")
         }
         assertTrue(versioned.message!!.contains("version 4"))
-        assertTrue(versioned.message!!.contains("newer"))
+        assertTrue(versioned.message!!.contains("different"))
     }
 
     @Test
