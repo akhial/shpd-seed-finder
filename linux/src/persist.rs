@@ -361,10 +361,9 @@ mod tests {
         // `fast_mode` is a retired flag: a state file written by an older
         // build must still load, with the key accepted and ignored rather
         // than refusing the whole document.
-        let restored = decode_state(
-            r#"{"requirements":[{"kind":"wand"}],"max_depth":11,"fast_mode":true}"#,
-        )
-        .expect("an old saved state must still load");
+        let restored =
+            decode_state(r#"{"requirements":[{"kind":"wand"}],"max_depth":11,"fast_mode":true}"#)
+                .expect("an old saved state must still load");
         assert_eq!(restored.requirements.len(), 1);
         assert_eq!(restored.max_depth, 11);
         // Saving again writes the current format, without the retired key.

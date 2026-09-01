@@ -132,9 +132,7 @@ const fn source_profile(
         // armor, the Sacrificial fire bumps its melee prize, and plain
         // chests front the flooded-vault, sentry, and secret-maze prizes,
         // each bumping one natural weapon/missile/armor roll.
-        (S::Chest, Weapon | Armor) | (S::Tomb, Armor) | (S::SacrificialFire, Weapon) => {
-            (0, 3, Any)
-        }
+        (S::Chest, Weapon | Armor) | (S::Tomb, Armor) | (S::SacrificialFire, Weapon) => (0, 3, Any),
         // Plain drops and chest variants use the natural rolls, capped at +2,
         // as do crystal chests/mimics (which stock only wands and rings).
         (S::Heap | S::Chest | S::LockedChest | S::Skeleton | S::Mimic, _)
