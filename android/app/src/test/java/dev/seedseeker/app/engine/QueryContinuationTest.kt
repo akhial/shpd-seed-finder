@@ -82,7 +82,6 @@ class QueryContinuationTest {
         val base = request(frost)
         assertContinues(false, request(frost, fireblast, maximumDepth = 12), base)
         assertContinues(false, request(frost, fireblast, challenges = Challenge.DARKNESS.bit), base)
-        assertContinues(false, request(frost, fireblast, fastMode = true), base)
 
         // The blacksmith flags and the quest filter only narrow the match
         // set, so switching one on strengthens the base instead of ending the
@@ -156,7 +155,6 @@ class QueryContinuationTest {
         requireBlacksmith: Boolean = false,
         excludeBlacksmithRewards: Boolean = false,
         wandmakerQuest: WandmakerQuest? = null,
-        fastMode: Boolean = false,
     ) = SearchRequest(
         requirements = requirements.toList(),
         maximumDepth = maximumDepth,
@@ -164,6 +162,5 @@ class QueryContinuationTest {
         requireBlacksmith = requireBlacksmith,
         excludeBlacksmithRewards = excludeBlacksmithRewards,
         wandmakerQuest = wandmakerQuest,
-        fastMode = fastMode,
     )
 }

@@ -97,7 +97,6 @@ fun FinderScreen(
     requireBlacksmith: Boolean,
     excludeBlacksmithRewards: Boolean,
     wandmakerQuest: WandmakerQuest?,
-    fastMode: Boolean,
     challenges: Int,
     presets: List<QueryPreset>,
     /** Draw the board's chips at their smaller size. */
@@ -125,7 +124,6 @@ fun FinderScreen(
     onRequireBlacksmithChange: (Boolean) -> Unit,
     onExcludeBlacksmithRewardsChange: (Boolean) -> Unit,
     onWandmakerQuestChange: (WandmakerQuest?) -> Unit,
-    onFastModeChange: (Boolean) -> Unit,
     /** Why the query cannot run yet, shown in the header; null when it is runnable. */
     validationMessage: String?,
     onSearch: () -> Unit,
@@ -275,7 +273,6 @@ fun FinderScreen(
                         requireBlacksmith = requireBlacksmith,
                         excludeBlacksmithRewards = excludeBlacksmithRewards,
                         wandmakerQuest = wandmakerQuest,
-                        fastMode = fastMode,
                         challenges = challenges,
                         isSearching = isSearching,
                         validationMessage = validationMessage,
@@ -288,7 +285,6 @@ fun FinderScreen(
                         onRequireBlacksmithChange = onRequireBlacksmithChange,
                         onExcludeBlacksmithRewardsChange = onExcludeBlacksmithRewardsChange,
                         onWandmakerQuestChange = onWandmakerQuestChange,
-                        onFastModeChange = onFastModeChange,
                         onSettings = onSettings,
                         // Takes every line down to the closed page's header,
                         // which waits at the bottom edge above the search bar
@@ -436,7 +432,6 @@ private fun QueryPage(
     requireBlacksmith: Boolean,
     excludeBlacksmithRewards: Boolean,
     wandmakerQuest: WandmakerQuest?,
-    fastMode: Boolean,
     challenges: Int,
     isSearching: Boolean,
     validationMessage: String?,
@@ -449,7 +444,6 @@ private fun QueryPage(
     onRequireBlacksmithChange: (Boolean) -> Unit,
     onExcludeBlacksmithRewardsChange: (Boolean) -> Unit,
     onWandmakerQuestChange: (WandmakerQuest?) -> Unit,
-    onFastModeChange: (Boolean) -> Unit,
     onSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -482,14 +476,12 @@ private fun QueryPage(
             requireBlacksmith = requireBlacksmith,
             excludeBlacksmithRewards = excludeBlacksmithRewards,
             wandmakerQuest = wandmakerQuest,
-            fastMode = fastMode,
             challenges = challenges,
             enabled = !isSearching,
             onMaximumDepthChange = onMaximumDepthChange,
             onRequireBlacksmithChange = onRequireBlacksmithChange,
             onExcludeBlacksmithRewardsChange = onExcludeBlacksmithRewardsChange,
             onWandmakerQuestChange = onWandmakerQuestChange,
-            onFastModeChange = onFastModeChange,
             onSettings = onSettings,
         )
         Spacer(Modifier.height(6.dp))
@@ -507,14 +499,12 @@ private fun ScopeSection(
     requireBlacksmith: Boolean,
     excludeBlacksmithRewards: Boolean,
     wandmakerQuest: WandmakerQuest?,
-    fastMode: Boolean,
     challenges: Int,
     enabled: Boolean,
     onMaximumDepthChange: (Int) -> Unit,
     onRequireBlacksmithChange: (Boolean) -> Unit,
     onExcludeBlacksmithRewardsChange: (Boolean) -> Unit,
     onWandmakerQuestChange: (WandmakerQuest?) -> Unit,
-    onFastModeChange: (Boolean) -> Unit,
     onSettings: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -534,7 +524,6 @@ private fun ScopeSection(
                     requireBlacksmith = requireBlacksmith,
                     excludeBlacksmithRewards = excludeBlacksmithRewards,
                     wandmakerQuest = wandmakerQuest,
-                    fastMode = fastMode,
                     challenges = challenges,
                 ),
                 modifier = Modifier.weight(1f),
@@ -593,14 +582,6 @@ private fun ScopeSection(
                     supporting = "Items may not come from the 2,000-favor Smith trade.",
                     checked = excludeBlacksmithRewards,
                     onCheckedChange = onExcludeBlacksmithRewardsChange,
-                    enabled = enabled,
-                )
-                SwitchRow(
-                    label = "Fast mode",
-                    supporting = "+3 gear matches quest rewards only; skips rare Crypt " +
-                        "and Sacrificial-fire seeds. Found seeds are always genuine.",
-                    checked = fastMode,
-                    onCheckedChange = onFastModeChange,
                     enabled = enabled,
                 )
                 Row(

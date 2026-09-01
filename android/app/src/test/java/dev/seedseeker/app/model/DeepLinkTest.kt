@@ -100,7 +100,6 @@ class DeepLinkTest {
             requireBlacksmith = true,
             excludeBlacksmithRewards = true,
             wandmakerQuest = WandmakerQuest.ROTBERRY,
-            fastMode = true,
             challenges = Challenge.NO_FOOD.bit or Challenge.STRONGER_BOSSES.bit,
         )
         assertRoundTrips(query)

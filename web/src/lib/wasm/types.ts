@@ -95,7 +95,6 @@ export interface QueryState {
   excludeBlacksmithRewards: boolean;
   /** Which Wandmaker quest a seed must roll; undefined matches any. */
   wandmakerQuest?: WandmakerQuest;
-  fastMode: boolean;
   challenges: ChallengeName[];
 }
 
@@ -122,13 +121,15 @@ export interface AnyOfDocument {
 
 export type RequirementEntryDocument = RequirementDocument | AnyOfDocument;
 
+/** The keys this release writes. Documents saved by older releases may carry
+ * retired keys such as `fast_mode`; both the engine's codec and `fromQueryJson`
+ * accept and ignore them. */
 export interface QueryDocument {
   requirements: RequirementEntryDocument[];
   max_depth?: number;
   require_blacksmith?: true;
   exclude_blacksmith_rewards?: true;
   wandmaker_quest?: WandmakerQuest;
-  fast_mode?: true;
   challenges?: ChallengeName[];
 }
 

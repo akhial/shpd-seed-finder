@@ -54,7 +54,7 @@ func enginePacket(
 
 /// The engine's refine soundness predicate, bridged rather than re-derived:
 /// whether the query document in `candidate` continues the one in `base` —
-/// an identical floor limit, challenge set and fast mode, world conditions (the
+/// an identical floor limit and challenge set, world conditions (the
 /// blacksmith flags and the Wandmaker filter) at least as strict as the base's,
 /// and every base requirement covered by a distinct candidate requirement at least
 /// as strict — equal or strengthened (a named item, a tightened bound).

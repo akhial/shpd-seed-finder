@@ -130,7 +130,7 @@ public sealed class NativeEngine
 
     /// <summary>
     /// Whether <paramref name="candidate"/> continues <paramref name="baseline"/>:
-    /// an identical floor limit, challenge set and fast mode, world conditions
+    /// an identical floor limit and challenge set, world conditions
     /// (the blacksmith flags and the Wandmaker quest) at least as strict as the
     /// baseline's, and every baseline requirement covered by a distinct
     /// candidate requirement at least as strict (equal or strengthened).

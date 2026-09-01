@@ -174,10 +174,19 @@ describe("query serialization", () => {
       maxDepth: 19,
       requireBlacksmith: true,
       excludeBlacksmithRewards: true,
-      fastMode: true,
       challenges: ["faith_is_my_armor", "hostile_champions"],
     };
     expect(fromQueryJson(toQueryJson(state))).toEqual(state);
+  });
+
+  it("loads a query saved with the retired fast-mode flag and drops it", () => {
+    // Saved queries, presets and share links written before fast mode was
+    // removed still open; the engine's codec ignores the key the same way.
+    const legacy = '{"requirements":[{"kind":"wand"}],"max_depth":12,"fast_mode":true}';
+    const current = '{"requirements":[{"kind":"wand"}],"max_depth":12}';
+    expect(fromQueryJson(legacy)).toEqual(fromQueryJson(current));
+    // And nothing writes the key back out.
+    expect(toQueryJson(fromQueryJson(legacy))).toBe(current);
   });
 
   it("snaps stored empty boss-floor limits to the equivalent floor below", () => {

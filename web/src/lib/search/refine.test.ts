@@ -101,13 +101,20 @@ describe("isContinuationOf", () => {
   });
   it("rejects a widened scope", () => {
     expect(isContinuationOf({ ...added, max_depth: 9 }, base)).toBe(false);
-    expect(isContinuationOf({ ...added, fast_mode: true }, base)).toBe(false);
     expect(isContinuationOf({ ...added, challenges: ["on_diet"] }, base)).toBe(false);
     expect(
       isContinuationOf({ ...added, challenges: ["on_diet"] }, { ...base, challenges: ["on_diet"] }),
     ).toBe(true);
     // Even an otherwise unchanged query restarts when the scope moves.
     expect(isContinuationOf({ ...base, max_depth: 9 }, base)).toBe(false);
+  });
+  it("ignores the retired fast-mode flag a stored query may still carry", () => {
+    // The engine accepts `fast_mode` from documents written before fast mode
+    // was removed and ignores it, so the flag can neither block a continuation
+    // nor create one: only the requirements and the scope decide.
+    expect(isContinuationOf({ ...added, fast_mode: true } as QueryDocument, base)).toBe(true);
+    expect(isContinuationOf(added, { ...base, fast_mode: true } as QueryDocument)).toBe(true);
+    expect(isContinuationOf({ ...base, fast_mode: true } as QueryDocument, added)).toBe(false);
   });
   it("accepts a narrowed world condition and rejects a relaxed one", () => {
     // The blacksmith flags and the quest filter only remove seeds, so

@@ -45,7 +45,6 @@ final class DeepLinkTests: XCTestCase {
             maximumDepth: 12,
             requireBlacksmith: true,
             wandmakerQuest: .rotberry,
-            fastMode: true,
             challenges: Challenge.noHerbalism.rawValue)
         let link = try DeepLink.encodeLink(for: query)
         XCTAssertTrue(link.hasPrefix("https://shpd-seed-seeker.web.app/#q="), link)
@@ -54,7 +53,6 @@ final class DeepLinkTests: XCTestCase {
         XCTAssertTrue(decoded.requireBlacksmith)
         XCTAssertFalse(decoded.excludeBlacksmithRewards)
         XCTAssertEqual(decoded.wandmakerQuest, .rotberry)
-        XCTAssertTrue(decoded.fastMode)
         XCTAssertEqual(decoded.challenges, Challenge.noHerbalism.rawValue)
         // Requirements compare equal except for the session-local row keys.
         var expected = query.requirements

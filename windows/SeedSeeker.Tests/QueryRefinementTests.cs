@@ -108,11 +108,10 @@ public sealed class QueryRefinementTests
         {
             var query = Query(Ring(), Wand()); mutate(query); return query;
         }
-        // The floor limit and fast mode change which world is generated, or how
-        // it is searched, and so does the challenge set: the base run's coverage
-        // says nothing about them, so they have to match exactly.
+        // The floor limit changes which world is generated, and so does the
+        // challenge set: the base run's coverage says nothing about them, so
+        // they have to match exactly.
         Assert.False(QueryRefinement.CanRefine(WithScope(q => q.MaximumDepth = 9), baseline));
-        Assert.False(QueryRefinement.CanRefine(WithScope(q => q.FastMode = true), baseline));
         Assert.False(QueryRefinement.CanRefine(WithScope(q => q.Challenges = 4), baseline));
         // Scope equal on both sides, including a non-default one.
         var challenged = Query(Ring()); challenged.Challenges = 4;

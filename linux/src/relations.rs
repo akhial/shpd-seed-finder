@@ -849,7 +849,6 @@ mod tests {
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
-            fast_mode: false,
         }
         .validate()
         .map_err(|error| error.to_string())

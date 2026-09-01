@@ -63,7 +63,6 @@ private struct ContentView: View {
     @State private var requireBlacksmith = false
     @State private var wandmakerQuest: WandmakerQuest?
     @State private var excludeBlacksmithRewards = false
-    @State private var fastMode = false
     @State private var restored = false
     @State private var userPresets: [QueryPreset] = []
     @State private var controller = SearchController()
@@ -108,7 +107,7 @@ private struct ContentView: View {
                 QueryView(requirements: $requirements, maximumDepth: $maximumDepth,
                           requireBlacksmith: $requireBlacksmith,
                           excludeBlacksmithRewards: $excludeBlacksmithRewards,
-                          wandmakerQuest: $wandmakerQuest, fastMode: $fastMode,
+                          wandmakerQuest: $wandmakerQuest,
                           challenges: $challenges,
                           userPresets: userPresets,
                           onApplyPreset: apply,
@@ -200,7 +199,6 @@ private struct ContentView: View {
             requireBlacksmith = saved.requireBlacksmith
             excludeBlacksmithRewards = saved.excludeBlacksmithRewards
             wandmakerQuest = saved.wandmakerQuest
-            fastMode = saved.fastMode
             userPresets = PresetPersistence.decode(savedPresetsJSON)
             if let link = pendingLink { pendingLink = nil; openQueryLink(link) }
         }
@@ -212,7 +210,6 @@ private struct ContentView: View {
         .onChange(of: requireBlacksmith) { save() }
         .onChange(of: excludeBlacksmithRewards) { save() }
         .onChange(of: wandmakerQuest) { save() }
-        .onChange(of: fastMode) { save() }
         .onChange(of: challenges) { save() }
         .onChange(of: controller.selectedSeed) { _, seed in
             // J/K navigation scouts before moving the selection; only scout
@@ -324,7 +321,7 @@ private struct ContentView: View {
         savedQueryJSON = QueryPersistence.encode(.init(requirements: requirements,
             maximumDepth: maximumDepth, requireBlacksmith: requireBlacksmith,
             excludeBlacksmithRewards: excludeBlacksmithRewards,
-            wandmakerQuest: wandmakerQuest, fastMode: fastMode,
+            wandmakerQuest: wandmakerQuest,
             challenges: challenges)) ?? ""
     }
 
@@ -340,7 +337,6 @@ private struct ContentView: View {
         requireBlacksmith = saved.requireBlacksmith
         excludeBlacksmithRewards = saved.excludeBlacksmithRewards
         wandmakerQuest = saved.wandmakerQuest
-        fastMode = saved.fastMode
         challenges = saved.challenges
     }
 
@@ -379,8 +375,7 @@ private struct ContentView: View {
                 requirements: requirements, maximumDepth: maximumDepth,
                 requireBlacksmith: requireBlacksmith,
                 excludeBlacksmithRewards: excludeBlacksmithRewards,
-                wandmakerQuest: wandmakerQuest,
-                fastMode: fastMode, challenges: challenges))
+                wandmakerQuest: wandmakerQuest, challenges: challenges))
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(link, forType: .string)
             // Brief checkmark in the toolbar icon as the "copied" feedback.
@@ -446,8 +441,7 @@ private struct ContentView: View {
         let query = SavedQuery(requirements: requirements, maximumDepth: maximumDepth,
                                requireBlacksmith: requireBlacksmith,
                                excludeBlacksmithRewards: excludeBlacksmithRewards,
-                               wandmakerQuest: wandmakerQuest,
-                               fastMode: fastMode, challenges: challenges)
+                               wandmakerQuest: wandmakerQuest, challenges: challenges)
         if let index = userPresets.firstIndex(where: { $0.name.localizedCaseInsensitiveCompare(cleanName) == .orderedSame }) {
             userPresets[index].query = query
         } else {
@@ -548,7 +542,6 @@ private struct QueryView: View {
     @Binding var requireBlacksmith: Bool
     @Binding var excludeBlacksmithRewards: Bool
     @Binding var wandmakerQuest: WandmakerQuest?
-    @Binding var fastMode: Bool
     @Binding var challenges: Int
     let userPresets: [QueryPreset]
     let onApplyPreset: (QueryPreset) -> Void
@@ -633,8 +626,7 @@ private struct QueryView: View {
         try SearchRequest(requirements: requirements, maximumDepth: maximumDepth,
                           requireBlacksmith: requireBlacksmith,
                           excludeBlacksmithRewards: excludeBlacksmithRewards,
-                          wandmakerQuest: wandmakerQuest,
-                          fastMode: fastMode, challenges: challenges)
+                          wandmakerQuest: wandmakerQuest, challenges: challenges)
     }
 
     private var presets: some View {
@@ -708,10 +700,6 @@ private struct QueryView: View {
                     Slider(value: floorLimitBinding($maximumDepth),
                            in: 0...Double(FloorLimits.options.count - 1), step: 1)
                         .accessibilityValue(Text("first \(maximumDepth) floor\(maximumDepth == 1 ? "" : "s")"))
-                }
-                SettingsGroup("Performance") {
-                    Toggle("Fast search", isOn: $fastMode)
-                    SettingsCaption("Treats +3 weapons and armor as quest rewards only — the Ghost's, the Blacksmith's and the Imp's vault prizes, so the search ends at floor 19 — skipping the rare Crypt, Sacrificial-fire and special-room chest prizes. Found seeds are always genuine.")
                 }
             }
             VStack(alignment: .leading, spacing: 14) {

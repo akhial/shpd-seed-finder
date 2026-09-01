@@ -9,8 +9,8 @@ import org.junit.Test
 
 /**
  * The app's own preset schema: additive, so presets saved by earlier
- * releases (single `modifier`, no groups) still load, and the new fields
- * round-trip.
+ * releases (single `modifier`, no groups) still load — retired keys such as
+ * `fastMode` included — and the new fields round-trip.
  */
 class PresetStorageTest {
     init { PackagedCatalog.install() }
@@ -18,11 +18,13 @@ class PresetStorageTest {
     @Test
     fun presetsSavedByOlderReleasesStillLoad() {
         val preferences = MemoryPreferences()
+        // "fastMode" is a retired flag kept in this saved preset deliberately:
+        // presets written before its removal must still load, the key ignored.
         preferences.edit().putString(
             "user_presets",
             """[{"id":"old","name":"Old preset","query":{
                  "maximumDepth":10,"requireBlacksmith":false,"excludeBlacksmithRewards":false,
-                 "wandmakerQuest":null,"fastMode":false,"challenges":0,
+                 "wandmakerQuest":null,"fastMode":true,"challenges":0,
                  "requirements":[
                    {"item":"sword","kind":"WEAPON","tier":0,"tierMatch":"ANY","upgrade":2,"upgradeMatch":"EXACT",
                     "modifier":"Lucky","source":null,"identityGroup":null,"maximumDepth":null,"requireUncursed":false},
