@@ -5,7 +5,7 @@ shareable link, and populate its query editor from such a link. The canonical
 link form is
 
 ```
-https://shpd-seed-seeker.web.app/#q=MAGWhMAA
+https://shpd-seed-seeker.web.app/#q=QAMtCYAA
 ```
 
 where the value after `#q=` is a base64url code carrying the whole query. The
@@ -40,10 +40,9 @@ bits are written.
 
 | Field | Bits | Meaning |
 | --- | --- | --- |
-| `version` | 4 | Format version, always `3`. Versions 1 and 2 (narrower records and a 24-bit effect mask over a differently ordered effect table) were retired while the feature had next to no users; decoders reject every version but 3, telling the user the link comes from a different release, and encoders must never renumber or reorder anything within the version. |
+| `version` | 4 | Format version, always `4`. Versions 1 and 2 (narrower records and a 24-bit effect mask over a differently ordered effect table) were retired while the feature had next to no users, and version 3 — this same layout plus a fast-mode flag bit after the blacksmith flags — went when that setting was removed; decoders reject every version but 4, telling the user the link comes from a different release, and encoders must never renumber or reorder anything within the version. |
 | `require_blacksmith` | 1 | Query flag. |
 | `exclude_blacksmith_rewards` | 1 | Query flag. |
-| (reserved) | 1 | Always `0`. Formerly the `fast_mode` query flag; readers ignore it, so links written while the flag existed still open (as an ordinary full-depth search). |
 | `max_depth` | 1 (+5) | Present only when not the default 24. Value is `max_depth − 1` (floors 1–24). |
 | `challenges` | 1 (+9) | Present only when nonzero. The upstream challenge bitmask: bit 0 `on_diet` … bit 8 `badder_bosses`, in the order of `CHALLENGE_NAMES` in `json_query.rs`. |
 | `wandmaker_quest` | 1 (+2) | Present only when the search filters on a Wandmaker variant. Value is the variant's one-based game value (`WandmakerQuestType` in `quests.rs`) minus one: `0` corpse dust · `1` elemental embers · `2` rotberry. `3` is invalid. |
@@ -83,8 +82,8 @@ codes at the end of the table; existing codes stay put.
 Every platform pins this vector:
 
 - Query document: `{"requirements":[{"item":"wand_fireblast","kind":"wand","upgrade":{"at_least":3}}]}`
-- Code: `MAGWhMAA`
-- Link: `https://shpd-seed-seeker.web.app/#q=MAGWhMAA`
+- Code: `QAMtCYAA`
+- Link: `https://shpd-seed-seeker.web.app/#q=QAMtCYAA`
 
 Encoding validates the query first, so a produced link always decodes;
 decoding returns the canonical query document (defaults omitted, `kind`

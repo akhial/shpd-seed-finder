@@ -8,7 +8,7 @@ import org.json.JSONObject
  * Shareable-link codec for search queries, backed by the Rust core.
  *
  * A deep link carries a whole query as a short base64url code, e.g.
- * `https://shpd-seed-seeker.web.app/#q=MAGWhMAA`. The codec — the bit stream,
+ * `https://shpd-seed-seeker.web.app/#q=QAMtCYAA`. The codec — the bit stream,
  * the frozen code tables, and the link grammar — lives only in
  * `crates/seedfinder-core/src/deep_link.rs` and is reached through
  * [JniBindings]; this wrapper converts between the app's models and the

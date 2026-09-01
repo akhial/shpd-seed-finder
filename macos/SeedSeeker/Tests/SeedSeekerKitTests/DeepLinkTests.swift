@@ -5,7 +5,7 @@ final class DeepLinkTests: XCTestCase {
     /// Cross-platform pinned vector: this query and this link must stay
     /// interchangeable on every platform. Re-frozen when the retired link
     /// formats were dropped alongside the journal-order effect table.
-    private static let pinnedLink = "https://shpd-seed-seeker.web.app/#q=MAGWhMAA"
+    private static let pinnedLink = "https://shpd-seed-seeker.web.app/#q=QAMtCYAA"
 
     private func pinnedQuery() throws -> SavedQuery {
         SavedQuery(requirements: [
@@ -19,7 +19,7 @@ final class DeepLinkTests: XCTestCase {
     }
 
     func testPinnedVectorDecodesFromEveryLinkForm() throws {
-        for text in [Self.pinnedLink, "MAGWhMAA", "seedseeker://q/MAGWhMAA"] {
+        for text in [Self.pinnedLink, "QAMtCYAA", "seedseeker://q/QAMtCYAA"] {
             let query = try DeepLink.decode(text)
             XCTAssertEqual(query.requirements.count, 1, text)
             let requirement = try XCTUnwrap(query.requirements.first)
@@ -63,8 +63,8 @@ final class DeepLinkTests: XCTestCase {
     }
 
     /// The enchantments and the item source v4.0.0 added are what the engine
-    /// writes format-3 links for; the pinned version-1 link above must keep
-    /// decoding all the same, so both eras stay shareable from this build.
+    /// writes format-4 links for; the pinned vector above must keep decoding
+    /// all the same, so links stay shareable from this build.
     func testAQueryOfV4EffectsAndTheVaultSourceRoundTripsThroughALink() throws {
         let query = SavedQuery(requirements: [
             try ItemRequirement(key: 1, item: ItemCatalog.findById("battle_axe"), upgrade: 5,

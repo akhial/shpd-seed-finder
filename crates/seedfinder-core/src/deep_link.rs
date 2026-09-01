@@ -1,13 +1,14 @@
 //! Compact shareable-link codec for search queries.
 //!
 //! A deep link carries a whole query as a short base64url code, e.g.
-//! `https://shpd-seed-seeker.web.app/#q=EAEkgA`. The payload is a versioned
+//! `https://shpd-seed-seeker.web.app/#q=QAMtCYAA`. The payload is a versioned
 //! bit stream, so codes shared today must keep decoding in every future
 //! release: the numeric code tables below are frozen by tests and may only
 //! ever grow at the end. There is a single live format version: versions 1
 //! and 2 were retired while the feature had next to no users (the effect
-//! table was also re-frozen in journal order at the same time), so decoding
-//! rejects them instead of carrying translation code forever.
+//! table was also re-frozen in journal order at the same time), and version
+//! 3 — the same layout plus the retired fast-mode bit — went with the flag,
+//! so decoding rejects them instead of carrying translation code forever.
 
 // Every narrowing cast in this module operates on a value already masked or
 // bounds-checked to fewer bits than the destination type.
@@ -32,8 +33,9 @@ pub const URI_SCHEME: &str = "seedseeker";
 
 /// The only format read or written: effect sets as a 32-bit mask,
 /// alternative groups and combined-level groups per requirement. Versions 1
-/// and 2 are rejected as unsupported.
-const VERSION: u8 = 3;
+/// through 3 are rejected as unsupported (3 differed only in carrying the
+/// retired fast-mode bit).
+const VERSION: u8 = 4;
 /// Requirement-count field width; far above anything the UIs produce.
 const MAX_REQUIREMENTS: usize = 63;
 /// Effect-set mask width: the weapon family has 27 effects, with room to
@@ -94,9 +96,6 @@ pub fn encode(query: &SearchQuery) -> Result<String, String> {
     bits.push(VERSION.into(), 4);
     bits.push(query.require_blacksmith.into(), 1);
     bits.push(query.exclude_blacksmith_rewards.into(), 1);
-    // Reserved bit, formerly fast mode: kept zero so the version-3 layout —
-    // and every link already shared — stays valid.
-    bits.push(0, 1);
     push_optional(&mut bits, query.max_depth != 24, || {
         (u32::from(query.max_depth) - 1, 5)
     });
@@ -157,9 +156,6 @@ pub fn decode(code: &str) -> Result<SearchQuery, String> {
     }
     let require_blacksmith = bits.pull(1)? == 1;
     let exclude_blacksmith_rewards = bits.pull(1)? == 1;
-    // Reserved bit, formerly fast mode: links that carried it still open,
-    // running as an ordinary full-depth search.
-    let _ = bits.pull(1)?;
     let max_depth = if bits.pull(1)? == 1 {
         depth_from(bits.pull(5)?)?
     } else {
@@ -894,8 +890,8 @@ mod tests {
         // A hand-crafted stream carrying group 200: the wire field is eight
         // bits, so out-of-range groups must die in the decoder.
         let mut bits = super::BitWriter::default();
-        bits.push(3, 4); // version
-        bits.push(0, 3); // flags
+        bits.push(4, 4); // version
+        bits.push(0, 2); // flags
         bits.push(0, 1); // max depth absent
         bits.push(0, 1); // challenges absent
         bits.push(0, 1); // Wandmaker filter absent
@@ -921,8 +917,8 @@ mod tests {
         assert!(decode("").is_err());
         assert!(decode("!!!").is_err());
         assert!(decode("A").is_err());
-        // Unsupported future version (bits 0100 in the top nibble).
-        assert!(decode("QAAA").unwrap_err().contains("version 4"));
+        // Unsupported future version (bits 0101 in the top nibble).
+        assert!(decode("UAAA").unwrap_err().contains("version 5"));
         let code = encode(&minimal(vec![wildcard(ItemKind::Wand)])).unwrap();
         assert!(decode(&code[..code.len() - 1]).is_err());
         assert!(decode(&format!("{code}AAAA")).is_err());
@@ -935,8 +931,8 @@ mod tests {
     fn unknown_category_codes_are_named_in_the_error() {
         for code in 6..=7 {
             let mut bits = super::BitWriter::default();
-            bits.push(3, 4); // version
-            bits.push(0, 3); // flags
+            bits.push(4, 4); // version
+            bits.push(0, 2); // flags
             bits.push(0, 1); // max depth absent
             bits.push(0, 1); // challenges absent
             bits.push(0, 1); // Wandmaker filter absent
@@ -1326,8 +1322,8 @@ mod tests {
     #[test]
     fn effect_masks_stay_thirty_two_bits_wide() {
         let mut bits = super::BitWriter::default();
-        bits.push(3, 4); // version
-        bits.push(0, 3); // flags
+        bits.push(4, 4); // version
+        bits.push(0, 2); // flags
         bits.push(0, 1); // max depth absent
         bits.push(0, 1); // challenges absent
         bits.push(0, 1); // Wandmaker filter absent
@@ -1423,18 +1419,19 @@ mod tests {
         ]);
         let code = encode(&query).unwrap();
         assert_eq!(decode(&code).unwrap(), query);
-        assert_eq!(code, "MAIQ4sCAAFwQAA");
-        assert_eq!(decode("MAIQ4sCAAFwQAA").unwrap(), query);
+        assert_eq!(code, "QAQhxYEAALggAA");
+        assert_eq!(decode("QAQhxYEAALggAA").unwrap(), query);
     }
 
-    /// Codes from the retired versions 1 and 2 are rejected by version, not
-    /// misread: their layouts and effect tables no longer apply.
+    /// Codes from the retired versions 1 through 3 are rejected by version,
+    /// not misread: their layouts (and, for 1 and 2, effect tables) no
+    /// longer apply. `MAGWhMAA` was version 3's pinned fixture.
     #[test]
     fn retired_versions_are_rejected() {
-        for code in ["EAGWhMA", "IAIQ4sCAEWJAgA"] {
+        for code in ["EAGWhMA", "IAIQ4sCAEWJAgA", "MAGWhMAA"] {
             let error = decode(code).unwrap_err();
             assert!(error.contains("format version"), "{error}");
-            assert!(error.contains("only understands version 3"), "{error}");
+            assert!(error.contains("only understands version 4"), "{error}");
         }
     }
 }
