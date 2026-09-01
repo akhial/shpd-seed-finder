@@ -123,7 +123,7 @@ fun RequirementSheet(
     var selectedItem by remember(identity) {
         mutableStateOf<CatalogItem?>(
             if (editing == null) {
-                ItemCatalog.forKind(kind).first { it.tier != 1 }
+                searchableItems(kind).first()
             } else {
                 editing.item
             },
@@ -258,7 +258,7 @@ fun RequirementSheet(
                                     checked = kind.family == entry,
                                     onCheckedChange = { checked ->
                                         if (checked && kind.family != entry) {
-                                            val first = ItemCatalog.forKind(entry).first { it.tier != 1 }
+                                            val first = searchableItems(entry).first()
                                             kind = entry
                                             selectedItem = first
                                             tierMatch = TierMatch.ANY
@@ -303,7 +303,7 @@ fun RequirementSheet(
                                         if (kind != weaponKind) {
                                             val kept = selectedItem?.takeIf(weaponKind::accepts)
                                             val chosen = kept
-                                                ?: ItemCatalog.forKind(weaponKind).first { it.tier != 1 }
+                                                ?: searchableItems(weaponKind).first()
                                             kind = weaponKind
                                             selectedItem = chosen
                                             clampUpgrade(
@@ -328,7 +328,7 @@ fun RequirementSheet(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        items(ItemCatalog.forKind(kind).filter { it.tier != 1 }, key = { it.id }) { item ->
+                        items(searchableItems(kind), key = { it.id }) { item ->
                             ItemTile(
                                 item = item,
                                 selected = selectedItem?.id == item.id,
@@ -913,6 +913,15 @@ fun RequirementSheet(
         }
     }
 }
+
+/**
+ * The items the picker offers for [kind]. Tier-1 equipment is starting gear
+ * that never spawns in the dungeon, and tipped darts are guaranteed shop
+ * stock anyone can tip by hand, so neither is worth searching for — scout
+ * views still show both.
+ */
+private fun searchableItems(kind: ItemKind): List<CatalogItem> =
+    ItemCatalog.forKind(kind).filter { it.tier != 1 && !it.isTippedDart }
 
 private fun normalizedUpgrade(value: Int, match: UpgradeMatch, ceiling: Int): Int = when (match) {
     UpgradeMatch.ANY -> 0

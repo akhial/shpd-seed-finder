@@ -65,6 +65,19 @@ public sealed class ItemCatalogTests
     }
 
     [Fact]
+    public void TheFreshPickListHidesTippedDarts()
+    {
+        // Every shop stocks tipped darts and any dart can be tipped by hand,
+        // so nobody searches for one; scouted worlds still show them.
+        Assert.Contains(ItemCatalog.All, item => item.Id.EndsWith("_dart", StringComparison.Ordinal));
+        Assert.All(ItemCatalog.For(ItemKind.ThrownWeapon),
+            item => Assert.False(item.Id.EndsWith("_dart", StringComparison.Ordinal)));
+        // A requirement importing one still round-trips through the editor.
+        var dart = ItemCatalog.Find("poison_dart")!;
+        Assert.Contains(dart, ItemCatalog.EditorItems(ItemKind.ThrownWeapon, dart));
+    }
+
+    [Fact]
     public void TheEditorListIsTheFreshPickListUntilTheRequirementNamesAHiddenItem()
     {
         Assert.Equal(ItemCatalog.For(ItemKind.Weapon), ItemCatalog.EditorItems(ItemKind.Weapon, null));

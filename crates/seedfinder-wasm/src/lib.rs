@@ -938,6 +938,18 @@ mod tests {
                     });
             assert_eq!(entry.class.as_deref(), expected, "{}", entry.id);
         }
+
+        // The frontends keep tipped darts out of their item pickers by the
+        // `_dart` id suffix, so the suffix must name exactly the core's
+        // tipped-dart set.
+        for entry in &catalog.entries {
+            assert_eq!(
+                entry.id.ends_with("_dart"),
+                item_by_stable_id(&entry.id).unwrap().id.is_tipped_dart(),
+                "{}",
+                entry.id
+            );
+        }
     }
 
     #[test]

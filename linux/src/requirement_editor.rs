@@ -703,7 +703,9 @@ fn set_tier_value(editor: &Rc<Editor>, tier: u8) {
 }
 
 /// Items offered for one category choice. Tier-1 equipment is starting gear
-/// and never spawns in the dungeon, so it is not searchable.
+/// and never spawns in the dungeon, so it is not searchable; tipped darts are
+/// guaranteed shop stock (and can be tipped by hand), so nobody searches for
+/// them either.
 fn searchable_items(choice: KindChoice) -> Vec<&'static ItemDefinition> {
     let (kind, weapon_category) = choice;
     let mut items: Vec<_> = ITEMS
@@ -711,6 +713,7 @@ fn searchable_items(choice: KindChoice) -> Vec<&'static ItemDefinition> {
         .filter(|definition| {
             definition.kind == kind
                 && definition.tier != Some(1)
+                && !definition.id.is_tipped_dart()
                 && weapon_category
                     .is_none_or(|category| definition.weapon_category() == Some(category))
         })
