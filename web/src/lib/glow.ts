@@ -1,5 +1,5 @@
-import { ANY_ENCHANTMENT } from './wasm/types'
-import type { EffectFilter, ScoutItem } from './wasm/types'
+import { ANY_ENCHANTMENT } from "./wasm/types";
+import type { EffectFilter, ScoutItem } from "./wasm/types";
 
 /**
  * Enchantment / glyph glow colours and pulse periods, mirrored 1:1 from
@@ -10,54 +10,54 @@ import type { EffectFilter, ScoutItem } from './wasm/types'
  */
 export interface Glow {
   /** Hex colour the sprite blends toward at the pulse peak. */
-  color: string
+  color: string;
   /** Seconds to reach peak glow; the full fade-in/out cycle lasts twice this. */
-  period: number
+  period: number;
 }
 
 /** Upstream's default `Glowing(color)` period when none is given (1f). */
-const DEFAULT_PERIOD = 1
+const DEFAULT_PERIOD = 1;
 
 // Keyed by the wire names the scout emits (WeaponEffect / ArmorEffect
 // `wire_name` in seedfinder-core). Only non-curse effects live here; every curse
 // glows black and is handled by CURSE_GLOW below.
 const ENCHANT_GLOW: Record<string, Glow> = {
   // Weapon enchantments, in the catalog's journal order
-  Blazing: { color: '#ff4400', period: DEFAULT_PERIOD },
-  Chilling: { color: '#00ffff', period: DEFAULT_PERIOD },
-  Kinetic: { color: '#ffff00', period: DEFAULT_PERIOD },
-  Shocking: { color: '#ffffff', period: 0.5 },
-  Venomous: { color: '#4400aa', period: DEFAULT_PERIOD },
-  Blocking: { color: '#0000ff', period: DEFAULT_PERIOD },
-  Blooming: { color: '#008800', period: DEFAULT_PERIOD },
-  Eldritch: { color: '#222222', period: DEFAULT_PERIOD },
-  Elastic: { color: '#ff00ff', period: DEFAULT_PERIOD },
-  Lucky: { color: '#00ff00', period: DEFAULT_PERIOD },
-  Projecting: { color: '#8844cc', period: DEFAULT_PERIOD },
-  Unstable: { color: '#999999', period: DEFAULT_PERIOD },
-  Vorpal: { color: '#aa6666', period: DEFAULT_PERIOD },
-  Corrupting: { color: '#440066', period: DEFAULT_PERIOD },
-  Crystal: { color: '#0088ff', period: DEFAULT_PERIOD },
-  Grim: { color: '#000000', period: DEFAULT_PERIOD },
-  Vampiric: { color: '#660022', period: DEFAULT_PERIOD },
+  Blazing: { color: "#ff4400", period: DEFAULT_PERIOD },
+  Chilling: { color: "#00ffff", period: DEFAULT_PERIOD },
+  Kinetic: { color: "#ffff00", period: DEFAULT_PERIOD },
+  Shocking: { color: "#ffffff", period: 0.5 },
+  Venomous: { color: "#4400aa", period: DEFAULT_PERIOD },
+  Blocking: { color: "#0000ff", period: DEFAULT_PERIOD },
+  Blooming: { color: "#008800", period: DEFAULT_PERIOD },
+  Eldritch: { color: "#222222", period: DEFAULT_PERIOD },
+  Elastic: { color: "#ff00ff", period: DEFAULT_PERIOD },
+  Lucky: { color: "#00ff00", period: DEFAULT_PERIOD },
+  Projecting: { color: "#8844cc", period: DEFAULT_PERIOD },
+  Unstable: { color: "#999999", period: DEFAULT_PERIOD },
+  Vorpal: { color: "#aa6666", period: DEFAULT_PERIOD },
+  Corrupting: { color: "#440066", period: DEFAULT_PERIOD },
+  Crystal: { color: "#0088ff", period: DEFAULT_PERIOD },
+  Grim: { color: "#000000", period: DEFAULT_PERIOD },
+  Vampiric: { color: "#660022", period: DEFAULT_PERIOD },
   // Armor glyphs
-  Obfuscation: { color: '#888888', period: DEFAULT_PERIOD },
-  Swiftness: { color: '#ffff00', period: DEFAULT_PERIOD },
-  Viscosity: { color: '#8844cc', period: DEFAULT_PERIOD },
-  Potential: { color: '#ffffff', period: 0.6 },
-  Brimstone: { color: '#ff4400', period: DEFAULT_PERIOD },
-  Stone: { color: '#222222', period: DEFAULT_PERIOD },
-  Entanglement: { color: '#663300', period: DEFAULT_PERIOD },
-  Repulsion: { color: '#ffffff', period: DEFAULT_PERIOD },
-  Camouflage: { color: '#448822', period: DEFAULT_PERIOD },
-  Flow: { color: '#0000ff', period: DEFAULT_PERIOD },
-  Affection: { color: '#ff4488', period: DEFAULT_PERIOD },
-  'Anti-Magic': { color: '#88eeff', period: DEFAULT_PERIOD },
-  Thorns: { color: '#660022', period: DEFAULT_PERIOD },
-}
+  Obfuscation: { color: "#888888", period: DEFAULT_PERIOD },
+  Swiftness: { color: "#ffff00", period: DEFAULT_PERIOD },
+  Viscosity: { color: "#8844cc", period: DEFAULT_PERIOD },
+  Potential: { color: "#ffffff", period: 0.6 },
+  Brimstone: { color: "#ff4400", period: DEFAULT_PERIOD },
+  Stone: { color: "#222222", period: DEFAULT_PERIOD },
+  Entanglement: { color: "#663300", period: DEFAULT_PERIOD },
+  Repulsion: { color: "#ffffff", period: DEFAULT_PERIOD },
+  Camouflage: { color: "#448822", period: DEFAULT_PERIOD },
+  Flow: { color: "#0000ff", period: DEFAULT_PERIOD },
+  Affection: { color: "#ff4488", period: DEFAULT_PERIOD },
+  "Anti-Magic": { color: "#88eeff", period: DEFAULT_PERIOD },
+  Thorns: { color: "#660022", period: DEFAULT_PERIOD },
+};
 
 /** Every curse glows black in the game, at the default period. */
-const CURSE_GLOW: Glow = { color: '#000000', period: DEFAULT_PERIOD }
+const CURSE_GLOW: Glow = { color: "#000000", period: DEFAULT_PERIOD };
 
 /**
  * The pulse glow for a scouted item, or null when it carries no enchantment or
@@ -66,10 +66,10 @@ const CURSE_GLOW: Glow = { color: '#000000', period: DEFAULT_PERIOD }
  * present — e.g. a curse-infused Kinetic weapon still glows yellow); otherwise a
  * cursed item pulses black.
  */
-export function itemGlow(item: Pick<ScoutItem, 'cursed' | 'effect'>): Glow | null {
-  if (item.effect?.kind === 'enchantment') return ENCHANT_GLOW[item.effect.name] ?? null
-  if (item.cursed) return CURSE_GLOW
-  return null
+export function itemGlow(item: Pick<ScoutItem, "cursed" | "effect">): Glow | null {
+  if (item.effect?.kind === "enchantment") return ENCHANT_GLOW[item.effect.name] ?? null;
+  if (item.cursed) return CURSE_GLOW;
+  return null;
 }
 
 /**
@@ -79,9 +79,9 @@ export function itemGlow(item: Pick<ScoutItem, 'cursed' | 'effect'>): Glow | nul
  * fixed set of its own and yields nothing.
  */
 export function effectGlows(effect: EffectFilter | undefined): Glow[] {
-  if (!effect || effect === ANY_ENCHANTMENT) return []
-  const names = typeof effect === 'string' ? [effect] : effect
-  return names.map((name) => ENCHANT_GLOW[name] ?? CURSE_GLOW)
+  if (!effect || effect === ANY_ENCHANTMENT) return [];
+  const names = typeof effect === "string" ? [effect] : effect;
+  return names.map((name) => ENCHANT_GLOW[name] ?? CURSE_GLOW);
 }
 
 /**
@@ -89,5 +89,5 @@ export function effectGlows(effect: EffectFilter | undefined): Glow[] {
  * none. A set pulses its first member's colour.
  */
 export function effectGlow(effect: EffectFilter | undefined): Glow | null {
-  return effectGlows(effect)[0] ?? null
+  return effectGlows(effect)[0] ?? null;
 }

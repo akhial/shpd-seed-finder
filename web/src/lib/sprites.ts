@@ -1,20 +1,20 @@
-import type { CSSProperties } from 'react'
-import spriteBounds from '../generated/sprite-bounds.json'
-import type { Glow } from './glow'
+import type { CSSProperties } from "react";
+import spriteBounds from "../generated/sprite-bounds.json";
+import type { Glow } from "./glow";
 
-const SHEET_URL = '/third_party/shattered-pixel-dungeon/items.png'
-const SHEET_COLUMNS = 16
-const CELL = 16
+const SHEET_URL = "/third_party/shattered-pixel-dungeon/items.png";
+const SHEET_COLUMNS = 16;
+const CELL = 16;
 
-const bounds: Record<string, number[]> = spriteBounds
+const bounds: Record<string, number[]> = spriteBounds;
 
 // Rings all share the same gemmed base sprite and are distinguished only by a
 // small type glyph overlaid on top — never by colour. The glyphs live in a
 // separate 8×8-cell atlas; these constants and per-glyph art sizes mirror the
 // Android client's Components.kt so the two stay pixel-identical.
-const ICON_SHEET_URL = '/third_party/shattered-pixel-dungeon/item_icons.png'
-const ICON_COLUMNS = 16
-const ICON_CELL = 8
+const ICON_SHEET_URL = "/third_party/shattered-pixel-dungeon/item_icons.png";
+const ICON_COLUMNS = 16;
+const ICON_CELL = 8;
 
 /**
  * Atlas cell of the first ring sprite (`ItemSpriteSheet.RINGS`).
@@ -26,20 +26,30 @@ const ICON_CELL = 8
  * class order, because a surface with no seed has no run to ask — and that
  * offset doubles as the class's glyph index.
  */
-export const RING_SPRITE_BASE = 224
+export const RING_SPRITE_BASE = 224;
 
 // Art dimensions (w, h) of each ring glyph within its 8×8 cell, index-aligned
 // to the ring classes (Accuracy, Arcana, Elements, … Wealth).
 const RING_ICON_SIZES: [number, number][] = [
-  [7, 7], [7, 7], [7, 7], [7, 5], [7, 7], [5, 6],
-  [7, 6], [6, 6], [7, 7], [7, 7], [6, 6], [7, 6],
-]
+  [7, 7],
+  [7, 7],
+  [7, 7],
+  [7, 5],
+  [7, 7],
+  [5, 6],
+  [7, 6],
+  [6, 6],
+  [7, 7],
+  [7, 7],
+  [6, 6],
+  [7, 6],
+];
 
 /**
  * The gem each ring class is drawn with in one run, in catalog ring order:
  * the scout document's `ringGems`.
  */
-export type RingGems = readonly number[]
+export type RingGems = readonly number[];
 
 /**
  * The ring-class glyph (0…11) a *catalog* sprite index names, or undefined for
@@ -51,8 +61,8 @@ export type RingGems = readonly number[]
  * says nothing about which ring it is.
  */
 export function ringGlyphIndex(catalogSpriteIndex: number): number | undefined {
-  const glyph = catalogSpriteIndex - RING_SPRITE_BASE
-  return glyph >= 0 && glyph < RING_ICON_SIZES.length ? glyph : undefined
+  const glyph = catalogSpriteIndex - RING_SPRITE_BASE;
+  return glyph >= 0 && glyph < RING_ICON_SIZES.length ? glyph : undefined;
 }
 
 /**
@@ -63,8 +73,8 @@ export function ringGlyphIndex(catalogSpriteIndex: number): number | undefined {
  * the same way. Build one with {@link itemArt}.
  */
 export interface ItemArt {
-  cell: number
-  ringGlyph?: number
+  cell: number;
+  ringGlyph?: number;
 }
 
 /**
@@ -77,13 +87,13 @@ export interface ItemArt {
  * glyph is the class's either way, so the ring stays identifiable.
  */
 export function itemArt(catalogSpriteIndex: number, gems?: RingGems): ItemArt {
-  const ringGlyph = ringGlyphIndex(catalogSpriteIndex)
-  if (ringGlyph === undefined) return { cell: catalogSpriteIndex }
-  const gem = gems?.[ringGlyph]
+  const ringGlyph = ringGlyphIndex(catalogSpriteIndex);
+  if (ringGlyph === undefined) return { cell: catalogSpriteIndex };
+  const gem = gems?.[ringGlyph];
   return {
     cell: gem === undefined ? catalogSpriteIndex : RING_SPRITE_BASE + gem,
     ringGlyph,
-  }
+  };
 }
 
 /**
@@ -92,14 +102,18 @@ export function itemArt(catalogSpriteIndex: number, gems?: RingGems): ItemArt {
  * drawn cell, and returns undefined when there is none — that is, for non-rings.
  * Meant to sit inside a position:relative sprite box.
  */
-export function ringIconCss(ringGlyph: number | undefined, size: number): CSSProperties | undefined {
-  if (ringGlyph === undefined || ringGlyph < 0 || ringGlyph >= RING_ICON_SIZES.length) return undefined
-  const [width, height] = RING_ICON_SIZES[ringGlyph]
-  const scale = size / CELL
-  const col = ringGlyph % ICON_COLUMNS
-  const row = Math.floor(ringGlyph / ICON_COLUMNS)
+export function ringIconCss(
+  ringGlyph: number | undefined,
+  size: number,
+): CSSProperties | undefined {
+  if (ringGlyph === undefined || ringGlyph < 0 || ringGlyph >= RING_ICON_SIZES.length)
+    return undefined;
+  const [width, height] = RING_ICON_SIZES[ringGlyph];
+  const scale = size / CELL;
+  const col = ringGlyph % ICON_COLUMNS;
+  const row = Math.floor(ringGlyph / ICON_COLUMNS);
   return {
-    position: 'absolute',
+    position: "absolute",
     top: 0,
     right: 0,
     width: `${width * scale}px`,
@@ -107,27 +121,30 @@ export function ringIconCss(ringGlyph: number | undefined, size: number): CSSPro
     backgroundImage: `url(${ICON_SHEET_URL})`,
     backgroundPosition: `${-col * ICON_CELL * scale}px ${-row * ICON_CELL * scale}px`,
     backgroundSize: `${ICON_COLUMNS * ICON_CELL * scale}px auto`,
-    imageRendering: 'pixelated',
-    pointerEvents: 'none',
-  }
+    imageRendering: "pixelated",
+    pointerEvents: "none",
+  };
 }
 
 export function spriteCss(index: number, size: number): CSSProperties {
-  const scale = size / CELL
-  const col = index % SHEET_COLUMNS
-  const row = Math.floor(index / SHEET_COLUMNS)
+  const scale = size / CELL;
+  const col = index % SHEET_COLUMNS;
+  const row = Math.floor(index / SHEET_COLUMNS);
   return {
     width: `${size}px`,
     height: `${size}px`,
     backgroundImage: `url(${SHEET_URL})`,
     backgroundPosition: `${-col * CELL * scale}px ${-row * CELL * scale}px`,
     backgroundSize: `${SHEET_COLUMNS * CELL * scale}px auto`,
-    imageRendering: 'pixelated',
-    flex: '0 0 auto',
-  }
+    imageRendering: "pixelated",
+    flex: "0 0 auto",
+  };
 }
 
-export interface SpriteBoxCss { outer: CSSProperties; inner: CSSProperties }
+export interface SpriteBoxCss {
+  outer: CSSProperties;
+  inner: CSSProperties;
+}
 
 /**
  * Sprite art is anchored to the top-left of its 16x16 sheet cell, so rendering
@@ -140,35 +157,35 @@ export interface SpriteBoxCss { outer: CSSProperties; inner: CSSProperties }
  * another run's gem is cropped to that gem's own art.
  */
 export function spriteBoxCss(cell: number, size: number): SpriteBoxCss {
-  const [x, y, width, height] = bounds[String(cell)] ?? [0, 0, CELL, CELL]
-  const scale = size / CELL
-  const col = cell % SHEET_COLUMNS
-  const row = Math.floor(cell / SHEET_COLUMNS)
+  const [x, y, width, height] = bounds[String(cell)] ?? [0, 0, CELL, CELL];
+  const scale = size / CELL;
+  const col = cell % SHEET_COLUMNS;
+  const row = Math.floor(cell / SHEET_COLUMNS);
   return {
     outer: {
-      position: 'relative',
+      position: "relative",
       width: `${size}px`,
       height: `${size}px`,
-      display: 'inline-flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      flex: '0 0 auto',
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      flex: "0 0 auto",
     },
     inner: {
-      position: 'relative',
+      position: "relative",
       width: `${width * scale}px`,
       height: `${height * scale}px`,
       backgroundImage: `url(${SHEET_URL})`,
       backgroundPosition: `${-(col * CELL + x) * scale}px ${-(row * CELL + y) * scale}px`,
       backgroundSize: `${SHEET_COLUMNS * CELL * scale}px auto`,
-      imageRendering: 'pixelated',
+      imageRendering: "pixelated",
     },
-  }
+  };
 }
 
 /** How much gradient one glow's turn occupies, and its blend into the next. */
-const GLOW_BAND = 160
-const GLOW_FADE = 12
+const GLOW_BAND = 160;
+const GLOW_FADE = 12;
 
 /**
  * Overlay CSS for an enchantment/curse glow, sized to sit exactly on top of the
@@ -186,14 +203,14 @@ const GLOW_FADE = 12
  * a chip's sprite and badge move through the colours together.
  */
 export function spriteGlowCss(cell: number, size: number, glows: Glow[]): CSSProperties {
-  const scale = size / CELL
-  const col = cell % SHEET_COLUMNS
-  const row = Math.floor(cell / SHEET_COLUMNS)
-  const [x, y] = bounds[String(cell)] ?? [0, 0, CELL, CELL]
-  const maskPosition = `${-(col * CELL + x) * scale}px ${-(row * CELL + y) * scale}px`
-  const maskSize = `${SHEET_COLUMNS * CELL * scale}px auto`
+  const scale = size / CELL;
+  const col = cell % SHEET_COLUMNS;
+  const row = Math.floor(cell / SHEET_COLUMNS);
+  const [x, y] = bounds[String(cell)] ?? [0, 0, CELL, CELL];
+  const maskPosition = `${-(col * CELL + x) * scale}px ${-(row * CELL + y) * scale}px`;
+  const maskSize = `${SHEET_COLUMNS * CELL * scale}px auto`;
   const base: CSSProperties = {
-    position: 'absolute',
+    position: "absolute",
     inset: 0,
     WebkitMaskImage: `url(${SHEET_URL})`,
     maskImage: `url(${SHEET_URL})`,
@@ -201,33 +218,33 @@ export function spriteGlowCss(cell: number, size: number, glows: Glow[]): CSSPro
     maskPosition,
     WebkitMaskSize: maskSize,
     maskSize,
-    WebkitMaskRepeat: 'no-repeat',
-    maskRepeat: 'no-repeat',
-    pointerEvents: 'none',
-  }
+    WebkitMaskRepeat: "no-repeat",
+    maskRepeat: "no-repeat",
+    pointerEvents: "none",
+  };
   if (glows.length < 2) {
     return {
       ...base,
       backgroundColor: glows[0]?.color,
       animationDuration: `${2 * (glows[0]?.period ?? 1)}s`,
-    }
+    };
   }
-  const round = glows.reduce((total, glow) => total + glow.period * 2, 0)
-  const width = glows.length * GLOW_BAND
+  const round = glows.reduce((total, glow) => total + glow.period * 2, 0);
+  const width = glows.length * GLOW_BAND;
   const stops = glows.flatMap((glow, band) => [
     `${glow.color} ${band * GLOW_BAND}px`,
     `${glow.color} ${(band + 1) * GLOW_BAND - GLOW_FADE}px`,
-  ])
-  stops.push(`${glows[0].color} ${width}px`)
+  ]);
+  stops.push(`${glows[0].color} ${width}px`);
   return {
     ...base,
-    backgroundImage: `linear-gradient(90deg, ${stops.join(', ')})`,
+    backgroundImage: `linear-gradient(90deg, ${stops.join(", ")})`,
     backgroundSize: `${width}px 100%`,
-    backgroundRepeat: 'repeat',
+    backgroundRepeat: "repeat",
     // Start with a band boundary halfway across the sprite: that is where the
     // pulse begins, at zero opacity, so every later swap lands there too.
-    '--d1-glow-from': `${size / 2}px`,
-    '--d1-glow-to': `${size / 2 - width}px`,
+    "--d1-glow-from": `${size / 2}px`,
+    "--d1-glow-to": `${size / 2 - width}px`,
     animationDuration: `${round / glows.length}s, ${round}s`,
-  } as CSSProperties
+  } as CSSProperties;
 }
