@@ -160,6 +160,10 @@ jobs:
 
       - name: Test, lint, and assemble release
         working-directory: android
+        env:
+          # Pull requests build only the device ABI to halve the native build;
+          # main and the release workflow keep the emulator ABI too.
+          ANDROID_ABIS: ${{ github.event_name == 'pull_request' && 'arm64-v8a' || 'arm64-v8a x86_64' }}
         run: ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleRelease --stacktrace
 
   macos:
