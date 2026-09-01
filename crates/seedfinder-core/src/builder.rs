@@ -300,8 +300,10 @@ fn free_space_from_collisions(
         // survivors, in their original order.
         let mut kept = 0_usize;
         let mut closest_room = None;
-        // Java initialises `closestDiff` to `(float) Integer.MAX_VALUE`.
-        let mut closest_difference = 2_147_483_648.0_f32;
+        // Java initialises `closestDiff` to `(float) Integer.MAX_VALUE`, which
+        // every real candidate beats; `i32::MAX` is the same sentinel for the
+        // squared distances compared below.
+        let mut closest_difference = i32::MAX;
         for index in 0..count {
             let bounds = colliding[index];
             // Everything below is predicated on `intersects` with conditional
@@ -341,7 +343,7 @@ fn free_space_from_collisions(
                 space.set(start.x, start.y, start.x, start.y);
                 return space;
             }
-            let current_difference = java_point_length(x_difference, y_difference);
+            let current_difference = squared_point_length(x_difference, y_difference);
             #[allow(clippy::needless_bitwise_bool)]
             let better = intersects & (current_difference < closest_difference);
             closest_difference = if better {
@@ -410,13 +412,30 @@ fn free_space_from_collisions(
     }
 }
 
-/// `Point.length()`: the squared sum is computed in Java `int` arithmetic,
-/// widened to `double` for `Math.sqrt`, then narrowed to `float`.
-#[allow(clippy::cast_possible_truncation)]
-fn java_point_length(x: i32, y: i32) -> f32 {
+/// The squared length Java takes the square root of in `PointF.length()`.
+///
+/// The closest-collision scan only ever *orders* these lengths, and a square
+/// root is monotonic, so ordering the squares gives the same answer without
+/// one `sqrt` per rectangle per pass — a few hundred thousand of them per
+/// generated seed, in the hottest loop of the room builder.
+///
+/// Two different squares can only compare equal once `f32` rounding merges
+/// their roots, which needs a square above `MAX_EXACTLY_ORDERED_SQUARE`.
+/// Both arguments are non-negative distances inside one level, so the largest
+/// square a map can produce is four orders of magnitude below that;
+/// `squares_below_the_documented_bound_order_like_their_roots` pins the bound
+/// itself.
+fn squared_point_length(x: i32, y: i32) -> i32 {
     let squared = x.wrapping_mul(x).wrapping_add(y.wrapping_mul(y));
-    f64::from(squared).sqrt() as f32
+    debug_assert!(
+        (0..MAX_EXACTLY_ORDERED_SQUARE).contains(&squared),
+        "a level distance outside the range where squares order like their roots"
+    );
+    squared
 }
+
+/// Above this square, `f32(sqrt(n))` stops being strictly increasing in `n`.
+const MAX_EXACTLY_ORDERED_SQUARE: i32 = 1 << 22;
 
 /// Exact float/double operation ordering of `Builder.angleBetweenPoints`.
 fn angle_between_points(from: PointF, to: PointF) -> f32 {
@@ -1720,5 +1739,34 @@ mod tests {
             ]
         );
         assert_eq!(rng.int(), -597_342_396);
+    }
+
+    /// The closest-collision scan orders squared distances instead of the
+    /// `PointF.length()` values Java compares. That is only the same
+    /// comparison while `f32(sqrt(n))` is strictly increasing in `n`, so pin
+    /// the documented bound rather than trusting the arithmetic.
+    #[test]
+    #[allow(clippy::cast_possible_truncation)] // The narrowing under test.
+    fn squares_below_the_documented_bound_order_like_their_roots() {
+        let mut previous = f64::from(0_i32).sqrt() as f32;
+        for square in 1..=MAX_EXACTLY_ORDERED_SQUARE {
+            let root = f64::from(square).sqrt() as f32;
+            assert!(
+                root > previous,
+                "sqrt({square}) does not exceed sqrt({}) once rounded to f32",
+                square - 1
+            );
+            previous = root;
+        }
+        // And the bound is tight enough to be worth stating: just above it
+        // the rounding does start merging neighbours.
+        let mut merged = false;
+        let mut previous = f64::from(MAX_EXACTLY_ORDERED_SQUARE).sqrt() as f32;
+        for square in MAX_EXACTLY_ORDERED_SQUARE + 1..MAX_EXACTLY_ORDERED_SQUARE * 8 {
+            let root = f64::from(square).sqrt() as f32;
+            merged |= root == previous;
+            previous = root;
+        }
+        assert!(merged, "the bound is far looser than documented");
     }
 }

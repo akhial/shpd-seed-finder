@@ -298,6 +298,16 @@ bash scripts/build-macos-native.sh
 bash scripts/build-macos-app.sh
 ```
 
+The native build applies the profile-guided optimisation profile checked in at
+`pgo/seed-seeker.profdata`, worth roughly 4% of search throughput. rustc matches
+a profile by mangled symbol name and silently ignores one that does not match,
+so re-record it whenever the engine's hot paths change shape:
+
+```sh
+bash scripts/check-pgo-profile.sh                            # CI runs this
+rustup component add llvm-tools && bash scripts/record-pgo-profile.sh
+```
+
 ### Linux
 
 The Linux app requires GTK 4.22, libadwaita 1.9, and `glib-compile-resources`;
