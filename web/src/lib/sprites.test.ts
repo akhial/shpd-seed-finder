@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import spriteBounds from '../generated/sprite-bounds.json'
 import { getItem, items } from './catalog'
 import { RING_SPRITE_BASE, itemArt, ringGlyphIndex } from './sprites'

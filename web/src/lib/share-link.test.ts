@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vite-plus/test'
 import { defaultQueryState, toQueryJson } from './query'
 import { hasShareCode, withoutFragment } from './share-link'
 import init, { decode_share_text, encode_share_link } from './wasm/pkg/seedfinder.js'

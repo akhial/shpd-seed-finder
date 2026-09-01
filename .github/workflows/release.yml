@@ -36,12 +36,13 @@ jobs:
         with:
           tool: wasm-pack
 
-      - name: Install Node.js
-        uses: actions/setup-node@v4
+      # Installs the Vite+ toolchain, Node.js, and the web app's dependencies.
+      - name: Install Vite+
+        uses: voidzero-dev/setup-vp@v1.18.0
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: web/package-lock.json
+          working-directory: web
+          cache: true
 
       - name: Build browser engine
         run: ./scripts/build-web-wasm.sh
@@ -49,10 +50,9 @@ jobs:
       - name: Build web app
         working-directory: web
         run: |
-          npm ci
-          npm run typecheck
-          npm test -- --run
-          npm run build
+          vp check
+          vp test
+          vp run build
 
       - name: Upload web artifact
         uses: actions/upload-artifact@v4

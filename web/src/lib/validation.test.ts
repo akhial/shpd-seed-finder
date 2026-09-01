@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { clampUpgrade, defaultQueryState, validateQuery, validateRequirement } from './query'
 import type { QueryState, RequirementState } from './wasm/types'
 

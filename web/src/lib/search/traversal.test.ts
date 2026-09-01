@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { SEARCH_START_STRIDE, TOTAL_SEEDS, advanceTraversalStart, partitionRotated, randomTraversalStart } from './traversal'
 
 const coveredSeeds = (segments: ReturnType<typeof partitionRotated>) =>

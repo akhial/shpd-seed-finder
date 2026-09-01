@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vite-plus/test'
 import init from '../wasm/pkg/seedfinder.js'
 import type { ParsedSeed, QueryDocument } from '../wasm/types'
 import { defaultQueryState, toQueryDocument } from '../query'

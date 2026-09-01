@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { fromQueryJson, toQueryDocument, toQueryJson, validateQuery } from '../../lib/query'
 import type { QueryState, RequirementState } from '../../lib/wasm/types'
 import {

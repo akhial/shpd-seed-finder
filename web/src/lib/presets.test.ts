@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { VAULT_FLOOR_LIMIT, builtInPresets } from './store'
 import { validateQuery } from './query'
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { FLOOR_LIMIT_OPTIONS, canonicalEffect, defaultQueryState, fromQueryJson, nearestOptionIndex, normalizeFloorLimit, slotCount, toQueryDocument, toQueryJson } from './query'
 import { weaponEnchantments } from './catalog'
 import type { QueryState, RequirementState } from './wasm/types'

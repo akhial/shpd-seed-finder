@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { effectGlows, itemGlow } from './glow'
 
 const enchanted = (name: string) => ({ cursed: false, effect: { name, kind: 'enchantment' as const } })

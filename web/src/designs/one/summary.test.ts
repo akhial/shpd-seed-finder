@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { slotCount } from '../../lib/query'
 import type { RequirementState } from '../../lib/wasm/types'
 import { alternativesTitle, effectLabel, requirementDetails } from './summary'

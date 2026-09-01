@@ -231,11 +231,16 @@ tooling/java-finder/run.sh --no-vault --skip-boss-floors --seeds 5000
 
 ### Web app
 
-Build the browser engine before starting Vite:
+The web app is a [Vite+](https://viteplus.dev) project. Install the `vp` CLI once
+(`curl -fsSL https://vite.plus | bash`), then build the browser engine before starting the dev
+server:
 
 ```sh
-./scripts/build-web-wasm.sh && cd web && npm ci && npm run dev
+./scripts/build-web-wasm.sh && cd web && vp install && vp dev
 ```
+
+`vp check` (format, lint, type-check), `vp test`, and `vp run build` cover the rest; they all need
+the generated engine assets, so run `build-web-wasm.sh` first on a fresh clone.
 
 ### Android
 

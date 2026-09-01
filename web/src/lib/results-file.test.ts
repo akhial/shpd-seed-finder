@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vite-plus/test'
 // The canonical frozen fixture, imported verbatim from the Rust core's test
 // data so this codec can never silently drift from it.
 import VERSION_1_FIXTURE from '../../../crates/seedfinder-core/tests/fixtures/results-export-v1.json?raw'

@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vite-plus/test'
 import { LEVEL_GEN_CHALLENGES, challenges } from './catalog'
 import {
   BLACKSMITH_LAST_FLOOR,

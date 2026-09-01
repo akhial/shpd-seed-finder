@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vite-plus/test'
 import { applyProgress, calculateRate, importedResultsState, initialCoordinatorState, markWorkerDone, mergeMatches, runSaturated, settleRun, type CoordinatorState } from './coordinator-state'
 
 const match = (value: number) => ({ value, code: value.toString().padStart(9, 'A') })
