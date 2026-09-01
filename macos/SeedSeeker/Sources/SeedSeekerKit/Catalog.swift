@@ -18,9 +18,13 @@ public enum ItemCatalog {
             let weaponClass: String?
             let tier: Int?
             let sprite: Int
+            /// Present only on rings: the class's glyph cell in
+            /// `item_icons.png`, which the asset states rather than leaving
+            /// each front-end to derive it from `sprite`.
+            let typeIcon: Int?
 
             private enum CodingKeys: String, CodingKey {
-                case id, name, type, tier, sprite
+                case id, name, type, tier, sprite, typeIcon
                 case weaponClass = "class"
             }
         }
@@ -69,7 +73,8 @@ public enum ItemCatalog {
         }
         return document.entries
             .filter { $0.type == type && (weaponClass == nil || $0.weaponClass == weaponClass) }
-            .map { CatalogItem(id: $0.id, name: $0.name, kind: kind, spriteIndex: $0.sprite, tier: $0.tier) }
+            .map { CatalogItem(id: $0.id, name: $0.name, kind: kind, spriteIndex: $0.sprite,
+                               tier: $0.tier, typeIconIndex: $0.typeIcon) }
     }
 
     public static let meleeWeapons = items("weapon", weaponClass: "melee")

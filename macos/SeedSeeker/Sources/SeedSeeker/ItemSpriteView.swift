@@ -15,8 +15,13 @@ import SwiftUI
 /// requirement) and when the atlas is not bundled, which is the case for a bare
 /// `swift run` outside the `.app`.
 struct ItemSpriteView: View {
-    /// The concrete item's atlas index, or nil for a wildcard requirement.
-    var spriteIndex: Int?
+    /// The concrete item, or nil for a wildcard requirement.
+    var item: CatalogItem?
+    /// The ring gems of the run this item belongs to, when it belongs to one:
+    /// a ring is drawn in its run's gem cell, so a scouted item must pass its
+    /// world's table. Nil keeps the catalog's own cell, which is what a
+    /// seedless surface — the requirement board — has to draw.
+    var ringGems: RingGems?
     /// Enchantment or curse glow to pulse with, if any.
     var glow: ItemGlow?
     /// Box edge in points. Multiples of 8 keep the pixel scale integral.
@@ -69,8 +74,9 @@ struct ItemSpriteView: View {
     }
 
     private func sprite(_ layer: SpriteLayer) -> CGImage? {
-        guard let spriteIndex else { return nil }
-        return SpriteAtlas.bundled?.composedSprite(spriteIndex: spriteIndex,
+        guard let item else { return nil }
+        return SpriteAtlas.bundled?.composedSprite(spriteIndex: item.spriteIndex(in: ringGems),
+                                                   typeIcon: item.typeIconIndex,
                                                    pointSize: pointSize, layer: layer)
     }
 }
@@ -112,14 +118,18 @@ private struct SpriteGlowLayer<Mask: View>: View {
 /// draws the selected row, so padding moves the open menu's rows and leaves the
 /// collapsed control untouched. Everything else keeps its square box, and the
 /// scout list — which asks for no margin — is unaffected either way.
+///
+/// The picker names item *classes*, not the contents of any one run, so a ring
+/// keeps the catalog's cell here — there is no seed to ask for a gem.
 struct ItemSpriteIcon: View {
-    var spriteIndex: Int
+    var item: CatalogItem
     var pointSize: Int = 16
     /// Points of transparency added to the right of a ring's glyph.
     var typeIconMargin: Int = 2
 
     var body: some View {
-        if let image = SpriteAtlas.bundled?.composedSprite(spriteIndex: spriteIndex,
+        if let image = SpriteAtlas.bundled?.composedSprite(spriteIndex: item.spriteIndex,
+                                                           typeIcon: item.typeIconIndex,
                                                            pointSize: pointSize,
                                                            typeIconMargin: typeIconMargin) {
             Image(decorative: image, scale: CGFloat(SpriteAtlas.pixelScale))

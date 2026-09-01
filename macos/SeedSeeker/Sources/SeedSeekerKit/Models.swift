@@ -97,11 +97,41 @@ public struct CatalogItem: Codable, Hashable, Identifiable, Sendable {
     public let id: String
     public let name: String
     public let kind: ItemKind
+    /// The item's own `items.png` cell — for a ring, the cell of its *class*,
+    /// which is its identity rather than the cell any particular run draws it
+    /// in. Use ``spriteIndex(in:)`` wherever a run's ring gems are known.
     public let spriteIndex: Int
     public let tier: Int?
+    /// A ring's `item_icons.png` glyph cell — the 0…11 class index that tells
+    /// one ring from another whatever gem the run gave it. Nil for everything
+    /// that is not a ring, which carries no glyph. Mirrors the Android
+    /// client's `CatalogItem.typeIconIndex` and the asset's `typeIcon`.
+    public let typeIconIndex: Int?
 
-    public init(id: String, name: String, kind: ItemKind, spriteIndex: Int, tier: Int? = nil) {
-        self.id = id; self.name = name; self.kind = kind; self.spriteIndex = spriteIndex; self.tier = tier
+    public init(id: String, name: String, kind: ItemKind, spriteIndex: Int, tier: Int? = nil,
+                typeIconIndex: Int? = nil) {
+        self.id = id; self.name = name; self.kind = kind; self.spriteIndex = spriteIndex
+        self.tier = tier; self.typeIconIndex = typeIconIndex
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, kind, spriteIndex, tier, typeIconIndex
+    }
+
+    /// Saved queries written before the glyph was carried hold every other
+    /// field, so an absent one is that older file rather than catalog drift.
+    /// It is taken from the entry the id names, leaving `SavedQuery.validated()`
+    /// — which drops a query whose item no longer equals its catalog entry — to
+    /// compare only what a saved query really pins.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        kind = try container.decode(ItemKind.self, forKey: .kind)
+        spriteIndex = try container.decode(Int.self, forKey: .spriteIndex)
+        tier = try container.decodeIfPresent(Int.self, forKey: .tier)
+        typeIconIndex = try container.decodeIfPresent(Int.self, forKey: .typeIconIndex)
+            ?? ItemCatalog.findById(id)?.typeIconIndex
     }
 }
 
@@ -639,14 +669,20 @@ public struct ScoutWorld: Sendable {
     public let seed: String
     public let quests: [ScoutQuest]
     public let items: [ScoutItem]
-    public init(seed: String, quests: [ScoutQuest] = [], items: [ScoutItem]) {
-        self.seed = seed; self.quests = quests; self.items = items
+    /// The gem this run gave each ring class, and so the cell every ring in
+    /// ``items`` is drawn in. It follows from the seed alone, so it belongs to
+    /// the world beside the manifest; a world assembled without one (a test
+    /// fixture, a stub engine) falls back to the catalog's own table.
+    public let ringGems: RingGems
+    public init(seed: String, quests: [ScoutQuest] = [], items: [ScoutItem],
+                ringGems: RingGems = .catalogDefault) {
+        self.seed = seed; self.quests = quests; self.items = items; self.ringGems = ringGems
     }
 }
 
 /// The quest giver a scouted world rolled on one of its quest floors.
 public enum ScoutQuestKind: Int, CaseIterable, Sendable {
-    // The raw value doubles as the SSC2 wire quest ID.
+    // The raw value doubles as the SSC3 wire quest ID.
     case ghost = 1, wandmaker, blacksmith, imp
 
     public var giverLabel: String {
@@ -666,7 +702,7 @@ public enum ScoutQuestKind: Int, CaseIterable, Sendable {
         case .imp: 17...19
         }
     }
-    /// Wire variants in SSC2 order; a quest's variant byte is a 1-based index.
+    /// Wire variants in SSC3 order; a quest's variant byte is a 1-based index.
     public var variants: [ScoutQuestVariant] {
         switch self {
         case .ghost: [.fetidRat, .gnollTrickster, .greatCrab]
