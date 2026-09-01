@@ -22,7 +22,7 @@ written in Rust — with native apps for Android, Linux, macOS, and Windows.
   <i>Scanning seeds for a +5 Runic Blade across 19 floors, on an Apple M4 Pro (12 cores).</i>
 </p>
 
-- ⚡️ **4–6× faster** than the game's own generator on the JVM, on the same workload
+- ⚡️ **4–6× faster** than Shattered Pixel Dungeon's own generator on the JVM
 - 🔍 **Rich queries**: multiple requirements across melee and thrown weapons, armor, wands, and rings
 - 🔗 **Share links**: any search fits in a short link that fills in the query on every platform
 - 🔮 **Seed scouting**: paste a seed, get every item with floor, upgrade, enchantment, cursed state and source
@@ -219,23 +219,6 @@ against the official `4.0.0-BETA-3` release JAR (`tooling/java-finder`):
 - **Builds:** Shattered Pixel Dungeon v4.0.0-BETA-3 release JAR; Rust release; Java OpenJDK 21.0.11
 - **Samples:** Java 5,000 seeds after 200 warm-up seeds (1 process), 2,000 per process; Rust 150,000 (1 thread), 1,000,000 (12 threads)
 - **Java turbo:** 6/8/12 processes: 805/902/916 seeds/s
-- **Cross-check:** identical 251 matches in the first 10,000 seeds
-- **Same allowances:** the Java finder runs with `--no-vault --skip-boss-floors`, the two shortcuts the engine's plan takes for this query — the vault's treasure stops at +4, and boss depths 5, 10 and 15 leave no run state behind. Made to generate those anyway it does 147 → 115 seeds/s (1 process) and 916 → 707 (12)
-- **Planning:** exact shortcuts on; lossy `fast_mode` off
-
-Both sides do the same work: floors 1 to 19, the Imp's prize table, and a stop
-as soon as a seed matches. A +5 only ever lands on a tier-4 weapon among the
-Imp's reward options, so the search has to reach the City however it is
-written, and neither tool can end early on a resolved quest. That makes this a
-narrower ratio, and a fairer one, than the v3.3.8 numbers published before it —
-there the engine's plan stopped at depth 9 while the Java finder generated all
-24 floors, and the two sets are not comparable.
-
-The baseline is our own because the established Java tool cannot follow the
-engine to v4.0.0: [Elektrochecker's shpd-seed-finder](https://github.com/Elektrochecker/shpd-seed-finder)
-patches the game's *source* and is pinned to v3.3.8, and upstream has published
-a v4.0.0 JAR but no v4.0.0 source. `tooling/java-finder` drives that JAR
-unmodified instead, and both tools return the same seeds.
 
 Reproduce:
 
@@ -370,17 +353,13 @@ java -cp /tmp RngOracle
 ```
 
 `EquipmentOracle.java` is compiled against the isolated v3.3.8 JAR.
-`tooling/oracle-4.0` drives the official v4.0.0-BETA-3 release JAR headlessly
-and is the parity reference for the current engine; `tooling/java-finder` is
-the Java baseline behind [Benchmarks](#benchmarks), built the same way.
+`tooling/oracle-4.0` drives the v4.0.0-BETA-3 release JAR headlessly.
 
 ## Acknowledgements<a id="acknowledgements"></a>
 
 Seed Seeker reimplements the generation of
 [Shattered Pixel Dungeon](https://github.com/00-Evan/shattered-pixel-dungeon) by Evan Debenham,
 itself based on [Pixel Dungeon](https://github.com/watabou/pixel-dungeon) by Oleg Dolya.
-
-[Elektrochecker's shpd-seed-finder](https://github.com/Elektrochecker/shpd-seed-finder) was used for the v3.3.8 parity tests and benchmarks.
 
 ## License and identity<a id="license-and-identity"></a>
 
