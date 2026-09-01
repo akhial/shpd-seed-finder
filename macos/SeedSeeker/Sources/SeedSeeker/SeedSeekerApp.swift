@@ -1395,10 +1395,13 @@ private struct RequirementEditor: View {
                     Picker("Item", selection: $itemID) {
                         Text("Any \(kind.singularLabel)").tag("")
                         if kind.family == .weapon {
-                            // Tier-1 weapons are starting gear and never spawn in the dungeon.
+                            // Tier-1 weapons are starting gear and never spawn in the
+                            // dungeon; tipped darts are guaranteed shop stock anyone can
+                            // tip by hand, so nobody searches for either.
                             ForEach(SearchLimits.exactTiers, id: \.self) { tier in
                                 Section("Tier \(tier)") {
-                                    ForEach(ItemCatalog.forKind(kind).filter { $0.tier == tier }) { item in
+                                    ForEach(ItemCatalog.forKind(kind)
+                                        .filter { $0.tier == tier && !$0.isTippedDart }) { item in
                                         Label { Text(item.name) } icon: {
                                             ItemSpriteIcon(item: item)
                                         }.tag(item.id)

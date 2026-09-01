@@ -1322,22 +1322,31 @@ public static class ItemCatalog
     private static Root Load() =>
         JsonSerializer.Deserialize<Root>(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Assets", "catalog-v4.0.0.json")), new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
     /// <summary>
-    /// The items offered when picking one fresh. Tier-1 items are hidden: they
-    /// are the starting gear, never worth searching for.
+    /// Whether picking an item fresh may offer it. Tier-1 items are hidden:
+    /// they are the starting gear, never worth searching for. Tipped darts are
+    /// hidden too: every shop stocks them and any dart can be tipped by hand,
+    /// so nobody searches for them — though a scouted world still lists the
+    /// ones it rolled. The engine's catalog keeps the <c>_dart</c> suffix
+    /// unambiguous (the plain dart has no entry), and its wasm cross-check
+    /// test pins the suffix to the tipped set.
     /// </summary>
-    public static IEnumerable<CatalogItem> For(ItemKind kind) => All.Where(x => kind.Accepts(x) && x.Tier != 1);
+    private static bool Searchable(CatalogItem item) =>
+        item.Tier != 1 && !item.Id.EndsWith("_dart", StringComparison.Ordinal);
+
+    /// <summary>The items offered when picking one fresh; see <see cref="Searchable"/>.</summary>
+    public static IEnumerable<CatalogItem> For(ItemKind kind) => All.Where(x => kind.Accepts(x) && Searchable(x));
 
     /// <summary>
     /// The items a requirement editor lists for <paramref name="kind"/>: the
     /// fresh-pick list, plus <paramref name="current"/> when the requirement
     /// being edited already names an item that list hides. Imports and share
     /// links resolve items through the whole catalog, so a requirement can name
-    /// a tier-1 item the picker would otherwise be unable to show — and saving
-    /// it unchanged would silently swap it for whichever item took its slot.
-    /// The order stays the catalog's.
+    /// a tier-1 item or tipped dart the picker would otherwise be unable to
+    /// show — and saving it unchanged would silently swap it for whichever
+    /// item took its slot. The order stays the catalog's.
     /// </summary>
     public static IReadOnlyList<CatalogItem> EditorItems(ItemKind kind, CatalogItem? current) =>
-        [.. All.Where(x => kind.Accepts(x) && (x.Tier != 1 || x.Id == current?.Id))];
+        [.. All.Where(x => kind.Accepts(x) && (Searchable(x) || x.Id == current?.Id))];
     public static CatalogItem? Find(string id) => All.FirstOrDefault(x => x.Id == id);
     public static IEnumerable<string> Modifiers(ItemKind kind) => kind.Family() switch { ItemKind.Weapon => Enchantments.Concat(WeaponCurses), ItemKind.Armor => Glyphs.Concat(ArmorCurses), _ => [] };
     /// <summary>The family's non-curse effects: what "any enchantment" stands for.</summary>
