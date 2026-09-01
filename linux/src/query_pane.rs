@@ -1176,8 +1176,10 @@ fn chip_tooltip(state: &AppState, index: usize, item: &BoardItem) -> String {
 /// particular item.
 fn requirement_prefix(requirement: &UiRequirement) -> gtk::Widget {
     match requirement.item {
+        // No seed is in sight here, so rings keep the catalog's own cell for
+        // their class rather than any run's gem.
         Some(item_id) => sprites::item_image(
-            shpd_seedfinder_core::catalog::item(item_id),
+            sprites::ItemSprite::from_catalog(shpd_seedfinder_core::catalog::item(item_id)),
             glow::effect(requirement.pinned_effect()),
         ),
         None => {

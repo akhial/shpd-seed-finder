@@ -7,14 +7,17 @@
 //! items:
 //!
 //! * `items.png` is a 16-column grid of 16×16 cells indexed row-major by
-//!   [`ItemDefinition::sprite_index`].
+//!   [`ItemSprite::art_index`].
 //! * Art is anchored to each cell's top-left, so drawing the whole cell leaves
 //!   small items (rings, darts, seeds) hugging the corner. We crop to the art's
 //!   alpha bounding box — measured at runtime on first use — and centre that
 //!   crop in the target box, keeping the pixel scale of a full-cell render.
-//! * Rings share one gemmed base sprite and are told apart by a type glyph from
-//!   `item_icons.png` (8×8 cells, 16 columns), drawn at the same scale anchored
-//!   to the sprite box's top-right.
+//! * Rings are drawn as a gem, and Shattered Pixel Dungeon shuffles which gem
+//!   each ring class wears once per run, so the art cell of a ring belongs to
+//!   the seed rather than to the class. They are told apart by a type glyph
+//!   from `item_icons.png` (8×8 cells, 16 columns), drawn at the same scale
+//!   anchored to the sprite box's top-right; the glyph names the *class*, so it
+//!   is the same in every run. [`ItemSprite`] pairs the two cells.
 //!
 //! Everything is scaled by nearest-neighbour into the widget's device pixels
 //! and then blitted 1:1, so the artwork stays crisp at any scale factor.
@@ -26,6 +29,7 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::{cairo, gdk, gio, glib};
 use shpd_seedfinder_core::catalog::ItemDefinition;
+use shpd_seedfinder_core::run::RingGems;
 
 use crate::config::RESOURCE_BASE_PATH;
 use crate::glow::{self, Glow};
@@ -39,11 +43,8 @@ const SHEET_COLUMNS: u16 = 16;
 const ICON_CELL: i32 = 8;
 const ICON_COLUMNS: usize = 16;
 
-/// First ring sprite in the atlas; ring glyph indices are offsets from it.
-const RING_SPRITE_BASE: u16 = 224;
-
-/// Art dimensions of each ring glyph within its 8×8 cell, index-aligned to ring
-/// sprites 224…235 (Accuracy, Arcana, Elements, … Wealth).
+/// Art dimensions of each ring glyph within its 8×8 cell, indexed by the ring
+/// class's glyph index (Accuracy, Arcana, Elements, … Wealth).
 const RING_ICON_SIZES: [(i32, i32); 12] = [
     (7, 7), // Accuracy
     (7, 7), // Arcana
@@ -59,11 +60,55 @@ const RING_ICON_SIZES: [(i32, i32); 12] = [
     (7, 6), // Wealth
 ];
 
-/// The ring-type glyph index for a base ring sprite, or `None` for non-rings.
-#[must_use]
-pub fn ring_icon_index(sprite_index: u16) -> Option<usize> {
-    let icon = usize::from(sprite_index.checked_sub(RING_SPRITE_BASE)?);
-    (icon < RING_ICON_SIZES.len()).then_some(icon)
+/// What to draw for one item: the `items.png` cell holding its art and, for a
+/// ring, the `item_icons.png` cell holding its class glyph.
+///
+/// The two are independent. A ring's art cell is the gem its class was given,
+/// which the run's seed decides, while its glyph names the class in every run,
+/// so neither can be derived from the other. Build the pair with
+/// [`Self::from_catalog`] on a surface that has no run to ask — the requirement
+/// editor — and with [`Self::in_run`] on one showing a scouted seed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ItemSprite {
+    definition: &'static ItemDefinition,
+    art_index: u16,
+    ring_glyph: Option<usize>,
+}
+
+impl ItemSprite {
+    /// The catalog's own cells: a ring shows the gem its *class* owns, which is
+    /// what a seedless surface must draw.
+    #[must_use]
+    pub fn from_catalog(definition: &'static ItemDefinition) -> Self {
+        Self::new(definition, definition.sprite_index)
+    }
+
+    /// The cells a run whose ring gems are `gems` draws this item in.
+    #[must_use]
+    pub fn in_run(definition: &'static ItemDefinition, gems: RingGems) -> Self {
+        Self::new(definition, definition.sprite_index_in(gems))
+    }
+
+    fn new(definition: &'static ItemDefinition, art_index: u16) -> Self {
+        Self {
+            definition,
+            art_index,
+            ring_glyph: definition.ring_glyph_index().map(usize::from),
+        }
+    }
+
+    /// The `items.png` cell the art comes from.
+    #[must_use]
+    pub const fn art_index(self) -> u16 {
+        self.art_index
+    }
+
+    /// The ring class's glyph cell, or `None` for everything that is not a
+    /// ring.
+    #[must_use]
+    pub const fn ring_glyph(self) -> Option<usize> {
+        self.ring_glyph
+    }
 }
 
 /// A rectangle of atlas pixels.
@@ -326,8 +371,12 @@ fn glow_value(frame_time: i64, period: f64) -> f64 {
 /// The real sprite for one item, pulsing `glow` when it carries an enchantment
 /// or curse. Falls back to the family's symbolic icon if the atlases cannot be
 /// decoded.
+///
+/// The caller chooses the cells: pass [`ItemSprite::in_run`] wherever the item
+/// belongs to a scouted seed, so its rings wear that run's gems.
 #[must_use]
-pub fn item_image(definition: &ItemDefinition, glow: Option<Glow>) -> gtk::Widget {
+pub fn item_image(sprite: ItemSprite, glow: Option<Glow>) -> gtk::Widget {
+    let definition = sprite.definition;
     let Some(atlas) = atlas() else {
         let image =
             gtk::Image::from_icon_name(kind_icon(definition.kind, definition.weapon_category()));
@@ -344,9 +393,8 @@ pub fn item_image(definition: &ItemDefinition, glow: Option<Glow>) -> gtk::Widge
         .build();
     area.update_property(&[gtk::accessible::Property::Label(definition.name)]);
 
-    let sprite_index = definition.sprite_index;
     area.set_draw_func(move |area, context, width, height| {
-        draw(&atlas, area, context, width, height, sprite_index, glow);
+        draw(&atlas, area, context, width, height, sprite, glow);
     });
     if let Some(glow) = glow {
         animate(&area, glow.period);
@@ -354,14 +402,14 @@ pub fn item_image(definition: &ItemDefinition, glow: Option<Glow>) -> gtk::Widge
     area.upcast()
 }
 
-#[allow(clippy::needless_pass_by_value)] // `Glow` is Copy; taking it by value reads better here.
+#[allow(clippy::needless_pass_by_value)] // Both are Copy; taking them by value reads better here.
 fn draw(
     atlas: &Atlas,
     area: &gtk::DrawingArea,
     context: &cairo::Context,
     width: i32,
     height: i32,
-    sprite_index: u16,
+    sprite: ItemSprite,
     glow: Option<Glow>,
 ) {
     let factor = area.scale_factor().max(1);
@@ -372,7 +420,7 @@ fn draw(
     let origin_x = f64::from((width - SIZE) * factor) / 2.0;
     let origin_y = f64::from((height - SIZE) * factor) / 2.0;
 
-    let Some(art) = atlas.art(sprite_index, box_size) else {
+    let Some(art) = atlas.art(sprite.art_index(), box_size) else {
         return;
     };
     // The atlas anchors art to the cell's top-left; centre the crop instead.
@@ -395,7 +443,7 @@ fn draw(
     }
 
     // Ring glyphs sit at the sprite box's top-right, never tinted by the glow.
-    if let Some(icon) = ring_icon_index(sprite_index)
+    if let Some(icon) = sprite.ring_glyph()
         && let Some(glyph) = atlas.glyph(icon, box_size)
     {
         let glyph_x = origin_x + f64::from(box_size - glyph.width());
@@ -448,11 +496,14 @@ fn animate(area: &gtk::DrawingArea, period: f64) {
 
 #[cfg(test)]
 mod tests {
-    use shpd_seedfinder_core::catalog::{ITEMS, ItemKind};
+    use shpd_seedfinder_core::catalog::{ITEMS, ItemId, ItemKind, RING_SPRITE_BASE, item};
+    use shpd_seedfinder_core::challenges::Challenges;
+    use shpd_seedfinder_core::run::RingGems;
+    use shpd_seedfinder_core::seed::DungeonSeed;
+    use shpd_seedfinder_session::production_scout_world;
 
     use super::{
-        Atlas, Pixels, RING_ICON_SIZES, RING_SPRITE_BASE, Rect, alpha_bounds, ring_icon_index,
-        sample, scaled_extent,
+        Atlas, ItemSprite, Pixels, RING_ICON_SIZES, Rect, alpha_bounds, sample, scaled_extent,
     };
 
     /// Registers the bundled resources so the atlas can be decoded in tests.
@@ -466,31 +517,85 @@ mod tests {
     }
 
     #[test]
-    fn ring_glyph_indices_map_the_twelve_ring_sprites() {
-        assert_eq!(ring_icon_index(RING_SPRITE_BASE), Some(0));
-        assert_eq!(ring_icon_index(RING_SPRITE_BASE + 11), Some(11));
-        assert_eq!(ring_icon_index(RING_SPRITE_BASE + 12), None);
-        assert_eq!(ring_icon_index(RING_SPRITE_BASE - 1), None);
-        assert_eq!(ring_icon_index(0), None);
-        // Every catalog ring has a glyph, and nothing else does.
+    fn catalog_sprites_draw_the_ring_block_in_class_order() {
+        // With no run to ask, every item keeps its catalog cell, and the ring
+        // classes own the block contiguously from the base — which is also what
+        // makes a class's offset its glyph index.
+        let mut rings = 0;
         for definition in ITEMS {
+            let sprite = ItemSprite::from_catalog(definition);
+            assert_eq!(sprite.art_index(), definition.sprite_index);
             assert_eq!(
-                ring_icon_index(definition.sprite_index).is_some(),
+                sprite.ring_glyph().is_some(),
                 definition.kind == ItemKind::Ring,
                 "{} maps to the wrong glyph slot",
                 definition.name
             );
+            if let Some(glyph) = sprite.ring_glyph() {
+                assert_eq!(glyph, rings);
+                let offset = u16::try_from(glyph).expect("twelve ring classes fit u16");
+                assert_eq!(sprite.art_index(), RING_SPRITE_BASE + offset);
+                rings += 1;
+            }
         }
-        // Ring sprites are contiguous from the base, in catalog order.
-        let rings: Vec<u16> = ITEMS
+        assert_eq!(rings, RING_ICON_SIZES.len());
+    }
+
+    #[test]
+    fn a_scouted_ring_wears_the_gem_its_run_gave_it() {
+        // YKH-LGJ-WDQ hands the ring of haste a diamond, the last gem in the
+        // block, so that run draws it four cells past the class's own catalog
+        // cell. The glyph that names the class does not move with it. Take the
+        // table off a scouted world, which is where the manifest reads it.
+        let seed = DungeonSeed::from_code("YKH-LGJ-WDQ").expect("a valid seed code");
+        let gems = production_scout_world(seed, Challenges::NONE)
+            .expect("an unchallenged run of a valid seed must generate")
+            .ring_gems;
+        let haste = item(ItemId::RingHaste);
+        let drawn = ItemSprite::in_run(haste, gems);
+        assert_eq!(drawn.art_index(), RING_SPRITE_BASE + 11);
+        assert_eq!(drawn.ring_glyph(), Some(7));
+        assert_eq!(
+            ItemSprite::from_catalog(haste).art_index(),
+            RING_SPRITE_BASE + 7
+        );
+
+        for definition in ITEMS {
+            let catalog = ItemSprite::from_catalog(definition);
+            // A run only ever moves rings, and only their art.
+            assert_eq!(
+                ItemSprite::in_run(definition, gems).ring_glyph(),
+                catalog.ring_glyph()
+            );
+            if definition.kind != ItemKind::Ring {
+                assert_eq!(
+                    ItemSprite::in_run(definition, gems),
+                    catalog,
+                    "{} moved with the run",
+                    definition.name
+                );
+            }
+            // An unshuffled table is the catalog's own reading of the block.
+            assert_eq!(
+                ItemSprite::in_run(definition, RingGems::UNSHUFFLED),
+                catalog
+            );
+        }
+
+        // The run permutes the block rather than pointing anywhere else in the
+        // atlas, so every ring still lands on real ring art.
+        let mut cells: Vec<u16> = ITEMS
             .iter()
             .filter(|definition| definition.kind == ItemKind::Ring)
-            .map(|definition| definition.sprite_index)
+            .map(|definition| ItemSprite::in_run(definition, gems).art_index())
             .collect();
-        assert_eq!(rings.len(), RING_ICON_SIZES.len());
-        for (offset, sprite_index) in rings.iter().enumerate() {
-            assert_eq!(ring_icon_index(*sprite_index), Some(offset));
-        }
+        cells.sort_unstable();
+        assert_eq!(
+            cells,
+            (0..12)
+                .map(|offset| RING_SPRITE_BASE + offset)
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
