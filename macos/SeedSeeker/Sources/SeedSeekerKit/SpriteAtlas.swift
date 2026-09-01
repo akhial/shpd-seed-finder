@@ -32,11 +32,16 @@ public enum SpriteSheet {
     /// `item_icons.png` is a 16-column grid of 8×8 cells.
     public static let iconCell = 8
     public static let iconColumns = 16
-    /// Sprite index of the first ring; all rings share one gemmed base sprite.
+    /// Cell of the first ring sprite (`ItemSpriteSheet.RINGS`). The twelve
+    /// cells from here are the twelve *gems* in `Ring.gems` order, not the
+    /// twelve ring classes: which of them a ring is drawn in is a property of
+    /// the run, so it comes from ``RingGems`` — see
+    /// ``CatalogItem/spriteIndex(in:)``.
     public static let ringSpriteBase = 224
 
-    /// Art dimensions of each ring glyph within its 8×8 cell, index-aligned to
-    /// ring sprites 224…235 (Accuracy, Arcana, Elements, … Wealth).
+    /// Art dimensions of each ring glyph within its 8×8 cell, indexed by ring
+    /// class (`CatalogItem.typeIconIndex`): Accuracy, Arcana, Elements, …
+    /// Wealth. A class keeps its glyph whatever gem the run gives it.
     public static let ringIconSizes: [PixelSize] = [
         PixelSize(width: 7, height: 7),  // Accuracy
         PixelSize(width: 7, height: 7),  // Arcana
@@ -52,11 +57,16 @@ public enum SpriteSheet {
         PixelSize(width: 7, height: 6),  // Wealth
     ]
 
-    /// The ring-type glyph index (0…11) for a base ring sprite, or nil for
-    /// non-rings. Rings are told apart only by this glyph, never by colour.
-    public static func ringIconIndex(_ spriteIndex: Int) -> Int? {
-        let icon = spriteIndex - ringSpriteBase
-        return icon >= 0 && icon < ringIconSizes.count ? icon : nil
+    /// The art size of ring glyph `typeIcon`, or nil when there is no such
+    /// glyph — a non-ring (nil) or an index outside the ring block.
+    ///
+    /// The glyph index is an input, never derived from the drawn cell: a
+    /// scouted ring is drawn in its run's gem cell, which says nothing about
+    /// which ring it is. Rings are told apart only by this glyph, never by
+    /// colour, so the two have to travel side by side.
+    public static func ringIconSize(_ typeIcon: Int?) -> PixelSize? {
+        guard let typeIcon, ringIconSizes.indices.contains(typeIcon) else { return nil }
+        return ringIconSizes[typeIcon]
     }
 }
 
@@ -112,6 +122,11 @@ public enum SpriteLayer: Hashable, Sendable {
 
     private struct ImageKey: Hashable {
         let spriteIndex: Int
+        /// The glyph drawn over that cell, if any. Two rings of one class in
+        /// runs with different gems differ here only in ``spriteIndex``, and a
+        /// gem cell shared by two classes only in this — so both belong in the
+        /// key.
+        let typeIcon: Int?
         let pointSize: Int
         let layer: SpriteLayer
         let typeIconMargin: Int
@@ -179,9 +194,16 @@ public enum SpriteLayer: Hashable, Sendable {
         return SpriteBounds(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
     }
 
-    /// A sprite composed for display: its art centred in a `pointSize`-square
-    /// box, with a ring's type glyph anchored to the box's top-right at the same
-    /// pixel scale, rasterised nearest-neighbour at ``pixelScale``× and cached.
+    /// A sprite composed for display: the `items.png` cell `spriteIndex` centred
+    /// in a `pointSize`-square box, with ring glyph `typeIcon` anchored to the
+    /// box's top-right at the same pixel scale, rasterised nearest-neighbour at
+    /// ``pixelScale``× and cached.
+    ///
+    /// The two are separate inputs and neither follows from the other. A
+    /// scouted ring's cell is its run's gem, which two ring classes never share
+    /// but which says nothing about the class; the glyph is the class, and is
+    /// the same in every run. Pass ``CatalogItem/spriteIndex(in:)`` and
+    /// ``CatalogItem/typeIconIndex``.
     ///
     /// `layer` selects which parts to draw; every layer uses the same geometry
     /// and box size, so they stack pixel-for-pixel back into ``SpriteLayer/whole``.
@@ -195,23 +217,26 @@ public enum SpriteLayer: Hashable, Sendable {
     /// with no glyph, which keep their square box.
     ///
     /// Returns nil when the bitmap cannot be allocated, and for
-    /// ``SpriteLayer/typeIcon`` on a sprite that is not a ring — there is no
-    /// glyph to draw, and an empty layer is not worth caching.
-    public func composedSprite(spriteIndex: Int, pointSize: Int, layer: SpriteLayer = .whole,
+    /// ``SpriteLayer/typeIcon`` without a glyph — there is nothing to draw, and
+    /// an empty layer is not worth caching.
+    public func composedSprite(spriteIndex: Int, typeIcon: Int? = nil, pointSize: Int,
+                               layer: SpriteLayer = .whole,
                                typeIconMargin: Int = 0) -> CGImage? {
-        let hasTypeIcon = SpriteSheet.ringIconIndex(spriteIndex) != nil
-        guard layer != .typeIcon || hasTypeIcon else { return nil }
-        let margin = hasTypeIcon ? max(0, typeIconMargin) : 0
-        let key = ImageKey(spriteIndex: spriteIndex, pointSize: pointSize, layer: layer,
-                           typeIconMargin: margin)
+        // A glyph index outside the ring block draws nothing, so it must not
+        // reach the cache key either: that image is the one with no glyph.
+        let icon = SpriteSheet.ringIconSize(typeIcon) == nil ? nil : typeIcon
+        guard layer != .typeIcon || icon != nil else { return nil }
+        let margin = icon == nil ? 0 : max(0, typeIconMargin)
+        let key = ImageKey(spriteIndex: spriteIndex, typeIcon: icon, pointSize: pointSize,
+                           layer: layer, typeIconMargin: margin)
         if let cached = imageCache[key] { return cached }
-        guard let rendered = render(spriteIndex: spriteIndex, pointSize: pointSize, layer: layer,
-                                    typeIconMargin: margin) else { return nil }
+        guard let rendered = render(spriteIndex: spriteIndex, typeIcon: icon, pointSize: pointSize,
+                                    layer: layer, typeIconMargin: margin) else { return nil }
         imageCache[key] = rendered
         return rendered
     }
 
-    private func render(spriteIndex: Int, pointSize: Int, layer: SpriteLayer,
+    private func render(spriteIndex: Int, typeIcon: Int?, pointSize: Int, layer: SpriteLayer,
                         typeIconMargin: Int) -> CGImage? {
         let pixels = pointSize * Self.pixelScale
         guard pixels > 0, let context = CGContext(
@@ -238,8 +263,7 @@ public enum SpriteLayer: Hashable, Sendable {
                                              width: width, height: height))
         }
 
-        if layer != .art, let icon = SpriteSheet.ringIconIndex(spriteIndex) {
-            let glyph = SpriteSheet.ringIconSizes[icon]
+        if layer != .art, let icon = typeIcon, let glyph = SpriteSheet.ringIconSize(icon) {
             let iconCell = SpriteSheet.iconCell
             let glyphSource = CGRect(x: (icon % SpriteSheet.iconColumns) * iconCell,
                                      y: (icon / SpriteSheet.iconColumns) * iconCell,
