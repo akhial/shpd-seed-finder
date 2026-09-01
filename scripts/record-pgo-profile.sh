@@ -56,10 +56,12 @@ SEEKER="$WORK/target/$TARGET/release/seed-seeker"
 
 # The training set has to cover the shapes real searches take, because a
 # function the workload never reaches gets no profile at all. The canonical
-# benchmark does reach the Imp's Vault — in v4.0.0 the Imp is a +3 wand source
-# too, so the plan runs to its depth-19 deadline rather than stopping at the
-# Wandmaker — but it never sees the Halls, and it exercises only one shape of
-# requirement, so the queries below widen the coverage.
+# benchmark runs every seed through the City — a +5 tier-4 weapon only comes
+# from the Imp, so the plan carries its depth-19 deadline — but it never sees
+# the Halls, never builds the Imp's Vault (the vault's own treasure stops at +4,
+# so the plan does not ask for the sub-level) and exercises only one shape of
+# requirement. The queries below widen the coverage: deep-wand and halls-armor
+# are the two that pull in the vault.
 echo "==> recording the training workload"
 cat > "$WORK/deep-wand.json" <<'JSON'
 {"max_depth":19,"requirements":[{"kind":"wand","upgrade":2}]}

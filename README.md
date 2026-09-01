@@ -15,14 +15,14 @@ written in Rust — with native apps for Android, Linux, macOS, and Windows.
 **[Try it in your browser →](https://shpd-seed-seeker.web.app/)**
 
 <p align="center">
-  <img alt="Bar chart of seed-search throughput. Seed Seeker tests 13,716 seeds per second on 12 cores and 1,567 on one core; the incumbent Java shpd-seed-finder tests 453 seeds per second across 6 processes and 94 in one process." src="assets/benchmark.svg">
+  <img alt="Bar chart of seed-search throughput. Seed Seeker tests 5,701 seeds per second on 12 cores and 630 on one core; a Java finder driving the game's own release JAR tests 916 seeds per second across 12 processes and 147 in one process." src="assets/benchmark.svg">
 </p>
 
 <p align="center">
-  <i>Scanning seeds for a +3 Wand of Fireblast across 24 floors, on an Apple M4 Pro (12 cores).</i>
+  <i>Scanning seeds for a +5 Runic Blade across 19 floors, on an Apple M4 Pro (12 cores).</i>
 </p>
 
-- ⚡️ **16–30× faster** than any Java seed finder
+- ⚡️ **4–6× faster** than the game's own generator on the JVM, on the same workload
 - 🔍 **Rich queries**: multiple requirements across melee and thrown weapons, armor, wands, and rings
 - 🔗 **Share links**: any search fits in a short link that fills in the query on every platform
 - 🔮 **Seed scouting**: paste a seed, get every item with floor, upgrade, enchantment, cursed state and source
@@ -204,25 +204,45 @@ cargo run --release -p shpd-seedfinder-cli -- -i requirements.json -b 1000 --wor
 
 ## Benchmarks<a id="benchmarks"></a>
 
-Compared with [Elektrochecker's Java finder](https://github.com/Elektrochecker/shpd-seed-finder):
+Compared with a Java finder that runs Shattered Pixel Dungeon's own generator
+against the official `4.0.0-BETA-3` release JAR (`tooling/java-finder`):
 
 | Configuration | Throughput | Relative |
 | --- | ---: | ---: |
-| Seed Seeker, 12 threads | 13,716 seeds/s | **30.3×** |
-| Seed Seeker, 1 thread | 1,567 seeds/s | 16.7× (per core) |
-| shpd-seed-finder, 6 processes (its best) | 453 seeds/s | 1× |
-| shpd-seed-finder, 1 process | 94 seeds/s | — |
+| Seed Seeker, 12 threads | 5,701 seeds/s | **6.2×** |
+| Seed Seeker, 1 thread | 630 seeds/s | 4.3× (per core) |
+| Java finder, 12 processes (its best) | 916 seeds/s | 1× |
+| Java finder, 1 process | 147 seeds/s | — |
 
-- **Machine:** Apple M4 Pro (12 cores), 48 GB, macOS 26.5
-- **Query:** +3 Wand of Fireblast, 24 floors, seeds from `AAA-AAA-AAA`
-- **Builds:** Shattered Pixel Dungeon v3.3.8; Rust release; Java OpenJDK 21
-- **Samples:** Java 3,000–10,000; Rust 150,000 (1 thread), 1,000,000 (12 threads)
-- **Java turbo:** 4/6/8 processes: 330/453/373 seeds/s
-- **Cross-check:** identical 92 matches in the first 10,000 seeds
+- **Machine:** Apple M4 Pro (12 cores), 48 GB, macOS 26.6
+- **Query:** +5 Runic Blade, 19 floors, seeds from `AAA-AAA-AAA`
+- **Builds:** Shattered Pixel Dungeon v4.0.0-BETA-3 release JAR; Rust release; Java OpenJDK 21.0.11
+- **Samples:** Java 5,000 seeds after 200 warm-up seeds (1 process), 2,000 per process; Rust 150,000 (1 thread), 1,000,000 (12 threads)
+- **Java turbo:** 6/8/12 processes: 805/902/916 seeds/s
+- **Cross-check:** identical 251 matches in the first 10,000 seeds
+- **Same allowances:** the Java finder runs with `--no-vault --skip-boss-floors`, the two shortcuts the engine's plan takes for this query — the vault's treasure stops at +4, and boss depths 5, 10 and 15 leave no run state behind. Made to generate those anyway it does 147 → 115 seeds/s (1 process) and 916 → 707 (12)
 - **Planning:** exact shortcuts on; lossy `fast_mode` off
-- **Depth 9 Java comparison:** 283 seeds/s; Seed Seeker is still 5.5× faster per core
 
-Reproduce: `cargo run --release -p shpd-seedfinder-cli -- --benchmark`
+Both sides do the same work: floors 1 to 19, the Imp's prize table, and a stop
+as soon as a seed matches. A +5 only ever lands on a tier-4 weapon among the
+Imp's reward options, so the search has to reach the City however it is
+written, and neither tool can end early on a resolved quest. That makes this a
+narrower ratio, and a fairer one, than the v3.3.8 numbers published before it —
+there the engine's plan stopped at depth 9 while the Java finder generated all
+24 floors, and the two sets are not comparable.
+
+The baseline is our own because the established Java tool cannot follow the
+engine to v4.0.0: [Elektrochecker's shpd-seed-finder](https://github.com/Elektrochecker/shpd-seed-finder)
+patches the game's *source* and is pinned to v3.3.8, and upstream has published
+a v4.0.0 JAR but no v4.0.0 source. `tooling/java-finder` drives that JAR
+unmodified instead, and both tools return the same seeds.
+
+Reproduce:
+
+```sh
+cargo run --release -p shpd-seedfinder-cli -- --benchmark
+tooling/java-finder/run.sh --no-vault --skip-boss-floors --seeds 5000
+```
 
 ## Development<a id="development"></a>
 
@@ -350,6 +370,9 @@ java -cp /tmp RngOracle
 ```
 
 `EquipmentOracle.java` is compiled against the isolated v3.3.8 JAR.
+`tooling/oracle-4.0` drives the official v4.0.0-BETA-3 release JAR headlessly
+and is the parity reference for the current engine; `tooling/java-finder` is
+the Java baseline behind [Benchmarks](#benchmarks), built the same way.
 
 ## Acknowledgements<a id="acknowledgements"></a>
 
@@ -357,7 +380,7 @@ Seed Seeker reimplements the generation of
 [Shattered Pixel Dungeon](https://github.com/00-Evan/shattered-pixel-dungeon) by Evan Debenham,
 itself based on [Pixel Dungeon](https://github.com/watabou/pixel-dungeon) by Oleg Dolya.
 
-[Elektrochecker's shpd-seed-finder](https://github.com/Elektrochecker/shpd-seed-finder) is used for parity tests.
+[Elektrochecker's shpd-seed-finder](https://github.com/Elektrochecker/shpd-seed-finder) was used for the v3.3.8 parity tests and benchmarks.
 
 ## License and identity<a id="license-and-identity"></a>
 
