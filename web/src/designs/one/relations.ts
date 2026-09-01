@@ -511,6 +511,9 @@ export function setStackTotal(
       }),
     );
   }
+  // Only rings count levels together; clearing a total above never needs
+  // this check, so stale non-ring sums can still be dissolved.
+  if (requirementFamily(anchor) !== "ring") return requirements;
   const group =
     anchor.levelSum?.group ??
     freeGroup(

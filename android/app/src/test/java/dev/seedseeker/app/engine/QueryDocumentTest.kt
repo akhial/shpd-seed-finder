@@ -270,6 +270,13 @@ class QueryDocumentTest {
             """{"requirements":[{"item":"ring_might","level_sum":{"group":1,"at_least":2}},{"item":"ring_might","level_sum":{"group":1,"at_least":3}}]}""",
             // An unattainable total.
             """{"requirements":[{"item":"ring_might","level_sum":{"group":1,"at_least":9}}]}""",
+            // A sum outside rings.
+            """{"requirements":[{"item":"sword","level_sum":{"group":1,"at_least":2}}]}""",
+            // A total past what a world generates: only one ring passes +2,
+            // so three rings stop at 11, not 15.
+            """{"requirements":[{"item":"ring_might","level_sum":{"group":1,"at_least":12}},""" +
+                """{"item":"ring_might","level_sum":{"group":1,"at_least":12}},""" +
+                """{"item":"ring_might","level_sum":{"group":1,"at_least":12}}]}""",
             // A curses-only set on an uncursed item.
             """{"requirements":[{"kind":"weapon","uncursed":true,"effect":["Annoying","Sacrificial"]}]}""",
             // Nested groups.

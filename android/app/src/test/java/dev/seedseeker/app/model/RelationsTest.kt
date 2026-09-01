@@ -211,6 +211,24 @@ class RelationsTest {
     }
 
     @Test
+    fun onlyARingStackCanCountLevelsTogether() {
+        // A wand's power does not scale the way a ring's effect does, so a
+        // total is refused and the stack stays plain repeats.
+        val start = listOf(ItemRequirement(1, fireblast, 3))
+        val stacked = start.setStackCount(start.boardItems().single(), count = 2)
+        assertSame(stacked, stacked.setStackTotal(stacked.boardItems().single(), total = 3))
+        // A stale non-ring sum from a hand-written document still clears.
+        val loaded = listOf(
+            ItemRequirement(1, fireblast, 0, upgradeMatch = UpgradeMatch.ANY, levelSum = LevelSum(1, 3)),
+            ItemRequirement(2, fireblast, 0, upgradeMatch = UpgradeMatch.ANY, levelSum = LevelSum(1, 3)),
+        )
+        val cleared = loaded.setStackTotal(loaded.boardItems().single(), total = null)
+        assertNull(cleared.firstOrNull { it.levelSum != null })
+        assertEquals(2, cleared.boardItems().single().stackCount)
+        assertNull(cleared.validationProblem())
+    }
+
+    @Test
     fun aLoadedLevelSumDocumentCollapsesBackIntoOneChip() {
         val loaded = listOf(
             ItemRequirement(1, might, 0, upgradeMatch = UpgradeMatch.ANY, levelSum = LevelSum(1, 3)),

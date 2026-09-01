@@ -10,6 +10,7 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::{cairo, gdk, gio, glib, pango};
 
+use shpd_seedfinder_core::catalog::{MAX_GENERATED_UPGRADE, MAX_STANDARD_RING_UPGRADE};
 use shpd_seedfinder_core::feasibility::Quest;
 use shpd_seedfinder_core::main_world::normalize_floor_limit;
 use shpd_seedfinder_core::query::{
@@ -1013,14 +1014,16 @@ fn menu_item(label: &str, action: &str, target: &glib::Variant) -> gio::MenuItem
 }
 
 /// The most levels a combined-level stack could reach: each item counts its
-/// upgrade plus one, and its members may carry any upgrade.
+/// upgrade plus one, and its members may carry any upgrade — but a generated
+/// world levels at most one ring, the Imp vault's prize, past
+/// [`MAX_STANDARD_RING_UPGRADE`].
 fn levels_capacity(state: &AppState, item: &BoardItem) -> u8 {
     let anchor = state.requirements[item.anchor()];
+    let count = u8::try_from(item.stack_count()).unwrap_or(1).max(1);
     let per_item = anchor.to_core().upgrade_ceiling() + 1;
-    u8::try_from(item.stack_count())
-        .unwrap_or(1)
-        .saturating_mul(per_item)
-        .max(1)
+    let generated = (MAX_GENERATED_UPGRADE + 1)
+        .saturating_add((count - 1).saturating_mul(MAX_STANDARD_RING_UPGRADE + 1));
+    count.saturating_mul(per_item).min(generated).max(1)
 }
 
 /// The tiny qualifiers beside a chip's name: tier, upgrade, floor. A named

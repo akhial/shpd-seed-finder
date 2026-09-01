@@ -224,8 +224,8 @@ describe("query validation", () => {
         ),
       ).errors,
     ).toEqual(["A stack must share one combined level."]);
-    // An item counts its upgrade plus one: an exact +3 ring reaches 4 levels,
-    // an open one 5, so the pair can reach 9 together.
+    // An item counts its upgrade plus one, and a world levels only one ring
+    // — the Imp vault's prize — past +2: a pair reaches 5 + 3 = 8 together.
     expect(
       validateQuery(
         state(
@@ -233,7 +233,16 @@ describe("query validation", () => {
           might({ upgrade: { mode: "exact", value: 3 }, levelSum: { group: 2, atLeast: 10 } }),
         ),
       ).errors,
-    ).toEqual(["A combined level of 10 needs more items: these 2 can reach 9."]);
+    ).toEqual(["A combined level of 10 needs more items: these 2 can reach 8."]);
+    // Only rings combine levels; no other family's effects add up that way.
+    expect(
+      validateQuery(
+        state(
+          requirement({ kind: "weapon", item: "sword", levelSum: { group: 1, atLeast: 3 } }),
+          requirement({ kind: "weapon", item: "sword", levelSum: { group: 1, atLeast: 3 } }),
+        ),
+      ).errors,
+    ).toContain("Requirement 1: Only rings can count levels together.");
     expect(
       validateQuery(state(might({ levelSum: { group: 1, atLeast: 0 } }))).errors.join(" "),
     ).toMatch(/at least 1/);

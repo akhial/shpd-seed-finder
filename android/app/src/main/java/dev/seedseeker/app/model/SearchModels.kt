@@ -35,6 +35,13 @@ object SearchLimits {
     const val MAX_UPGRADE_RING = 4
 
     /**
+     * Highest upgrade every ring but one can carry in a single world: ring
+     * drops roll +0..+2, and the only source beyond that — the Imp vault's
+     * final-room prize — appears once per run.
+     */
+    const val MAX_UPGRADE_RING_STANDARD = 2
+
+    /**
      * Highest upgrade a weapon requirement may name. v4.0.0's Imp vault lays
      * out a +5 tier-4 weapon among its prizes, one level above what any other
      * family can reach.
@@ -74,6 +81,14 @@ object SearchLimits {
         }
         return if (reachesExtraTier) ceiling else MAX_UPGRADE_ANY_TIER
     }
+
+    /**
+     * The highest combined level [count] rings can reach together: one ring
+     * at the vault ceiling, every other at the standard roll, each counting
+     * its upgrade plus one.
+     */
+    fun ringStackCapacity(count: Int): Int =
+        (MAX_UPGRADE_RING + 1) + (count - 1) * (MAX_UPGRADE_RING_STANDARD + 1)
 }
 
 enum class ItemKind(
@@ -386,16 +401,24 @@ fun List<ItemRequirement>.validationProblem(): String? {
             return "Only one item of a stack can carry constraints; the extra copies are plain."
         }
     }
-    // Combined-level groups: one shared, reachable total, counted in levels
-    // (upgrade plus one per item).
+    // Combined-level groups: rings only, and one shared, reachable total,
+    // counted in levels (upgrade plus one per item).
     val sumGroups = filter { it.levelSum != null }.groupBy { it.levelSum!!.group }
     for ((_, members) in sumGroups.toSortedMap()) {
+        if (members.any { it.kind.family != ItemKind.RING }) {
+            return "Only rings can count levels together."
+        }
         val totals = members.map { it.levelSum!!.atLeast }.distinct()
         if (totals.size > 1) {
             return "A stack must share one combined level " +
                 "(it has ${totals.sorted().joinToString(" and ")})."
         }
-        val reachable = members.sumOf { it.maximumLevel }
+        // Each member's own ceiling, bounded by what a world generates: only
+        // the Imp vault's one prize levels a ring past the standard roll.
+        val reachable = minOf(
+            members.sumOf { it.maximumLevel },
+            SearchLimits.ringStackCapacity(members.size),
+        )
         val needed = totals.single()
         if (needed > reachable) {
             return "A combined level of $needed needs more items: " +

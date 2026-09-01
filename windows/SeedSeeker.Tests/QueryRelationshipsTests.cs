@@ -33,25 +33,32 @@ public sealed class QueryRelationshipsTests
     {
         var exact = Ring(1); exact.LevelSum = new(2, 1);
         var any = new ItemRequirement { Kind = ItemKind.Ring, LevelSum = new(2, 1) };
-        var atLeast = new ItemRequirement { Kind = ItemKind.Wand, UpgradeMatch = UpgradeMatch.AtLeast, Upgrade = 1, LevelSum = new(2, 1) };
+        var atLeast = new ItemRequirement { Kind = ItemKind.Wand, UpgradeMatch = UpgradeMatch.AtLeast, Upgrade = 1 };
         // A weapon reaches the vault's +5, one past every other family's ceiling.
-        var weapon = new ItemRequirement { Kind = ItemKind.ThrownWeapon, LevelSum = new(2, 1) };
+        var weapon = new ItemRequirement { Kind = ItemKind.ThrownWeapon };
         var elsewhere = Ring(4); elsewhere.LevelSum = new(1, 4);
         Assert.Equal(1, exact.MaximumUpgrade); Assert.Equal(4, any.MaximumUpgrade); Assert.Equal(4, atLeast.MaximumUpgrade); Assert.Equal(5, weapon.MaximumUpgrade);
         // Every item counts its upgrade plus one.
         Assert.Equal(2, exact.MaximumLevel); Assert.Equal(5, any.MaximumLevel); Assert.Equal(5, atLeast.MaximumLevel); Assert.Equal(6, weapon.MaximumLevel);
-        Assert.Equal(2 + 5 + 5 + 6, QueryRelationships.SumCapacity([exact, any, atLeast, weapon, elsewhere], 2));
+        Assert.Equal(2 + 5, QueryRelationships.SumCapacity([exact, any, atLeast, weapon, elsewhere], 2));
         Assert.Equal(new LevelSum(1, 4), elsewhere.LevelSum);
+        // The members' own ceilings are bounded by generation: a world levels
+        // only one ring — the Imp vault's prize — past +2, so three
+        // any-upgrade rings reach eleven levels together, not fifteen.
+        var trio = Enumerable.Range(0, 3).Select(_ => new ItemRequirement { Kind = ItemKind.Ring, LevelSum = new(3, 1) }).ToList();
+        Assert.Equal(11, QueryRelationships.SumCapacity(trio, 3));
     }
 
     [Fact]
     public void ValidationNamesTheGroupThatCannotReachItsTotal()
     {
-        // Two wands of any upgrade reach ten levels: +4 plus one each.
-        var a = Wand(); var b = Wand(); a.LevelSum = new(1, 11); b.LevelSum = new(1, 11);
+        // Two rings of any upgrade reach eight levels together, not ten: the
+        // vault's one +4 prize plus a standard +2 ring, upgrade plus one each.
+        var a = new ItemRequirement { Kind = ItemKind.Ring, LevelSum = new(1, 9) };
+        var b = new ItemRequirement { Kind = ItemKind.Ring, LevelSum = new(1, 9) };
         var query = new QuerySettings { Requirements = List(a, b) };
-        Assert.Equal("Combined level group A needs 11 levels but its items can reach at most 10.", QueryRelationships.Validate(query));
-        a.LevelSum = new(1, 10); b.LevelSum = new(1, 10);
+        Assert.Equal("Combined level group A needs 9 levels but its items can reach at most 8.", QueryRelationships.Validate(query));
+        a.LevelSum = new(1, 8); b.LevelSum = new(1, 8);
         Assert.Null(QueryRelationships.Validate(query));
         b.LevelSum = new(1, 5);
         Assert.Equal("Combined level group A has members that disagree on the total.", QueryRelationships.Validate(query));
@@ -89,7 +96,9 @@ public sealed class QueryRelationshipsTests
     {
         static string? Check(ItemRequirement requirement) =>
             QueryRelationships.Validate(new QuerySettings { Requirements = List(requirement) });
-        Assert.Contains("alternative", Check(new() { Kind = ItemKind.Wand, AlternativeGroup = 1, LevelSum = new(1, 1) }));
+        Assert.Contains("alternative", Check(new() { Kind = ItemKind.Ring, AlternativeGroup = 1, LevelSum = new(1, 1) }));
+        // Levels only combine across rings; no other family adds up that way.
+        Assert.Contains("only rings", Check(new() { Kind = ItemKind.Wand, LevelSum = new(1, 1) }));
         Assert.Contains("carry none", Check(new() { Kind = ItemKind.Ring, Effect = EffectFilter.Enchantment() }));
         Assert.Contains("only lists curses", Check(new() { Kind = ItemKind.Weapon, RequireUncursed = true, Effect = EffectFilter.OneOf(["Annoying", "Wayward"]) }));
         // A mixed set with uncursed is fine: only the good members can match.
@@ -342,6 +351,31 @@ public sealed class QueryRelationshipsTests
     }
 
     [Fact]
+    public void OnlyARingStackCanCountLevelsTogether()
+    {
+        // The editor and the menu never offer a total off a ring, and the model
+        // refuses one from anywhere else — the badge of a hand-written document.
+        List<ItemRequirement> swords = [WeaponItem("longsword")];
+        var stacked = QueryRelationships.SetStackCount(swords, Entry(swords, 0), 2);
+        var refused = QueryRelationships.SetStackTotal(stacked, Entry(stacked, 0), 3);
+        Assert.All(refused, requirement => Assert.Null(requirement.LevelSum));
+        Assert.Equal(2, QueryRelationships.BoardItems(refused)[0].StackCount);
+        // A stale non-ring sum can still be dissolved, back to plain repeats.
+        var sword = WeaponItem("longsword"); sword.LevelSum = new(1, 3);
+        var again = WeaponItem("longsword"); again.LevelSum = new(1, 3);
+        List<ItemRequirement> stale = [sword, again];
+        Assert.Contains("only rings", Problem(stale));
+        var cleared = QueryRelationships.SetStackTotal(stale, Entry(stale, 0), null);
+        Assert.All(cleared, requirement => Assert.Null(requirement.LevelSum));
+        Assert.Null(Problem(cleared));
+        // The capacity a total is held to: one ring at the vault's +4, every
+        // other at the standard +2, each counting its upgrade plus one.
+        Assert.Equal(5, QueryRelationships.RingStackCapacity(1));
+        Assert.Equal(8, QueryRelationships.RingStackCapacity(2));
+        Assert.Equal(11, QueryRelationships.RingStackCapacity(3));
+    }
+
+    [Fact]
     public void ALoadedLevelSumDocumentCollapsesBackIntoOneChip()
     {
         const string document = """
@@ -538,9 +572,10 @@ public sealed class QueryRelationshipsTests
             "Longsword\nany upgrade\n\u00d7 3 of the same kind \u2014 the extra copies: any upgrade, floors 1\u20134",
             QueryRelationships.ChipDetail(requirements, 0, Entry(requirements, 0), null));
         // A combined level speaks for the upgrades, so the chip's own says nothing.
-        var counted = QueryRelationships.SetStackTotal(requirements, Entry(requirements, 0), 5);
+        var rings = QueryRelationships.ApplyEdit([], null, RingOf("ring_might"), 3, null);
+        var counted = QueryRelationships.SetStackTotal(rings, Entry(rings, 0), 5);
         Assert.Equal(
-            "Longsword\n\u03a3 up to 3 \u2014 levels add to \u2265 5",
+            "Ring of Might\n\u03a3 up to 3 \u2014 levels add to \u2265 5",
             QueryRelationships.ChipDetail(counted, 0, Entry(counted, 0), null));
         // A cluster member names its peers, and a problem has the last word.
         var joined = QueryRelationships.JoinAlternatives([WeaponItem("spear"), WeaponItem("shuriken")], 1, 0);

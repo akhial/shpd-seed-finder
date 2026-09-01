@@ -48,16 +48,32 @@ class SearchRequestValidationTest {
         assertNull(listOf(ring(1, atLeast = 7, upgrade = 1), ring(2, atLeast = 7)).validationProblem())
         val failure = assertThrows(IllegalArgumentException::class.java) { SearchRequest(members) }
         assertEquals("A combined level of 8 needs more items: these 2 can reach 7.", failure.message)
+    }
 
-        // A tier-4 weapon pair uses the weapon cap of 5, so 6 levels each.
-        val weapons = listOf(
-            ItemRequirement(1, battleAxe, 0, upgradeMatch = UpgradeMatch.ANY, levelSum = LevelSum(2, 13)),
-            ItemRequirement(2, battleAxe, 0, upgradeMatch = UpgradeMatch.ANY, levelSum = LevelSum(2, 13)),
-        )
+    @Test
+    fun aWorldLevelsOnlyOneRingPastTheStandardRoll() {
+        // Each ring counts its upgrade plus one, but only the Imp vault's one
+        // prize goes past +2 — so three rings reach 5 + 3 + 3, not 3 × 5.
+        assertEquals(listOf(5, 8, 11), (1..3).map(SearchLimits::ringStackCapacity))
+        val trio = listOf(ring(1, atLeast = 12), ring(2, atLeast = 12), ring(3, atLeast = 12))
         assertEquals(
-            "A combined level of 13 needs more items: these 2 can reach 12.",
-            weapons.validationProblem(),
+            "A combined level of 12 needs more items: these 3 can reach 11.",
+            trio.validationProblem(),
         )
+        assertNull(listOf(ring(1, atLeast = 11), ring(2, atLeast = 11), ring(3, atLeast = 11)).validationProblem())
+    }
+
+    @Test
+    fun onlyRingsCanCountLevelsTogether() {
+        // A weapon's damage does not scale the way a ring's effect does, so a
+        // level sum outside rings says nothing the engine could honour.
+        val weapons = listOf(
+            ItemRequirement(1, battleAxe, 0, upgradeMatch = UpgradeMatch.ANY, levelSum = LevelSum(2, 6)),
+            ItemRequirement(2, battleAxe, 0, upgradeMatch = UpgradeMatch.ANY, levelSum = LevelSum(2, 6)),
+        )
+        assertEquals("Only rings can count levels together.", weapons.validationProblem())
+        val failure = assertThrows(IllegalArgumentException::class.java) { SearchRequest(weapons) }
+        assertEquals("Only rings can count levels together.", failure.message)
     }
 
     @Test

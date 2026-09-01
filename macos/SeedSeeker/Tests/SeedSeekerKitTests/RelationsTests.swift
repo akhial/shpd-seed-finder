@@ -192,6 +192,19 @@ final class RelationsTests: XCTestCase {
         XCTAssertEqual(cleared.boardItems()[0].stackCount, 2)
     }
 
+    func testATotalIsRefusedOutsideRings() throws {
+        // Only a ring's effect scales with its level, so a weapon stack is
+        // never offered a total — and asking for one anyway changes nothing.
+        var base = [try req(1, item: "spear")]
+        base = base.setStackCount(try item(base, 0), 2)
+        XCTAssertEqual(base.setStackTotal(try item(base, 0), 3), base)
+        // Clearing never needs the gate: the stack keeps its plain repeats.
+        let cleared = base.setStackTotal(try item(base, 0), nil)
+        XCTAssertTrue(cleared.allSatisfy { $0.levelSum == nil })
+        XCTAssertEqual(cleared.boardItems().map(\.stackCount), [2])
+        assertSearchable(cleared)
+    }
+
     func testALoadedLevelSumDocumentCollapsesBackIntoOneChip() throws {
         let requirements = [
             try req(1, item: "ring_might", levelSum: LevelSum(group: 2, atLeast: 4)),
