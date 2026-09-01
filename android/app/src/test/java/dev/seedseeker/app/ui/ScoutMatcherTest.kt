@@ -10,6 +10,7 @@ import dev.seedseeker.app.model.EffectFilter
 import dev.seedseeker.app.model.ItemKind
 import dev.seedseeker.app.model.ItemRequirement
 import dev.seedseeker.app.model.ScoutItemSource
+import dev.seedseeker.app.model.SearchLimits
 import dev.seedseeker.app.model.SearchRequest
 import dev.seedseeker.app.model.UpgradeMatch
 import dev.seedseeker.app.model.LevelSum
@@ -194,7 +195,7 @@ class ScoutMatcherTest {
             upgradeMatch = UpgradeMatch.ANY,
             levelSum = LevelSum(group = 1, atLeast = atLeast),
         )
-        val capacity = 2 * (ItemKind.RING.maximumSearchUpgrade + 1)
+        val capacity = SearchLimits.ringStackCapacity(2)
         var reachable = 0
         for (total in 1..capacity) {
             val marks = marksFor(anyRing(1, total), anyRing(2, total))

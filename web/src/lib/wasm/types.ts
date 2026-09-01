@@ -144,6 +144,7 @@ export interface EngineLimits {
   levelSumGroupMax: number;
   maxUpgradeDefault: number;
   maxUpgradeRing: number;
+  maxUpgradeRingStandard: number;
   maxUpgradeWeapon: number;
   maxUpgradeAnyTier: number;
   extraUpgradeTier: number;

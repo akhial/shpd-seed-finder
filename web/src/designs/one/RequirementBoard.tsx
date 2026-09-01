@@ -14,6 +14,7 @@ import {
   isAnyEnchantment,
   levelSumCapacity,
   maxUpgradeOf,
+  requirementFamily,
   validateRequirement,
 } from "../../lib/query";
 import type { RequirementState } from "../../lib/wasm/types";
@@ -836,7 +837,8 @@ function ChipMenu({
   // A cluster spanning two categories cannot anchor a stack, so it is not
   // offered one.
   const canCount = canStack(requirements, item);
-  const canTotal = !inCluster && anchor.item !== undefined && count > 1;
+  const canTotal =
+    !inCluster && anchor.item !== undefined && count > 1 && requirementFamily(anchor) === "ring";
   return (
     <div ref={ref} className="d1-chip-menu" role="menu" style={{ left, top }}>
       <button type="button" role="menuitem" onClick={onEdit}>

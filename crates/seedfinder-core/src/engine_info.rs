@@ -9,7 +9,9 @@
 
 use serde_json::{Value, json};
 
-use crate::catalog::{EXTRA_UPGRADE_TIER, ItemKind, MAX_GENERATED_UPGRADE};
+use crate::catalog::{
+    EXTRA_UPGRADE_TIER, ItemKind, MAX_GENERATED_UPGRADE, MAX_STANDARD_RING_UPGRADE,
+};
 use crate::feasibility::Quest;
 use crate::json_query::CHALLENGE_NAMES;
 use crate::main_world::EMPTY_BOSS_FLOORS;
@@ -44,6 +46,11 @@ pub fn document() -> Value {
             // and thrown) reach `maxUpgradeWeapon`.
             "maxUpgradeDefault": ItemKind::Armor.maximum_search_upgrade(),
             "maxUpgradeRing": ItemKind::Ring.maximum_search_upgrade(),
+            // A world levels at most one ring — the Imp vault's prize —
+            // beyond this, so a combined-level group of n rings reaches
+            // (maxUpgradeRing + 1) + (n - 1) * (maxUpgradeRingStandard + 1)
+            // levels, each ring counting its upgrade plus one.
+            "maxUpgradeRingStandard": MAX_STANDARD_RING_UPGRADE,
             "maxUpgradeWeapon": ItemKind::Weapon.maximum_search_upgrade(),
             "maxUpgradeByKind": {
                 "weapon": ItemKind::Weapon.maximum_search_upgrade(),
@@ -117,6 +124,7 @@ mod tests {
         assert_eq!(info["limits"]["levelSumGroupMax"], 4);
         assert_eq!(info["limits"]["maxUpgradeDefault"], 4);
         assert_eq!(info["limits"]["maxUpgradeRing"], 4);
+        assert_eq!(info["limits"]["maxUpgradeRingStandard"], 2);
         assert_eq!(info["limits"]["maxUpgradeWeapon"], 5);
         assert_eq!(
             info["limits"]["maxUpgradeByKind"],
@@ -144,6 +152,7 @@ mod tests {
                 "maxUpgradeByKind",
                 "maxUpgradeDefault",
                 "maxUpgradeRing",
+                "maxUpgradeRingStandard",
                 "maxUpgradeWeapon",
                 "resultsFileMaxBytes",
             ]

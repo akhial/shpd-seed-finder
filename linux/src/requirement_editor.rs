@@ -8,7 +8,7 @@ use std::rc::Rc;
 use adw::prelude::*;
 use shpd_seedfinder_core::catalog::{
     ALL_ARMOR_EFFECTS, ALL_WEAPON_EFFECTS, EXTRA_UPGRADE_TIER, Effect, ITEMS, ItemDefinition,
-    ItemId, ItemKind, MAX_GENERATED_UPGRADE, item,
+    ItemId, ItemKind, MAX_GENERATED_UPGRADE, MAX_STANDARD_RING_UPGRADE, item,
 };
 use shpd_seedfinder_core::main_world::normalize_floor_limit;
 use shpd_seedfinder_core::model::ItemSource;
@@ -219,9 +219,9 @@ fn build(context: AppState, requirement: &UiRequirement, stack: StackShape) -> E
             .title("Count levels together")
             .subtitle("Any upgrade on each, as long as they add up")
             .build(),
-        // One item's levels: its upgrade plus one. `refresh_levels_range`
+        // One ring's levels: its upgrade plus one. `refresh_levels_range`
         // widens this to the whole stack's capacity.
-        levels_value: spin_row("Levels reach", 1.0, 1.0, f64::from(widest_upgrade() + 1)),
+        levels_value: spin_row("Levels reach", 1.0, 1.0, one_ring_levels()),
         effect_mode_group: adw::PreferencesGroup::builder()
             .title("Enchantment")
             .build(),
@@ -671,10 +671,13 @@ fn selected_count(editor: &Rc<Editor>) -> usize {
     count.clamp(1, STACK_MAX)
 }
 
-/// Whether the row is a stack of a named item whose levels count together —
-/// the only shape a combined level can describe.
+/// Whether the row is a stack of a named ring whose levels count together —
+/// the only shape a combined level can describe. Levels only combine
+/// meaningfully across rings: a ring's effect scales with its level, so a +0
+/// and a +1 together grant what one +2 does.
 fn countable_levels(editor: &Rc<Editor>) -> bool {
     !editor.in_cluster
+        && selected_kind(editor) == ItemKind::Ring
         && selected_item(editor).is_some()
         && selected_count(editor) > 1
         && editor.levels_switch.is_active()
@@ -686,13 +689,15 @@ fn selected_total(editor: &Rc<Editor>) -> u8 {
 }
 
 /// The most levels the stack could reach: every item counts its upgrade plus
-/// one, and a member of a combined-level stack may carry any upgrade.
+/// one, and a member of a combined-level stack may carry any upgrade — but a
+/// generated world levels at most one ring, the Imp vault's prize, past
+/// [`MAX_STANDARD_RING_UPGRADE`].
 fn levels_capacity(editor: &Rc<Editor>) -> u8 {
+    let count = u8::try_from(selected_count(editor)).unwrap_or(1).max(1);
     let per_item = selected_upgrade_ceiling(editor) + 1;
-    u8::try_from(selected_count(editor))
-        .unwrap_or(1)
-        .saturating_mul(per_item)
-        .max(1)
+    let generated = (MAX_GENERATED_UPGRADE + 1)
+        .saturating_add((count - 1).saturating_mul(MAX_STANDARD_RING_UPGRADE + 1));
+    count.saturating_mul(per_item).min(generated).max(1)
 }
 
 fn set_tier_value(editor: &Rc<Editor>, tier: u8) {
@@ -925,7 +930,7 @@ fn refresh_visibility(editor: &Rc<Editor>) {
         .set_visible(stacked && !counting_levels && editor.copy_floor_switch.is_active());
     editor
         .levels_switch
-        .set_visible(stacked && selected_item(editor).is_some());
+        .set_visible(stacked && kind == ItemKind::Ring && selected_item(editor).is_some());
     editor.levels_value.set_visible(counting_levels);
     editor.effect_mode_group.set_visible(enchantable(kind));
     editor
@@ -948,6 +953,12 @@ fn bounded_tier_labels() -> Vec<String> {
 /// on the Imp's vault prizes.
 fn widest_upgrade() -> u8 {
     ItemKind::Weapon.maximum_search_upgrade()
+}
+
+/// One ring's levels — its upgrade plus one — the combined-level spin row's
+/// opening upper bound.
+fn one_ring_levels() -> f64 {
+    f64::from(MAX_GENERATED_UPGRADE + 1)
 }
 
 /// The "+N or higher" options for a family: every upgrade below its ceiling,

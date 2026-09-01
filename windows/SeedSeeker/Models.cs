@@ -94,6 +94,12 @@ public static class SearchLimits
     public const int MaxUpgradeDefault = 4;
     /// <summary>Highest upgrade a ring requirement may name.</summary>
     public const int MaxUpgradeRing = 4;
+    /// <summary>
+    /// Highest upgrade every ring but one can carry in a single world: ring
+    /// drops roll +0..+2, and the only source beyond that — the Imp vault's
+    /// final-room prize — appears once per run.
+    /// </summary>
+    public const int MaxUpgradeRingStandard = 2;
     /// <summary>Highest upgrade a weapon requirement may name; the vault reaches +5 on a tier-4 weapon.</summary>
     public const int MaxUpgradeWeapon = 5;
     /// <summary>Highest upgrade the generator puts on any item, whatever its tier.</summary>
@@ -447,9 +453,16 @@ public static class QueryRelationships
     public static IEnumerable<ItemRequirement> SumMembers(IEnumerable<ItemRequirement> requirements, int group) =>
         requirements.Where(requirement => requirement.LevelSum?.Group == group);
 
-    /// <summary>The highest level total the members of <paramref name="group"/> can reach together.</summary>
-    public static int SumCapacity(IEnumerable<ItemRequirement> requirements, int group) =>
-        SumMembers(requirements, group).Sum(member => member.MaximumLevel);
+    /// <summary>
+    /// The highest level total the members of <paramref name="group"/> can
+    /// reach together: each one's own ceiling, bounded by what a world
+    /// generates — <see cref="RingStackCapacity"/>.
+    /// </summary>
+    public static int SumCapacity(IEnumerable<ItemRequirement> requirements, int group)
+    {
+        var members = SumMembers(requirements, group).ToList();
+        return Math.Min(members.Sum(member => member.MaximumLevel), RingStackCapacity(members.Count));
+    }
 
     // ---- the board's collapsed view -----------------------------------------
 
@@ -821,8 +834,10 @@ public static class QueryRelationships
     }
 
     /// <summary>
-    /// Sets or clears the stack's combined level. Only a lone concrete chip can
-    /// count levels; with a total the whole stack becomes identical optional
+    /// Sets or clears the stack's combined level. Only a lone concrete ring
+    /// chip can count levels — a ring's effect scales with its level, so a +0
+    /// and a +1 together grant what one +2 does, and no other family adds up
+    /// that way; with a total the whole stack becomes identical optional
     /// members ("up to N items reaching T levels"), without one it returns to an
     /// anchor with plain repeats ("exactly N of the item").
     /// </summary>
@@ -840,6 +855,9 @@ public static class QueryRelationships
                     : PlainCopy(anchor, null, next[index].Key);
             return Normalize(next);
         }
+        // Only rings count levels together; clearing a total above never needs
+        // this check, so stale non-ring sums can still be dissolved.
+        if (anchor.Kind.Family() != ItemKind.Ring) return next;
         if ((anchor.LevelSum?.Group ?? FreeGroup(next.Select(requirement => requirement.LevelSum?.Group), SearchLimits.LevelSumGroupMax)) is not int group) return next;
         foreach (var index in indices)
         {
@@ -854,11 +872,13 @@ public static class QueryRelationships
     }
 
     /// <summary>
-    /// The most levels a stack of <paramref name="count"/> items of
-    /// <paramref name="kind"/> can reach together: each counts its upgrade plus
-    /// one, and the copies of a combined-level stack are unconstrained.
+    /// The most levels a stack of <paramref name="count"/> rings can reach
+    /// together: one ring at the vault ceiling, every other at the standard
+    /// roll, each counting its upgrade plus one. Only rings count levels
+    /// together, so this is the capacity every combined level is held to.
     /// </summary>
-    public static int StackCapacity(int upgradeCeiling, int count) => count * (upgradeCeiling + 1);
+    public static int RingStackCapacity(int count) =>
+        SearchLimits.MaxUpgradeRing + 1 + (count - 1) * (SearchLimits.MaxUpgradeRingStandard + 1);
 
     /// <summary>
     /// Applies the editor's result: the anchor's own fields plus the stack's
@@ -953,6 +973,11 @@ public static class QueryRelationships
                 return $"{requirement.Title} requires uncursed but only lists curses.";
             if (requirement.LevelSum is { } sum)
             {
+                // Levels only combine meaningfully across rings — a ring's effect
+                // scales with its level, so a +0 and a +1 together grant what one
+                // +2 does. No other family adds up that way.
+                if (family != ItemKind.Ring)
+                    return $"{requirement.Title} cannot count levels together: only rings can.";
                 if (requirement.AlternativeGroup is not null)
                     return $"{requirement.Title} is an alternative, so it cannot be in combined level group {GroupLabel(sum.Group)}.";
                 if (sum.Group < 1 || sum.Group > SearchLimits.LevelSumGroupMax || sum.AtLeast < 1)

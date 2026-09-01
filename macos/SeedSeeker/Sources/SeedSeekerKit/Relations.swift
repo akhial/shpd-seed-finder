@@ -444,8 +444,8 @@ extension Array where Element == ItemRequirement {
     }
 
     /**
-     Sets or clears the stack's combined level. Only a lone concrete chip can
-     count levels; with a total the whole stack becomes identical optional
+     Sets or clears the stack's combined level. Only a lone concrete ring chip
+     can count levels; with a total the whole stack becomes identical optional
      members ("up to N items reaching T levels"), without one it returns to an
      anchor with plain repeats ("exactly N of the item").
      */
@@ -461,6 +461,9 @@ extension Array where Element == ItemRequirement {
             }
             return next.normalizeRelations()
         }
+        // Only rings count levels together; clearing a total above never
+        // needs this check, so stale non-ring sums can still be dissolved.
+        guard anchor.kind.family == .ring else { return self }
         guard let group = anchor.levelSum?.group
             ?? freeGroup(map { $0.levelSum?.group }, upTo: SearchLimits.levelSumGroupMax)
         else { return self }

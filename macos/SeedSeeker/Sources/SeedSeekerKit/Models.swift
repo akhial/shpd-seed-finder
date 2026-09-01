@@ -24,6 +24,10 @@ public enum SearchLimits {
     public static let maxUpgradeDefault = 4
     /// Highest upgrade a ring requirement may name.
     public static let maxUpgradeRing = 4
+    /// Highest upgrade every ring but one can carry in a single world: ring
+    /// drops roll +0...+2, and the only source beyond that — the Imp vault's
+    /// final-room prize — appears once per run.
+    public static let maxUpgradeRingStandard = 2
     /// Highest upgrade a weapon requirement may name: v4.0.0's Imp vault
     /// reaches +5 on a tier-4 weapon or thrown weapon, one above every other
     /// family's ceiling.
@@ -55,6 +59,13 @@ public enum SearchLimits {
             }
         }
         return reachesExtraTier ? ceiling : maxUpgradeAnyTier
+    }
+
+    /// The highest combined level `count` rings can reach together: one ring
+    /// at the vault ceiling, every other at the standard roll, each counting
+    /// its upgrade plus one.
+    public static func ringStackCapacity(_ count: Int) -> Int {
+        maxUpgradeRing + 1 + (count - 1) * (maxUpgradeRingStandard + 1)
     }
     /// Every challenge bit together: the largest legal challenge mask.
     public static let challengeMask = 511
@@ -223,7 +234,7 @@ public enum ModelValidationError: Error, Equatable, LocalizedError {
     case itemKind, tier, upgrade, modifier, effect, uncursedCurse, identityGroup, itemMaximumDepth
     case identityGroupMixedKinds(group: Int)
     case identityGroupOverconstrained(group: Int)
-    case levelSum, levelSumInAlternative
+    case levelSum, levelSumOutsideRings, levelSumInAlternative
     case levelSumMismatch(group: Int)
     case levelSumUnattainable(group: Int, needed: Int, maximum: Int)
     case emptyRequirements, maximumDepth, challenges
@@ -242,6 +253,7 @@ public enum ModelValidationError: Error, Equatable, LocalizedError {
             "Same-item group \(groupLetter(group)) can describe one item (or one set of alternatives); its other members must be plain"
         case .itemMaximumDepth: "Item floor limit must be 1..\(SearchLimits.maxDepth)"
         case .levelSum: "Combined level group must be A..D with a total of at least 1"
+        case .levelSumOutsideRings: "Only rings can count levels together"
         case .levelSumInAlternative: "An alternative cannot be part of a combined level group"
         case .levelSumMismatch(let group):
             "Combined level group \(groupLetter(group)) must share one total across its items"
@@ -376,6 +388,10 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
             guard (1...SearchLimits.levelSumGroupMax).contains(levelSum.group), levelSum.atLeast >= 1 else {
                 throw ModelValidationError.levelSum
             }
+            // Levels only combine meaningfully across rings — a ring's effect
+            // scales with its level, so a +0 and a +1 together grant what one
+            // +2 does. No other family adds up that way.
+            guard kind.family == .ring else { throw ModelValidationError.levelSumOutsideRings }
             guard alternativeGroup == nil else { throw ModelValidationError.levelSumInAlternative }
         }
         self.key = key; self.item = item; self.upgrade = upgrade; self.effect = effect
@@ -559,7 +575,11 @@ extension Array where Element == ItemRequirement {
             guard totals.count == 1, let needed = totals.first else {
                 throw ModelValidationError.levelSumMismatch(group: group)
             }
-            let maximum = members.reduce(0) { $0 + $1.1.maximumLevel }
+            // Each member's own ceiling, bounded by what a world generates: it
+            // levels at most one ring — the Imp vault's prize — past the
+            // standard roll, so N rings never reach N times the family cap.
+            let maximum = Swift.min(members.reduce(0) { $0 + $1.1.maximumLevel },
+                                    SearchLimits.ringStackCapacity(members.count))
             guard needed <= maximum else {
                 throw ModelValidationError.levelSumUnattainable(group: group, needed: needed, maximum: maximum)
             }

@@ -51,6 +51,17 @@ export const STACK_MAX = 3;
 export const MAX_UPGRADE_DEFAULT = 4;
 export const MAX_UPGRADE_RING = 4;
 export const MAX_UPGRADE_WEAPON = 5;
+
+/** The highest upgrade every ring but one can carry in a single world: ring
+ * drops roll +0…+2, and the only source beyond that — the Imp vault's
+ * final-room prize — appears once per run. */
+export const MAX_UPGRADE_RING_STANDARD = 2;
+
+/** The highest combined level `count` rings can reach together: one ring at
+ * the vault ceiling, every other at the standard roll, each counting its
+ * upgrade plus one. */
+export const ringStackCapacity = (count: number): number =>
+  MAX_UPGRADE_RING + 1 + (count - 1) * (MAX_UPGRADE_RING_STANDARD + 1);
 export const maxUpgradeFor = (family: string | undefined): number =>
   family === "weapon"
     ? MAX_UPGRADE_WEAPON
@@ -122,9 +133,14 @@ export const maxLevelOf = (requirement: RequirementState): number =>
   (requirement.upgrade.mode === "exact" ? requirement.upgrade.value : maxUpgradeOf(requirement)) +
   1;
 
-/** The highest combined level a group's members can reach together. */
+/** The highest combined level a group's members can reach together: each
+ * one's own ceiling, bounded by what a world generates —
+ * {@link ringStackCapacity}. */
 export const levelSumCapacity = (members: RequirementState[]): number =>
-  members.reduce((total, member) => total + maxLevelOf(member), 0);
+  Math.min(
+    members.reduce((total, member) => total + maxLevelOf(member), 0),
+    ringStackCapacity(members.length),
+  );
 
 /**
  * Whether a requirement constrains anything beyond its category: a stack's
@@ -515,6 +531,8 @@ export function validateRequirement(requirement: RequirementState): string[] {
     if (group < 1 || group > LEVEL_SUM_GROUP_MAX)
       errors.push(`A combined-level group must be 1 through ${LEVEL_SUM_GROUP_MAX}.`);
     if (atLeast < 1) errors.push("A combined level must be at least 1.");
+    if (requirementFamily(requirement) !== "ring")
+      errors.push("Only rings can count levels together.");
     if (requirement.alternativeGroup !== undefined)
       errors.push("An either/or alternative cannot count a combined level.");
   }

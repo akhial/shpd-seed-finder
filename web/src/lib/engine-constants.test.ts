@@ -14,6 +14,7 @@ import {
   MAX_UPGRADE_ANY_TIER,
   MAX_UPGRADE_DEFAULT,
   MAX_UPGRADE_RING,
+  MAX_UPGRADE_RING_STANDARD,
   MAX_UPGRADE_WEAPON,
   LEVEL_SUM_GROUP_MAX,
   maxUpgradeFor,
@@ -52,6 +53,7 @@ describe("local constants match the engine document", () => {
     expect(LEVEL_SUM_GROUP_MAX).toBe(info.limits.levelSumGroupMax);
     expect(MAX_UPGRADE_DEFAULT).toBe(info.limits.maxUpgradeDefault);
     expect(MAX_UPGRADE_RING).toBe(info.limits.maxUpgradeRing);
+    expect(MAX_UPGRADE_RING_STANDARD).toBe(info.limits.maxUpgradeRingStandard);
     expect(MAX_UPGRADE_WEAPON).toBe(info.limits.maxUpgradeWeapon);
     expect(MAX_UPGRADE_ANY_TIER).toBe(info.limits.maxUpgradeAnyTier);
     expect(EXTRA_UPGRADE_TIER).toBe(info.limits.extraUpgradeTier);

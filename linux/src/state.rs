@@ -1145,10 +1145,18 @@ mod tests {
         assert!(!shape.in_cluster);
         assert!(state.to_query().is_ok());
 
-        // Two rings reach ten levels between them, and no more.
+        // A ring reaches +4 (five levels), but only one per world — the Imp
+        // vault's prize; every other ring stops at +2 (three levels). Two
+        // rings therefore reach eight levels together, three eleven.
+        assert!(state.validate_draft(&ring, 2, Some(8), None).is_ok());
         assert_eq!(
-            state.validate_draft(&ring, 2, Some(11), None).unwrap_err(),
-            "combined level group A needs 11 levels but its items can reach at most 10"
+            state.validate_draft(&ring, 2, Some(9), None).unwrap_err(),
+            "combined level group A needs 9 levels but its items can reach at most 8"
+        );
+        assert!(state.validate_draft(&ring, 3, Some(11), None).is_ok());
+        assert_eq!(
+            state.validate_draft(&ring, 3, Some(12), None).unwrap_err(),
+            "combined level group A needs 12 levels but its items can reach at most 11"
         );
 
         // The badge lowers the total without going through the editor.

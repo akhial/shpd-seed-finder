@@ -24,7 +24,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use shpd_seedfinder_core::catalog::ItemId;
+use shpd_seedfinder_core::catalog::{ItemId, ItemKind};
 use shpd_seedfinder_core::query::{
     EffectRequirement, LevelSum, MAX_IDENTITY_GROUP, MAX_LEVEL_SUM_GROUP, TierRequirement,
     UpgradeRequirement,
@@ -676,8 +676,8 @@ pub fn set_copy_depth(
     normalize(&next)
 }
 
-/// Sets or clears the stack's combined level. Only a lone concrete chip can
-/// count levels; with a total the whole stack becomes identical optional
+/// Sets or clears the stack's combined level. Only a lone concrete ring chip
+/// can count levels; with a total the whole stack becomes identical optional
 /// members ("up to N items reaching T levels"), without one it returns to an
 /// anchor with plain repeats ("exactly N of the item").
 #[must_use]
@@ -707,6 +707,11 @@ pub fn set_stack_total(
         }
         return normalize(&next);
     };
+    // Only rings count levels together; clearing a total above never needs
+    // this check, so stale non-ring sums can still be dissolved.
+    if anchor.kind != ItemKind::Ring {
+        return requirements.to_vec();
+    }
     let Some(group) = anchor.level_sum.map(|sum| sum.group).or_else(|| {
         free_group(
             requirements
@@ -806,7 +811,7 @@ pub fn apply_edit(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shpd_seedfinder_core::catalog::{ItemKind, WeaponCategory};
+    use shpd_seedfinder_core::catalog::WeaponCategory;
     use shpd_seedfinder_core::query::SearchQuery;
 
     /// A weapon requirement with the given patch applied, keyed in order.
@@ -1091,6 +1096,32 @@ mod tests {
         let cleared = set_stack_total(&next, &board_items(&next)[0], None);
         assert!(cleared.iter().all(|row| row.level_sum.is_none()));
         assert_eq!(board_items(&cleared)[0].stack_count(), 2);
+    }
+
+    #[test]
+    fn a_total_refuses_a_non_ring_anchor_but_still_clears_a_stale_one() {
+        // Levels only combine meaningfully across rings, so the badge cannot
+        // put a total on a weapon stack…
+        let start = vec![row(1, |r| r.item = Some(ItemId::Spear))];
+        let mut next_key = 2;
+        let base = set_stack_count(&start, &item_at(&start, 0), 2, &mut next_key);
+        let refused = set_stack_total(&base, &item_at(&base, 0), Some(3));
+        assert_eq!(refused, base);
+        // …but a stale sum from a hand-written document still dissolves.
+        let sum = LevelSum {
+            group: 1,
+            minimum_total: 3,
+        };
+        let member = |key| {
+            row(key, |r| {
+                r.item = Some(ItemId::Spear);
+                r.level_sum = Some(sum);
+            })
+        };
+        let loaded = vec![member(1), member(2)];
+        let cleared = set_stack_total(&loaded, &item_at(&loaded, 0), None);
+        assert!(cleared.iter().all(|row| row.level_sum.is_none()));
+        assert!(valid(&cleared).is_ok());
     }
 
     #[test]

@@ -27,6 +27,7 @@ final class EngineConstantsTests: XCTestCase {
         XCTAssertEqual(SearchLimits.levelSumGroupMax, limit("levelSumGroupMax"))
         XCTAssertEqual(SearchLimits.maxUpgradeDefault, limit("maxUpgradeDefault"))
         XCTAssertEqual(SearchLimits.maxUpgradeRing, limit("maxUpgradeRing"))
+        XCTAssertEqual(SearchLimits.maxUpgradeRingStandard, limit("maxUpgradeRingStandard"))
         XCTAssertEqual(SearchLimits.maxUpgradeWeapon, limit("maxUpgradeWeapon"))
         // The families route to the right maximum, narrowed weapon kinds
         // included: the engine publishes one ceiling per family.

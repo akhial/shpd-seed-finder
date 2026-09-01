@@ -8,6 +8,14 @@ use crate::run::{RingGems, RingKind};
 /// `+2..=+4`, above anything the rest of the dungeon rolls.
 pub const MAX_GENERATED_UPGRADE: u8 = 4;
 
+/// Highest upgrade every ring but one can carry in a single world.
+///
+/// Ring drops mirror `Ring.random()` — `+0..=+2` — and a golden mimic's
+/// bonus only ever lifts a +0 to +1. The sole source above that is the Imp
+/// vault's final-room prize, levelled `+2..=+4`, and a run holds one prize:
+/// a world's second-best ring never exceeds this ceiling.
+pub const MAX_STANDARD_RING_UPGRADE: u8 = 2;
+
 /// The one weapon tier that reaches [`EXTRA_UPGRADE_MAXIMUM`], a
 /// v4.0.0-BETA-3 quirk of `Imp.Quest.rewardOptions`.
 ///

@@ -1085,9 +1085,11 @@ private struct ChipView: View {
                 }
             }
         }
-        // Only a lone concrete chip can count levels: "up to N rings reaching
-        // 5 levels" needs an item to be N of, and a cluster is one slot.
-        if item.cluster == nil, requirement.item != nil, item.stackCount > 1 {
+        // Only a lone concrete ring chip can count levels: "up to N rings
+        // reaching 5 levels" needs an item to be N of, a cluster is one slot,
+        // and only a ring's effect scales with its level.
+        if item.cluster == nil, requirement.item != nil, item.stackCount > 1,
+           requirement.kind.family == .ring {
             Button(item.total == nil ? "Count levels together" : "Stop counting levels") {
                 guard let fresh = liveItem else { return }
                 requirements = requirements.setStackTotal(
@@ -1200,12 +1202,13 @@ private struct StackBadgesView: View {
     }
 
     /// The highest combined level this stack could reach: each member counts
-    /// its upgrade plus one.
+    /// its upgrade plus one, bounded by what a world generates — it levels at
+    /// most one ring, the Imp vault's prize, past the standard roll.
     private var capacity: Int {
         guard let item else { return 1 }
-        return ([item.anchor] + item.extras)
-            .filter(requirements.indices.contains)
-            .reduce(0) { $0 + requirements[$1].maximumLevel }
+        let members = ([item.anchor] + item.extras).filter(requirements.indices.contains)
+        return min(members.reduce(0) { $0 + requirements[$1].maximumLevel },
+                   SearchLimits.ringStackCapacity(members.count))
     }
 }
 
@@ -1602,13 +1605,17 @@ private struct RequirementEditor: View {
         .frame(width: 480, height: kind.modifierLabel == nil ? 580 : 660)
     }
 
-    /// A combined level is a property of a concrete stack of two or more: it
-    /// needs an item to be N of, and a cluster is one slot, not a stack.
-    private var totalable: Bool { !stack.inCluster && !itemID.isEmpty && count > 1 }
+    /// A combined level is a property of a concrete stack of two or more —
+    /// and of rings only, whose effects scale with their level: it needs an
+    /// item to be N of, and a cluster is one slot, not a stack.
+    private var totalable: Bool {
+        !stack.inCluster && !itemID.isEmpty && count > 1 && kind.family == .ring
+    }
     private var effectiveTotal: Int? { totalable ? total : nil }
     /// The most levels the stack could add up to, its members taking any
-    /// upgrade: each counts the family's cap plus one.
-    private var totalCapacity: Int { count * (maximumUpgrade + 1) }
+    /// upgrade: one ring at the vault ceiling, every other at the standard
+    /// roll, each counting its upgrade plus one.
+    private var totalCapacity: Int { SearchLimits.ringStackCapacity(count) }
 
     /// The highest upgrade the draft can name: only a tier-4 weapon is
     /// levelled past `SearchLimits.maxUpgradeAnyTier`, so naming an item of

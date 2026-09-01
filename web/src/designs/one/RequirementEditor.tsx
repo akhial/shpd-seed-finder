@@ -20,6 +20,7 @@ import {
   effectNamesOf,
   isAnyEnchantment,
   maxUpgradeOf,
+  ringStackCapacity,
   validateRequirement,
 } from "../../lib/query";
 import { ANY_ENCHANTMENT } from "../../lib/wasm/types";
@@ -125,10 +126,13 @@ export function RequirementEditor({
   const enchantments = family === "weapon" ? weaponEnchantments : armorGlyphs;
   const curses = family === "weapon" ? weaponCurses : armorCurses;
   const errors = validateRequirement(draft);
-  // A combined level is a property of a concrete stack of two or more.
-  const totalable = stack.inCluster ? false : draft.item !== undefined && count > 1;
+  // A combined level is a property of a concrete stack of two or more —
+  // and of rings only, whose effects scale with their level.
+  const totalable = stack.inCluster
+    ? false
+    : draft.item !== undefined && count > 1 && family === "ring";
   const effectiveTotal = totalable ? total : undefined;
-  const totalCapacity = count * (maxUpgrade + 1);
+  const totalCapacity = ringStackCapacity(count);
   const effectMode: EffectMode = isAnyEnchantment(draft.effect)
     ? "any_enchantment"
     : draft.effect !== undefined || choosingEffects
@@ -395,7 +399,7 @@ export function RequirementEditor({
                     setCount(value);
                     if (value < 2) setTotal(undefined);
                     else if (total !== undefined)
-                      setTotal(clamp(total, 1, value * (maxUpgrade + 1)));
+                      setTotal(clamp(total, 1, ringStackCapacity(value)));
                   }}
                   ariaLabel="How many of this"
                 />
