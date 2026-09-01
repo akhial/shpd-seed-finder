@@ -17,9 +17,12 @@ namespace SeedSeeker;
 /// (rings, darts, seeds) hugging the corner. Each cell's art is therefore cropped
 /// to its alpha bounding box — measured here at runtime, no build step — and that
 /// crop is centred in the target box at the same pixel scale a full-cell render
-/// would use. Rings share one gemmed base sprite per type and are told apart by a
-/// glyph from <c>item_icons.png</c> (8×8 cells, glyph index = sprite index − 224),
-/// drawn at the same scale anchored to the sprite box's top-right.
+/// would use. A ring's art is just its gem, which the run — not the ring class —
+/// decides, so the two are separate inputs here: the caller passes the cell to
+/// draw and, alongside it, the class's glyph from <c>item_icons.png</c> (8×8
+/// cells), drawn at the same scale anchored to the sprite box's top-right. The
+/// glyph cannot be recovered from the cell, since twelve classes share the twelve
+/// gem cells in an order the seed picks.
 ///
 /// WinUI 3's <c>Image</c> exposes no interpolation-mode knob, so scaling is done
 /// here by hand into a <see cref="WriteableBitmap"/> sized in device pixels; the
@@ -31,13 +34,13 @@ internal sealed class ItemAtlas
     private const int Columns = 16;
     private const int IconCell = 8;
     private const int IconColumns = 16;
-    private const int RingSpriteBase = 224;
     /// <summary>Cached bitmaps per atlas beyond which the caches are dropped wholesale.</summary>
     private const int CacheLimit = 512;
 
     /// <summary>
     /// Art dimensions (width, height) of each ring glyph within its 8×8 cell,
-    /// index-aligned to ring sprites 224…235 (Accuracy, Arcana, … Wealth).
+    /// index-aligned to the ring classes (Accuracy, Arcana, … Wealth) — the
+    /// catalog's <c>typeIcon</c>, not the cell the ring is drawn in.
     /// </summary>
     private static readonly (int Width, int Height)[] RingIconSizes =
     [
@@ -50,7 +53,7 @@ internal sealed class ItemAtlas
     private readonly Layer items;
     private readonly Layer icons;
     private readonly Dictionary<int, (int X, int Y, int Width, int Height)> bounds = new();
-    private readonly Dictionary<(int Index, int Size), WriteableBitmap> sprites = new();
+    private readonly Dictionary<(int Index, int TypeIcon, int Size), WriteableBitmap> sprites = new();
     private readonly Dictionary<(int Index, int Size, uint Color), WriteableBitmap> masks = new();
 
     private ItemAtlas(Layer items, Layer icons)
@@ -101,15 +104,19 @@ internal sealed class ItemAtlas
     /// <summary>
     /// The sprite for <paramref name="index"/>, cropped, centred and scaled into a
     /// <paramref name="size"/>×<paramref name="size"/> device-pixel bitmap, with
-    /// the ring type glyph overlaid for rings.
+    /// ring glyph <paramref name="typeIcon"/> overlaid when one is given.
     /// </summary>
-    public WriteableBitmap? Sprite(int index, int size)
+    /// <param name="index">The <c>items.png</c> cell to draw. For a scouted ring
+    /// this is the run's gem, not the class's catalog cell.</param>
+    /// <param name="typeIcon">The ring class's cell in <c>item_icons.png</c>, or
+    /// -1 for an item that carries no glyph.</param>
+    public WriteableBitmap? Sprite(int index, int typeIcon, int size)
     {
         if (!Contains(index) || size <= 0) return null;
-        if (sprites.TryGetValue((index, size), out var cached)) return cached;
+        if (sprites.TryGetValue((index, typeIcon, size), out var cached)) return cached;
         if (sprites.Count >= CacheLimit) sprites.Clear();
-        var bitmap = Bitmap(Compose(index, size, null), size);
-        sprites[(index, size)] = bitmap;
+        var bitmap = Bitmap(Compose(index, size, null, typeIcon), size);
+        sprites[(index, typeIcon, size)] = bitmap;
         return bitmap;
     }
 
@@ -127,7 +134,7 @@ internal sealed class ItemAtlas
         var key = (index, size, (uint)((color.R << 16) | (color.G << 8) | color.B));
         if (masks.TryGetValue(key, out var cached)) return cached;
         if (masks.Count >= CacheLimit) masks.Clear();
-        var bitmap = Bitmap(Compose(index, size, color), size);
+        var bitmap = Bitmap(Compose(index, size, color, -1), size);
         masks[key] = bitmap;
         return bitmap;
     }
@@ -144,7 +151,7 @@ internal sealed class ItemAtlas
     /// Premultiplied BGRA for one sprite. With <paramref name="tint"/> null this is
     /// the art itself; otherwise it is the tinted alpha mask used for the glow.
     /// </summary>
-    private byte[] Compose(int index, int size, Color? tint)
+    private byte[] Compose(int index, int size, Color? tint, int typeIcon)
     {
         var buffer = new byte[size * size * 4];
         var (boundsX, boundsY, boundsWidth, boundsHeight) = Bounds(index);
@@ -179,13 +186,17 @@ internal sealed class ItemAtlas
                 buffer[target + 3] = alpha;
             }
         }
-        if (tint is null) DrawRingIcon(buffer, index, size, scale);
+        if (tint is null) DrawRingIcon(buffer, typeIcon, size, scale);
         return buffer;
     }
 
-    private void DrawRingIcon(byte[] buffer, int index, int size, double scale)
+    /// <summary>
+    /// Overlays ring glyph <paramref name="icon"/>, doing nothing when the item
+    /// has none. The glyph is the ring class's own and is passed in: the drawn
+    /// cell is the run's gem, which says nothing about which ring this is.
+    /// </summary>
+    private void DrawRingIcon(byte[] buffer, int icon, int size, double scale)
     {
-        var icon = index - RingSpriteBase;
         if (icon < 0 || icon >= RingIconSizes.Length) return;
         var (artWidth, artHeight) = RingIconSizes[icon];
         var width = Math.Clamp((int)Math.Round(artWidth * scale), 1, size);

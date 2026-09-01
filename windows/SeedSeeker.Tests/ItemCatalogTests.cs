@@ -121,4 +121,25 @@ public sealed class ItemCatalogTests
             .Select(entry => entry.GetProperty("id").GetString()).ToArray();
         Assert.Equal(entries, ItemCatalog.All.Select(item => item.Id));
     }
+
+    /// <summary>
+    /// The ring glyphs are the asset's <c>typeIcon</c>, carried through rather
+    /// than derived from the sprite index: once a scouted ring is drawn in the
+    /// cell its run's gem picks, that derivation names the wrong ring.
+    /// </summary>
+    [Fact]
+    public void TheRingGlyphsAreTheAssetsOwn()
+    {
+        var glyphs = Asset().GetProperty("entries").EnumerateArray()
+            .Select(entry => entry.TryGetProperty("typeIcon", out var icon) ? icon.GetInt32() : (int?)null)
+            .ToArray();
+        Assert.Equal(glyphs, ItemCatalog.All.Select(item => item.TypeIconIndex));
+        // Every ring carries one and nothing else does, and each is its class's
+        // own offset into the catalog's block of ring cells.
+        foreach (var item in ItemCatalog.All)
+        {
+            Assert.Equal(item.Kind == ItemKind.Ring, item.TypeIconIndex is not null);
+            if (item.TypeIconIndex is int glyph) Assert.Equal(RingGems.RingSpriteBase + glyph, item.SpriteIndex);
+        }
+    }
 }

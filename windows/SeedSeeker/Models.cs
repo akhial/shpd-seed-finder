@@ -141,7 +141,20 @@ public enum UpgradeMatch { Any, Exactly, AtLeast }
 public enum TierMatch { Any, Exactly, AtLeast, AtMost }
 public enum SearchState { Running, Completed, Cancelled, Failed }
 
-public sealed record CatalogItem(string Id, string Name, ItemKind Kind, int SpriteIndex, int? Tier, WeaponClass? Class = null);
+/// <summary>
+/// One searchable item as the shared catalog lists it.
+/// </summary>
+/// <param name="SpriteIndex">The item's own cell in <c>items.png</c>. For a ring
+/// this is the class's identity cell, which is what a surface with no run to ask
+/// — the requirement editor — draws; a scouted ring is drawn in the cell the
+/// run's gems give it instead (<see cref="RingGems.SpriteIndex"/>).</param>
+/// <param name="TypeIconIndex">The ring's cell in the 8×8 <c>item_icons.png</c>
+/// glyph atlas, which is what tells one ring from another on screen; null for
+/// everything that is not a ring. The glyph belongs to the class, so unlike the
+/// art cell it is the same in every run. Mirrors the Android client's field of
+/// the same name, and the catalog's <c>typeIcon</c>.</param>
+public sealed record CatalogItem(string Id, string Name, ItemKind Kind, int SpriteIndex, int? Tier,
+    WeaponClass? Class = null, int? TypeIconIndex = null);
 
 public enum ScoutItemSource
 {
@@ -272,8 +285,14 @@ public sealed partial class ItemRequirement
     /// <summary>Combined-level group membership; never set on an alternative.</summary>
     public LevelSum? LevelSum { get; set; }
     [JsonIgnore] public string Glyph => KindStyle.Glyph(Kind);
-    /// <summary>Row-major index into the upstream item atlas, or -1 for a wildcard.</summary>
+    /// <summary>
+    /// Row-major index into the upstream item atlas, or -1 for a wildcard.
+    /// A requirement names no seed, so a ring keeps its class's catalog cell:
+    /// there is no run here whose gems could say otherwise.
+    /// </summary>
     [JsonIgnore] public int SpriteIndex => Item?.SpriteIndex ?? -1;
+    /// <summary>The ring glyph drawn over the sprite, or -1 when there is none.</summary>
+    [JsonIgnore] public int TypeIconIndex => Item?.TypeIconIndex ?? -1;
     [JsonIgnore] public string Title => Item?.Name ?? (TierMatch switch { TierMatch.Exactly => $"Any Tier {Tier} {Labels.Singular(Kind)}", TierMatch.AtLeast => $"Any Tier {Tier}+ {Labels.Singular(Kind)}", TierMatch.AtMost => $"Any Tier {Tier} or lower {Labels.Singular(Kind)}", _ => $"Any {Labels.Singular(Kind)}" });
     [JsonIgnore] public string Description
     {
@@ -1206,7 +1225,76 @@ public sealed record SeedResult(string Seed, int Number);
 public sealed record ScoutItem(CatalogItem Item, int Depth, int Upgrade, string? Effect, bool Cursed,
     ScoutItemSource Source, byte AccessibilityTag, int AccessibilityGroup, ulong AccessibilityValue,
     bool Secret = false);
-public sealed record ScoutWorld(string Seed, IReadOnlyList<ScoutQuest> Quests, IReadOnlyList<ScoutItem> Items);
+/// <summary>
+/// The gems one run gives the twelve ring classes, indexed by class — which is
+/// also the class's <see cref="CatalogItem.TypeIconIndex"/>, so a ring looks up
+/// its own gem by its glyph.
+///
+/// Shattered Pixel Dungeon shuffles <c>Ring.gems</c> once per run in
+/// <c>Dungeon.init()</c> and hands each ring class the gem at its own index, so
+/// which gem — and so which colour — a ring shows is fixed by the seed alone,
+/// before any floor is generated and before any challenge is read. The engine
+/// reproduces that shuffle and carries it in the <c>SSC3</c> scout packet, which
+/// describes the same run; drawing a scouted ring from the catalog cell instead
+/// shows the same twelve colours for every seed.
+/// </summary>
+public sealed record RingGems
+{
+    /// <summary>Atlas cell of the first ring sprite (<c>ItemSpriteSheet.RINGS</c>).</summary>
+    public const int RingSpriteBase = 224;
+
+    /// <summary>How many ring classes — and so gems — there are.</summary>
+    public const int Count = 12;
+
+    /// <summary>
+    /// The gem ordinal each ring class was given, in catalog ring order. A
+    /// shuffle deals every class a distinct gem, so this is always a
+    /// permutation of <c>0..11</c>.
+    /// </summary>
+    public IReadOnlyList<byte> Ordinals { get; }
+
+    /// <summary>
+    /// Reads a table from the twelve ordinals a scout packet carries, taking a
+    /// copy so a later write to the buffer cannot move a drawn ring.
+    /// </summary>
+    /// <exception cref="InvalidDataException">The ordinals are not a
+    /// permutation of <c>0..11</c>, so they are a corrupt table rather than an
+    /// unusual run — the engine's own <c>RingGems::from_ordinals</c> rejects
+    /// the same tables.</exception>
+    public RingGems(IReadOnlyList<byte> ordinals)
+    {
+        if (ordinals.Count != Count) throw new InvalidDataException("Unexpected ring gem table size");
+        var seen = new bool[Count];
+        foreach (var gem in ordinals)
+        {
+            if (gem >= Count || seen[gem]) throw new InvalidDataException("Ring gems are not a permutation of the twelve gems");
+            seen[gem] = true;
+        }
+        Ordinals = [.. ordinals];
+    }
+
+    /// <summary>
+    /// The table as it stands before the shuffle: every class holding its own
+    /// gem, which is exactly what the catalog's per-ring cells spell out. Only
+    /// for surfaces that have no run to ask.
+    /// </summary>
+    public static RingGems Unshuffled { get; } = new([.. Enumerable.Range(0, Count).Select(gem => (byte)gem)]);
+
+    /// <summary>
+    /// The <c>items.png</c> cell <paramref name="item"/> is drawn in during this
+    /// run: the run's gem for a ring's class, and the item's own catalog cell for
+    /// everything else. Mirrors the engine's <c>sprite_index_in</c>.
+    /// </summary>
+    public int SpriteIndex(CatalogItem item) =>
+        item.TypeIconIndex is int type && type >= 0 && type < Ordinals.Count
+            ? RingSpriteBase + Ordinals[type]
+            : item.SpriteIndex;
+}
+
+/// <param name="Gems">The run's ring gems, which decide what cell each scouted
+/// ring is drawn in.</param>
+public sealed record ScoutWorld(string Seed, IReadOnlyList<ScoutQuest> Quests, IReadOnlyList<ScoutItem> Items,
+    RingGems Gems);
 public sealed record SearchStatus(SearchState State, long Scanned, long Total, long ErrorCode, double Probability);
 
 /// <summary>
@@ -1219,12 +1307,12 @@ public sealed record ScoutMatches(IReadOnlySet<int> Matched, int MatchedRequirem
 public static class ItemCatalog
 {
     private sealed class Root { public Entry[] Entries { get; set; } = []; public EffectTables Modifiers { get; set; } = new(); }
-    private sealed class Entry { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string Type { get; set; } = ""; public string? Class { get; set; } public int? Tier { get; set; } public int Sprite { get; set; } }
+    private sealed class Entry { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string Type { get; set; } = ""; public string? Class { get; set; } public int? Tier { get; set; } public int Sprite { get; set; } public int? TypeIcon { get; set; } }
     /// <summary>The upstream effect names, exactly as the shared catalog lists them.</summary>
     private sealed class EffectTables { public string[] WeaponEnchantments { get; set; } = []; public string[] WeaponCurses { get; set; } = []; public string[] ArmorGlyphs { get; set; } = []; public string[] ArmorCurses { get; set; } = []; }
     private static readonly Root Catalog = Load();
     public static IReadOnlyList<CatalogItem> All { get; } = Catalog.Entries.Select(e => new CatalogItem(e.Id, e.Name, Enum.Parse<ItemKind>(e.Type, true), e.Sprite, e.Tier,
-        string.IsNullOrEmpty(e.Class) ? null : Enum.Parse<WeaponClass>(e.Class, true))).ToArray();
+        string.IsNullOrEmpty(e.Class) ? null : Enum.Parse<WeaponClass>(e.Class, true), e.TypeIcon)).ToArray();
     // The four effect tables come from the same asset as the items, so a
     // catalog bump carries them and no hand-typed list can fall behind it.
     public static IReadOnlyList<string> Enchantments => Catalog.Modifiers.WeaponEnchantments;

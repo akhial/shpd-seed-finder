@@ -434,12 +434,16 @@ public sealed partial class MainWindow : Window
         return chip;
     }
 
-    /// <summary>The real item sprite when one is pinned; the generic Fluent glyph only for wildcards, which have no sprite of their own.</summary>
+    /// <summary>
+    /// The real item sprite when one is pinned; the generic Fluent glyph only for
+    /// wildcards, which have no sprite of their own. A requirement names no seed,
+    /// so a ring here keeps its class's catalog cell rather than any run's gem.
+    /// </summary>
     private static Grid ChipArt(ItemRequirement requirement)
     {
         var art = new Grid { Width = 18, Height = 18, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, -2, 0) };
         if (requirement.Item is null) art.Children.Add(new FontIcon { Glyph = requirement.Glyph, Foreground = KindStyle.Tint(requirement.Kind), FontSize = 13, VerticalAlignment = VerticalAlignment.Center });
-        else art.Children.Add(new SpriteView { SpriteIndex = requirement.SpriteIndex, SpriteSize = 18, GlowColor = requirement.GlowColor, GlowPeriod = requirement.GlowPeriod });
+        else art.Children.Add(new SpriteView { SpriteIndex = requirement.SpriteIndex, TypeIconIndex = requirement.TypeIconIndex, SpriteSize = 18, GlowColor = requirement.GlowColor, GlowPeriod = requirement.GlowPeriod });
         return art;
     }
 
@@ -1807,7 +1811,7 @@ public sealed partial class MainWindow : Window
                 .GroupBy(x => x.Item.Depth).OrderBy(g => g.Key).Select(g =>
             {
                 var group = new ScoutGroup { Floor = $"Floor {g.Key}", Region = Region(g.Key), Quest = QuestLabel(world.Quests, g.Key) };
-                group.AddRange(g.Select(entry => ScoutRow.From(entry.Item, matches.Matched.Contains(entry.Index)))); return group;
+                group.AddRange(g.Select(entry => ScoutRow.From(entry.Item, matches.Matched.Contains(entry.Index), world.Gems))); return group;
             }).ToList();
             ScoutList.ItemsSource = new CollectionViewSource { IsSourceGrouped = true, Source = groups }.View;
             QuestStrip.Children.Clear();
@@ -1876,15 +1880,22 @@ public sealed class ScoutRow
     public string Accessibility { get; init; } = "";
     public Visibility AccessibilityVisibility { get; init; } = Visibility.Collapsed;
     public Visibility MatchVisibility { get; init; } = Visibility.Collapsed;
-    /// <summary>Row-major index into the upstream item atlas.</summary>
+    /// <summary>
+    /// Row-major index into the upstream item atlas: the cell this run draws the
+    /// item in, which for a ring is the gem the seed gave its class.
+    /// </summary>
     public int SpriteIndex { get; init; } = -1;
+    /// <summary>The ring class's glyph in <c>item_icons.png</c>, or -1 for anything else.</summary>
+    public int TypeIconIndex { get; init; } = -1;
     /// <summary>Enchantment/curse glow colour; only meaningful when <see cref="GlowPeriod"/> is positive.</summary>
     public Color GlowColor { get; init; }
     /// <summary>Seconds to peak glow, or zero when the item neither is enchanted nor cursed.</summary>
     public double GlowPeriod { get; init; }
     public Windows.UI.Text.FontWeight Weight { get; init; } = FontWeights.Normal;
 
-    public static ScoutRow From(ScoutItem x, bool match)
+    /// <param name="gems">The scouted run's ring gems, which decide the cell a
+    /// ring is drawn in; the same item is a different colour in another run.</param>
+    public static ScoutRow From(ScoutItem x, bool match, RingGems gems)
     {
         var access = x.AccessibilityTag switch { 1 => $"One reward of choice group {x.AccessibilityGroup} (option {x.AccessibilityValue + 1})", 2 => $"Only in some outcomes of scenario group {x.AccessibilityGroup}", _ => "" };
         var isCurse = x.Effect is not null && ItemCatalog.IsCurse(x.Item.Kind, x.Effect);
@@ -1901,7 +1912,7 @@ public sealed class ScoutRow
             Accessibility = access, AccessibilityVisibility = access.Length == 0 ? Visibility.Collapsed : Visibility.Visible,
             MatchVisibility = match ? Visibility.Visible : Visibility.Collapsed,
             Weight = match ? FontWeights.SemiBold : FontWeights.Normal,
-            SpriteIndex = x.Item.SpriteIndex,
+            SpriteIndex = gems.SpriteIndex(x.Item), TypeIconIndex = x.Item.TypeIconIndex ?? -1,
             GlowColor = glow?.Color ?? default, GlowPeriod = glow?.Period ?? 0,
         };
     }

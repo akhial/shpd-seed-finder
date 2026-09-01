@@ -48,6 +48,8 @@ internal ref struct Reader
     public byte U8() { if (Remaining < 1) throw new InvalidDataException("Truncated native packet"); return data[offset++]; }
     public int U16() => U8() << 8 | U8();
     public ulong U64() { ulong v = 0; for (var i = 0; i < 8; i++) v = v << 8 | U8(); return v; }
+    /// <summary>The next <paramref name="count"/> bytes verbatim.</summary>
+    public byte[] Bytes(int count) { if (count < 0 || Remaining < count) throw new InvalidDataException("Truncated native packet"); var b = data.Slice(offset, count).ToArray(); offset += count; return b; }
     public string Text(int count) { if (count < 0 || Remaining < count) throw new InvalidDataException("Truncated native packet"); var s = Encoding.UTF8.GetString(data.Slice(offset, count)); offset += count; return s; }
     public string Text() => Text(U16());
     public void Magic(string expected) { if (Text(4) != expected) throw new InvalidDataException("Unexpected native packet"); }
@@ -211,8 +213,9 @@ public sealed class NativeEngine
         var request = EncodeScoutRequest(seed, challenges);
         var code = Native.seedfinder_scout(request, (nuint)request.Length, out var ptr, out var len);
         if (code != 0) throw new InvalidOperationException($"Native scout failed ({code}).");
-        var bytes = CopyAndFree(ptr, len); var r = new Reader(bytes); r.Magic("SSC2");
-        var returnedSeed = r.Text(r.U8()); var quests = r.Quests(); var items = new List<ScoutItem>(); var count = r.U16();
+        var bytes = CopyAndFree(ptr, len); var r = new Reader(bytes); r.Magic("SSC3");
+        var returnedSeed = r.Text(r.U8()); var gems = new RingGems(r.Bytes(RingGems.Count));
+        var quests = r.Quests(); var items = new List<ScoutItem>(); var count = r.U16();
         for (var i = 0; i < count; i++)
         {
             var item = ItemCatalog.Find(r.Text()) ?? throw new InvalidDataException("Unknown item in scout packet");
@@ -222,7 +225,7 @@ public sealed class NativeEngine
             items.Add(new(item, depth, upgrade, effect.Length == 0 ? null : effect, (flags & 1) != 0, source, tag, group, value, Secret: (flags & 2) != 0));
         }
         if (r.Remaining != 0) throw new InvalidDataException("Trailing native data");
-        return new(returnedSeed, quests, items);
+        return new(returnedSeed, quests, items, gems);
     }
 
     /// <summary>
