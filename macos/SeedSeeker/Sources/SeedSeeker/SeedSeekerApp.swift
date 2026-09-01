@@ -505,7 +505,8 @@ private struct ChallengesSettingsView: View {
 extension Color {
     /// Shattered Pixel Dungeon's upgrade green, the web app's `--d1-upgrade`.
     static let shatteredGreen = Color(.sRGB, red: 131 / 255, green: 252 / 255, blue: 100 / 255)
-    /// The softer green the web app spends on stack and match badges, `--d1-green`.
+    /// The softer green the web app spends on its soft tags and match badges,
+    /// `--d1-green`.
     static let shatteredMint = Color(.sRGB, red: 110 / 255, green: 201 / 255, blue: 143 / 255)
     /// The game's highlight yellow, the web app's `--d1-amber`.
     static let shatteredYellow = Color(.sRGB, red: 1, green: 1, blue: 85 / 255)
@@ -1150,7 +1151,7 @@ private struct StackBadgesView: View {
         HStack(spacing: 3) {
             if count > 1 {
                 Button { editingCount = true } label: {
-                    badge(total == nil ? "×\(count)" : "≤\(count)", tint: .shatteredMint)
+                    badge(total == nil ? "×\(count)" : "≤\(count)")
                 }
                 .buttonStyle(.plain)
                 .help(total == nil ? "\(count) of the same kind" : "Up to \(count) items")
@@ -1164,7 +1165,7 @@ private struct StackBadgesView: View {
                 }
             }
             if let total {
-                Button { editingTotal = true } label: { badge("Σ ≥ \(total)", tint: .shatteredYellow) }
+                Button { editingTotal = true } label: { badge("Σ ≥ \(total)") }
                     .buttonStyle(.plain)
                     .help("Levels add to at least \(total) (a +0 item counts 1)")
                     .popover(isPresented: $editingTotal, arrowEdge: .bottom) {
@@ -1177,12 +1178,16 @@ private struct StackBadgesView: View {
         }
     }
 
-    private func badge(_ text: String, tint: Color) -> some View {
+    /// Both badges wear the chip's own tag style: they read as one more thing
+    /// the chip says about itself, and what they say already tells them apart,
+    /// where a filled pill among flat tags claimed an emphasis a count does
+    /// not want.
+    private func badge(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 11, weight: .bold, design: .monospaced))
-            .foregroundStyle(Color.black)
-            .padding(.horizontal, 6).frame(height: 18)
-            .background(tint, in: Capsule())
+            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+            .foregroundStyle(Color.shatteredYellow)
+            .padding(.horizontal, 4)
+            .background(Color.shatteredYellow.opacity(0.13), in: RoundedRectangle(cornerRadius: 4))
     }
 
     private var countBinding: Binding<Int> {
