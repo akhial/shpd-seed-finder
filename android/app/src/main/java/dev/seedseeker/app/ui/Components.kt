@@ -112,10 +112,19 @@ private const val ADAPTIVE_ICON_VISIBLE = 72f
  * no bloom or halo outside the silhouette. Several [glows] take the sprite in
  * turn, a pulse each, so an item asked for by more than one effect shows every
  * colour it may arrive in.
+ *
+ * [spriteIndex] is the atlas cell the art comes from and defaults to the item's
+ * own catalog cell. A ring is the one item whose cell a run decides — it shows
+ * the gem that run gave its class — so a surface displaying an item that
+ * belongs to a seed passes `world.ringGems.spriteIndexFor(item)`, while a
+ * surface with no run to ask (the requirement board, the query editor and its
+ * pickers) keeps the default. The glyph drawn over a ring is
+ * [CatalogItem.typeIconIndex], the class's own, which no run changes.
  */
 @Composable
 fun ItemSprite(
     item: CatalogItem,
+    spriteIndex: Int = item.spriteIndex,
     glows: List<Glow> = emptyList(),
     modifier: Modifier = Modifier,
 ) {
@@ -135,8 +144,8 @@ fun ItemSprite(
         val shift = typeIconSize?.let { ringCompositeShift(it, scale) } ?: IntOffset.Zero
         if (atlas != null) {
             val srcOffset = IntOffset(
-                x = (item.spriteIndex % ITEM_ATLAS_COLUMNS) * ITEM_SPRITE_SIZE,
-                y = (item.spriteIndex / ITEM_ATLAS_COLUMNS) * ITEM_SPRITE_SIZE,
+                x = (spriteIndex % ITEM_ATLAS_COLUMNS) * ITEM_SPRITE_SIZE,
+                y = (spriteIndex / ITEM_ATLAS_COLUMNS) * ITEM_SPRITE_SIZE,
             )
             val srcSize = IntSize(ITEM_SPRITE_SIZE, ITEM_SPRITE_SIZE)
             val dstSize = IntSize(size.width.toInt(), size.height.toInt())

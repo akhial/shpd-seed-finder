@@ -73,6 +73,7 @@ import androidx.compose.ui.unit.sp
 import dev.seedseeker.app.catalog.ItemCatalog
 import dev.seedseeker.app.engine.ScoutMatches
 import dev.seedseeker.app.engine.SeedCode
+import dev.seedseeker.app.model.RingGems
 import dev.seedseeker.app.model.ScoutAccessibility
 import dev.seedseeker.app.model.ScoutItem
 import dev.seedseeker.app.model.ScoutQuest
@@ -245,6 +246,7 @@ fun ScoutScreen(
                                 item(key = "scout-$depth-${indexedItem.index}-${scoutItem.item.id}") {
                                     ScoutItemCard(
                                         scoutItem = scoutItem,
+                                        ringGems = world.ringGems,
                                         matches = matches?.items?.contains(indexedItem.index) == true,
                                         modifier = Modifier.padding(bottom = 8.dp),
                                     )
@@ -503,9 +505,11 @@ private fun FloorHeading(
     }
 }
 
+/** One row of a scouted world, drawn with the gems [ringGems] says that run holds. */
 @Composable
 private fun ScoutItemCard(
     scoutItem: ScoutItem,
+    ringGems: RingGems,
     matches: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -538,6 +542,7 @@ private fun ScoutItemCard(
             // pulsing masked tint is the only modifier cue, no tile, no halo.
             ItemSprite(
                 item = scoutItem.item,
+                spriteIndex = ringGems.spriteIndexFor(scoutItem.item),
                 glows = listOfNotNull(ItemGlows.forItem(effect = scoutItem.effect, cursed = scoutItem.cursed)),
                 modifier = Modifier.size(40.dp),
             )
