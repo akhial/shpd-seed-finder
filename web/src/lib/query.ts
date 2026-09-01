@@ -354,9 +354,11 @@ function upgradeFromDocument(value: unknown): UpgradeFilter {
 /** Rejects unknown quest names rather than silently widening the filter. */
 function wandmakerQuestFromDocument(value: unknown): WandmakerQuest | undefined {
   if (value === undefined || value === null) return undefined;
-  if (typeof value === "string" && (WANDMAKER_QUESTS as readonly string[]).includes(value))
-    return value as WandmakerQuest;
-  throw new Error(`unknown Wandmaker quest "${String(value)}"`);
+  if (typeof value === "string") {
+    if ((WANDMAKER_QUESTS as readonly string[]).includes(value)) return value as WandmakerQuest;
+    throw new Error(`unknown Wandmaker quest "${value}"`);
+  }
+  throw new Error("unrecognized Wandmaker quest filter");
 }
 
 /** Decodes the wire effect forms: absent, a bare name, or a list of names; anything else is an error. */

@@ -111,5 +111,3 @@ context.addEventListener("message", (event: MessageEvent<SearchWorkerRequest>) =
     });
   }
 });
-
-export {};

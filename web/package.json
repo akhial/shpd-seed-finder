@@ -6,7 +6,6 @@
   "scripts": {
     "dev": "vp dev",
     "build": "tsc -b && vp build",
-    "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
     "test": "vp test",
     "preview": "vp preview"
   },
