@@ -992,7 +992,10 @@ mod tests {
             &query,
             SearchOptions {
                 start_seed: 0,
-                end_seed_exclusive: 2_000,
+                // An upgraded ring matches every few seeds, so this small
+                // range still mixes kept and dropped candidates while staying
+                // affordable in an unoptimised test build.
+                end_seed_exclusive: 200,
                 workers: NonZeroUsize::MIN,
                 chunk_size: NonZeroUsize::new(64).unwrap(),
                 max_results: NonZeroUsize::new(MAX_RESULTS).unwrap(),
@@ -1007,7 +1010,7 @@ mod tests {
         assert!(!matches.is_empty());
 
         #[allow(clippy::cast_precision_loss)]
-        let candidates = (0..2_000_u64).map(|seed| seed as f64).collect::<Vec<_>>();
+        let candidates = (0..200_u64).map(|seed| seed as f64).collect::<Vec<_>>();
         let output: Value =
             serde_json::from_str(&filter_seeds_impl(query_json, &candidates).unwrap()).unwrap();
         let kept = output
@@ -1039,7 +1042,11 @@ mod tests {
             &query,
             SearchOptions {
                 start_seed: 0,
-                end_seed_exclusive: 20_000,
+                // Seeds 104, 164, 224 and 289 award this wand, so the range
+                // holds several matches while the two sides still cut their
+                // chunks at different, non-aligned boundaries. Anything much
+                // larger turns an unoptimised test build into minutes of CI.
+                end_seed_exclusive: 300,
                 workers: NonZeroUsize::MIN,
                 chunk_size: NonZeroUsize::new(137).unwrap(),
                 max_results: NonZeroUsize::new(MAX_RESULTS).unwrap(),
@@ -1051,8 +1058,9 @@ mod tests {
         .into_iter()
         .map(|world| world.seed.value())
         .collect::<Vec<_>>();
+        assert!(!parallel.is_empty());
 
-        let mut session = SearchSession::new_impl(query_json, 0.0, 20_000.0).unwrap();
+        let mut session = SearchSession::new_impl(query_json, 0.0, 300.0).unwrap();
         let mut cooperative = Vec::new();
         loop {
             let output: Value = serde_json::from_str(&session.advance(113)).unwrap();
