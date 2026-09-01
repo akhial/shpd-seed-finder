@@ -186,6 +186,12 @@ export interface ScoutItem {
   id: string
   name: string
   category: ItemCategory
+  /**
+   * The item's *catalog* cell, which names the item and never varies by seed.
+   * For a ring it is the class's own cell, whose offset from the ring block is
+   * the class's glyph; the cell to actually draw comes from `ringGems` below.
+   * Resolve both through `itemArt`.
+   */
   spriteIndex: number
   upgrade: number
   effect: { name: string; kind: 'enchantment' | 'curse' } | null
@@ -231,6 +237,13 @@ export interface ScoutQuest {
 export interface ScoutResult {
   seed: ParsedSeed
   items: ScoutItem[]
+  /**
+   * The gem this run draws each ring class with, in catalog ring order. The
+   * game shuffles `Ring.gems` once per run, so a seed decides what colour each
+   * ring is: an item's ring cell is `RING_SPRITE_BASE` plus its class's entry
+   * here. Only items from this scout may be resolved against it.
+   */
+  ringGems: number[]
   quests: ScoutQuest[]
   matchedRequirements: number
   totalRequirements: number

@@ -26,7 +26,7 @@ import { ANY_ENCHANTMENT } from '../../lib/wasm/types'
 import type { ItemCategory, ItemSource, RequirementKind, RequirementState } from '../../lib/wasm/types'
 import type { StackShape } from './RequirementBoard'
 import { Field, Segmented, SliderRow, Sprite, Stepper } from './parts'
-import { requirementSprite, requirementTitle } from './summary'
+import { requirementArt, requirementTitle } from './summary'
 
 const CATEGORY_OPTIONS: { value: ItemCategory; label: string }[] = [
   { value: 'weapon', label: 'Weapon' },
@@ -183,7 +183,7 @@ export function RequirementEditor({
     >
       <div className="d1-modal" role="dialog" aria-modal="true" aria-label={isNew ? 'New requirement' : 'Edit requirement'}>
         <header className="d1-modal-head">
-          <Sprite index={requirementSprite(draft)} size={28} />
+          <Sprite art={requirementArt(draft)} size={28} />
           <div className="d1-modal-title">
             <h2>{isNew ? 'New Requirement' : 'Edit Requirement'}</h2>
             <p className="d1-mono">{requirementTitle(draft)}</p>
