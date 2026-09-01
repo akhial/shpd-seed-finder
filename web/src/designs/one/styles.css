@@ -1416,32 +1416,31 @@ input[type="range"]::-moz-range-thumb {
   opacity: 0.85;
 }
 
-/* Stack badges: how many of the chip (×N / ≤N) and the combined level (Σ). */
+/* Stack badges: how many of the chip (×N / ≤N) and the combined level (Σ).
+   Both read as another of the chip's tags, so they take .d1-chip-tag's look;
+   what they say already tells them apart, and a filled pill among flat tags
+   only claimed an emphasis the count does not want. */
 
 .d1-stack-badge {
   display: inline-flex;
   align-items: center;
-  height: 18px;
-  padding: 0 6px;
+  padding: 0 4px;
   font-family: var(--d1-mono);
   font-size: 11px;
-  font-weight: 700;
-  color: var(--d1-accent-ink);
-  background: var(--d1-green);
+  font-weight: 600;
+  line-height: 16px;
+  color: var(--d1-amber);
+  background: var(--d1-amber-dim);
   border: none;
-  border-radius: 9px;
+  border-radius: 4px;
   white-space: nowrap;
 }
 
-.d1-stack-badge-total {
-  color: #000;
-  background: var(--d1-amber);
-}
 .d1-stack-badge-btn {
   cursor: pointer;
 }
 .d1-stack-badge-btn:hover {
-  filter: brightness(1.12);
+  background: rgba(255, 255, 85, 0.26);
 }
 
 .d1-stack-edit {
