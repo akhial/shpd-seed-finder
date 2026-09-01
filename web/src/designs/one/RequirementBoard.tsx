@@ -20,7 +20,7 @@ import {
   stackCount,
 } from './relations'
 import type { BoardItem } from './relations'
-import { effectLabel, requirementSprite, requirementTitle } from './summary'
+import { effectLabel, requirementArt, requirementTitle } from './summary'
 
 /**
  * The requirement board: every requirement is a chip; drop one chip onto
@@ -367,7 +367,7 @@ export function RequirementBoard({
         onFocus={(event) => setHovered(index, event.currentTarget)}
         onBlur={() => { if (hoveredIndex === index) setHovered(null) }}
       >
-        <Sprite index={requirementSprite(requirement)} size={18} glow={glows} />
+        <Sprite art={requirementArt(requirement)} size={18} glow={glows} />
         <span className="d1-chip-name">{chipName(requirement)}</span>
         {chipTags(requirement).map((tag) => (
           <span key={tag.text} className={tag.upgrade ? 'd1-chip-tag d1-chip-tag-up' : 'd1-chip-tag'}>{tag.text}</span>
@@ -510,7 +510,7 @@ export function RequirementBoard({
       )}
       {drag && dragSource && (
         <div className="d1-chip d1-chip-ghost" style={{ left: drag.x, top: drag.y }} aria-hidden="true">
-          <Sprite index={requirementSprite(dragSource)} size={18} />
+          <Sprite art={requirementArt(dragSource)} size={18} />
           <span className="d1-chip-name">{chipName(dragSource)}</span>
           {(drag.over?.kind === 'chip' || drag.over?.kind === 'cluster') && <span className="d1-chip-ghost-tag d1-ghost-alternative">or</span>}
           {drag.over?.kind === 'delete' && <span className="d1-chip-ghost-tag d1-ghost-delete">remove</span>}

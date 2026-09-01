@@ -1,7 +1,17 @@
 import catalogJson from '../generated/catalog.json'
 import type { ChallengeName, ItemCategory, ItemSource, RequirementKind, WeaponClass } from './wasm/types'
 
-export interface CatalogItem { id: string; name: string; type: ItemCategory; class?: WeaponClass; tier?: number; sprite: number }
+export interface CatalogItem {
+  id: string
+  name: string
+  type: ItemCategory
+  class?: WeaponClass
+  tier?: number
+  /** The item's catalog cell in `items.png`; for a ring, its class's own cell. */
+  sprite: number
+  /** Rings only: the class's glyph cell in `item_icons.png`. */
+  typeIcon?: number
+}
 interface CatalogModifiers {
   weaponEnchantments: string[]
   weaponCurses: string[]

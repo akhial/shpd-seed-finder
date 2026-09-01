@@ -6,6 +6,7 @@ import { CheckIcon, CopyIcon, FlagIcon, ForkIcon } from '../../lib/icons'
 import { questLabel, questVariantLabel } from '../../lib/quests'
 import { regionForDepth } from '../../lib/region'
 import type { ResultPosition } from '../../lib/scout-nav'
+import { itemArt } from '../../lib/sprites'
 import { queryStore } from '../../lib/store'
 import { formatSeedCode } from '../../lib/wasm'
 import type { ScoutItem, ScoutResult } from '../../lib/wasm/types'
@@ -147,10 +148,10 @@ export function ScoutPanel({
         {!result && !loading && (
           <div className="d1-scout-empty">
             <div className="d1-scout-empty-art" aria-hidden="true">
-              <Sprite index={112} size={32} />
-              <Sprite index={178} size={32} />
-              <Sprite index={209} size={32} />
-              <Sprite index={224} size={32} />
+              <Sprite art={itemArt(112)} size={32} />
+              <Sprite art={itemArt(178)} size={32} />
+              <Sprite art={itemArt(209)} size={32} />
+              <Sprite art={itemArt(224)} size={32} />
             </div>
             <h4>No seed scouted</h4>
             <p>Enter a seed, or select a search result, to scout its contents.</p>
@@ -201,7 +202,7 @@ export function ScoutPanel({
                       const note = accessibilityNote(item)
                       return (
                         <li className={item.matched ? 'd1-item d1-item-matched' : 'd1-item'} key={`${item.id}-${index}`}>
-                          <Sprite index={item.spriteIndex} size={32} label={item.name} glow={itemGlow(item)} />
+                          <Sprite art={itemArt(item.spriteIndex, result.ringGems)} size={32} label={item.name} glow={itemGlow(item)} />
                           <div className="d1-item-body">
                             <div className="d1-item-name">
                               <span>{item.name}</span>
