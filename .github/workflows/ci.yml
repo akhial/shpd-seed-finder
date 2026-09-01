@@ -56,7 +56,7 @@ jobs:
         run: |
           vp check
           vp test
-          vp run build
+          vp build
 
   rust:
     name: Rust

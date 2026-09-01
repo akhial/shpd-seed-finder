@@ -239,8 +239,8 @@ server:
 ./scripts/build-web-wasm.sh && cd web && vp install && vp dev
 ```
 
-`vp check` (format, lint, type-check), `vp test`, and `vp run build` cover the rest; they all need
-the generated engine assets, so run `build-web-wasm.sh` first on a fresh clone.
+`vp check` (format, lint, type-check), `vp test`, and `vp build` cover the rest; they all need the
+generated engine assets, so run `build-web-wasm.sh` first on a fresh clone.
 
 ### Android
 

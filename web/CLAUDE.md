@@ -32,14 +32,17 @@ This directory is the Vite+ project root. Run every toolchain command from `web/
 rather than `npm`, `npx`, `vite`, or `vitest` directly — `package.json` pins the npm version through
 `devEngines`, so bare `npm` fails on any other npm release.
 
-| Task                     | Command                                                     |
-| ------------------------ | ----------------------------------------------------------- |
-| Install dependencies     | `vp install`                                                |
-| Dev server               | `vp dev`                                                    |
-| Format, lint, type-check | `vp check` (`vp check --fix` to autofix)                    |
-| Tests                    | `vp test` (`vp test watch` for watch mode)                  |
-| Production build         | `vp run build` — the script adds `tsc -b` before `vp build` |
-| Preview the built app    | `vp preview`                                                |
+| Task                     | Command                                    |
+| ------------------------ | ------------------------------------------ |
+| Install dependencies     | `vp install`                               |
+| Dev server               | `vp dev`                                   |
+| Format, lint, type-check | `vp check` (`vp check --fix` to autofix)   |
+| Tests                    | `vp test` (`vp test watch` for watch mode) |
+| Production build         | `vp build`                                 |
+| Preview the built app    | `vp preview`                               |
+
+`package.json` deliberately declares no `scripts`: every command above is a `vp` built-in, so there
+is nothing for `vp run` to run here.
 
 Before `vp check`, `vp test`, or a build on a fresh clone, generate the browser engine and its
 assets from the repository root:
@@ -57,4 +60,5 @@ are gitignored and required to type-check and build. Re-run it whenever the Rust
   `vite-plus/prefer-vite-plus-imports` lint rule enforces this.
 - All tool configuration lives in `vite.config.ts` (`fmt`, `lint`, `test` blocks). Do not add
   `.oxfmtrc.json`, `.oxlintrc.json`, or `vitest.config.ts`.
+- Type checking runs through tsgolint inside `vp check`; there is no separate `tsc` step.
 - Formatting is Oxfmt with its defaults; `vp check` rewrites files, so run it before committing.

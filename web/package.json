@@ -3,12 +3,6 @@
   "version": "0.8.0",
   "private": true,
   "type": "module",
-  "scripts": {
-    "dev": "vp dev",
-    "build": "tsc -b && vp build",
-    "test": "vp test",
-    "preview": "vp preview"
-  },
   "dependencies": {
     "@tanstack/react-store": "0.11.0",
     "@tanstack/store": "0.11.0",
@@ -22,12 +16,10 @@
     "@vitejs/plugin-react": "6.0.3",
     "typescript": "7.0.2",
     "vite": "npm:@voidzero-dev/vite-plus-core@0.3.0",
-    "vite-plus": "0.3.0",
-    "vitest": "4.1.11"
+    "vite-plus": "0.3.0"
   },
   "overrides": {
-    "vite": "npm:@voidzero-dev/vite-plus-core@0.3.0",
-    "vitest": "4.1.11"
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.3.0"
   },
   "devEngines": {
     "packageManager": {
