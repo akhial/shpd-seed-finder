@@ -1,27 +1,27 @@
-import { useMemo, useState } from 'react'
-import { useStore } from '@tanstack/react-store'
-import { sourceLabel } from '../../lib/catalog'
-import { itemGlow } from '../../lib/glow'
-import { CheckIcon, CopyIcon, FlagIcon, ForkIcon } from '../../lib/icons'
-import { questLabel, questVariantLabel } from '../../lib/quests'
-import { regionForDepth } from '../../lib/region'
-import type { ResultPosition } from '../../lib/scout-nav'
-import { itemArt } from '../../lib/sprites'
-import { queryStore } from '../../lib/store'
-import { formatSeedCode } from '../../lib/wasm'
-import type { ScoutItem, ScoutResult } from '../../lib/wasm/types'
-import { Sprite } from './parts'
+import { useMemo, useState } from "react";
+import { useStore } from "@tanstack/react-store";
+import { sourceLabel } from "../../lib/catalog";
+import { itemGlow } from "../../lib/glow";
+import { CheckIcon, CopyIcon, FlagIcon, ForkIcon } from "../../lib/icons";
+import { questLabel, questVariantLabel } from "../../lib/quests";
+import { regionForDepth } from "../../lib/region";
+import type { ResultPosition } from "../../lib/scout-nav";
+import { itemArt } from "../../lib/sprites";
+import { queryStore } from "../../lib/store";
+import { formatSeedCode } from "../../lib/wasm";
+import type { ScoutItem, ScoutResult } from "../../lib/wasm/types";
+import { Sprite } from "./parts";
 
-const groupLetter = (group: number) => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'[group % 26]
+const groupLetter = (group: number) => "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[group % 26];
 
 function accessibilityNote(item: ScoutItem): string | undefined {
-  if (item.accessibility.type === 'choice') {
-    return `One reward of choice group ${groupLetter(item.accessibility.group)} (option ${item.accessibility.option + 1})`
+  if (item.accessibility.type === "choice") {
+    return `One reward of choice group ${groupLetter(item.accessibility.group)} (option ${item.accessibility.option + 1})`;
   }
-  if (item.accessibility.type === 'scenarios') {
-    return `Only in some outcomes of scenario group ${groupLetter(item.accessibility.group)}`
+  if (item.accessibility.type === "scenarios") {
+    return `Only in some outcomes of scenario group ${groupLetter(item.accessibility.group)}`;
   }
-  return undefined
+  return undefined;
 }
 
 export function ScoutPanel({
@@ -34,37 +34,37 @@ export function ScoutPanel({
   nav,
   onNavigate,
 }: {
-  input: string
-  onInput: (value: string) => void
-  onScout: (seed: string) => void
-  loading: boolean
-  error?: string
-  result?: ScoutResult
+  input: string;
+  onInput: (value: string) => void;
+  onScout: (seed: string) => void;
+  loading: boolean;
+  error?: string;
+  result?: ScoutResult;
   /** Position of the scouted seed within the search results, when it is one. */
-  nav?: ResultPosition
-  onNavigate?: (delta: number) => void
+  nav?: ResultPosition;
+  onNavigate?: (delta: number) => void;
 }) {
-  const challengeCount = useStore(queryStore, (state) => state.challenges.length)
-  const [copied, setCopied] = useState(false)
+  const challengeCount = useStore(queryStore, (state) => state.challenges.length);
+  const [copied, setCopied] = useState(false);
 
   const floors = useMemo(() => {
-    const byDepth = new Map<number, ScoutItem[]>()
+    const byDepth = new Map<number, ScoutItem[]>();
     for (const item of result?.items ?? []) {
-      byDepth.set(item.depth, [...(byDepth.get(item.depth) ?? []), item])
+      byDepth.set(item.depth, [...(byDepth.get(item.depth) ?? []), item]);
     }
-    return [...byDepth.entries()].sort(([left], [right]) => left - right)
-  }, [result])
+    return [...byDepth.entries()].sort(([left], [right]) => left - right);
+  }, [result]);
 
   // `?? []` guards against cached worker responses from before quests existed.
-  const questByDepth = new Map((result?.quests ?? []).map((quest) => [quest.depth, quest]))
+  const questByDepth = new Map((result?.quests ?? []).map((quest) => [quest.depth, quest]));
 
   const copySeed = () => {
-    if (!result) return
+    if (!result) return;
     void navigator.clipboard.writeText(result.seed.code).then(() => {
-      setCopied(true)
-      window.setTimeout(() => setCopied(false), 1_200)
-    })
-  }
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1_200);
+    });
+  };
 
   return (
     <>
@@ -74,7 +74,7 @@ export function ScoutPanel({
           {challengeCount > 0 && (
             <>
               <FlagIcon size={12} />
-              {challengeCount} challenge{challengeCount === 1 ? '' : 's'}
+              {challengeCount} challenge{challengeCount === 1 ? "" : "s"}
             </>
           )}
         </span>
@@ -91,7 +91,7 @@ export function ScoutPanel({
           aria-label="Seed code"
           onChange={(event) => onInput(formatSeedCode(event.currentTarget.value))}
           onKeyDown={(event) => {
-            if (event.key === 'Enter' && input.length === 11) onScout(input)
+            if (event.key === "Enter" && input.length === 11) onScout(input);
           }}
         />
         <button
@@ -100,10 +100,14 @@ export function ScoutPanel({
           disabled={input.length !== 11 || loading}
           onClick={() => onScout(input)}
         >
-          {loading ? 'Scouting…' : 'Scout'}
+          {loading ? "Scouting…" : "Scout"}
         </button>
       </div>
-      {error && <p className="d1-inline-error d1-scout-error" role="alert">{error}</p>}
+      {error && (
+        <p className="d1-inline-error d1-scout-error" role="alert">
+          {error}
+        </p>
+      )}
 
       {nav && (
         <div className="d1-scout-nav" role="navigation" aria-label="Search result navigation">
@@ -120,8 +124,10 @@ export function ScoutPanel({
           {/* Only the index is a live region: a running search grows the
               total ~1,000 times and must not re-announce each change. */}
           <span className="d1-scout-nav-pos">
-            <span aria-live="polite">Result <b className="d1-mono">{nav.index + 1}</b></span>
-            {' of '}
+            <span aria-live="polite">
+              Result <b className="d1-mono">{nav.index + 1}</b>
+            </span>
+            {" of "}
             <b className="d1-mono">{nav.total}</b>
           </span>
           <button
@@ -140,7 +146,9 @@ export function ScoutPanel({
             <kbd className="d1-keycap">K</kbd>
             <span>prev</span>
           </span>
-          <span className="d1-scout-nav-hint d1-scout-nav-hint-swipe" aria-hidden="true">swipe to browse</span>
+          <span className="d1-scout-nav-hint d1-scout-nav-hint-swipe" aria-hidden="true">
+            swipe to browse
+          </span>
         </div>
       )}
 
@@ -161,21 +169,35 @@ export function ScoutPanel({
         {!result && loading && <p className="d1-empty">Scouting seed…</p>}
 
         {result && (
-          <div className={loading ? 'd1-manifest d1-manifest-loading' : 'd1-manifest'}>
+          <div className={loading ? "d1-manifest d1-manifest-loading" : "d1-manifest"}>
             <div className="d1-manifest-head">
               <div className="d1-manifest-seed">
                 <span className="d1-mono d1-manifest-code">{result.seed.code}</span>
-                <button type="button" className="d1-result-copy" aria-label="Copy seed" title="Copy seed" onClick={copySeed}>
+                <button
+                  type="button"
+                  className="d1-result-copy"
+                  aria-label="Copy seed"
+                  title="Copy seed"
+                  onClick={copySeed}
+                >
                   {copied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
                 </button>
               </div>
               <p className="d1-caption">
-                {result.items.length} item{result.items.length === 1 ? '' : 's'} across {floors.length} floor{floors.length === 1 ? '' : 's'}
+                {result.items.length} item{result.items.length === 1 ? "" : "s"} across{" "}
+                {floors.length} floor{floors.length === 1 ? "" : "s"}
                 {result.totalRequirements > 0 && (
                   <>
-                    {' · '}
-                    <span className={result.matchedRequirements === result.totalRequirements ? 'd1-match-full' : undefined}>
-                      {result.matchedRequirements} of {result.totalRequirements} requirement{result.totalRequirements === 1 ? '' : 's'} met
+                    {" · "}
+                    <span
+                      className={
+                        result.matchedRequirements === result.totalRequirements
+                          ? "d1-match-full"
+                          : undefined
+                      }
+                    >
+                      {result.matchedRequirements} of {result.totalRequirements} requirement
+                      {result.totalRequirements === 1 ? "" : "s"} met
                     </span>
                   </>
                 )}
@@ -183,10 +205,14 @@ export function ScoutPanel({
             </div>
 
             {floors.map(([depth, items]) => {
-              const region = regionForDepth(depth)
-              const quest = questByDepth.get(depth)
+              const region = regionForDepth(depth);
+              const quest = questByDepth.get(depth);
               return (
-                <section className="d1-floor" key={depth} style={{ ['--region' as string]: region.color }}>
+                <section
+                  className="d1-floor"
+                  key={depth}
+                  style={{ ["--region" as string]: region.color }}
+                >
                   <header className="d1-floor-head">
                     <span className="d1-floor-bar" aria-hidden="true" />
                     <span className="d1-floor-label">Floor {depth}</span>
@@ -199,20 +225,41 @@ export function ScoutPanel({
                   </header>
                   <ul className="d1-item-list">
                     {items.map((item, index) => {
-                      const note = accessibilityNote(item)
+                      const note = accessibilityNote(item);
                       return (
-                        <li className={item.matched ? 'd1-item d1-item-matched' : 'd1-item'} key={`${item.id}-${index}`}>
-                          <Sprite art={itemArt(item.spriteIndex, result.ringGems)} size={32} label={item.name} glow={itemGlow(item)} />
+                        <li
+                          className={item.matched ? "d1-item d1-item-matched" : "d1-item"}
+                          key={`${item.id}-${index}`}
+                        >
+                          <Sprite
+                            art={itemArt(item.spriteIndex, result.ringGems)}
+                            size={32}
+                            label={item.name}
+                            glow={itemGlow(item)}
+                          />
                           <div className="d1-item-body">
                             <div className="d1-item-name">
                               <span>{item.name}</span>
-                              {item.upgrade > 0 && <b className="d1-badge d1-badge-up">+{item.upgrade}</b>}
+                              {item.upgrade > 0 && (
+                                <b className="d1-badge d1-badge-up">+{item.upgrade}</b>
+                              )}
                               {item.cursed && <b className="d1-badge d1-badge-curse">cursed</b>}
-                              {item.secret && <b className="d1-badge d1-badge-secret" title="Hidden in a secret room — search to reveal it">secret</b>}
+                              {item.secret && (
+                                <b
+                                  className="d1-badge d1-badge-secret"
+                                  title="Hidden in a secret room — search to reveal it"
+                                >
+                                  secret
+                                </b>
+                              )}
                             </div>
                             <div className="d1-item-meta">
                               {item.effect && (
-                                <span className={item.effect.kind === 'curse' ? 'd1-fx-curse' : 'd1-fx'}>{item.effect.name}</span>
+                                <span
+                                  className={item.effect.kind === "curse" ? "d1-fx-curse" : "d1-fx"}
+                                >
+                                  {item.effect.name}
+                                </span>
                               )}
                               <span>{sourceLabel(item.source)}</span>
                             </div>
@@ -223,17 +270,24 @@ export function ScoutPanel({
                               </p>
                             )}
                           </div>
-                          {item.matched && <span className="d1-badge d1-badge-match" title="Selected as part of a jointly obtainable requirement match">✓ match</span>}
+                          {item.matched && (
+                            <span
+                              className="d1-badge d1-badge-match"
+                              title="Selected as part of a jointly obtainable requirement match"
+                            >
+                              ✓ match
+                            </span>
+                          )}
                         </li>
-                      )
+                      );
                     })}
                   </ul>
                 </section>
-              )
+              );
             })}
           </div>
         )}
       </div>
     </>
-  )
+  );
 }

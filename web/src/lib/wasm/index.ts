@@ -9,19 +9,21 @@ import init, {
   format_seed_code,
   parse_seed_code,
   query_continues,
-} from './pkg/seedfinder.js'
-import type { AnalysisResult, EngineInfo, ParsedSeed } from './types'
+} from "./pkg/seedfinder.js";
+import type { AnalysisResult, EngineInfo, ParsedSeed } from "./types";
 
-let enginePromise: Promise<void> | undefined
+let enginePromise: Promise<void> | undefined;
 
 export function initEngine(): Promise<void> {
-  enginePromise ??= init(new URL('./pkg/seedfinder_bg.wasm', import.meta.url)).then(() => undefined)
-  return enginePromise
+  enginePromise ??= init(new URL("./pkg/seedfinder_bg.wasm", import.meta.url)).then(
+    () => undefined,
+  );
+  return enginePromise;
 }
 
 export async function getEngineInfo(): Promise<EngineInfo> {
-  await initEngine()
-  return JSON.parse(engine_info()) as EngineInfo
+  await initEngine();
+  return JSON.parse(engine_info()) as EngineInfo;
 }
 
 /**
@@ -32,17 +34,17 @@ export async function getEngineInfo(): Promise<EngineInfo> {
  * controlled input. Callers must have awaited `initEngine()`.
  */
 export function formatSeedCode(input: string): string {
-  return format_seed_code(input)
+  return format_seed_code(input);
 }
 
 export async function parseSeedCode(input: string): Promise<ParsedSeed> {
-  await initEngine()
-  return JSON.parse(parse_seed_code(input)) as ParsedSeed
+  await initEngine();
+  return JSON.parse(parse_seed_code(input)) as ParsedSeed;
 }
 
 export async function analyzeQuery(queryJson: string): Promise<AnalysisResult> {
-  await initEngine()
-  return JSON.parse(analyze_query(queryJson)) as AnalysisResult
+  await initEngine();
+  return JSON.parse(analyze_query(queryJson)) as AnalysisResult;
 }
 
 /**
@@ -57,7 +59,7 @@ export async function analyzeQuery(queryJson: string): Promise<AnalysisResult> {
  * `getEngineInfo()` has resolved, so nothing can reach this before then.
  */
 export function queryContinues(candidateJson: string, baseJson: string): boolean {
-  return query_continues(candidateJson, baseJson)
+  return query_continues(candidateJson, baseJson);
 }
 
 /**
@@ -79,19 +81,25 @@ export function decideStart(
   targetHasUncoveredSeeds: boolean,
   detachedBaseJson: string | undefined,
 ): string {
-  return decide_start(candidateJson, targetJson, targetSetEmpty, targetHasUncoveredSeeds, detachedBaseJson)
+  return decide_start(
+    candidateJson,
+    targetJson,
+    targetSetEmpty,
+    targetHasUncoveredSeeds,
+    detachedBaseJson,
+  );
 }
 
 /** Encodes a canonical query document as a full shareable web link. */
 export async function encodeShareLink(queryJson: string): Promise<string> {
-  await initEngine()
-  return encode_share_link(queryJson)
+  await initEngine();
+  return encode_share_link(queryJson);
 }
 
 /** Decodes share-link text (full link or bare code) into the canonical query document. */
 export async function decodeShareText(text: string): Promise<string> {
-  await initEngine()
-  return decode_share_text(text)
+  await initEngine();
+  return decode_share_text(text);
 }
 
 /**
@@ -103,7 +111,7 @@ export async function decodeShareText(text: string): Promise<string> {
  * `initEngine()`.
  */
 export function parseSeedCodeSync(input: string): ParsedSeed {
-  return JSON.parse(parse_seed_code(input)) as ParsedSeed
+  return JSON.parse(parse_seed_code(input)) as ParsedSeed;
 }
 
 /**
@@ -115,7 +123,7 @@ export function parseSeedCodeSync(input: string): ParsedSeed {
  * synchronous UI paths. Callers must have awaited `initEngine()`.
  */
 export function encodeResultsFileText(requestJson: string): string {
-  return encode_results_file(requestJson)
+  return encode_results_file(requestJson);
 }
 
 /**
@@ -129,5 +137,5 @@ export function encodeResultsFileText(requestJson: string): string {
  * `initEngine()`.
  */
 export function decodeResultsFileText(contents: string): string {
-  return decode_results_file(contents)
+  return decode_results_file(contents);
 }
