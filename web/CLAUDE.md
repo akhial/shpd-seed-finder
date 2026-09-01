@@ -29,8 +29,9 @@ release. Add a tool name to select part of the graph. For example, run
 ## Seed Seeker web app
 
 This directory is the Vite+ project root. Run every toolchain command from `web/`, and use `vp`
-rather than `npm`, `npx`, `vite`, or `vitest` directly — `package.json` pins the npm version through
-`devEngines`, so bare `npm` fails on any other npm release.
+rather than `pnpm`, `npm`, `vite`, or `vitest` directly. The package manager is pnpm, pinned through
+`devEngines.packageManager`; `vp` downloads the pinned version itself, so nothing has to be
+installed globally beyond `vp`. There is no `package-lock.json` — `pnpm-lock.yaml` is the lockfile.
 
 | Task                     | Command                                    |
 | ------------------------ | ------------------------------------------ |
@@ -58,6 +59,9 @@ are gitignored and required to type-check and build. Re-run it whenever the Rust
 
 - Tests import Vitest APIs from `vite-plus/test`, not `vitest`. The
   `vite-plus/prefer-vite-plus-imports` lint rule enforces this.
+- Dependency versions are pinned through the pnpm catalog in `pnpm-workspace.yaml`, which also
+  carries the `vite` -> `@voidzero-dev/vite-plus-core` override. Use `vp add` / `vp remove` rather
+  than editing `package.json` by hand.
 - All tool configuration lives in `vite.config.ts` (`fmt`, `lint`, `test` blocks). Do not add
   `.oxfmtrc.json`, `.oxlintrc.json`, or `vitest.config.ts`.
 - Type checking runs through tsgolint inside `vp check`; there is no separate `tsc` step.
