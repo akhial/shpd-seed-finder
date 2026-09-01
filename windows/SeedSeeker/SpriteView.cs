@@ -36,7 +36,7 @@ public sealed class SpriteView : Grid
     private bool live;
     private XamlRoot? hookedRoot;
     private TypedEventHandler<XamlRoot, XamlRootChangedEventArgs>? rootChanged;
-    private (int Index, int Size, uint Glow) rendered = (int.MinValue, 0, 0);
+    private (int Index, int TypeIcon, int Size, uint Glow) rendered = (int.MinValue, int.MinValue, 0, 0);
     private int generation;
 
     public SpriteView()
@@ -50,9 +50,22 @@ public sealed class SpriteView : Grid
         Unloaded += OnUnloaded;
     }
 
-    /// <summary>Row-major index into <c>items.png</c>; negative renders nothing.</summary>
+    /// <summary>
+    /// Row-major index into <c>items.png</c>; negative renders nothing. For a
+    /// ring drawn as part of a scouted seed this is the cell that run's gems
+    /// give it, which is not the ring class's catalog cell — hence
+    /// <see cref="TypeIconIndex"/> beside it.
+    /// </summary>
     public static readonly DependencyProperty SpriteIndexProperty = DependencyProperty.Register(
         nameof(SpriteIndex), typeof(int), typeof(SpriteView), new PropertyMetadata(-1, OnVisualChanged));
+
+    /// <summary>
+    /// Row-major index of the ring glyph in <c>item_icons.png</c> overlaid on the
+    /// sprite, or -1 for an item that carries no glyph. It names the ring class
+    /// and so cannot be derived from <see cref="SpriteIndex"/>.
+    /// </summary>
+    public static readonly DependencyProperty TypeIconIndexProperty = DependencyProperty.Register(
+        nameof(TypeIconIndex), typeof(int), typeof(SpriteView), new PropertyMetadata(-1, OnVisualChanged));
 
     /// <summary>Edge of the square sprite box, in DIPs.</summary>
     public static readonly DependencyProperty SpriteSizeProperty = DependencyProperty.Register(
@@ -70,6 +83,12 @@ public sealed class SpriteView : Grid
     {
         get => (int)GetValue(SpriteIndexProperty);
         set => SetValue(SpriteIndexProperty, value);
+    }
+
+    public int TypeIconIndex
+    {
+        get => (int)GetValue(TypeIconIndexProperty);
+        set => SetValue(TypeIconIndexProperty, value);
     }
 
     public double SpriteSize
@@ -129,7 +148,7 @@ public sealed class SpriteView : Grid
         // The high bit distinguishes "no glow" from "glow that happens to be black".
         var tint = period > 0 ? 0x1000000u | (uint)((color.R << 16) | (color.G << 8) | color.B) : 0u;
         var pixels = (int)Math.Max(1, Math.Round(size * EffectiveScale()));
-        var key = (SpriteIndex, pixels, tint);
+        var key = (SpriteIndex, TypeIconIndex, pixels, tint);
         if (!force && key == rendered) return;
         rendered = key;
         StopPulse();
@@ -159,7 +178,7 @@ public sealed class SpriteView : Grid
         // Completes synchronously once the atlas has been decoded.
         var atlas = await ItemAtlas.GetAsync();
         if (atlas is null || token != generation) return;
-        art.Source = atlas.Sprite(SpriteIndex, pixels);
+        art.Source = atlas.Sprite(SpriteIndex, TypeIconIndex, pixels);
         if (period > 0)
         {
             glow.Source = atlas.Mask(SpriteIndex, pixels, GlowColor);

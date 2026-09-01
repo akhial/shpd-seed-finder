@@ -321,7 +321,7 @@
                 <DataTemplate>
                   <Grid ColumnSpacing="10" Padding="0,6">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <local:SpriteView SpriteIndex="{Binding SpriteIndex}" SpriteSize="22"
+                    <local:SpriteView SpriteIndex="{Binding SpriteIndex}" TypeIconIndex="{Binding TypeIconIndex}" SpriteSize="22"
                                       GlowColor="{Binding GlowColor}" GlowPeriod="{Binding GlowPeriod}"
                                       VerticalAlignment="Top" Margin="0,2,0,0"/>
                     <StackPanel Grid.Column="1" Spacing="2">
