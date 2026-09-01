@@ -27,6 +27,11 @@ const EXTRA_CONNECTION_CHANCE: f32 = 0.55;
 struct GridCells {
     keys: Vec<i32>,
     values: Vec<usize>,
+    /// Slots holding a live key, ascending: `keyArray()` kept incrementally
+    /// so a lookup is an index instead of a scan of the whole table. The
+    /// builder reads one key per placement try and places barely thirty, so
+    /// paying an insert per put to make reads O(1) is heavily in profit.
+    order: Vec<usize>,
     size: usize,
     threshold: usize,
     shift: u32,
@@ -50,6 +55,7 @@ impl GridCells {
         Self {
             keys: vec![0; table_size],
             values: vec![usize::MAX; table_size],
+            order: Vec::new(),
             size: 0,
             threshold,
             shift: (mask as u64).leading_zeros(),
@@ -84,6 +90,7 @@ impl GridCells {
         self.locate(key).is_ok()
     }
 
+    #[cfg(test)]
     fn get(&self, key: i32) -> Option<usize> {
         self.locate(key).ok().map(|index| self.values[index])
     }
@@ -95,6 +102,8 @@ impl GridCells {
             Err(index) => {
                 self.keys[index] = key;
                 self.values[index] = value;
+                let position = self.order.partition_point(|&slot| slot < index);
+                self.order.insert(position, index);
                 self.size += 1;
                 if self.size >= self.threshold {
                     self.resize(self.keys.len() << 1);
@@ -118,12 +127,29 @@ impl GridCells {
                 grown.values[index] = value;
             }
         }
+        grown.order.extend(
+            grown
+                .keys
+                .iter()
+                .enumerate()
+                .filter_map(|(slot, &key)| (key != 0).then_some(slot)),
+        );
         *self = grown;
     }
 
     /// `SparseArray.keyArray()`: table iteration order.
+    #[cfg(test)]
     fn key_array(&self) -> Vec<i32> {
         self.keys.iter().copied().filter(|&key| key != 0).collect()
+    }
+
+    /// `keyArray()[index]` and the room it maps to, without materialising the
+    /// array. The builder never wants the whole key list — only one entry per
+    /// placement try — and building the `Vec` for each try was the single
+    /// hottest allocation in the vault generator.
+    fn nth_entry(&self, index: usize) -> (i32, usize) {
+        let slot = self.order[index];
+        (self.keys[slot], self.values[slot])
     }
 }
 
@@ -296,14 +322,11 @@ pub fn build_grid(rooms: &mut [VaultRoom], random: &mut RandomStack) -> bool {
             let (neighbour, neighbour_index) = if placed.len() < 3 {
                 (entrance, entry_index)
             } else {
-                let keys = grid_cells.key_array();
-                let bound = i32::try_from(keys.len()).expect("grid key count fits Java int");
-                let key = keys
-                    [usize::try_from(random.int_bound(bound)).expect("Random.Int is non-negative")];
-                (
-                    grid_cells.get(key).expect("key array entries are live"),
-                    key,
-                )
+                let bound = i32::try_from(grid_cells.size).expect("grid key count fits Java int");
+                let index =
+                    usize::try_from(random.int_bound(bound)).expect("Random.Int is non-negative");
+                let (key, room) = grid_cells.nth_entry(index);
+                (room, key)
             };
 
             #[allow(clippy::cast_precision_loss)]
@@ -393,8 +416,13 @@ pub fn build_grid(rooms: &mut [VaultRoom], random: &mut RandomStack) -> bool {
 
     find_neighbours(rooms);
     for room in 0..rooms.len() {
-        let neighbours = rooms[room].neighbours.clone();
-        for other in neighbours {
+        // `connect_rooms` only ever reaches `add_neighbour` for a room that is
+        // not already a neighbour, so this list cannot grow underneath the
+        // loop and indexing it avoids cloning it for every room.
+        let mut index = 0;
+        while index < rooms[room].neighbours.len() {
+            let other = rooms[room].neighbours[index];
+            index += 1;
             if rooms[other].connection_to(room).is_none()
                 && random.float() < EXTRA_CONNECTION_CHANCE
             {
@@ -429,6 +457,30 @@ mod tests {
         assert!(slots.len() == keys.len() || sorted == slots);
         assert_eq!(cells.get(grid_index(1, 0)), Some(1));
         assert!(!cells.contains_key(grid_index(5, 5)));
+    }
+
+    #[test]
+    fn the_incremental_key_order_tracks_the_key_array() {
+        let mut cells = GridCells::new();
+        // Enough keys to force the 64-slot table to grow to 128, so the
+        // rehash path has to rebuild the order too.
+        for (index, (x, y)) in (0..12)
+            .flat_map(|x| (0..6).map(move |y| (x, y)))
+            .enumerate()
+        {
+            cells.put(grid_index(x, y), index);
+            let expected = cells.key_array();
+            assert_eq!(cells.size, expected.len());
+            let actual: Vec<i32> = (0..cells.size).map(|n| cells.nth_entry(n).0).collect();
+            assert_eq!(actual, expected, "after inserting ({x}, {y})");
+        }
+        assert_eq!(cells.keys.len(), 128, "the table must have been resized");
+        for (index, (x, y)) in (0..12)
+            .flat_map(|x| (0..6).map(move |y| (x, y)))
+            .enumerate()
+        {
+            assert_eq!(cells.get(grid_index(x, y)), Some(index));
+        }
     }
 
     #[test]
