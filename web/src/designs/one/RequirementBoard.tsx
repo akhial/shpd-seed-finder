@@ -560,7 +560,7 @@ export function RequirementBoard({
             >
               −
             </button>
-            <span className="d1-stack-badge d1-stack-badge-total">Σ ≥ {item.total ?? 0}</span>
+            <span className="d1-stack-badge">Σ ≥ {item.total ?? 0}</span>
             <button
               type="button"
               aria-label="Raise total"
@@ -582,7 +582,7 @@ export function RequirementBoard({
           item.total !== undefined && (
             <button
               type="button"
-              className="d1-stack-badge d1-stack-badge-total d1-stack-badge-btn"
+              className="d1-stack-badge d1-stack-badge-btn"
               data-no-drag
               title={`Levels add to at least ${item.total} (a +0 item counts 1)`}
               onPointerDown={(event) => event.stopPropagation()}
