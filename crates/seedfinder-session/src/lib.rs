@@ -95,7 +95,7 @@ pub enum ScoutCallError {
 
 /// Validates an `SSQ2` scout request (`magic[4]`, little-endian challenge
 /// `u16`, remaining UTF-8 seed code) or a legacy raw-seed request, generates a
-/// depth-24 world with the supplied generator, and encodes `SSC2`.
+/// depth-24 world with the supplied generator, and encodes `SSC3`.
 ///
 /// # Errors
 ///
@@ -164,7 +164,7 @@ pub enum ScoutMatchError {
 /// reports which of its items satisfy the query in `query_packet`.
 ///
 /// The world is generated exactly like [`production_scout_packet`]'s, so the
-/// reported item indices address the item list of the `SSC2` packet that
+/// reported item indices address the item list of the `SSC3` packet that
 /// request produces.
 ///
 /// # Errors
@@ -604,6 +604,7 @@ mod tests {
     use shpd_seedfinder_core::query::{
         EffectRequirement, Requirement, SearchQuery, TierRequirement, UpgradeRequirement,
     };
+    use shpd_seedfinder_core::run::RingGems;
     use shpd_seedfinder_core::search::{SearchOptions, WorldGenerator};
     use shpd_seedfinder_core::seed::DungeonSeed;
     use shpd_seedfinder_core::wire::{WireError, decode_scout_world};
@@ -695,6 +696,7 @@ mod tests {
                 accessibility: Accessibility::Independent,
                 secret: true,
             }],
+            ring_gems: RingGems::UNSHUFFLED,
         }
     }
     fn query() -> SearchQuery {

@@ -101,6 +101,11 @@ struct ScoutOutput {
     seed: SeedOutput,
     quests: Vec<ScoutQuestOutput>,
     items: Vec<ScoutItemOutput>,
+    /// The gem each ring class is drawn with in this run, in catalog ring
+    /// order. A ring item's atlas cell is `RING_SPRITE_BASE` plus its class's
+    /// entry; `spriteIndex` below stays the class's own catalog cell, whose
+    /// offset from `RING_SPRITE_BASE` is the class's `item_icons.png` glyph.
+    ring_gems: [u8; 12],
     matched_requirements: usize,
     total_requirements: usize,
 }
@@ -541,6 +546,7 @@ fn scout_impl(request_json: &str) -> Result<String, String> {
         seed: seed.into(),
         quests: scout_quest_outputs(world.quests),
         items,
+        ring_gems: world.ring_gems.ordinals(),
         matched_requirements,
         total_requirements,
     }))
@@ -698,7 +704,7 @@ mod tests {
 
     use serde::Deserialize;
     use serde_json::{Value, json};
-    use shpd_seedfinder_core::catalog::item;
+    use shpd_seedfinder_core::catalog::{RING_SPRITE_BASE, item, item_by_stable_id};
     use shpd_seedfinder_core::json_query;
     use shpd_seedfinder_core::main_world::{CanonicalMainWorldGenerator, generate_main_world};
     use shpd_seedfinder_core::search::{SearchOptions, SearchProgress, search_parallel};
@@ -853,8 +859,34 @@ mod tests {
     }
 
     #[test]
+    fn scouting_reports_the_run_gems_that_recolor_its_rings() {
+        // YKH-LGJ-WDQ draws haste as a diamond in the game. The item keeps its
+        // catalog cell — which is what names the class and indexes its glyph —
+        // and the gem table is what moves the art onto the diamond.
+        let output: Value =
+            serde_json::from_str(&scout_impl(r#"{"seed":"YKH-LGJ-WDQ"}"#).unwrap()).unwrap();
+        assert_eq!(
+            output["ringGems"],
+            serde_json::json!([7, 8, 3, 5, 4, 6, 2, 11, 10, 1, 0, 9])
+        );
+
+        let haste = item_by_stable_id("ring_haste").unwrap();
+        assert_eq!(haste.sprite_index, RING_SPRITE_BASE + 7);
+        assert_eq!(haste.ring_glyph_index(), Some(7));
+        let gems = output["ringGems"].as_array().unwrap();
+        let glyph = usize::from(haste.ring_glyph_index().unwrap());
+        let drawn = RING_SPRITE_BASE + u16::try_from(gems[glyph].as_u64().unwrap()).unwrap();
+        assert_eq!(drawn, RING_SPRITE_BASE + 11);
+
+        for output_item in output["items"].as_array().unwrap() {
+            let definition = item_by_stable_id(output_item["id"].as_str().unwrap()).unwrap();
+            assert_eq!(output_item["spriteIndex"], definition.sprite_index);
+        }
+    }
+
+    #[test]
     fn scout_matches_canonical_world_and_android_catalog() {
-        use shpd_seedfinder_core::catalog::{WeaponCategory, item_by_stable_id};
+        use shpd_seedfinder_core::catalog::WeaponCategory;
 
         let output: Value =
             serde_json::from_str(&scout_impl(r#"{"seed":"AAA-AAA-AAA"}"#).unwrap()).unwrap();

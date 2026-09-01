@@ -832,6 +832,7 @@ mod tests {
     use crate::catalog::{ItemId, ItemKind};
     use crate::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
     use crate::query::{EffectRequirement, Requirement, SearchQuery, TierRequirement};
+    use crate::run::RingGems;
 
     use super::{
         SearchError, SearchOptions, SearchProgress, StreamingSearchState, WorldGenerator,
@@ -861,6 +862,7 @@ mod tests {
                 quests: crate::quests::QuestSummary::default(),
                 seed,
                 items,
+                ring_gems: RingGems::UNSHUFFLED,
             }
         }
     }
@@ -947,6 +949,7 @@ mod tests {
                             })
                             .into_iter()
                             .collect(),
+                        ring_gems: RingGems::UNSHUFFLED,
                     })
                     .collect()
             }
@@ -1018,6 +1021,7 @@ mod tests {
                     quests: crate::quests::QuestSummary::default(),
                     seed,
                     items: Vec::new(),
+                    ring_gems: RingGems::UNSHUFFLED,
                 }
             }
         }
@@ -1182,6 +1186,7 @@ mod tests {
                 seed,
                 items,
                 quests: crate::quests::QuestSummary::default(),
+                ring_gems: RingGems::UNSHUFFLED,
             }
         }
     }
@@ -1207,6 +1212,7 @@ mod tests {
                     seed,
                     items: Vec::new(),
                     quests: crate::quests::QuestSummary::default(),
+                    ring_gems: RingGems::UNSHUFFLED,
                 }
             }
         }
@@ -1483,6 +1489,7 @@ mod tests {
                         accessibility: Accessibility::Independent,
                     }],
                     quests: crate::quests::QuestSummary::default(),
+                    ring_gems: RingGems::UNSHUFFLED,
                 }
             }
         }
@@ -1522,6 +1529,7 @@ mod tests {
                     quests: crate::quests::QuestSummary::default(),
                     seed,
                     items: Vec::new(),
+                    ring_gems: RingGems::UNSHUFFLED,
                 }
             }
         }
