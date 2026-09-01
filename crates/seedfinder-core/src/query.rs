@@ -2784,37 +2784,6 @@ mod tests {
             ],
             ..scout_query(Vec::new())
         };
-        // A ring reaches +4 (five levels), but only one per world — the Imp
-        // vault's prize; every other ring stops at +2 (three levels). Two
-        // rings therefore reach eight levels together, not ten.
-        assert_eq!(pair(3).validate(), Ok(()));
-        assert_eq!(pair(8).validate(), Ok(()));
-        assert_eq!(
-            pair(9).validate(),
-            Err(QueryError::UnattainableLevelSum {
-                group: 1,
-                minimum_total: 9,
-                capacity: 8,
-            })
-        );
-        assert_eq!(
-            pair(9).validate().unwrap_err().to_string(),
-            "combined level group A needs 9 levels but its items can reach at most 8"
-        );
-        // Only rings count levels together.
-        assert_eq!(
-            Requirement {
-                item: Some(ItemId::Sword),
-                level_sum: Some(LevelSum {
-                    group: 1,
-                    minimum_total: 3,
-                }),
-                ..plain(ItemKind::Weapon)
-            }
-            .validate(),
-            Err(QueryError::LevelSumOutsideRings)
-        );
-
         let rings = |upgrades: &[u8]| {
             scout_world(
                 upgrades
@@ -2849,6 +2818,55 @@ mod tests {
         let short = scout_matches(&rings(&[1]), &pair(4));
         assert_eq!(short.matched_requirements, 0);
         assert!(short.matched_indices().is_empty());
+    }
+
+    #[test]
+    fn combined_level_validation_caps_totals_and_admits_rings_only() {
+        let might = |level_sum| Requirement {
+            item: Some(ItemId::RingMight),
+            level_sum: Some(level_sum),
+            ..plain(ItemKind::Ring)
+        };
+        let pair = |minimum_total| SearchQuery {
+            requirements: vec![
+                might(LevelSum {
+                    group: 1,
+                    minimum_total,
+                });
+                2
+            ],
+            ..scout_query(Vec::new())
+        };
+        // A ring reaches +4 (five levels), but only one per world — the Imp
+        // vault's prize; every other ring stops at +2 (three levels). Two
+        // rings therefore reach eight levels together, not ten.
+        assert_eq!(pair(3).validate(), Ok(()));
+        assert_eq!(pair(8).validate(), Ok(()));
+        assert_eq!(
+            pair(9).validate(),
+            Err(QueryError::UnattainableLevelSum {
+                group: 1,
+                minimum_total: 9,
+                capacity: 8,
+            })
+        );
+        assert_eq!(
+            pair(9).validate().unwrap_err().to_string(),
+            "combined level group A needs 9 levels but its items can reach at most 8"
+        );
+        // Only rings count levels together.
+        assert_eq!(
+            Requirement {
+                item: Some(ItemId::Sword),
+                level_sum: Some(LevelSum {
+                    group: 1,
+                    minimum_total: 3,
+                }),
+                ..plain(ItemKind::Weapon)
+            }
+            .validate(),
+            Err(QueryError::LevelSumOutsideRings)
+        );
 
         // Members agree on the total, sums need a group and a total, and a
         // sum cannot live inside an alternative group.
