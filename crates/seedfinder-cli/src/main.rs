@@ -214,12 +214,14 @@ fn benchmark_command(benchmark: &BenchmarkOptions) -> Result<String, String> {
             "Seed Seeker benchmark (Shattered Pixel Dungeon {shpd_version})\n",
             "Workers: {workers}\n",
             "Seeds tested: {tested}\n",
+            "Matches: {matches}\n",
             "Elapsed: {elapsed:.3} s\n",
             "Throughput: {throughput:.0} seeds/s",
         ),
         shpd_version = SHPD_VERSION,
         workers = workers,
         tested = outcome.tested,
+        matches = outcome.worlds.len(),
         elapsed = outcome.elapsed.as_secs_f64(),
         throughput = outcome.seeds_per_second(),
     ))
@@ -274,23 +276,23 @@ fn load_query(path: &Path) -> Result<SearchQuery, String> {
         .map_err(|error| format!("could not parse '{}': {error}", path.display()))
 }
 
-/// The canonical benchmark: a +3 Wand of Fireblast anywhere in the first 24
-/// floors.
+/// The canonical benchmark: a +5 Runic Blade anywhere in the first 19 floors.
 ///
-/// Before v4.0.0 the Wandmaker was the only source of a +3 wand and the
-/// planner's quest-window shortcut ended generation at depth 9. The Imp is now
-/// a source too, so the plan runs to its depth-19 deadline and asks for the
-/// vault sub-level: the workload covers every region and the most expensive
-/// level in the game, and benchmark numbers published against the older engine
-/// are not comparable with current ones.
+/// A tier-4 weapon among the Imp's reward options is the only thing in v4.0.0
+/// that reaches +5, so the plan runs to the Imp's depth-19 deadline and no
+/// quest window can end it sooner: every seed is generated through the City.
+/// The vault sub-level is not built — its treasure stops at +4 — which keeps
+/// the workload the plain cost of nineteen floors. Numbers published against
+/// the older engine, or against the +3 Wand of Fireblast workload used before
+/// it, are not comparable with current ones.
 fn benchmark_query() -> SearchQuery {
     SearchQuery {
         requirements: vec![Requirement {
-            kind: ItemKind::Wand,
+            kind: ItemKind::Weapon,
             weapon_category: None,
-            item: Some(ItemId::WandFireblast),
+            item: Some(ItemId::RunicBlade),
             tier: TierRequirement::Any,
-            upgrade: UpgradeRequirement::Exact(3),
+            upgrade: UpgradeRequirement::Exact(5),
             effect: EffectRequirement::Any,
             require_uncursed: false,
             source: None,
@@ -299,7 +301,7 @@ fn benchmark_query() -> SearchQuery {
             alternative_group: None,
             level_sum: None,
         }],
-        max_depth: 24,
+        max_depth: 19,
         challenges: Challenges::NONE,
         require_blacksmith: false,
         exclude_blacksmith_rewards: false,

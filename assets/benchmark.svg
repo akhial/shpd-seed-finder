@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 180" width="780" height="180" role="img">
-  <title>Bar chart of seed-search throughput: Seed Seeker tests 13,716 seeds per second on 12 cores and 1,567 on one core; the Java shpd-seed-finder tests 453 seeds per second across 6 processes and 94 in one process.</title>
+  <title>Bar chart of seed-search throughput: Seed Seeker tests 5,701 seeds per second on 12 cores and 630 on one core; a Java finder driving the game's own v4.0.0-BETA-3 JAR tests 916 seeds per second across 12 processes and 147 in one process.</title>
 
   <style>
     @font-face {
@@ -32,20 +32,20 @@
   <!-- Seed Seeker · 12 threads -->
   <text class="label ours" x="210" y="34" text-anchor="end">Seed Seeker (12 threads)</text>
   <path class="bar-ours" d="M222 20 h438 q2 0 2 2 v16 q0 2 -2 2 h-438 z"/>
-  <text class="value ours" x="670" y="34">13,716 seeds/s</text>
+  <text class="value ours" x="670" y="34">5,701 seeds/s</text>
 
   <!-- Seed Seeker · 1 thread -->
   <text class="label ours" x="210" y="70" text-anchor="end">Seed Seeker (1 thread)</text>
-  <path class="bar-ours" d="M222 56 h50 q2 0 2 2 v16 q0 2 -2 2 h-50 z"/>
-  <text class="value ours" x="282" y="70">1,567</text>
+  <path class="bar-ours" d="M222 56 h48.4 q2 0 2 2 v16 q0 2 -2 2 h-48.4 z"/>
+  <text class="value ours" x="280" y="70">630</text>
 
-  <!-- shpd-seed-finder · 6 processes -->
-  <text class="label" x="210" y="106" text-anchor="end">shpd-seed-finder (6 processes)</text>
-  <path class="bar-theirs" d="M222 92 h14.5 q2 0 2 2 v16 q0 2 -2 2 h-14.5 z"/>
-  <text class="value" x="247" y="106">453</text>
+  <!-- Java baseline · 12 processes -->
+  <text class="label" x="210" y="106" text-anchor="end">Java baseline (12 processes)</text>
+  <path class="bar-theirs" d="M222 92 h70.4 q2 0 2 2 v16 q0 2 -2 2 h-70.4 z"/>
+  <text class="value" x="302" y="106">916</text>
 
-  <!-- shpd-seed-finder · 1 process -->
-  <text class="label" x="210" y="142" text-anchor="end">shpd-seed-finder (1 process)</text>
-  <path class="bar-theirs" d="M222 128 h3 q2 0 2 2 v16 q0 2 -2 2 h-3 z"/>
-  <text class="value" x="235" y="142">94</text>
+  <!-- Java baseline · 1 process -->
+  <text class="label" x="210" y="142" text-anchor="end">Java baseline (1 process)</text>
+  <path class="bar-theirs" d="M222 128 h11.3 q2 0 2 2 v16 q0 2 -2 2 h-11.3 z"/>
+  <text class="value" x="243" y="142">147</text>
 </svg>
