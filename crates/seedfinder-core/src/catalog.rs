@@ -191,6 +191,15 @@ impl ItemId {
         }
     }
 
+    /// Whether this is a tipped dart. Every shop stocks tipped darts and any
+    /// dart can be tipped by hand, so search UIs never offer them as a
+    /// requirement — though a scouted world still lists the ones it rolled.
+    #[must_use]
+    pub const fn is_tipped_dart(self) -> bool {
+        // Contiguity is asserted next to `TIPPED_DARTS` in probability_tables.
+        Self::RotDart as u8 <= self as u8 && self as u8 <= Self::BlindingDart as u8
+    }
+
     /// Whether a weapon is wielded (melee) or thrown (missile weapons and
     /// tipped darts). `None` for armor, wands, and rings.
     #[must_use]

@@ -48,11 +48,18 @@ export const kindFamily = (kind: RequirementKind): ItemCategory =>
 export const kindWeaponClass = (kind: RequirementKind): WeaponClass | undefined =>
   kind === "melee_weapon" ? "melee" : kind === "thrown_weapon" ? "thrown" : undefined;
 
+/**
+ * Tipped darts are guaranteed shop stock and can be tipped by hand, so no one
+ * searches for them; they stay out of the pickers but render in scout views.
+ */
+const isTippedDart = (item: CatalogItem): boolean => item.id.endsWith("_dart");
+
 /** Catalog items selectable under one requirement kind. */
 export const itemsForKind = (kind: RequirementKind): CatalogItem[] => {
   const weaponClass = kindWeaponClass(kind);
   const family = itemsByCategory[kindFamily(kind)];
-  return weaponClass ? family.filter((item) => item.class === weaponClass) : family;
+  const selectable = family.filter((item) => !isTippedDart(item));
+  return weaponClass ? selectable.filter((item) => item.class === weaponClass) : selectable;
 };
 export const getItem = (id: string): CatalogItem | undefined => lookup.get(id);
 export const displayItemName = (id: string): string => getItem(id)?.name ?? id.replaceAll("_", " ");

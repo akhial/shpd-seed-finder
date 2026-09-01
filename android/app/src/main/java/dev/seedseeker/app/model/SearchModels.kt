@@ -123,7 +123,16 @@ data class CatalogItem(
     val tier: Int? = null,
     val typeIconIndex: Int? = null,
     val weaponClass: WeaponClass? = null,
-)
+) {
+    /**
+     * Whether this is a tipped dart. Every shop stocks tipped darts and any
+     * dart can be tipped by hand, so the item picker never offers them —
+     * though a scouted world still lists the ones it rolled. The engine's
+     * catalog keeps the `_dart` suffix unambiguous (the plain dart has no
+     * entry), and its wasm cross-check test pins the suffix to the tipped set.
+     */
+    val isTippedDart: Boolean get() = id.endsWith("_dart")
+}
 
 /**
  * Which enchantment, glyph or curse a weapon/armor requirement accepts.
