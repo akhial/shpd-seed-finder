@@ -841,9 +841,16 @@ mod tests {
         // A sum group whose total is unattainable fails query validation.
         assert!(
             rejection(
-                br#"{"requirements":[{"item":"sword","level_sum":{"group":1,"at_least":9}}]}"#
+                br#"{"requirements":[{"item":"ring_might","level_sum":{"group":1,"at_least":9}}]}"#
             )
             .contains("level")
+        );
+        // Levels combine across rings only.
+        assert!(
+            rejection(
+                br#"{"requirements":[{"item":"sword","level_sum":{"group":1,"at_least":3}}]}"#
+            )
+            .contains("rings")
         );
     }
 

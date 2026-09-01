@@ -44,6 +44,7 @@ class EngineConstantsTest {
         assertEquals(limits.getInt("levelSumGroupMax"), SearchLimits.LEVEL_SUM_GROUP_MAX)
         assertEquals(limits.getInt("maxUpgradeDefault"), SearchLimits.MAX_UPGRADE_DEFAULT)
         assertEquals(limits.getInt("maxUpgradeRing"), SearchLimits.MAX_UPGRADE_RING)
+        assertEquals(limits.getInt("maxUpgradeRingStandard"), SearchLimits.MAX_UPGRADE_RING_STANDARD)
         assertEquals(limits.getInt("maxUpgradeWeapon"), SearchLimits.MAX_UPGRADE_WEAPON)
         // The families route to the right maximum, narrowed weapon kinds
         // included: the engine publishes one ceiling per family, and a kind

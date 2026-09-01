@@ -121,24 +121,25 @@ public sealed class ScoutMatchesTests
     [Fact]
     public void ACombinedLevelGroupIsOneConditionAnySubsetMayMeet()
     {
-        static ItemRequirement AnyWand(int atLeast) => new() { Kind = ItemKind.Wand, LevelSum = new(1, atLeast) };
-        // The group is one condition however many members it has. The +3 vault
-        // wand alone carries four levels (its upgrade plus one), so it meets a
-        // total of 5 with any other wand, and every contributing item is marked.
-        var marks = Matches(Query(AnyWand(5), AnyWand(5)));
+        static ItemRequirement AnyRing(int atLeast) => new() { Kind = ItemKind.Ring, LevelSum = new(1, atLeast) };
+        // The group is one condition however many members it has. The Imp lets
+        // one of his +2 rings leave floor 17 (quest reward or vault, one pick),
+        // three levels (upgrade plus one); with the +1 crystal-chest ring's two
+        // it meets a total of 5, and every contributing item is marked.
+        var marks = Matches(Query(AnyRing(5), AnyRing(5)));
         Assert.Equal(1, marks.TotalRequirements);
         Assert.Equal(1, marks.MatchedRequirements);
         var items = Manifest();
-        Assert.Contains(marks.Matched, index => items[index].Item.Id == "wand_frost");
+        Assert.Contains(marks.Matched, index => items[index].Item.Id == "ring_sharpshooting");
         Assert.True(marks.Matched.Sum(index => items[index].Upgrade + 1) >= 5);
-        // Members are optional: the +3 wand meets a total of 4 by itself.
-        marks = Matches(Query(AnyWand(4), AnyWand(4)));
+        // Members are optional: a +2 ring meets a total of 3 by itself.
+        marks = Matches(Query(AnyRing(3), AnyRing(3)));
         Assert.Equal(1, marks.MatchedRequirements);
         Assert.NotEmpty(marks.Matched);
-        // Eight levels is attainable (two +4 wands would carry ten) but this
-        // world's best pair is the +3 and a +2, seven levels: nothing is
-        // marked, not even the +3 that serves the short group.
-        marks = Matches(Query(AnyWand(8), AnyWand(8)));
+        // Six levels is attainable (a vault +4 prize and a +1 would carry
+        // seven) but this world's best pair carries five: nothing is marked,
+        // not even the +2 that serves the short group.
+        marks = Matches(Query(AnyRing(6), AnyRing(6)));
         Assert.Equal(1, marks.TotalRequirements);
         Assert.Equal(0, marks.MatchedRequirements);
         Assert.Empty(marks.Matched);

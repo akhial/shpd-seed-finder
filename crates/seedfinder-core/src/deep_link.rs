@@ -1265,7 +1265,7 @@ mod tests {
                 group: 5,
                 minimum_total: 1,
             }),
-            ..wildcard(ItemKind::Wand)
+            ..wildcard(ItemKind::Ring)
         }]);
         let error = encode(&query).unwrap_err();
         assert!(error.contains("combined level group"), "{error}");

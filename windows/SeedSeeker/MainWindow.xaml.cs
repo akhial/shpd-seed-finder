@@ -559,8 +559,9 @@ public sealed partial class MainWindow : Window
                 value => { if (Locate(anchorKey).Item is { } entry) SetRequirements(QueryRelationships.SetStackCount(query.Requirements, entry, value)); }));
         if (item.Total is int total)
         {
-            // Never a total the stack cannot reach: each item counts its upgrade plus one.
-            var capacity = QueryRelationships.StackCapacity(requirements[item.Anchor].UpgradeCeiling, item.StackCount);
+            // Never a total the stack cannot reach: each ring counts its upgrade
+            // plus one, and a world levels only one ring past the standard roll.
+            var capacity = QueryRelationships.RingStackCapacity(item.StackCount);
             badges.Add(StackBadge($"\u03a3 \u2265 {total}", CautionInk, CautionFill,
                 "Combined level", total, 1, Math.Max(1, capacity),
                 value => { if (Locate(anchorKey).Item is { } entry) SetRequirements(QueryRelationships.SetStackTotal(query.Requirements, entry, value)); }));
@@ -620,9 +621,11 @@ public sealed partial class MainWindow : Window
             }
             menu.Items.Add(howMany);
         }
-        // Only a lone chip naming one item can count levels: its copies are the
-        // same item over again, so their upgrades add up to something.
-        if (item.Cluster is null && requirements[item.Anchor].Item is not null && item.StackCount > 1)
+        // Only a lone chip naming one ring can count levels: its copies are the
+        // same item over again, and a ring's effect scales with its level, so
+        // their upgrades add up to something. No other family's do.
+        if (item.Cluster is null && requirements[item.Anchor].Item is not null
+            && requirements[item.Anchor].Kind.Family() == ItemKind.Ring && item.StackCount > 1)
         {
             var levels = new MenuFlyoutItem { Text = item.Total is null ? "Count levels together" : "Stop counting levels" };
             levels.Click += (_, _) =>
@@ -1015,19 +1018,23 @@ public sealed partial class MainWindow : Window
         // The stack section: "how many" is a property of every lone chip, while
         // a floor limit for the extra copies and a combined level are the two
         // shapes a stack of more than one can take — the second only for a
-        // concrete item, whose copies are the same item over again.
+        // concrete ring, whose copies are the same item over again.
         void SyncStack()
         {
             var many = !stack.InCluster && Counted() > 1;
-            totalToggle.Visibility = many && item.SelectedIndex > 0 ? Visibility.Visible : Visibility.Collapsed;
+            // A combined level is a property of a concrete stack of two or more
+            // — and of rings only, whose effects scale with their level.
+            var ring = ((ItemKind)Math.Max(0, kind.SelectedIndex)).Family() == ItemKind.Ring;
+            totalToggle.Visibility = many && item.SelectedIndex > 0 && ring ? Visibility.Visible : Visibility.Collapsed;
             var counting = CountingLevels();
             total.Visibility = counting ? Visibility.Visible : Visibility.Collapsed;
             copyDepthToggle.Visibility = many && !counting ? Visibility.Visible : Visibility.Collapsed;
             copyDepth.Visibility = copyDepthToggle.Visibility == Visibility.Visible && copyDepthToggle.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
-            // Never a total the stack cannot reach: each item counts its upgrade plus one.
+            // Never a total the stack cannot reach: each ring counts its upgrade
+            // plus one, and a world levels only one ring past the standard roll.
             if (counting)
             {
-                total.Maximum = Math.Max(1, QueryRelationships.StackCapacity(maximumUpgrade, Counted()));
+                total.Maximum = Math.Max(1, QueryRelationships.RingStackCapacity(Counted()));
                 total.Value = Math.Clamp(double.IsNaN(total.Value) ? 1 : total.Value, 1, total.Maximum);
             }
             total.Header = $"Levels reach \u2265 {(int)total.Value} across up to {Counted()}";

@@ -443,6 +443,9 @@ fun List<ItemRequirement>.setStackTotal(item: BoardItem, total: Int?): List<Item
             }
         }.normalizeRelations()
     }
+    // Only rings count levels together; clearing a total above never needs
+    // this check, so stale non-ring sums can still be dissolved.
+    if (anchor.kind.family != ItemKind.RING) return this
     val group = anchor.levelSum?.group
         ?: freeGroup(map { it.levelSum?.group }, SearchLimits.LEVEL_SUM_GROUP_MAX)
         ?: return this

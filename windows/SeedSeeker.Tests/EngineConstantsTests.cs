@@ -29,6 +29,7 @@ public sealed class EngineConstantsTests
         Assert.Equal(SearchLimits.LevelSumGroupMax, Limit("levelSumGroupMax"));
         Assert.Equal(SearchLimits.MaxUpgradeDefault, Limit("maxUpgradeDefault"));
         Assert.Equal(SearchLimits.MaxUpgradeRing, Limit("maxUpgradeRing"));
+        Assert.Equal(SearchLimits.MaxUpgradeRingStandard, Limit("maxUpgradeRingStandard"));
         Assert.Equal(SearchLimits.MaxUpgradeWeapon, Limit("maxUpgradeWeapon"));
         // The families route to the right maximum, narrowed weapon kinds included.
         Assert.Equal(Limit("maxUpgradeRing"), ItemKind.Ring.MaximumSearchUpgrade());

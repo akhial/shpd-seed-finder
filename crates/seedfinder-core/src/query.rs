@@ -5,7 +5,7 @@ use std::fmt;
 
 use crate::catalog::{
     ALL_ARMOR_EFFECTS, ALL_WEAPON_EFFECTS, EXTRA_UPGRADE_TIER, Effect, ItemId, ItemKind,
-    MAX_GENERATED_UPGRADE, WeaponCategory, item,
+    MAX_GENERATED_UPGRADE, MAX_STANDARD_RING_UPGRADE, WeaponCategory, item,
 };
 use crate::challenges::Challenges;
 use crate::model::{GeneratedWorld, ItemSource, WorldItem};
@@ -297,6 +297,9 @@ impl EffectRequirement {
 /// levels. Members are *optional*: one +2 ring alone satisfies a two-member
 /// group asking for three levels. Combine with [`Requirement::identity_group`]
 /// to demand the contributing items be copies of one kind.
+///
+/// Only ring requirements may carry one: a ring's effect scales with its
+/// level, so levels on separate rings add up the way no other family's do.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LevelSum {
     /// Non-zero group label shared by the participating requirements.
@@ -508,6 +511,12 @@ impl Requirement {
         {
             return Err(QueryError::InvalidLevelSum);
         }
+        // Levels only combine meaningfully across rings — a ring's effect
+        // scales with its level, so a +0 and a +1 together grant what one
+        // +2 does. No other family adds up that way.
+        if self.level_sum.is_some() && self.kind != ItemKind::Ring {
+            return Err(QueryError::LevelSumOutsideRings);
+        }
         if self.alternative_group.is_some() && self.level_sum.is_some() {
             return Err(QueryError::LevelSumInsideAlternative);
         }
@@ -651,11 +660,12 @@ impl SearchQuery {
             }
         }
         for (group, summary) in self.level_sum_groups() {
-            if summary.minimum_total > summary.capacity {
+            let attainable = summary.attainable_capacity();
+            if summary.minimum_total > attainable {
                 return Err(QueryError::UnattainableLevelSum {
                     group,
                     minimum_total: summary.minimum_total,
-                    capacity: summary.capacity,
+                    capacity: attainable,
                 });
             }
         }
@@ -956,6 +966,24 @@ pub struct SumGroup {
     /// The most combined levels the members could contribute together:
     /// each one's [`Requirement::maximum_level`].
     pub capacity: u16,
+}
+
+impl SumGroup {
+    /// The most combined levels a generated world can actually put on the
+    /// group: [`SumGroup::capacity`] bounded by generation, which levels at
+    /// most one ring — the Imp vault's prize — beyond
+    /// [`MAX_STANDARD_RING_UPGRADE`]. The matcher keeps pruning against the
+    /// per-member `capacity`, which stays sound on any world it is handed;
+    /// this tighter bound is what validation holds a total to.
+    #[must_use]
+    pub fn attainable_capacity(&self) -> u16 {
+        let generated = u16::from(MAX_GENERATED_UPGRADE + 1)
+            + self
+                .members
+                .saturating_sub(1)
+                .saturating_mul(u16::from(MAX_STANDARD_RING_UPGRADE + 1));
+        self.capacity.min(generated)
+    }
 }
 
 /// Letter every editor shows for a portable group label (A..D), falling
@@ -1402,6 +1430,8 @@ pub enum QueryError {
     OverconstrainedIdentityGroup,
     InvalidAlternativeGroup,
     InvalidLevelSum,
+    /// A combined-level group member of a family other than rings.
+    LevelSumOutsideRings,
     /// The members of the group disagree on the total.
     InconsistentLevelSum {
         group: u8,
@@ -1464,6 +1494,7 @@ impl fmt::Display for QueryError {
             }
             Self::InvalidAlternativeGroup => "alternative group zero is reserved for no group",
             Self::InvalidLevelSum => "combined level groups need a non-zero group and total",
+            Self::LevelSumOutsideRings => "levels are only counted together across rings",
             Self::InconsistentLevelSum { .. } | Self::UnattainableLevelSum { .. } => {
                 unreachable!("written above")
             }
@@ -2753,22 +2784,6 @@ mod tests {
             ],
             ..scout_query(Vec::new())
         };
-        // A ring reaches +4, so it counts up to five levels; two rings ten.
-        assert_eq!(pair(3).validate(), Ok(()));
-        assert_eq!(pair(10).validate(), Ok(()));
-        assert_eq!(
-            pair(11).validate(),
-            Err(QueryError::UnattainableLevelSum {
-                group: 1,
-                minimum_total: 11,
-                capacity: 10,
-            })
-        );
-        assert_eq!(
-            pair(11).validate().unwrap_err().to_string(),
-            "combined level group A needs 11 levels but its items can reach at most 10"
-        );
-
         let rings = |upgrades: &[u8]| {
             scout_world(
                 upgrades
@@ -2803,6 +2818,55 @@ mod tests {
         let short = scout_matches(&rings(&[1]), &pair(4));
         assert_eq!(short.matched_requirements, 0);
         assert!(short.matched_indices().is_empty());
+    }
+
+    #[test]
+    fn combined_level_validation_caps_totals_and_admits_rings_only() {
+        let might = |level_sum| Requirement {
+            item: Some(ItemId::RingMight),
+            level_sum: Some(level_sum),
+            ..plain(ItemKind::Ring)
+        };
+        let pair = |minimum_total| SearchQuery {
+            requirements: vec![
+                might(LevelSum {
+                    group: 1,
+                    minimum_total,
+                });
+                2
+            ],
+            ..scout_query(Vec::new())
+        };
+        // A ring reaches +4 (five levels), but only one per world — the Imp
+        // vault's prize; every other ring stops at +2 (three levels). Two
+        // rings therefore reach eight levels together, not ten.
+        assert_eq!(pair(3).validate(), Ok(()));
+        assert_eq!(pair(8).validate(), Ok(()));
+        assert_eq!(
+            pair(9).validate(),
+            Err(QueryError::UnattainableLevelSum {
+                group: 1,
+                minimum_total: 9,
+                capacity: 8,
+            })
+        );
+        assert_eq!(
+            pair(9).validate().unwrap_err().to_string(),
+            "combined level group A needs 9 levels but its items can reach at most 8"
+        );
+        // Only rings count levels together.
+        assert_eq!(
+            Requirement {
+                item: Some(ItemId::Sword),
+                level_sum: Some(LevelSum {
+                    group: 1,
+                    minimum_total: 3,
+                }),
+                ..plain(ItemKind::Weapon)
+            }
+            .validate(),
+            Err(QueryError::LevelSumOutsideRings)
+        );
 
         // Members agree on the total, sums need a group and a total, and a
         // sum cannot live inside an alternative group.

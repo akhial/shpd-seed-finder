@@ -271,28 +271,27 @@ final class QueryDocumentTests: XCTestCase {
 
     func testScoutMarksACombinedLevelGroupAsOneCondition() async throws {
         let world = try await ProductionSeedFinderEngine().scoutSeed(Self.pinnedSeed, challenges: 0)
-        let plate = try XCTUnwrap(ItemCatalog.findById("plate_armor"))
+        let tenacity = try XCTUnwrap(ItemCatalog.findById("ring_tenacity"))
         func pair(total: Int) throws -> [ItemRequirement] {
             try [1, 2].map { key in
-                try ItemRequirement(key: Int64(key), item: plate, upgrade: 0, kind: .armor, upgradeMatch: .any,
+                try ItemRequirement(key: Int64(key), item: tenacity, upgrade: 0, kind: .ring, upgradeMatch: .any,
                                     requireUncursed: true, levelSum: LevelSum(group: 1, atLeast: total))
             }
         }
-        // The world's uncursed plate armors reach five levels between them: the
-        // vault's +3 and a plain +0. (The Imp's own +2 plate is one of the
-        // vault prize's alternatives, so the two never count together.) The
-        // group is one condition, and every contributing item is marked.
-        let reached = try marks(try pair(total: 5))
+        // The world's Rings of Tenacity reach four levels between them: one of
+        // the vault prize's +2 options and a mimic's plain +0. The group is
+        // one condition, and every contributing item is marked.
+        let reached = try marks(try pair(total: 4))
         XCTAssertEqual(reached.totalRequirements, 1, "a combined-level group is one condition")
         XCTAssertEqual(reached.matchedRequirements, 1)
-        XCTAssertEqual(Set(reached.matched.map { world.items[$0].upgrade }), [0, 3])
+        XCTAssertEqual(Set(reached.matched.map { world.items[$0].upgrade }), [0, 2])
 
-        // Members are optional: the +3 armor's four levels satisfy a total of 4 alone.
-        let single = try marks(try pair(total: 4))
+        // Members are optional: the +2 ring's three levels satisfy a total of 3 alone.
+        let single = try marks(try pair(total: 3))
         XCTAssertEqual(single.matchedRequirements, 1)
         XCTAssertFalse(single.matched.isEmpty)
 
-        let short = try marks(try pair(total: 6))
+        let short = try marks(try pair(total: 5))
         XCTAssertEqual(short.totalRequirements, 1)
         XCTAssertEqual(short.matchedRequirements, 0)
         XCTAssertTrue(short.matched.isEmpty, "a short level group marks nothing")
@@ -341,8 +340,23 @@ final class QueryDocumentTests: XCTestCase {
             try ItemRequirement(key: key, item: might, upgrade: upgrade, kind: .ring, upgradeMatch: match,
                                 levelSum: LevelSum(group: group, atLeast: total))
         }
-        // Two rings of any upgrade reach ten levels: +4 plus one each.
-        XCTAssertNoThrow(try SearchRequest(requirements: [ring(1, total: 10), ring(2, total: 10)]))
+        // A ring reaches +4 (five levels), but only one per world — the Imp
+        // vault's prize; every other ring stops at +2 (three levels). Two
+        // rings therefore reach eight levels together, not ten.
+        XCTAssertNoThrow(try SearchRequest(requirements: [ring(1, total: 8), ring(2, total: 8)]))
+        XCTAssertThrowsError(try SearchRequest(requirements: [ring(1, total: 9), ring(2, total: 9)])) { error in
+            XCTAssertEqual(error as? ModelValidationError,
+                           .levelSumUnattainable(group: 1, needed: 9, maximum: 8))
+        }
+        XCTAssertNoThrow(try SearchRequest(requirements: [
+            ring(1, total: 11), ring(2, total: 11), ring(3, total: 11),
+        ]))
+        XCTAssertThrowsError(try SearchRequest(requirements: [
+            ring(1, total: 12), ring(2, total: 12), ring(3, total: 12),
+        ])) { error in
+            XCTAssertEqual(error as? ModelValidationError,
+                           .levelSumUnattainable(group: 1, needed: 12, maximum: 11))
+        }
         XCTAssertThrowsError(try SearchRequest(requirements: [ring(1, total: 3), ring(2, total: 4)])) { error in
             XCTAssertEqual(error as? ModelValidationError, .levelSumMismatch(group: 1))
             XCTAssertEqual(error.localizedDescription,
@@ -361,11 +375,17 @@ final class QueryDocumentTests: XCTestCase {
         XCTAssertNoThrow(try SearchRequest(requirements: [
             ring(1, upgrade: 1, match: .exactly, total: 7, group: 2), ring(2, total: 7, group: 2),
         ]))
-        let wand = try ItemRequirement(key: 3, item: nil, upgrade: 0, kind: .wand, upgradeMatch: .any,
-                                       levelSum: LevelSum(group: 3, atLeast: 6))
-        XCTAssertThrowsError(try SearchRequest(requirements: [wand])) { error in
+        XCTAssertThrowsError(try SearchRequest(requirements: [ring(1, total: 6, group: 3)])) { error in
             XCTAssertEqual(error as? ModelValidationError,
                            .levelSumUnattainable(group: 3, needed: 6, maximum: 5))
+        }
+        // Levels only combine meaningfully across rings; no other family's
+        // effects add up that way.
+        XCTAssertThrowsError(try ItemRequirement(key: 3, item: nil, upgrade: 0, kind: .wand,
+                                                 upgradeMatch: .any,
+                                                 levelSum: LevelSum(group: 3, atLeast: 3))) { error in
+            XCTAssertEqual(error as? ModelValidationError, .levelSumOutsideRings)
+            XCTAssertEqual(error.localizedDescription, "Only rings can count levels together")
         }
         XCTAssertNoThrow(try SearchRequest(requirements: [ring(1, total: 4), ring(2, total: 3, group: 2)]))
     }

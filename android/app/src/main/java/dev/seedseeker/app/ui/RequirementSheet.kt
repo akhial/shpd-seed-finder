@@ -171,8 +171,13 @@ fun RequirementSheet(
     val upgradeCeiling = SearchLimits.maximumUpgrade(kind, selectedItem, tierMatch, tier)
     val draftMaximumUpgrade = if (upgradeMatch == UpgradeMatch.EXACT) upgrade else upgradeCeiling
     // Every item of a stack that counts levels is a copy of the anchor, and each
-    // contributes its upgrade plus one.
-    val levelCapacity = (draftMaximumUpgrade + 1) * stackCount
+    // contributes its upgrade plus one — bounded by what a world generates,
+    // which levels only the Imp vault's one ring past the standard +2 roll.
+    fun levelCapacityFor(count: Int): Int = minOf(
+        (draftMaximumUpgrade + 1) * count,
+        SearchLimits.ringStackCapacity(count),
+    )
+    val levelCapacity = levelCapacityFor(stackCount)
 
     // The edit that lowers the ceiling has to pass the ceiling it leaves
     // behind: the state it reads has not recomposed yet.
@@ -740,7 +745,7 @@ fun RequirementSheet(
                                         stackCount = count
                                         // A shrinking stack cannot keep a total its items
                                         // can no longer reach.
-                                        stackTotal = stackTotal?.coerceAtMost((draftMaximumUpgrade + 1) * count)
+                                        stackTotal = stackTotal?.coerceAtMost(levelCapacityFor(count))
                                     },
                                 )
                             }
@@ -797,7 +802,9 @@ fun RequirementSheet(
                                     )
                                 }
                             }
-                            if (stackCount > 1 && selectedItem != null) {
+                            // A combined level is meaningful for rings alone,
+                            // whose effects scale with their level.
+                            if (stackCount > 1 && selectedItem != null && kind.family == ItemKind.RING) {
                                 val total = stackTotal
                                 Spacer(Modifier.height(12.dp))
                                 Row(
@@ -884,7 +891,14 @@ fun RequirementSheet(
                             Button(
                                 onClick = {
                                     draft.getOrNull()?.let {
-                                        val total = if (inAlternativeGroup) null else stackTotal
+                                        // Only a stack of a concrete ring counts
+                                        // levels; an edit away from that drops
+                                        // the total it can no longer say.
+                                        val total = if (inAlternativeGroup || selectedItem == null || kind.family != ItemKind.RING) {
+                                            null
+                                        } else {
+                                            stackTotal
+                                        }
                                         // A cluster's stack is the cluster's, and
                                         // a combined level leaves no lone copies.
                                         val copies = if (inAlternativeGroup || stackCount < 2 || total != null) {
