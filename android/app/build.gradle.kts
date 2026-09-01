@@ -81,8 +81,14 @@ android {
 val rustJniOutput = layout.buildDirectory.dir("generated/jniLibs")
 val buildRustJni by tasks.registering(Exec::class) {
     group = "build"
-    description = "Builds arm64-v8a and x86_64 Rust JNI libraries"
+    description = "Builds the Rust JNI libraries for the ABIs in ANDROID_ABIS"
     workingDir(rootProject.projectDir.parentFile)
+    // The script reads ANDROID_ABIS, so a changed ABI set must defeat the
+    // up-to-date check and rebuild the output directory.
+    inputs.property(
+        "abis",
+        providers.environmentVariable("ANDROID_ABIS").orElse("arm64-v8a x86_64"),
+    )
     commandLine(
         "sh",
         rootProject.projectDir.parentFile.resolve("scripts/build-android-native.sh").absolutePath,

@@ -4,6 +4,9 @@ set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 OUTPUT=${1:-"$ROOT/android/app/build/generated/jniLibs"}
+# Space-separated ABI list. Releases ship both; pull-request CI sets a single
+# ABI to halve the native build.
+ABIS=${ANDROID_ABIS:-"arm64-v8a x86_64"}
 
 if [ -n "${ANDROID_NDK_HOME:-}" ]; then
     NDK=$ANDROID_NDK_HOME
@@ -25,19 +28,35 @@ esac
 TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/$HOST/bin
 
 cd "$ROOT"
+# Drop ABIs left over from a previous, wider run so the packaged set is
+# exactly $ABIS.
+rm -rf "$OUTPUT"
+
 # rustc 1.94/LLVM 21.1.8 miscompiles the deterministic generator at O3 on
 # Android AArch64 (the scalar seed-1 City prefix diverges). O2 is parity-clean
 # on device, including with the workspace's fat LTO, and is used for both
 # shipped ABIs so one Android build policy governs canonical results.
-CARGO_PROFILE_RELEASE_OPT_LEVEL=2 \
-    CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$TOOLCHAIN/aarch64-linux-android21-clang" \
-    cargo build --locked --release -p shpd-seedfinder-jni --target aarch64-linux-android
-CARGO_PROFILE_RELEASE_OPT_LEVEL=2 \
-    CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$TOOLCHAIN/x86_64-linux-android21-clang" \
-    cargo build --locked --release -p shpd-seedfinder-jni --target x86_64-linux-android
-
-mkdir -p "$OUTPUT/arm64-v8a" "$OUTPUT/x86_64"
-cp "$ROOT/target/aarch64-linux-android/release/libshpd_seedfinder.so" \
-    "$OUTPUT/arm64-v8a/libshpd_seedfinder.so"
-cp "$ROOT/target/x86_64-linux-android/release/libshpd_seedfinder.so" \
-    "$OUTPUT/x86_64/libshpd_seedfinder.so"
+for ABI in $ABIS; do
+    case "$ABI" in
+        arm64-v8a)
+            TRIPLE=aarch64-linux-android
+            LINKER=CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER
+            CLANG=aarch64-linux-android21-clang
+            ;;
+        x86_64)
+            TRIPLE=x86_64-linux-android
+            LINKER=CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER
+            CLANG=x86_64-linux-android21-clang
+            ;;
+        *)
+            echo "Unknown Android ABI: $ABI" >&2
+            exit 1
+            ;;
+    esac
+    env CARGO_PROFILE_RELEASE_OPT_LEVEL=2 \
+        "$LINKER=$TOOLCHAIN/$CLANG" \
+        cargo build --locked --release -p shpd-seedfinder-jni --target "$TRIPLE"
+    mkdir -p "$OUTPUT/$ABI"
+    cp "$ROOT/target/$TRIPLE/release/libshpd_seedfinder.so" \
+        "$OUTPUT/$ABI/libshpd_seedfinder.so"
+done
