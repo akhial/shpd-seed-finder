@@ -93,8 +93,9 @@ It is decoded by `crates/seedfinder-core/src/json_query.rs`:
     `upgrade_sum` spelling, which counted upgrades, is refused with an error
     naming the field rather than reinterpreted.
 - `max_depth` (integer 1–24, default 24), `require_blacksmith`,
-  `exclude_blacksmith_rewards`, `fast_mode` (booleans) — top-level scope
-  flags.
+  `exclude_blacksmith_rewards` (booleans) — top-level scope flags. A
+  `fast_mode` boolean written by earlier releases is still accepted and
+  ignored.
 - `wandmaker_quest` — `"corpse_dust" | "elemental_embers" | "rotberry"`,
   restricting the search to runs whose Wandmaker asks for that item. Absent
   means any quest.

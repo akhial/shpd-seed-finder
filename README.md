@@ -86,7 +86,6 @@ cargo run --release -p shpd-seedfinder-cli -- -i requirements.json -b 1000 --wor
   "exclude_blacksmith_rewards"?: true | false = false,
   // The run's Wandmaker (floors 7-9) must ask for this quest item.
   "wandmaker_quest"?: "corpse_dust" | "elemental_embers" | "rotberry",
-  "fast_mode"?: true | false = false,
 
   "challenges"?: [
     (

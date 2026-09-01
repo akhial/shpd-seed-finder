@@ -94,7 +94,9 @@ pub fn encode(query: &SearchQuery) -> Result<String, String> {
     bits.push(VERSION.into(), 4);
     bits.push(query.require_blacksmith.into(), 1);
     bits.push(query.exclude_blacksmith_rewards.into(), 1);
-    bits.push(query.fast_mode.into(), 1);
+    // Reserved bit, formerly fast mode: kept zero so the version-3 layout —
+    // and every link already shared — stays valid.
+    bits.push(0, 1);
     push_optional(&mut bits, query.max_depth != 24, || {
         (u32::from(query.max_depth) - 1, 5)
     });
@@ -155,7 +157,9 @@ pub fn decode(code: &str) -> Result<SearchQuery, String> {
     }
     let require_blacksmith = bits.pull(1)? == 1;
     let exclude_blacksmith_rewards = bits.pull(1)? == 1;
-    let fast_mode = bits.pull(1)? == 1;
+    // Reserved bit, formerly fast mode: links that carried it still open,
+    // running as an ordinary full-depth search.
+    let _ = bits.pull(1)?;
     let max_depth = if bits.pull(1)? == 1 {
         depth_from(bits.pull(5)?)?
     } else {
@@ -186,7 +190,6 @@ pub fn decode(code: &str) -> Result<SearchQuery, String> {
         require_blacksmith,
         exclude_blacksmith_rewards,
         wandmaker_quest,
-        fast_mode,
     };
     query
         .validate()
@@ -734,7 +737,6 @@ mod tests {
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
-            fast_mode: false,
         }
     }
 
@@ -789,7 +791,6 @@ mod tests {
             require_blacksmith: true,
             exclude_blacksmith_rewards: true,
             wandmaker_quest: Some(WandmakerQuestType::Rotberry),
-            fast_mode: true,
         };
         let code = encode(&query).unwrap();
         assert_eq!(decode(&code).unwrap(), query);

@@ -559,14 +559,6 @@ pub struct SearchQuery {
     /// is worth searching for on its own; the other three givers' variants
     /// change nothing but the fight, and are reported rather than filtered.
     pub wandmaker_quest: Option<WandmakerQuestType>,
-    /// Trades exhaustiveness for speed: +3 weapon/armor requirements are
-    /// assumed to come from quest rewards — the Ghost, the Blacksmith and the
-    /// Imp's vault prizes, which stay exact — ignoring the far rarer Crypt,
-    /// Sacrificial-fire and special-room chest prizes, so such a search ends
-    /// at the Imp's floor 19 instead of the floor limit. Matches are still
-    /// always genuine, but seeds whose only qualifying item comes from those
-    /// rooms are skipped. See [`crate::feasibility`].
-    pub fast_mode: bool,
 }
 
 /// Whether `candidate`'s Wandmaker filter is at least as strict as `base`'s.
@@ -737,8 +729,8 @@ impl SearchQuery {
         slots.len() - sum_slots + groups.len()
     }
 
-    /// Whether this query *continues* `base`: identical floor limit,
-    /// challenges and fast mode, world conditions at least as strict as
+    /// Whether this query *continues* `base`: identical floor limit and
+    /// challenges, world conditions at least as strict as
     /// `base`'s (the blacksmith flags and the Wandmaker filter — see
     /// [`flag_at_least_as_strict`]), and, for every slot of `base`, a
     /// *distinct* slot of this query at least as strict: each of its members
@@ -763,7 +755,6 @@ impl SearchQuery {
                 base.exclude_blacksmith_rewards,
             )
             || !quest_at_least_as_strict(self.wandmaker_quest, base.wandmaker_quest)
-            || self.fast_mode != base.fast_mode
         {
             return false;
         }
@@ -1559,7 +1550,6 @@ mod tests {
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
-            fast_mode: false,
         };
 
         // Equality and supersets continue, in any requirement order.
@@ -1577,17 +1567,14 @@ mod tests {
         assert!(base.continues(&single));
         assert!(!single.continues(&base));
 
-        // A different world — floor limit, challenges, or the lossy fast
-        // mode — breaks continuation outright.
+        // A different world — floor limit or challenges — breaks continuation
+        // outright.
         let mut deeper = base.clone();
         deeper.max_depth = 5;
         assert!(!deeper.continues(&base));
         let mut challenged = base.clone();
         challenged.challenges = crate::challenges::Challenges::DARKNESS;
         assert!(!challenged.continues(&base));
-        let mut fast = base.clone();
-        fast.fast_mode = true;
-        assert!(!fast.continues(&base));
 
         // The world conditions only ever remove seeds, so switching one on
         // strengthens the query rather than ending the continuation. Turning
@@ -1650,7 +1637,6 @@ mod tests {
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
-            fast_mode: false,
         };
         let base = query(vec![any_ring]);
 
@@ -1727,7 +1713,6 @@ mod tests {
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
-            fast_mode: false,
         };
         let any_ring = query(ItemKind::Ring, None);
         let tenacity = query(ItemKind::Ring, Some(ItemId::RingTenacity));
@@ -1754,7 +1739,6 @@ mod tests {
         // Scope differences are irrelevant: a filter re-verifies from scratch.
         let mut deep_ring = any_ring.clone();
         deep_ring.max_depth = 5;
-        deep_ring.fast_mode = true;
         assert!(deep_ring.shares_item(&tenacity));
     }
 
@@ -1767,7 +1751,6 @@ mod tests {
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
-            fast_mode: false,
         };
         let one = GeneratedWorld {
             quests: crate::quests::QuestSummary::default(),
@@ -1799,7 +1782,6 @@ mod tests {
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             wandmaker_quest: Some(WandmakerQuestType::Rotberry),
-            fast_mode: false,
         };
         let world = |wandmaker| GeneratedWorld {
             quests: QuestSummary {
@@ -1865,7 +1847,6 @@ mod tests {
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
-            fast_mode: false,
         };
         assert!(!query.matches(&world));
         query.requirements[0].max_depth = Some(3);
@@ -1881,7 +1862,6 @@ mod tests {
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
-            fast_mode: false,
         };
         let world = GeneratedWorld {
             quests: crate::quests::QuestSummary::default(),
@@ -1916,7 +1896,6 @@ mod tests {
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
-            fast_mode: false,
         };
         let world = GeneratedWorld {
             quests: crate::quests::QuestSummary::default(),
@@ -1979,7 +1958,6 @@ mod tests {
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
-            fast_mode: false,
         };
         assert!(compatible.matches(&world));
 
@@ -1990,7 +1968,6 @@ mod tests {
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
-            fast_mode: false,
         };
         assert!(!incompatible.matches(&world));
     }
@@ -2365,7 +2342,6 @@ mod tests {
             require_blacksmith: true,
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
-            fast_mode: false,
         };
         let make = |item, upgrade, depth, source| WorldItem {
             item,
@@ -2410,7 +2386,6 @@ mod tests {
             require_blacksmith: true,
             exclude_blacksmith_rewards: true,
             wandmaker_quest: None,
-            fast_mode: false,
         };
         let make = |source| WorldItem {
             item: ItemId::Sword,
@@ -2468,7 +2443,6 @@ mod tests {
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
-            fast_mode: false,
         };
 
         // Two members naming items would describe two different wands forced
@@ -3010,7 +2984,6 @@ mod tests {
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
-            fast_mode: false,
         }
     }
 

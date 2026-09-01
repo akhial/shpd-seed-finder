@@ -209,7 +209,6 @@ fn random_query(rng: &mut Rng) -> Option<SearchQuery> {
                 require_blacksmith: false,
                 exclude_blacksmith_rewards: false,
                 wandmaker_quest: None,
-                fast_mode: false,
             };
             query.slots()
         };
@@ -244,7 +243,6 @@ fn random_query(rng: &mut Rng) -> Option<SearchQuery> {
         require_blacksmith: false,
         exclude_blacksmith_rewards: rng.chance(20),
         wandmaker_quest: None,
-        fast_mode: false,
     };
     query.validate().ok().map(|()| query)
 }

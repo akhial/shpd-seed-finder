@@ -694,7 +694,6 @@ mod tests {
             require_blacksmith: true,
             exclude_blacksmith_rewards: true,
             wandmaker_quest: Some(WandmakerQuestType::ElementalEmbers),
-            fast_mode: true,
         };
         let packet = request(&query);
         assert_eq!(packet[0], b'{');
@@ -814,7 +813,6 @@ mod tests {
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
-            fast_mode: false,
         };
         assert_eq!(decode_query(&request(&query)), Ok(query));
     }
@@ -859,10 +857,9 @@ mod tests {
         let document = br#"{"requirements":[
             {"any_of":[{"item":"spear","upgrade":3},{"item":"sword","upgrade":1}]},
             {"kind":"armor","effect":"any_enchantment"}
-        ],"max_depth":12,"fast_mode":true}"#;
+        ],"max_depth":12}"#;
         let query = decode_query(document).unwrap();
         assert_eq!(query.max_depth, 12);
-        assert!(query.fast_mode);
         assert_eq!(query.slot_count(), 2);
         assert_eq!(query.requirements.len(), 3);
         // The canonical re-encoding of the same query decodes identically,
