@@ -9,14 +9,16 @@
 #[global_allocator]
 static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
+use std::num::NonZeroUsize;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 
 use shpd_seedfinder_core::{deep_link, engine_info, json_query, results_export, seed};
 use shpd_seedfinder_session::{
     FilterPacketError, MAX_RESULTS, NativeSession, ScoutCallError, ScoutMatchError,
-    ScoutPacketError, SearchError, StartSessionError, close_session, decide_start_packets, json,
-    production_filter_packet, production_scout_packet, queries_continue, registry,
+    ScoutPacketError, SearchError, StartSessionError, available_workers, close_session,
+    decide_start_packets, json, production_filter_packet, production_scout_packet,
+    queries_continue, registry,
 };
 
 const OK: i32 = 0;
@@ -59,13 +61,19 @@ fn clear_outputs(out_packet: *mut *mut u8, out_len: *mut usize) {
     }
 }
 
+/// `workers` is the number of search threads to spawn, clamped to the host's
+/// parallelism; 0 uses every available core.
 #[unsafe(no_mangle)]
-pub extern "C" fn seedfinder_start_search(request: *const u8, request_len: usize) -> i64 {
+pub extern "C" fn seedfinder_start_search(
+    request: *const u8,
+    request_len: usize,
+    workers: u32,
+) -> i64 {
     catch_unwind(AssertUnwindSafe(|| {
         let Some(bytes) = request_slice(request, request_len) else {
             return 0;
         };
-        match NativeSession::production_from_packet(bytes) {
+        match NativeSession::production_from_packet(bytes, requested_workers(workers)) {
             Ok(session) => registry().insert(session),
             Err(StartSessionError::Request(_) | StartSessionError::Spawn(_)) => 0,
         }
@@ -76,24 +84,39 @@ pub extern "C" fn seedfinder_start_search(request: *const u8, request_len: usize
 /// Starts a search which resumes a previous traversal: it scans only the
 /// `scan_len` seeds beginning at `resume_from`, wrapping at the end of the
 /// seed space. Callers obtain both values from `seedfinder_resume_hint` on the
-/// stopped or completed session being refined.
+/// stopped or completed session being refined. `workers` behaves exactly as in
+/// `seedfinder_start_search`.
 #[unsafe(no_mangle)]
 pub extern "C" fn seedfinder_start_resumed_search(
     request: *const u8,
     request_len: usize,
     resume_from: u64,
     scan_len: u64,
+    workers: u32,
 ) -> i64 {
     catch_unwind(AssertUnwindSafe(|| {
         let Some(bytes) = request_slice(request, request_len) else {
             return 0;
         };
-        match NativeSession::production_resumed_from_packet(bytes, resume_from, scan_len) {
+        let workers = requested_workers(workers);
+        match NativeSession::production_resumed_from_packet(bytes, resume_from, scan_len, workers) {
             Ok(session) => registry().insert(session),
             Err(StartSessionError::Request(_) | StartSessionError::Spawn(_)) => 0,
         }
     }))
     .unwrap_or(0)
+}
+
+/// Logical processors available to search workers, never less than one: the
+/// ceiling for a frontend's worker selector.
+#[unsafe(no_mangle)]
+pub extern "C" fn seedfinder_available_workers() -> u32 {
+    u32::try_from(available_workers()).unwrap_or(u32::MAX)
+}
+
+/// Maps the ABI's `0` = every available core onto the session API's `None`.
+fn requested_workers(workers: u32) -> Option<NonZeroUsize> {
+    NonZeroUsize::new(workers as usize)
 }
 
 /// Writes `[resume_position, remaining]` for the session into `out_hint`,
@@ -661,7 +684,9 @@ mod tests {
     #[test]
     fn start_poll_status_cancel_close_lifecycle() {
         let request = query_packet();
-        let handle = seedfinder_start_search(request.as_ptr(), request.len());
+        // An explicit worker count and one far beyond the host's parallelism
+        // both start fine; the session clamps.
+        let handle = seedfinder_start_search(request.as_ptr(), request.len(), u32::MAX);
         assert!(handle > 0);
         let mut status = [0; 5];
         assert_eq!(seedfinder_status(handle, status.as_mut_ptr()), OK);
@@ -685,7 +710,7 @@ mod tests {
     #[test]
     fn resumed_search_and_hint_lifecycle() {
         let request = query_packet();
-        let handle = seedfinder_start_search(request.as_ptr(), request.len());
+        let handle = seedfinder_start_search(request.as_ptr(), request.len(), 0);
         assert!(handle > 0);
         seedfinder_cancel(handle);
         // A stopped search keeps reporting state 0 until every queued result
@@ -718,6 +743,7 @@ mod tests {
             request.len(),
             u64::try_from(hint[0]).unwrap(),
             4,
+            1,
         );
         assert!(resumed > 0);
         seedfinder_cancel(resumed);
@@ -725,7 +751,7 @@ mod tests {
 
         // A scan length beyond the seed space is rejected before spawning.
         assert_eq!(
-            seedfinder_start_resumed_search(request.as_ptr(), request.len(), 0, u64::MAX),
+            seedfinder_start_resumed_search(request.as_ptr(), request.len(), 0, u64::MAX, 0),
             0
         );
         assert_eq!(
@@ -1033,8 +1059,8 @@ mod tests {
 
     #[test]
     fn invalid_inputs_are_rejected() {
-        assert_eq!(seedfinder_start_search(ptr::null(), 0), 0);
-        assert_eq!(seedfinder_start_search(b"bad".as_ptr(), 3), 0);
+        assert_eq!(seedfinder_start_search(ptr::null(), 0, 0), 0);
+        assert_eq!(seedfinder_start_search(b"bad".as_ptr(), 3, 0), 0);
         let mut pointer = ptr::null_mut();
         let mut len = 0;
         assert_eq!(

@@ -181,6 +181,21 @@ pub fn production_scout_matches(
     Ok(scout_matches(&world, &query))
 }
 
+/// Logical processors available to search workers, never less than one.
+/// Frontends read their worker-selector ceiling from here so the engine and
+/// its UI agree on what "all cores" means.
+#[must_use]
+pub fn available_workers() -> usize {
+    SearchOptions::available_parallelism().get()
+}
+
+/// The worker count a session actually spawns: the request clamped to the
+/// host's parallelism, or every available core when the caller passes `None`.
+fn effective_workers(requested: Option<NonZeroUsize>) -> NonZeroUsize {
+    let available = SearchOptions::available_parallelism();
+    requested.map_or(available, |workers| workers.min(available))
+}
+
 /// Re-verifies specific seeds against a full query, returning the matching
 /// worlds in input order. This is the "filter existing results" half of
 /// refining a search: frontends pass the seeds already on screen together with
@@ -345,17 +360,22 @@ impl NativeSession {
         })
     }
 
-    /// Starts the canonical full-range production search.
+    /// Starts the canonical full-range production search. `workers` is the
+    /// number of search threads to spawn, clamped to the host's parallelism;
+    /// `None` uses every available core.
     ///
     /// # Errors
     ///
     /// Returns [`SearchError`] if workers cannot be spawned.
-    pub fn production(query: SearchQuery) -> Result<Self, SearchError> {
+    pub fn production(
+        query: SearchQuery,
+        workers: Option<NonZeroUsize>,
+    ) -> Result<Self, SearchError> {
         let match_probability = estimate_match_probability(&query);
         let options = SearchOptions {
             start_seed: 0,
             end_seed_exclusive: TOTAL_SEEDS,
-            workers: SearchOptions::available_parallelism(),
+            workers: effective_workers(workers),
             chunk_size: NonZeroUsize::new(SEARCH_CHUNK_SIZE).unwrap_or(NonZeroUsize::MIN),
             max_results: NonZeroUsize::new(MAX_RESULTS).unwrap_or(NonZeroUsize::MIN),
         };
@@ -374,9 +394,12 @@ impl NativeSession {
     /// # Errors
     ///
     /// Distinguishes invalid wire requests from worker spawn failures.
-    pub fn production_from_packet(request: &[u8]) -> Result<Self, StartSessionError> {
+    pub fn production_from_packet(
+        request: &[u8],
+        workers: Option<NonZeroUsize>,
+    ) -> Result<Self, StartSessionError> {
         let query = decode_query(request).map_err(StartSessionError::Request)?;
-        Self::production(query).map_err(StartSessionError::Spawn)
+        Self::production(query, workers).map_err(StartSessionError::Spawn)
     }
 
     /// Starts a production search which resumes a previous traversal: it scans
@@ -393,12 +416,13 @@ impl NativeSession {
         query: SearchQuery,
         resume_from: u64,
         scan_len: u64,
+        workers: Option<NonZeroUsize>,
     ) -> Result<Self, SearchError> {
         let match_probability = estimate_match_probability(&query);
         let options = SearchOptions {
             start_seed: 0,
             end_seed_exclusive: TOTAL_SEEDS,
-            workers: SearchOptions::available_parallelism(),
+            workers: effective_workers(workers),
             chunk_size: NonZeroUsize::new(SEARCH_CHUNK_SIZE).unwrap_or(NonZeroUsize::MIN),
             max_results: NonZeroUsize::new(MAX_RESULTS).unwrap_or(NonZeroUsize::MIN),
         };
@@ -421,9 +445,11 @@ impl NativeSession {
         request: &[u8],
         resume_from: u64,
         scan_len: u64,
+        workers: Option<NonZeroUsize>,
     ) -> Result<Self, StartSessionError> {
         let query = decode_query(request).map_err(StartSessionError::Request)?;
-        Self::production_resumed(query, resume_from, scan_len).map_err(StartSessionError::Spawn)
+        Self::production_resumed(query, resume_from, scan_len, workers)
+            .map_err(StartSessionError::Spawn)
     }
 
     /// Where and how much a follow-up traversal must scan to finish this
@@ -967,7 +993,7 @@ mod tests {
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
         };
-        let session = NativeSession::production_resumed(impossible, 42, 1_000).unwrap();
+        let session = NativeSession::production_resumed(impossible, 42, 1_000, None).unwrap();
         wait(&session);
         assert_eq!(session.status()[0], STATE_COMPLETED);
         assert_eq!(session.resume_hint(), [42, 1_000]);
