@@ -4,7 +4,7 @@
 //! the canonical JSON query document of [`crate::json_query`], which
 //! frontends already build for share links and results files. What stays
 //! binary is what the bridges hand back or take as a seed: `SSR1` result
-//! batches, `SSQ2` scouting requests and `SSC2` scouted worlds.
+//! batches, `SSQ2` scouting requests and `SSC3` scouted worlds.
 
 use std::fmt;
 
@@ -17,11 +17,14 @@ use crate::quests::{
     BlacksmithQuestType, GhostQuestType, ImpQuestType, QuestSummary, ScheduledQuest,
     WandmakerQuestType,
 };
+use crate::run::RingGems;
 use crate::seed::DungeonSeed;
 
 const SCOUT_REQUEST_MAGIC_V2: &[u8; 4] = b"SSQ2";
+/// Ring classes, and so gem-table bytes, in one `SSC3` packet.
+const RING_GEM_COUNT: usize = 12;
 const RESULT_MAGIC: &[u8; 4] = b"SSR1";
-const SCOUT_RESULT_MAGIC: &[u8; 4] = b"SSC2";
+const SCOUT_RESULT_MAGIC: &[u8; 4] = b"SSC3";
 /// Requirement ceiling of a bridge request; far above anything the UIs
 /// produce, and what the retired binary layout's count field could hold.
 #[cfg(feature = "json-query")]
@@ -120,10 +123,11 @@ pub fn decode_scout_seed(request: &[u8]) -> Result<DungeonSeed, WireError> {
 
 /// Encodes every searchable item in one generated world for scouting mode.
 ///
-/// `SSC2` is big-endian and self-delimiting:
+/// `SSC3` is big-endian and self-delimiting:
 ///
 /// ```text
 /// magic[4], seed:utf8_u8,
+/// ring_gems[12],
 /// quest_count:u8,
 /// repeated { quest:u8, variant:u8, depth:u8 },
 /// item_count:u16,
@@ -133,6 +137,13 @@ pub fn decode_scout_seed(request: &[u8]) -> Result<DungeonSeed, WireError> {
 ///   source:u8, accessibility_tag:u8, accessibility_payload
 /// }
 /// ```
+///
+/// `ring_gems` is the run's [`RingGems::ordinals`]: one gem ordinal per ring
+/// class, in the catalog's ring order. It rides with the manifest because it is
+/// a property of the same run — like the quests, and unlike anything an item
+/// carries — and because a frontend that draws a ring from its catalog cell
+/// alone shows the same twelve colours for every seed. `SSC3` replaces `SSC2`,
+/// which had no room for it.
 ///
 /// Quest entries are emitted in strictly ascending quest order — Ghost `1`,
 /// Wandmaker `2`, Blacksmith `3`, Imp `4` — and each quest appears at most
@@ -160,6 +171,7 @@ pub fn encode_scout_world(world: &GeneratedWorld) -> Result<Vec<u8>, WireError> 
     output.extend_from_slice(SCOUT_RESULT_MAGIC);
     output.push(seed_length);
     output.extend_from_slice(seed.as_bytes());
+    output.extend_from_slice(&world.ring_gems.ordinals());
     encode_quest_summary(world.quests, &mut output)?;
     output.extend_from_slice(&count.to_be_bytes());
 
@@ -309,7 +321,7 @@ const fn quest_depth_range(quest: u8) -> std::ops::RangeInclusive<u8> {
     }
 }
 
-/// Decodes an `SSC2` scouting response.
+/// Decodes an `SSC3` scouting response.
 ///
 /// This is primarily the executable protocol specification and makes native
 /// round-trip tests cover every source/accessibility branch. Android uses the
@@ -325,6 +337,12 @@ pub fn decode_scout_world(packet: &[u8]) -> Result<GeneratedWorld, WireError> {
         return Err(WireError::BadMagic);
     }
     let seed = DungeonSeed::from_code(input.utf8_u8()?).map_err(|_| WireError::InvalidSeedCode)?;
+    let ring_gems = input
+        .take(RING_GEM_COUNT)?
+        .try_into()
+        .ok()
+        .and_then(RingGems::from_ordinals)
+        .ok_or(WireError::InvalidRingGems)?;
     let quests = decode_quest_summary(&mut input)?;
     let count = usize::from(input.u16()?);
     let mut items = Vec::with_capacity(count);
@@ -390,6 +408,7 @@ pub fn decode_scout_world(packet: &[u8]) -> Result<GeneratedWorld, WireError> {
         seed,
         items,
         quests,
+        ring_gems,
     })
 }
 
@@ -518,6 +537,7 @@ pub enum WireError {
     UnknownItemSource,
     InvalidAccessibility,
     InvalidQuestCount,
+    InvalidRingGems,
     InvalidQuestOrder,
     InvalidQuestDepth,
     UnknownQuest,
@@ -549,6 +569,7 @@ impl fmt::Display for WireError {
             Self::UnknownItemSource => "packet names an unknown item source",
             Self::InvalidAccessibility => "packet contains an invalid accessibility constraint",
             Self::InvalidQuestCount => "scouted world lists more than four quests",
+            Self::InvalidRingGems => "packet ring gems are not a permutation of the twelve gems",
             Self::InvalidQuestOrder => "packet quest entries must have ascending unique IDs",
             Self::InvalidQuestDepth => "packet quest depth leaves its canonical floor range",
             Self::UnknownQuest => "packet names an unknown quest",
@@ -573,6 +594,11 @@ mod tests {
         UpgradeRequirement,
     };
     use crate::quests::WandmakerQuestType;
+    use crate::run::RingGems;
+
+    /// Every `SSC3` packet opens with the magic, the length-prefixed seed
+    /// code, and the run's twelve-byte gem table. The quest block starts here.
+    const SCOUT_HEADER: usize = 4 + 1 + 11 + super::RING_GEM_COUNT;
     use crate::search::WorldGenerator;
     use crate::seed::DungeonSeed;
 
@@ -959,11 +985,13 @@ mod tests {
                 quests: crate::quests::QuestSummary::default(),
                 seed: DungeonSeed::MIN,
                 items: Vec::new(),
+                ring_gems: RingGems::UNSHUFFLED,
             },
             GeneratedWorld {
                 quests: crate::quests::QuestSummary::default(),
                 seed: DungeonSeed::new(1).unwrap(),
                 items: Vec::new(),
+                ring_gems: RingGems::UNSHUFFLED,
             },
         ];
         let packet = encode_results(&worlds).unwrap();
@@ -1036,9 +1064,14 @@ mod tests {
                 },
                 secret: false,
             }],
+            ring_gems: RingGems::UNSHUFFLED,
         };
         let packet = encode_scout_world(&world).unwrap();
-        let mut expected = b"SSC2\x0bAAA-AAA-AAA\0\0\x01\0\x0awand_frost".to_vec();
+        let mut expected = b"SSC3\x0bAAA-AAA-AAA".to_vec();
+        // The run's own gem table, unshuffled here, so every ring class
+        // keeps the cell the catalog gives it.
+        expected.extend_from_slice(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+        expected.extend_from_slice(b"\0\0\x01\0\x0awand_frost");
         expected.extend_from_slice(&[
             7, 2, 1, // depth, upgrade, cursed flag
             0, 0, // no effect
@@ -1077,9 +1110,13 @@ mod tests {
             },
             seed: DungeonSeed::MIN,
             items: Vec::new(),
+            ring_gems: RingGems::UNSHUFFLED,
         };
         let packet = encode_scout_world(&world).unwrap();
-        let mut expected = b"SSC2\x0bAAA-AAA-AAA".to_vec();
+        let mut expected = b"SSC3\x0bAAA-AAA-AAA".to_vec();
+        // The run's own gem table, unshuffled here, so every ring class
+        // keeps the cell the catalog gives it.
+        expected.extend_from_slice(&[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
         expected.extend_from_slice(&[
             4, // quest count
             1, 3, 4, // ghost: great crab on floor 4
@@ -1106,39 +1143,41 @@ mod tests {
             },
             seed: DungeonSeed::MIN,
             items: Vec::new(),
+            ring_gems: RingGems::UNSHUFFLED,
         };
         let packet = encode_scout_world(&world).unwrap();
-        // Header (16), then quest count and one entry (quest, variant, depth).
-        assert_eq!(&packet[16..], &[1, 2, 1, 7, 0, 0]);
+        // The quest count and its one entry (quest, variant, depth), then
+        // the empty item count.
+        assert_eq!(&packet[SCOUT_HEADER..], &[1, 2, 1, 7, 0, 0]);
 
         let mut bad_count = packet.clone();
-        bad_count[16] = 5;
+        bad_count[SCOUT_HEADER] = 5;
         assert_eq!(
             decode_scout_world(&bad_count),
             Err(WireError::InvalidQuestCount)
         );
 
         let mut bad_quest = packet.clone();
-        bad_quest[17] = 9;
+        bad_quest[SCOUT_HEADER + 1] = 9;
         assert_eq!(decode_scout_world(&bad_quest), Err(WireError::UnknownQuest));
 
         let mut bad_variant = packet.clone();
-        bad_variant[18] = 4;
+        bad_variant[SCOUT_HEADER + 2] = 4;
         assert_eq!(
             decode_scout_world(&bad_variant),
             Err(WireError::UnknownQuestVariant)
         );
 
         let mut bad_depth = packet.clone();
-        bad_depth[19] = 12;
+        bad_depth[SCOUT_HEADER + 3] = 12;
         assert_eq!(
             decode_scout_world(&bad_depth),
             Err(WireError::InvalidQuestDepth)
         );
 
         let mut duplicated = packet;
-        duplicated[16] = 2;
-        let entry_start = 17;
+        duplicated[SCOUT_HEADER] = 2;
+        let entry_start = SCOUT_HEADER + 1;
         let entry = duplicated[entry_start..entry_start + 3].to_vec();
         duplicated.splice(entry_start + 3..entry_start + 3, entry);
         assert_eq!(
@@ -1172,6 +1211,7 @@ mod tests {
                 accessibility: Accessibility::Independent,
                 secret: true,
             }],
+            ring_gems: RingGems::UNSHUFFLED,
         };
         let packet = encode_scout_world(&world).unwrap();
         assert_eq!(decode_scout_world(&packet), Ok(world));
@@ -1229,10 +1269,11 @@ mod tests {
             },
             seed: DungeonSeed::MAX,
             items,
+            ring_gems: RingGems::UNSHUFFLED,
         };
 
         let packet = encode_scout_world(&world).unwrap();
-        assert_eq!(&packet[..4], b"SSC2");
+        assert_eq!(&packet[..4], b"SSC3");
         assert_eq!(decode_scout_world(&packet), Ok(world));
     }
 
@@ -1403,6 +1444,7 @@ mod tests {
                 },
                 secret: true,
             }],
+            ring_gems: RingGems::UNSHUFFLED,
         };
         let packet = encode_scout_world(&world).unwrap();
         for end in 0..packet.len() {
@@ -1429,17 +1471,18 @@ mod tests {
                 accessibility: Accessibility::Independent,
                 secret: false,
             }],
+            ring_gems: RingGems::UNSHUFFLED,
         };
         let packet = encode_scout_world(&world).unwrap();
 
         let mut bad_flags = packet.clone();
-        // Header (19, incl. empty quest block), ID length (2), "wand_frost"
-        // (10), depth, upgrade.
-        bad_flags[33] = 4;
+        // Past the header: the empty quest block, the item count, the
+        // length-prefixed "wand_frost", then depth and upgrade.
+        bad_flags[SCOUT_HEADER + 17] = 4;
         assert_eq!(decode_scout_world(&bad_flags), Err(WireError::InvalidFlags));
 
         let mut bad_depth = packet.clone();
-        bad_depth[31] = 0;
+        bad_depth[SCOUT_HEADER + 15] = 0;
         assert_eq!(
             decode_scout_world(&bad_depth),
             Err(WireError::InvalidItemDepth)
@@ -1447,21 +1490,21 @@ mod tests {
 
         // Wands reach +4 in v4.0.0; +5 is above every kind's ceiling.
         let mut bad_upgrade = packet.clone();
-        bad_upgrade[32] = 5;
+        bad_upgrade[SCOUT_HEADER + 16] = 5;
         assert_eq!(
             decode_scout_world(&bad_upgrade),
             Err(WireError::InvalidItemUpgrade)
         );
 
         let mut bad_source = packet.clone();
-        bad_source[36] = u8::MAX;
+        bad_source[SCOUT_HEADER + 20] = u8::MAX;
         assert_eq!(
             decode_scout_world(&bad_source),
             Err(WireError::UnknownItemSource)
         );
 
         let mut bad_accessibility = packet.clone();
-        bad_accessibility[37] = u8::MAX;
+        bad_accessibility[SCOUT_HEADER + 21] = u8::MAX;
         assert_eq!(
             decode_scout_world(&bad_accessibility),
             Err(WireError::InvalidAccessibility)
@@ -1523,6 +1566,7 @@ mod tests {
             quests: crate::quests::QuestSummary::default(),
             seed: DungeonSeed::MIN,
             items: vec![item; usize::from(u16::MAX) + 1],
+            ring_gems: RingGems::UNSHUFFLED,
         };
         assert_eq!(
             encode_scout_world(&world),

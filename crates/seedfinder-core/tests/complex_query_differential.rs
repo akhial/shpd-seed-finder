@@ -19,6 +19,7 @@ use shpd_seedfinder_core::query::{
     UpgradeRequirement, scout_matches,
 };
 use shpd_seedfinder_core::quests::QuestSummary;
+use shpd_seedfinder_core::run::RingGems;
 use shpd_seedfinder_core::seed::DungeonSeed;
 
 const POOL: [ItemId; 8] = [
@@ -109,6 +110,7 @@ fn random_world(rng: &mut Rng) -> GeneratedWorld {
         seed: DungeonSeed::MIN,
         items,
         quests: QuestSummary::default(),
+        ring_gems: RingGems::UNSHUFFLED,
     }
 }
 

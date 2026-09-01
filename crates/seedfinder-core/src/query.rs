@@ -1481,6 +1481,7 @@ impl std::error::Error for QueryError {}
 mod tests {
     use crate::catalog::{Effect, ItemId, ItemKind, WeaponCategory, WeaponEffect};
     use crate::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
+    use crate::run::RingGems;
     use crate::seed::DungeonSeed;
 
     use super::{
@@ -1741,6 +1742,7 @@ mod tests {
             quests: crate::quests::QuestSummary::default(),
             seed: DungeonSeed::MIN,
             items: vec![world_item(ItemId::Sword, Accessibility::Independent)],
+            ring_gems: RingGems::UNSHUFFLED,
         };
         assert!(!query.matches(&one));
         let two = GeneratedWorld {
@@ -1750,6 +1752,7 @@ mod tests {
                 world_item(ItemId::Sword, Accessibility::Independent),
                 world_item(ItemId::Sword, Accessibility::Independent),
             ],
+            ring_gems: RingGems::UNSHUFFLED,
         };
         assert!(query.matches(&two));
     }
@@ -1774,6 +1777,7 @@ mod tests {
             },
             seed: DungeonSeed::MIN,
             items: vec![world_item(ItemId::Sword, Accessibility::Independent)],
+            ring_gems: RingGems::UNSHUFFLED,
         };
         let rotberry = ScheduledQuest {
             variant: WandmakerQuestType::Rotberry,
@@ -1819,6 +1823,7 @@ mod tests {
             quests: crate::quests::QuestSummary::default(),
             seed: DungeonSeed::MIN,
             items: vec![world_item(ItemId::Sword, Accessibility::Independent)],
+            ring_gems: RingGems::UNSHUFFLED,
         };
         let mut limited = requirement(ItemId::Sword);
         limited.max_depth = Some(2);
@@ -1866,6 +1871,7 @@ mod tests {
                     },
                 ),
             ],
+            ring_gems: RingGems::UNSHUFFLED,
         };
         assert!(!query.matches(&world));
     }
@@ -1900,6 +1906,7 @@ mod tests {
                     },
                 ),
             ],
+            ring_gems: RingGems::UNSHUFFLED,
         };
         assert!(query.matches(&world));
     }
@@ -1931,6 +1938,7 @@ mod tests {
             quests: crate::quests::QuestSummary::default(),
             seed: DungeonSeed::MIN,
             items: vec![sword, armor, wand],
+            ring_gems: RingGems::UNSHUFFLED,
         };
 
         let compatible = SearchQuery {
@@ -2348,6 +2356,7 @@ mod tests {
                 make(ItemId::WandLightning, 1, 5, ItemSource::Heap),
                 make(ItemId::Sword, 2, 13, ItemSource::BlacksmithReward),
             ],
+            ring_gems: RingGems::UNSHUFFLED,
         };
 
         assert_eq!(query.validate(), Ok(()));
@@ -2386,6 +2395,7 @@ mod tests {
             quests: crate::quests::QuestSummary::default(),
             seed: DungeonSeed::MIN,
             items: vec![make(ItemSource::BlacksmithReward)],
+            ring_gems: RingGems::UNSHUFFLED,
         };
 
         assert!(!query.matches(&smith_only));
@@ -2399,6 +2409,7 @@ mod tests {
             quests: crate::quests::QuestSummary::default(),
             seed: DungeonSeed::MIN,
             items: vec![make(ItemSource::Heap)],
+            ring_gems: RingGems::UNSHUFFLED,
         };
         assert!(query.matches(&no_blacksmith));
     }
@@ -2944,6 +2955,7 @@ mod tests {
             quests: crate::quests::QuestSummary::default(),
             seed: DungeonSeed::MIN,
             items,
+            ring_gems: RingGems::UNSHUFFLED,
         }
     }
 
