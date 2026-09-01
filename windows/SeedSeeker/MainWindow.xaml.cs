@@ -81,6 +81,14 @@ public sealed partial class MainWindow : Window
     private static readonly string SettingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Seed Seeker", "query.json");
     private static readonly string PresetsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Seed Seeker", "presets.json");
     private static readonly string UpdateStatePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Seed Seeker", "update.json");
+    /// <summary>
+    /// The worker count is a property of this machine, not of the hunt, so it
+    /// is saved on its own rather than in query.json — nothing that carries a
+    /// query (preset, export, share link) can then pick it up.
+    /// </summary>
+    private static readonly string WorkersPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Seed Seeker", "workers.json");
+    /// <summary>Search threads every start passes to the engine; see <see cref="WorkerPreference"/>.</summary>
+    private int workers = WorkerPreference.Ceiling;
     private bool updateCheckStarted;
 
     [DllImport("user32.dll")] private static extern uint GetDpiForWindow(nint hwnd);
@@ -120,6 +128,7 @@ public sealed partial class MainWindow : Window
         FloorSlider.ThumbToolTipValueConverter = new FloorLimitIndexConverter();
         FloorSlider.Minimum = 0; FloorSlider.Maximum = FloorLimits.Options.Length - 1; FloorSlider.Value = 0;
         results.CollectionChanged += (_, _) => UpdateTransferButtons();
+        LoadWorkerPreference();
         LoadSettings(); LoadPresets(); RefreshPresets(); RefreshQuery(); UpdateTransferButtons();
         Closed += (_, _) => { search?.Cancel(); search?.Dispose(); };
         // ContentDialog needs a live XamlRoot, which only exists once the root
@@ -191,6 +200,31 @@ public sealed partial class MainWindow : Window
         restoring = false;
     }
     private void SaveSettings() { if (restoring) return; Directory.CreateDirectory(Path.GetDirectoryName(SettingsPath)!); File.WriteAllText(SettingsPath, JsonSerializer.Serialize(query, new JsonSerializerOptions { WriteIndented = true })); }
+    /// <summary>
+    /// Restores the device-local worker count and sizes its slider to the
+    /// engine's ceiling. A machine with one logical processor has nothing to
+    /// choose, so the whole Performance cell goes away there.
+    /// </summary>
+    private void LoadWorkerPreference()
+    {
+        var ceiling = WorkerPreference.Ceiling;
+        if (ceiling <= 1) { workers = 1; PerformanceCell.Visibility = Visibility.Collapsed; return; }
+        restoring = true;
+        workers = WorkerPreference.Load(WorkersPath, ceiling);
+        WorkerSlider.Maximum = ceiling; WorkerSlider.Value = workers;
+        WorkerLabel.Text = WorkerPreference.Describe(workers, ceiling);
+        restoring = false;
+    }
+    private void WorkerSlider_ValueChanged(object sender, Microsoft.UI.Xaml.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+    {
+        if (restoring || WorkerLabel is null) return;
+        var ceiling = WorkerPreference.Ceiling;
+        workers = WorkerPreference.Clamp((int)e.NewValue, ceiling);
+        WorkerLabel.Text = WorkerPreference.Describe(workers, ceiling);
+        // Local only: this deliberately does not touch SaveSettings, which
+        // writes the query.
+        WorkerPreference.Save(WorkersPath, workers, ceiling);
+    }
     private void LoadPresets()
     {
         try
@@ -261,7 +295,7 @@ public sealed partial class MainWindow : Window
         var paired = (e.NewSize.Width - SettingsGrid.ColumnSpacing) / 2 >= SettingsPairMinimum;
         if (paired == settingsPaired) return;
         settingsPaired = paired;
-        FrameworkElement[] cells = [ScopeCell, WandmakerCell, BlacksmithCell];
+        FrameworkElement[] cells = [ScopeCell, WandmakerCell, BlacksmithCell, PerformanceCell];
         for (var i = 0; i < cells.Length; i++)
         {
             Grid.SetRow(cells[i], paired ? i / 2 : i);
@@ -1385,7 +1419,7 @@ public sealed partial class MainWindow : Window
             // Snapshot the query so an export always describes the query that
             // actually produced the listed results, even after later edits.
             searchedQuery = snapshot;
-            search = await Task.Run(() => engine.Start(snapshot)); await RunSearch(search, notice); await CaptureBaseRun(snapshot, search, detached ? RunKind.Detached : RunKind.Anchor);
+            search = await Task.Run(() => engine.Start(snapshot, workers)); await RunSearch(search, notice); await CaptureBaseRun(snapshot, search, detached ? RunKind.Detached : RunKind.Anchor);
         }
         catch (Exception ex) { SearchStatus.Text = $"Failed: {ex.Message}"; baseRun = null; lastRunDetached = false; }
         finally { busy = false; search?.Dispose(); search = null; SetStartButton(running: false); StartButton.IsEnabled = query.Requirements.Count != 0; }
@@ -1429,7 +1463,7 @@ public sealed partial class MainWindow : Window
                 // listed. Repeating an identical query therefore keeps growing
                 // the Target Set by roughly a cap per run.
                 SetStatusBar($"{summary} — searching for more…");
-                search = await Task.Run(() => engine.StartResumed(snapshot, anchor.ResumeFrom, anchor.Remaining));
+                search = await Task.Run(() => engine.StartResumed(snapshot, anchor.ResumeFrom, anchor.Remaining, workers));
                 StartButton.IsEnabled = true;
                 await RunSearch(search, summary); await CaptureBaseRun(snapshot, search, RunKind.TargetRefine);
             }
@@ -1473,7 +1507,7 @@ public sealed partial class MainWindow : Window
                 // display: new finds beyond the cap still enter `collected`,
                 // the continuation base a later refine filters.
                 SetStatusBar($"{summary} — searching for more…");
-                search = await Task.Run(() => engine.StartResumed(snapshot, previous.ResumeFrom, previous.Remaining));
+                search = await Task.Run(() => engine.StartResumed(snapshot, previous.ResumeFrom, previous.Remaining, workers));
                 StartButton.IsEnabled = true;
                 await RunSearch(search, summary); await CaptureBaseRun(snapshot, search, RunKind.Detached);
             }

@@ -71,7 +71,7 @@
               </StackPanel>
             </Border>
             <TextBlock x:Name="NoRequirements" Text="No requirements yet. Add one to describe the item you're hunting for." Style="{StaticResource Caption}" Margin="1,0,1,10"/>
-            <!-- The setting sections sit two to a row while the sidebar is
+            <!-- The four setting sections sit two to a row while the sidebar is
                  wide enough for it, so the wider sidebar buys less scrolling
                  rather than emptier cards; SettingsGrid_SizeChanged moves the
                  cells back into one column when it is not. Each cell is a
@@ -79,7 +79,7 @@
                  of a row share a bottom edge. -->
             <Grid x:Name="SettingsGrid" ColumnSpacing="12" SizeChanged="SettingsGrid_SizeChanged">
               <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-              <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+              <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
 
               <Grid x:Name="ScopeCell">
                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
@@ -128,6 +128,24 @@
                       <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="Required items cannot come from the 2,000-favor Smith choice, leaving favor available for reforging." Style="{StaticResource Caption}"/>
                       <ToggleSwitch Grid.Column="1" x:Name="ExcludeRewards" Style="{StaticResource CompactToggle}" Toggled="SettingChanged" VerticalAlignment="Top" Margin="0,-4,0,0"/>
                     </Grid>
+                  </StackPanel>
+                </Border>
+              </Grid>
+
+              <!-- The worker slider is the whole cell, so a single-core machine
+                   has nothing to show here: LoadWorkerPreference collapses it. -->
+              <Grid x:Name="PerformanceCell" Grid.Row="1" Grid.Column="1">
+                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
+                <TextBlock Text="Performance" Style="{StaticResource SectionHeader}"/>
+                <Border Grid.Row="1" Style="{StaticResource SettingsCard}">
+                  <StackPanel>
+                    <Grid ColumnSpacing="8">
+                      <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                      <TextBlock Text="Workers" VerticalAlignment="Center"/>
+                      <TextBlock Grid.Column="1" x:Name="WorkerLabel" Style="{StaticResource Caption}" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                    </Grid>
+                    <Slider x:Name="WorkerSlider" StepFrequency="1" Minimum="1" ValueChanged="WorkerSlider_ValueChanged" HorizontalAlignment="Stretch" Margin="0,2,0,-4"/>
+                    <TextBlock Text="Number of search threads to spawn." Style="{StaticResource Caption}"/>
                   </StackPanel>
                 </Border>
               </Grid>

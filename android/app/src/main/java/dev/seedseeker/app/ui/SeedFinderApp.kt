@@ -45,6 +45,7 @@ import dev.seedseeker.app.engine.EngineInfo
 import dev.seedseeker.app.engine.NativeSearchSession
 import dev.seedseeker.app.engine.NativeSeedFinder
 import dev.seedseeker.app.engine.ScoutMatches
+import dev.seedseeker.app.engine.SearchWorkers
 import dev.seedseeker.app.engine.SeedCode
 import dev.seedseeker.app.model.BoardItem
 import dev.seedseeker.app.model.ItemRequirement
@@ -69,6 +70,7 @@ import dev.seedseeker.app.model.slotCount
 import dev.seedseeker.app.model.toPresetQuery
 import dev.seedseeker.app.model.validationProblem
 import dev.seedseeker.app.model.WandmakerQuest
+import dev.seedseeker.app.model.WorkerPreference
 import dev.seedseeker.app.update.UpdateChecker
 import dev.seedseeker.app.update.UpdateInfo
 import kotlinx.coroutines.CancellationException
@@ -145,6 +147,9 @@ fun SeedFinderApp(
         context.getSharedPreferences(SETTINGS_PREFERENCES, Context.MODE_PRIVATE)
     }
     val presetStorage = remember(preferences) { PresetStorage(preferences) }
+    val workerPreference = remember(preferences) {
+        WorkerPreference(preferences, SearchWorkers.ceiling)
+    }
 
     var destination by remember { mutableStateOf(Destination.FINDER) }
     var aboutReturnDestination by remember { mutableStateOf(Destination.FINDER) }
@@ -168,6 +173,9 @@ fun SeedFinderApp(
         )
     }
     var compactChips by remember { mutableStateOf(preferences.getBoolean(COMPACT_CHIPS_KEY, false)) }
+    // Device-local, so unlike the query state above nothing an import, a
+    // preset or a share link carries ever writes it.
+    var workerCount by remember { mutableStateOf(workerPreference.load()) }
     // The board anchor the editor is open on, plus the stack shape it showed;
     // null means the sheet is building a new chip.
     var editingIndex by remember { mutableStateOf<Int?>(null) }
@@ -445,9 +453,14 @@ fun SeedFinderApp(
 
             val openedSession = withContext(Dispatchers.Default) {
                 if (refine == null) {
-                    engine.startSearch(currentRun.request)
+                    engine.startSearch(currentRun.request, workerCount)
                 } else {
-                    engine.startResumedSearch(currentRun.request, refine.resumeFrom, refine.remaining)
+                    engine.startResumedSearch(
+                        currentRun.request,
+                        refine.resumeFrom,
+                        refine.remaining,
+                        workerCount,
+                    )
                 }
             }
             session = openedSession
@@ -622,6 +635,8 @@ fun SeedFinderApp(
                 excludeBlacksmithRewards = excludeBlacksmithRewards,
                 wandmakerQuest = wandmakerQuest,
                 challenges = challenges,
+                workerCount = workerCount,
+                workerCeiling = workerPreference.ceiling,
                 presets = BuiltInPresets.all + userPresets,
                 compactChips = compactChips,
                 results = results,
@@ -696,6 +711,7 @@ fun SeedFinderApp(
                 onRequireBlacksmithChange = { requireBlacksmith = it },
                 onExcludeBlacksmithRewardsChange = { excludeBlacksmithRewards = it },
                 onWandmakerQuestChange = { wandmakerQuest = it },
+                onWorkerCountChange = { workerCount = workerPreference.save(it) },
                 validationMessage = validationMessage,
                 onSearch = {
                     if (currentRequest != null) {

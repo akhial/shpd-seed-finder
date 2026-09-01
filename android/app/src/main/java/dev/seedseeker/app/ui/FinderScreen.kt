@@ -98,6 +98,10 @@ fun FinderScreen(
     excludeBlacksmithRewards: Boolean,
     wandmakerQuest: WandmakerQuest?,
     challenges: Int,
+    /** Search threads to spawn: a device setting, not part of the query. */
+    workerCount: Int,
+    /** Cores this device offers; the selector hides itself when there is one. */
+    workerCeiling: Int,
     presets: List<QueryPreset>,
     /** Draw the board's chips at their smaller size. */
     compactChips: Boolean,
@@ -124,6 +128,7 @@ fun FinderScreen(
     onRequireBlacksmithChange: (Boolean) -> Unit,
     onExcludeBlacksmithRewardsChange: (Boolean) -> Unit,
     onWandmakerQuestChange: (WandmakerQuest?) -> Unit,
+    onWorkerCountChange: (Int) -> Unit,
     /** Why the query cannot run yet, shown in the header; null when it is runnable. */
     validationMessage: String?,
     onSearch: () -> Unit,
@@ -274,6 +279,8 @@ fun FinderScreen(
                         excludeBlacksmithRewards = excludeBlacksmithRewards,
                         wandmakerQuest = wandmakerQuest,
                         challenges = challenges,
+                        workerCount = workerCount,
+                        workerCeiling = workerCeiling,
                         isSearching = isSearching,
                         validationMessage = validationMessage,
                         compactChips = compactChips,
@@ -285,6 +292,7 @@ fun FinderScreen(
                         onRequireBlacksmithChange = onRequireBlacksmithChange,
                         onExcludeBlacksmithRewardsChange = onExcludeBlacksmithRewardsChange,
                         onWandmakerQuestChange = onWandmakerQuestChange,
+                        onWorkerCountChange = onWorkerCountChange,
                         onSettings = onSettings,
                         // Takes every line down to the closed page's header,
                         // which waits at the bottom edge above the search bar
@@ -433,6 +441,8 @@ private fun QueryPage(
     excludeBlacksmithRewards: Boolean,
     wandmakerQuest: WandmakerQuest?,
     challenges: Int,
+    workerCount: Int,
+    workerCeiling: Int,
     isSearching: Boolean,
     validationMessage: String?,
     compactChips: Boolean,
@@ -444,6 +454,7 @@ private fun QueryPage(
     onRequireBlacksmithChange: (Boolean) -> Unit,
     onExcludeBlacksmithRewardsChange: (Boolean) -> Unit,
     onWandmakerQuestChange: (WandmakerQuest?) -> Unit,
+    onWorkerCountChange: (Int) -> Unit,
     onSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -477,11 +488,14 @@ private fun QueryPage(
             excludeBlacksmithRewards = excludeBlacksmithRewards,
             wandmakerQuest = wandmakerQuest,
             challenges = challenges,
+            workerCount = workerCount,
+            workerCeiling = workerCeiling,
             enabled = !isSearching,
             onMaximumDepthChange = onMaximumDepthChange,
             onRequireBlacksmithChange = onRequireBlacksmithChange,
             onExcludeBlacksmithRewardsChange = onExcludeBlacksmithRewardsChange,
             onWandmakerQuestChange = onWandmakerQuestChange,
+            onWorkerCountChange = onWorkerCountChange,
             onSettings = onSettings,
         )
         Spacer(Modifier.height(6.dp))
@@ -500,11 +514,14 @@ private fun ScopeSection(
     excludeBlacksmithRewards: Boolean,
     wandmakerQuest: WandmakerQuest?,
     challenges: Int,
+    workerCount: Int,
+    workerCeiling: Int,
     enabled: Boolean,
     onMaximumDepthChange: (Int) -> Unit,
     onRequireBlacksmithChange: (Boolean) -> Unit,
     onExcludeBlacksmithRewardsChange: (Boolean) -> Unit,
     onWandmakerQuestChange: (WandmakerQuest?) -> Unit,
+    onWorkerCountChange: (Int) -> Unit,
     onSettings: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -583,6 +600,15 @@ private fun ScopeSection(
                     checked = excludeBlacksmithRewards,
                     onCheckedChange = onExcludeBlacksmithRewardsChange,
                     enabled = enabled,
+                )
+                // A device setting sharing the scope panel with the query's own
+                // constraints: it is deliberately absent from the collapsed
+                // summary above, which describes the query alone.
+                WorkersRow(
+                    count = workerCount,
+                    ceiling = workerCeiling,
+                    enabled = enabled,
+                    onCountChange = onWorkerCountChange,
                 )
                 Row(
                     modifier = Modifier
@@ -785,6 +811,51 @@ private fun SwitchRow(
             }
         }
         Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+    }
+}
+
+/**
+ * How many threads the next search spawns. The count is a device preference
+ * rather than part of the query, so it is stored locally and never travels
+ * with a preset, an export or a share link; the engine clamps whatever it is
+ * handed, and a single-core device has nothing to choose, so the row is not
+ * drawn at all there.
+ */
+@Composable
+private fun WorkersRow(
+    count: Int,
+    ceiling: Int,
+    enabled: Boolean,
+    onCountChange: (Int) -> Unit,
+) {
+    if (ceiling <= 1) return
+    val shown = count.coerceIn(1, ceiling)
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Workers",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "$shown of $ceiling cores",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+        Slider(
+            value = shown.toFloat(),
+            onValueChange = { onCountChange(it.roundToInt().coerceIn(1, ceiling)) },
+            valueRange = 1f..ceiling.toFloat(),
+            steps = ceiling - 2,
+            enabled = enabled,
+            modifier = Modifier.semantics { stateDescription = "$shown of $ceiling cores" },
+        )
+        Text(
+            "Number of search threads to spawn.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

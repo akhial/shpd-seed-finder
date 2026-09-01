@@ -19,6 +19,12 @@ public struct EngineInfo: Sendable {
     /// The one instance, loaded on first use.
     public static let shared = load()
 
+    /// Logical processors available to search workers, never less than one:
+    /// the ceiling of the worker selector. Unlike the constants above this
+    /// describes the host rather than the build, so it is read per call
+    /// instead of being frozen into `shared`.
+    public static var availableWorkers: Int { max(1, Int(seedfinder_available_workers())) }
+
     private static func load() -> EngineInfo {
         guard let packet = try? enginePacket({ out, length in
                   seedfinder_engine_info(out, length)
