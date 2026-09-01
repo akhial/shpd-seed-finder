@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PROFILE="$ROOT/pgo/seed-seeker.profdata"
+PROFILE="$ROOT/pgo/seed-seeker-aarch64-apple-darwin.profdata"
 
 # The checked-in profile is recorded by scripts/record-pgo-profile.sh and
 # improves the seed search on top of the source-level optimizations. Resolve it

@@ -31,6 +31,22 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <RustTarget>x86_64-pc-windows-msvc</RustTarget>
   </PropertyGroup>
+  <!-- Engine build flags. The seed search is allocation- and branch-bound, so
+       both levers below are worth several percent and neither changes the
+       seeds the engine reports.
+       * The profile-guided profile is used only when pgo/ carries one recorded
+         for this exact target. Profiles are keyed by mangled symbol name and
+         the crate disambiguator differs per target, so one file cannot serve
+         several targets; a missing file silently falls back to a plain build.
+       * EngineIsa=avx2 raises the baseline to the x86-64-v3 microarchitecture
+         level (Intel Haswell 2013+, AMD Excavator 2015+). The release workflow
+         publishes that as a separate download; the default stays portable. -->
+  <PropertyGroup>
+    <EngineIsa Condition="'$(EngineIsa)' == ''">baseline</EngineIsa>
+    <EnginePgoProfile>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..\pgo\seed-seeker-$(RustTarget).profdata'))</EnginePgoProfile>
+    <EngineRustFlags Condition="Exists('$(EnginePgoProfile)')">-Cprofile-use=$(EnginePgoProfile)</EngineRustFlags>
+    <EngineRustFlags Condition="'$(EngineIsa)' == 'avx2'">$(EngineRustFlags) -Ctarget-cpu=x86-64-v3</EngineRustFlags>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
     <!-- The exe icon covers Explorer; AppWindow.SetIcon needs the .ico on
@@ -46,7 +62,9 @@
   </ItemGroup>
   <Target Name="BuildRustEngine" BeforeTargets="Build">
     <Error Condition="'$(RustTarget)' == ''" Text="Build with -p:Platform=ARM64 or -p:Platform=x64; platform '$(Platform)' has no Rust target mapping." />
-    <Exec WorkingDirectory="..\.." Command="cargo build --release -p shpd-seedfinder-ffi --target $(RustTarget)" />
+    <Error Condition="'$(EngineIsa)' != 'baseline' AND '$(EngineIsa)' != 'avx2'" Text="EngineIsa must be 'baseline' or 'avx2', not '$(EngineIsa)'." />
+    <Error Condition="'$(EngineIsa)' == 'avx2' AND '$(Platform)' != 'x64'" Text="EngineIsa=avx2 is an x86-64 microarchitecture level and does not apply to platform '$(Platform)'." />
+    <Exec WorkingDirectory="..\.." Command="cargo build --release -p shpd-seedfinder-ffi --target $(RustTarget)" EnvironmentVariables="RUSTFLAGS=$(EngineRustFlags)" />
     <Copy SourceFiles="..\..\target\$(RustTarget)\release\shpd_seedfinder_ffi.dll" DestinationFolder="$(OutDir)" />
   </Target>
 </Project>

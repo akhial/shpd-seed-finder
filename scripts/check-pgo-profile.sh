@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Fails when pgo/seed-seeker.profdata no longer matches the build that
+# Fails when pgo/seed-seeker-$TARGET.profdata no longer matches the build that
 # consumes it. rustc drops profile entries whose mangled name it cannot find
 # and says nothing, so a stale profile costs throughput invisibly: before this
 # check existed the checked-in profile had been recorded under legacy symbol
 # mangling and matched not one of the engine's hot functions.
 #
-# Re-record with scripts/record-pgo-profile.sh when this fails.
+# Set PGO_TARGET to check another target's profile. Re-record with
+# scripts/record-pgo-profile.sh when this fails.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TARGET="${PGO_TARGET:-aarch64-apple-darwin}"
-PROFILE="$ROOT/pgo/seed-seeker.profdata"
+PROFILE="$ROOT/pgo/seed-seeker-$TARGET.profdata"
 
 # The self time leaders of a depth-19 search, which is the workload the app
 # spends its life on. Every one of them must carry profile data.

@@ -2,6 +2,13 @@
 
 #![allow(unsafe_code)]
 
+// Level generation is allocation-bound: a deep seed churns thousands of small
+// buffers, and the platform allocators serialize badly across search workers.
+// Every artifact built from this crate — the Windows DLL, the macOS
+// staticlib — therefore carries mimalloc, exactly as the CLI does.
+#[global_allocator]
+static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::ptr;
 

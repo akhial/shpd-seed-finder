@@ -22,14 +22,11 @@ written in Rust — with native apps for Android, Linux, macOS, and Windows.
   <i>Scanning seeds for a +3 Wand of Fireblast across 24 floors, on an Apple M4 Pro (12 cores).</i>
 </p>
 
-- ⚡️ **16–30× faster** than the established Java seed finder
+- ⚡️ **16–30× faster** than any Java seed finder
 - 🔍 **Rich queries**: multiple requirements across melee and thrown weapons, armor, wands, and rings
 - 🔗 **Share links**: any search fits in a short link that fills in the query on every platform
-- 🔮 **Seed scouting**: paste a seed code, get every item with floor, upgrade, enchantment, cursed state and source
-- 📱 **Android app** beautiful Material 3 interface
-- 🐧 **Native Linux app** GTK 4 and libadwaita
-- 🍎 **Native macOS app** SwiftUI, Apple Silicon
-- 🪟 **Native Windows app** WinUI 3, x64 and ARM64 using Fluent Design 2
+- 🔮 **Seed scouting**: paste a seed, get every item with floor, upgrade, enchantment, cursed state and source
+- 📱 **Native apps** Material 3, GTK 4 and libadwaita, SwiftUI, WinUI 3
 
 ## Table of contents
 
@@ -54,14 +51,14 @@ Binaries are published on the [GitHub Releases page](https://github.com/akhial/s
 | Asset | Platforms |
 | --- | --- |
 | `seed-seeker-cli-<tag>-<target>.tar.gz` / `.zip` | CLI for Linux (x86_64, arm64), macOS (Apple Silicon, Intel), and Windows (x86_64, arm64) |
+| `seed-seeker-cli-<tag>-<target>-avx2.tar.gz` / `.zip` | CLI built for AVX2 x86-64 machines |
 | `seed-seeker-<tag>-<arch>.AppImage` | Native Linux app (x86_64, arm64) |
 | `seed-seeker-<tag>-macos-arm64.dmg` | Native macOS app (Apple Silicon, macOS 14+) |
 | `seed-seeker-<tag>-windows-<arch>.zip` | Native Windows app (x64, ARM64) |
+| `seed-seeker-<tag>-windows-x64-avx2.zip` | Windows app built for AVX2 x86-64 machines |
 | `seed-seeker-<tag>-android.apk` | Android app (arm64-v8a and x86_64) |
 
-- The Windows app requires the
-  [Windows App SDK 1.8 runtime](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/downloads)
-  to be installed.
+- The Windows app requires the [Windows App SDK 1.8 runtime](https://learn.microsoft.com/en-us/windows/apps/windows-app-sdk/downloads).
 
 ### CLI
 
@@ -72,8 +69,7 @@ cargo run --release -p shpd-seedfinder-cli -- --benchmark
 cargo run --release -p shpd-seedfinder-cli -- -b 1000 --workers 4
 ```
 
-To search, put the requirements in a JSON file and pass it with `--items` (or `-i`). Matching
-seed codes are written to standard output in ascending order, starting from `AAA-AAA-AAA`:
+To search, put the requirements in a JSON file and pass it with `--items` (or `-i`):
 
 ```sh
 cargo run --release -p shpd-seedfinder-cli -- --items requirements.json
@@ -147,9 +143,7 @@ cargo run --release -p shpd-seedfinder-cli -- -i requirements.json -b 1000 --wor
         { "at_most": 3..4 }
         = "any",
 
-      // Everything reaches +4; a tier-4 weapon, melee or thrown, reaches +5,
-      // so +5 is rejected for any other tier, item, or family. Everything
-      // above +3 comes only from the Imp's vault (floors 17-19).
+      // Everything reaches +4; a tier-4 weapon, melee or thrown, reaches +5.
       // "any" and effect names are case-insensitive.
       "upgrade"?:
         "any" | 1..5 |
@@ -159,7 +153,7 @@ cargo run --release -p shpd-seedfinder-cli -- -i requirements.json -b 1000 --wor
 
       // The effect must belong to the selected weapon or armor kind. A list
       // matches any one of its entries, and "any_enchantment" is shorthand
-      // for every non-curse enchantment or glyph of the item's family.
+      // for every non-curse enchantment or glyph.
       "effect"?: <name> | [<name>, ...] | "any_enchantment", where <name> is
         // Weapon enchantments
         "Blazing" | "Chilling" | "Kinetic" | "Shocking" | "Blocking" | "Blooming" |
@@ -208,26 +202,6 @@ cargo run --release -p shpd-seedfinder-cli -- -i requirements.json -b 1000 --wor
 }
 ```
 
-### Fast Mode
-
-This mode adds one lossy shortcut: +3 weapon/armor requirements consider only quest rewards — the Ghost, the Blacksmith, and the Imp's vault prizes, which are quest rewards and stay exact — skipping the rare Crypt, Sacrificial-fire and special-room chest prizes, so those searches end at floor 19 instead of running to the floor limit. Requirements above +3 are always exact: only the Imp's vault produces them.
-
-### Share links
-
-Every app can encode the current query as a short link like
-`https://shpd-seed-seeker.web.app/#q=EAGWhMA` (the **Share** button on the
-web, **Copy Link** on desktop, **Share search…** on Android). Opening a share
-link fills in the search form:
-
-- **Web** — the link opens the web app directly.
-- **Android** — links to `shpd-seed-seeker.web.app` open in the app when it
-  is installed (Android App Links).
-- **Windows, macOS, and Linux** — the apps register the `seedseeker://` URI
-  scheme; a pasted web link decodes through the same codec.
-
-The compact payload format is documented in
-[`docs/share-link-format.md`](docs/share-link-format.md).
-
 ## Benchmarks<a id="benchmarks"></a>
 
 Compared with [Elektrochecker's Java finder](https://github.com/Elektrochecker/shpd-seed-finder):
@@ -259,8 +233,6 @@ Build the browser engine before starting Vite:
 ```sh
 ./scripts/build-web-wasm.sh && cd web && npm ci && npm run dev
 ```
-
-Searches run fully client-side in Web Workers through WebAssembly. Release tags build and deploy the app to Firebase Hosting.
 
 ### Android
 
@@ -298,10 +270,7 @@ bash scripts/build-macos-native.sh
 bash scripts/build-macos-app.sh
 ```
 
-The native build applies the profile-guided optimisation profile checked in at
-`pgo/seed-seeker.profdata`, worth roughly 4% of search throughput. rustc matches
-a profile by mangled symbol name and silently ignores one that does not match,
-so re-record it whenever the engine's hot paths change shape:
+#### PGO
 
 ```sh
 bash scripts/check-pgo-profile.sh                            # CI runs this
@@ -332,7 +301,16 @@ The Windows app requires Visual Studio with the WinUI application development an
 .\scripts\build-windows-app.ps1
 ```
 
-The script builds for the host architecture; pass `-Platform ARM64` or `-Platform x64` to cross-build, and `-Configuration Debug` for a debug build. To build and run, open `windows\SeedSeeker\SeedSeeker.slnx` in Visual Studio and press F5, or launch the built `SeedSeeker.exe` under `windows\SeedSeeker\bin\`.
+The script builds for the host architecture; pass `-Platform ARM64` or `-Platform x64` to cross-build, and `-Configuration Debug` for a debug build.
+
+Pass `-EngineIsa avx2` to build the engine for x86-64-v3.
+
+#### PGO
+
+```sh
+PGO_TARGET=x86_64-pc-windows-msvc bash scripts/record-pgo-profile.sh
+PGO_TARGET=x86_64-pc-windows-msvc bash scripts/check-pgo-profile.sh
+```
 
 ### Testing
 
@@ -373,23 +351,17 @@ java -cp /tmp RngOracle
 
 `EquipmentOracle.java` is compiled against the isolated v3.3.8 JAR.
 
-The engine now targets Shattered Pixel Dungeon 4.0.0, whose source has not
-been published: `tooling/oracle-4.0` is the 4.0.0 oracle, built from the
-official `4.0.0-BETA-3` release JAR (the digest pinned in `SHPD_COMMIT`)
-rather than from a source checkout. The v3.3.8 oracle in `tooling/oracle`
-remains for the fixtures that still pin that version.
-
 ## Acknowledgements<a id="acknowledgements"></a>
 
 Seed Seeker reimplements the generation of
 [Shattered Pixel Dungeon](https://github.com/00-Evan/shattered-pixel-dungeon) by Evan Debenham,
 itself based on [Pixel Dungeon](https://github.com/watabou/pixel-dungeon) by Oleg Dolya.
 
-[Elektrochecker's shpd-seed-finder](https://github.com/Elektrochecker/shpd-seed-finder) serves as an oracle for this project's parity tests.
+[Elektrochecker's shpd-seed-finder](https://github.com/Elektrochecker/shpd-seed-finder) is used for parity tests.
 
 ## License and identity<a id="license-and-identity"></a>
 
-This project is GPL-3.0-or-later. It contains a derived generation implementation and an unchanged item sprite atlas from Shattered Pixel Dungeon.
+This project is GPL-3.0-or-later.
 
 - Pixel Dungeon © 2012–2015 Oleg Dolya / Watabou
 - Shattered Pixel Dungeon © 2014–2026 Evan Debenham

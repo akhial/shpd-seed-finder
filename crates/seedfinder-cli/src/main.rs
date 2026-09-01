@@ -275,9 +275,14 @@ fn load_query(path: &Path) -> Result<SearchQuery, String> {
 }
 
 /// The canonical benchmark: a +3 Wand of Fireblast anywhere in the first 24
-/// floors. Only the Wandmaker can hand out a +3 wand, so the planner's exact
-/// quest-window shortcut ends generation at depth 9 — the workload exercises
-/// the planning shortcuts that real searches benefit from.
+/// floors.
+///
+/// Before v4.0.0 the Wandmaker was the only source of a +3 wand and the
+/// planner's quest-window shortcut ended generation at depth 9. The Imp is now
+/// a source too, so the plan runs to its depth-19 deadline and asks for the
+/// vault sub-level: the workload covers every region and the most expensive
+/// level in the game, and benchmark numbers published against the older engine
+/// are not comparable with current ones.
 fn benchmark_query() -> SearchQuery {
     SearchQuery {
         requirements: vec![Requirement {

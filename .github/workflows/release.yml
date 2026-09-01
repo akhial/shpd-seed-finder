@@ -88,8 +88,17 @@ jobs:
   cli:
     name: CLI (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    # The x86-64 targets build twice; fat LTO with one codegen unit is not
+    # cheap and the second build shares nothing with the first.
+    timeout-minutes: 60
 
+    # `avx2` marks the x86-64 targets that also ship a second binary built for
+    # the x86-64-v3 microarchitecture level (AVX2/BMI2/FMA; Intel Haswell 2013
+    # and AMD Excavator 2015 onwards). Level generation is branchy scalar and
+    # byte-array work rather than hand-written SIMD, so the ~9% it gains comes
+    # from wider auto-vectorization of the flag and bitboard loops and from
+    # single-instruction float rounding. AArch64 needs no variant: it mandates
+    # NEON and the rounding instructions already.
     strategy:
       fail-fast: false
       matrix:
@@ -97,6 +106,7 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
             archive: tar.gz
+            avx2: true
           - target: aarch64-unknown-linux-gnu
             runner: ubuntu-24.04-arm
             archive: tar.gz
@@ -107,9 +117,11 @@ jobs:
           - target: x86_64-apple-darwin
             runner: macos-15
             archive: tar.gz
+            avx2: true
           - target: x86_64-pc-windows-msvc
             runner: windows-latest
             archive: zip
+            avx2: true
           - target: aarch64-pc-windows-msvc
             runner: windows-11-arm
             archive: zip
@@ -142,6 +154,28 @@ jobs:
         run: |
           Compress-Archive -Path "target/${{ matrix.target }}/release/seed-seeker.exe" `
             -DestinationPath "seed-seeker-cli-${{ github.ref_name }}-${{ matrix.target }}.zip"
+
+      # Changing RUSTFLAGS invalidates the whole dependency graph, so this is
+      # a second full build rather than an incremental one; it runs once the
+      # portable binary is already packaged.
+      - name: Build CLI (AVX2)
+        if: matrix.avx2
+        env:
+          RUSTFLAGS: -Ctarget-cpu=x86-64-v3
+        run: cargo build --release --locked -p shpd-seedfinder-cli --target ${{ matrix.target }}
+
+      - name: Package AVX2 (tar.gz)
+        if: matrix.avx2 && matrix.archive == 'tar.gz'
+        run: |
+          tar -czf "seed-seeker-cli-${{ github.ref_name }}-${{ matrix.target }}-avx2.tar.gz" \
+            -C "target/${{ matrix.target }}/release" seed-seeker
+
+      - name: Package AVX2 (zip)
+        if: matrix.avx2 && matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "target/${{ matrix.target }}/release/seed-seeker.exe" `
+            -DestinationPath "seed-seeker-cli-${{ github.ref_name }}-${{ matrix.target }}-avx2.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -412,7 +446,8 @@ jobs:
   windows-app:
     name: Windows app (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
+    # x64 builds the engine twice, once per microarchitecture level.
+    timeout-minutes: 60
 
     strategy:
       fail-fast: false
@@ -463,11 +498,29 @@ jobs:
           Compress-Archive -Path "$($out.FullName)/*" `
             -DestinationPath "seed-seeker-${{ github.ref_name }}-windows-${{ matrix.arch }}.zip"
 
+      # Only the engine DLL differs between the two x64 downloads. Re-running
+      # the app build with EngineIsa=avx2 rebuilds just that DLL (the managed
+      # output is already up to date) and keeps the profile-guided flags the
+      # csproj applies, which a bare cargo invocation here would drop.
+      - name: Build app (AVX2 engine)
+        if: matrix.arch == 'x64'
+        run: pwsh scripts/build-windows-app.ps1 -Platform ${{ matrix.platform }} -EngineIsa avx2
+
+      - name: Package app (AVX2)
+        if: matrix.arch == 'x64'
+        shell: pwsh
+        run: |
+          $out = Get-ChildItem -Path windows/SeedSeeker/bin -Recurse -Directory -Filter ${{ matrix.rid }} |
+            Where-Object { $_.FullName -match 'Release' } | Select-Object -First 1
+          if (-not $out) { throw "${{ matrix.rid }} Release output directory not found" }
+          Compress-Archive -Path "$($out.FullName)/*" `
+            -DestinationPath "seed-seeker-${{ github.ref_name }}-windows-${{ matrix.arch }}-avx2.zip"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-app-${{ matrix.arch }}
-          path: seed-seeker-*-windows-${{ matrix.arch }}.zip
+          path: seed-seeker-*-windows-${{ matrix.arch }}*.zip
           if-no-files-found: error
 
   release:
