@@ -5,6 +5,7 @@ import dev.seedseeker.app.BuildConfig
 import dev.seedseeker.app.model.Challenge
 import dev.seedseeker.app.model.ResultsExport
 import dev.seedseeker.app.model.ResumeHint
+import dev.seedseeker.app.model.RingGems
 import dev.seedseeker.app.model.SearchBatch
 import dev.seedseeker.app.model.SearchLimits
 import dev.seedseeker.app.model.SearchRequest
@@ -161,7 +162,7 @@ class DemoNativeSeedFinder : NativeSeedFinder {
         StandardCharsets.UTF_8,
     )
 
-    // The demo scout hands back a fabricated world rather than an engine SSC2
+    // The demo scout hands back a fabricated world rather than an engine SSC3
     // packet, so the engine's marks — computed over the world this seed really
     // generates — would point at other items entirely. Demo APKs therefore show
     // no marks at all; a Kotlin stand-in matcher would be a second
@@ -171,6 +172,9 @@ class DemoNativeSeedFinder : NativeSeedFinder {
     override fun scoutSeed(seed: String, challenges: Int): ScoutWorld {
         require(SeedCode.isCanonical(seed)) { "Seed must use XXX-XXX-XXX format" }
         require(challenges in 0..Challenge.ALL_MASK) { "Challenge mask must be 0..${Challenge.ALL_MASK}" }
+        // These items are fabricated rather than generated, so no run stands
+        // behind them to roll ring gems: this world states the catalog's own
+        // table and its rings show their own classes' colours.
         return ScoutWorld(
             seed = seed,
             items = listOf(
@@ -238,6 +242,7 @@ class DemoNativeSeedFinder : NativeSeedFinder {
                 ScoutQuest(variant = ScoutQuestVariant.CRYSTAL, depth = 13),
                 ScoutQuest(variant = ScoutQuestVariant.VAULT, depth = 18),
             ),
+            ringGems = RingGems.CATALOG,
         )
     }
 
@@ -346,7 +351,8 @@ class DemoNativeSeedFinder : NativeSeedFinder {
  * Result packet `SSR1`: magic[4], count:u16, then
  * repeated seedLength:u8, seed:ASCII. State codes are 0 running, 1 complete, 2 cancelled,
  * 3 failed. A non-zero handle is required. Scout requests use `SSQ2`, a little-endian challenge
- * mask, then the canonical UTF-8 seed. Scout packet `SSC2` contains the echoed canonical seed,
+ * mask, then the canonical UTF-8 seed. Scout packet `SSC3` contains the echoed canonical seed,
+ * then the run's ring gems — twelve gem ordinals, one per ring class in catalog ring order —
  * then a quest block — questCount:u8 (0..4) of strictly ascending {quest:u8, variant:u8,
  * depth:u8} records, where quest 1..4 is ghost/wandmaker/blacksmith/imp, variants are 1-based
  * per giver, and depth must sit in the giver's floor range (2..4, 7..9, 12..14, 17..19) — and
@@ -646,7 +652,7 @@ private object ResultCodec {
         }
 }
 
-/** Reads the scout-match envelope `scoutMatches` returns: indices into the `SSC2` item order plus slot counts. */
+/** Reads the scout-match envelope `scoutMatches` returns: indices into the `SSC3` item order plus slot counts. */
 private object ScoutMatchCodec {
     fun decode(document: ByteArray): ScoutMatches {
         val envelope = JSONObject(String(document, StandardCharsets.UTF_8))
@@ -660,7 +666,7 @@ private object ScoutMatchCodec {
 }
 
 object ScoutResultCodec {
-    private val MAGIC = byteArrayOf('S'.code.toByte(), 'S'.code.toByte(), 'C'.code.toByte(), '2'.code.toByte())
+    private val MAGIC = byteArrayOf('S'.code.toByte(), 'S'.code.toByte(), 'C'.code.toByte(), '3'.code.toByte())
 
     fun decode(packet: ByteArray): ScoutWorld =
         DataInputStream(ByteArrayInputStream(packet)).use { input ->
@@ -669,6 +675,19 @@ object ScoutResultCodec {
 
             val seed = readAscii(input, input.readUnsignedByte())
             check(SeedCode.isCanonical(seed)) { "Malformed seed from native scout" }
+            // The twelve gem ordinals this run gave the ring classes. A shuffle
+            // hands every class a distinct gem, so the model's own permutation
+            // rule decides whether these bytes are a run's table; a corrupt one
+            // is a malformed packet like any other field here, not an argument
+            // some caller passed.
+            val gemOrdinals = ByteArray(RingGems.RING_CLASS_COUNT)
+                .also(input::readFully)
+                .map { it.toInt() and 0xFF }
+            val ringGems = try {
+                RingGems(gemOrdinals)
+            } catch (corrupt: IllegalArgumentException) {
+                error("Malformed ring gems in native scout packet: ${corrupt.message}")
+            }
             val questCount = input.readUnsignedByte()
             check(questCount <= ScoutQuestGiver.entries.size) { "Scout quest count must be 0..4" }
             var previousQuestId = 0
@@ -738,7 +757,7 @@ object ScoutResultCodec {
                 )
             }
             check(input.available() == 0) { "Trailing bytes in native scout packet" }
-            ScoutWorld(seed = seed, items = items, quests = quests)
+            ScoutWorld(seed = seed, items = items, quests = quests, ringGems = ringGems)
         }
 
     private fun readUtf8(input: DataInputStream, length: Int): String {

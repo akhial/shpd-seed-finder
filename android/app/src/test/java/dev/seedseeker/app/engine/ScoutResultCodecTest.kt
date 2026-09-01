@@ -2,6 +2,7 @@
 package dev.seedseeker.app.engine
 
 import dev.seedseeker.app.model.ItemKind
+import dev.seedseeker.app.model.RingGems
 import dev.seedseeker.app.model.ScoutAccessibility
 import dev.seedseeker.app.model.ScoutItemSource
 import dev.seedseeker.app.model.ScoutQuest
@@ -20,7 +21,7 @@ import org.junit.Test
 
 class ScoutResultCodecTest {
     @Test
-    fun decodesAllSsc2FieldsWithoutDroppingDuplicateOrZeroUpgradeItems() {
+    fun decodesAllSsc3FieldsWithoutDroppingDuplicateOrZeroUpgradeItems() {
         val packet = scoutPacket(
             item(
                 id = "dagger",
@@ -72,11 +73,13 @@ class ScoutResultCodecTest {
                 source = 17,
             ),
             quests = listOf(quest(1, 2, 3), quest(4, 1, 17)),
+            gems = SHUFFLED_GEMS,
         )
 
         val world = ScoutResultCodec.decode(packet)
 
         assertEquals("AAA-AAA-AAA", world.seed)
+        assertEquals(RingGems(SHUFFLED_GEMS), world.ringGems)
         assertEquals(
             listOf(
                 ScoutQuest(ScoutQuestVariant.GNOLL_TRICKSTER, 3),
@@ -126,11 +129,15 @@ class ScoutResultCodecTest {
     }
 
     @Test
-    fun decodesTheGoldenSsc2QuestBlockBytes() {
-        val packet = "SSC2".toByteArray(StandardCharsets.US_ASCII) +
+    fun decodesTheGoldenSsc3GemAndQuestBlockBytes() {
+        // The gems sit between the seed and the quest count, so a table read at
+        // the wrong offset cannot pass: this one is the reverse permutation,
+        // which shares no position with the unshuffled table.
+        val packet = "SSC3".toByteArray(StandardCharsets.US_ASCII) +
             byteArrayOf(0x0B) +
             "AAA-AAA-AAA".toByteArray(StandardCharsets.UTF_8) +
             byteArrayOf(
+                0x0B, 0x0A, 0x09, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0x00,
                 0x04,
                 0x01, 0x03, 0x04,
                 0x02, 0x03, 0x08,
@@ -143,6 +150,7 @@ class ScoutResultCodecTest {
 
         assertEquals("AAA-AAA-AAA", world.seed)
         assertTrue(world.items.isEmpty())
+        assertEquals(RingGems((11 downTo 0).toList()), world.ringGems)
         assertEquals(
             listOf(
                 ScoutQuest(ScoutQuestVariant.GREAT_CRAB, 4),
@@ -161,6 +169,22 @@ class ScoutResultCodecTest {
             ),
             world.quests.map { it.giver },
         )
+    }
+
+    @Test
+    fun rejectsAGemTableThatIsNotAPermutationOfTheTwelveGems() {
+        // A shuffle gives every class a distinct gem, so a repeat or an
+        // out-of-range ordinal is a corrupt packet — reported like every other
+        // malformed field, not as an argument the caller got wrong.
+        val repeatedGem = scoutPacket(gems = List(12) { 0 })
+        assertThrows(IllegalStateException::class.java) {
+            ScoutResultCodec.decode(repeatedGem)
+        }
+
+        val gemOutOfRange = scoutPacket(gems = (0 until 11).toList() + 12)
+        assertThrows(IllegalStateException::class.java) {
+            ScoutResultCodec.decode(gemOutOfRange)
+        }
     }
 
     @Test
@@ -298,13 +322,14 @@ class ScoutResultCodecTest {
         assertEquals("ABC-DEF-GHI", SeedCode.formatInput("abcdefghijkl"))
         assertTrue(SeedCode.isCanonical("ABC-DEF-GHI"))
 
-        val bindings = ScoutBindings(scoutPacket())
+        val bindings = ScoutBindings(scoutPacket(gems = SHUFFLED_GEMS))
         val world = JniNativeSeedFinder(bindings).scoutSeed("AAA-AAA-AAA")
-        assertArrayEquals(
-            byteArrayOf('S'.code.toByte(), 'S'.code.toByte(), 'Q'.code.toByte(), '2'.code.toByte(), 0, 0) +
-                "AAA-AAA-AAA".toByteArray(StandardCharsets.UTF_8),
-            bindings.scoutRequest,
-        )
+        val request = byteArrayOf('S'.code.toByte(), 'S'.code.toByte(), 'Q'.code.toByte(), '2'.code.toByte(), 0, 0) +
+            "AAA-AAA-AAA".toByteArray(StandardCharsets.UTF_8)
+        assertArrayEquals(request, bindings.scoutRequest)
+        // The items and the gems are two halves of one run, and one engine call
+        // hands back both, so the table lands on the world it describes.
+        assertEquals(RingGems(SHUFFLED_GEMS), world.ringGems)
         assertEquals("AAA-AAA-AAA", world.seed)
         assertThrows(IllegalArgumentException::class.java) {
             JniNativeSeedFinder(bindings).scoutSeed("abc-def-ghi")
@@ -330,10 +355,12 @@ class ScoutResultCodecTest {
         vararg items: ByteArray,
         quests: List<IntArray> = emptyList(),
         questCount: Int = quests.size,
+        gems: List<Int> = UNSHUFFLED_GEMS,
     ): ByteArray = ByteArrayOutputStream().use { bytes ->
         DataOutputStream(bytes).use { output ->
-            output.writeBytes("SSC2")
+            output.writeBytes("SSC3")
             writeByteString(output, "AAA-AAA-AAA")
+            gems.forEach(output::writeByte)
             output.writeByte(questCount)
             quests.forEach { (quest, variant, depth) ->
                 output.writeByte(quest)
@@ -379,6 +406,14 @@ class ScoutResultCodecTest {
         val encoded = text.toByteArray(StandardCharsets.UTF_8)
         output.writeShort(encoded.size)
         output.write(encoded)
+    }
+
+    private companion object {
+        /** Every ring class holding its own gem: what a packet says when no shuffle moved it. */
+        val UNSHUFFLED_GEMS = (0 until 12).toList()
+
+        /** A shuffled run's table — YKH-LGJ-WDQ's, which `RingGemsTest` pins against the engine. */
+        val SHUFFLED_GEMS = listOf(7, 8, 3, 5, 4, 6, 2, 11, 10, 1, 0, 9)
     }
 
     private class ScoutBindings(private val response: ByteArray) : NativeBindings {

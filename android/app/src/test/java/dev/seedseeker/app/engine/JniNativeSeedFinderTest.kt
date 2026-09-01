@@ -245,13 +245,15 @@ class JniNativeSeedFinderTest {
             closeCalls++
         }
 
+        /** An empty world whose gem block is unshuffled, so its rings keep their own colours. */
         override fun scoutSeed(request: ByteArray): ByteArray = byteArrayOf(
             'S'.code.toByte(),
             'S'.code.toByte(),
             'C'.code.toByte(),
-            '2'.code.toByte(),
+            '3'.code.toByte(),
             11,
-        ) + "AAA-AAA-AAA".encodeToByteArray() + byteArrayOf(0, 0, 0)
+        ) + "AAA-AAA-AAA".encodeToByteArray() + ByteArray(12) { it.toByte() } +
+            byteArrayOf(0, 0, 0)
 
         override fun scoutMatches(request: ByteArray, query: ByteArray): ByteArray {
             scoutMatchRequest = request.copyOf()

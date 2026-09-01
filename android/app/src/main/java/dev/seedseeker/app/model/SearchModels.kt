@@ -518,7 +518,70 @@ data class ScoutWorld(
     val seed: String,
     val items: List<ScoutItem>,
     val quests: List<ScoutQuest>,
+    /**
+     * The gems this run gave the ring classes, which decide what colour each
+     * ring in [items] is drawn. It rides in the same scout packet as [items],
+     * so every generated world states its own; there is no default, because a
+     * world that quietly claimed [RingGems.CATALOG] would draw a seed's rings
+     * in the wrong twelve colours rather than fail. Only a world no run stands
+     * behind — the demo engine's — names the catalog table itself.
+     */
+    val ringGems: RingGems,
 )
+
+/**
+ * The gems one run hands the twelve ring classes: `ordinals[cls]` is the gem
+ * ordinal the run gave the ring whose class index is `cls` — which is also that
+ * class's position in `ItemCatalog.rings` and its [CatalogItem.typeIconIndex].
+ *
+ * Shattered Pixel Dungeon shuffles `Ring.gems` in `Dungeon.init()`, before the
+ * first floor exists and before any challenge is read, so which gem a ring
+ * shows follows from the seed alone (docs/COMPATIBILITY.md). The engine
+ * reproduces that shuffle and publishes it in the `SSC3` scout packet, beside
+ * the items it colours; nothing here re-derives it.
+ */
+data class RingGems(val ordinals: List<Int>) {
+    init {
+        require(ordinals.size == RING_CLASS_COUNT) {
+            "A run's ring gems must be $RING_CLASS_COUNT ordinals, not ${ordinals.size}"
+        }
+        require(ordinals.toSet().size == RING_CLASS_COUNT && ordinals.all { it in 0 until RING_CLASS_COUNT }) {
+            "A run's ring gems must be a permutation of 0..${RING_CLASS_COUNT - 1}, not $ordinals"
+        }
+    }
+
+    /**
+     * The `items.png` cell [item] is drawn from in this run: this run's gem for
+     * the ring class [CatalogItem.typeIconIndex] names, and the item's own
+     * catalog cell for everything that names no class — which today is
+     * everything but a ring, since the catalog gives a `typeIcon` to rings
+     * alone. Every surface showing an item that belongs to a seed must draw
+     * this rather than [CatalogItem.spriteIndex], or every seed renders the
+     * same twelve ring colours.
+     */
+    fun spriteIndexFor(item: CatalogItem): Int {
+        // The class index is the one the catalog states, not one read back out
+        // of a sprite cell: a cell says which gem, never which ring.
+        val ringClass = item.typeIconIndex ?: return item.spriteIndex
+        if (ringClass !in ordinals.indices) return item.spriteIndex
+        return RING_SPRITE_BASE + ordinals[ringClass]
+    }
+
+    companion object {
+        /** `ItemSpriteSheet.RINGS`: the atlas cell the twelve gem sprites start at. */
+        const val RING_SPRITE_BASE = 224
+
+        /** `Generator.Category.RING.classes.length`, which is also `Ring.gems.length`. */
+        const val RING_CLASS_COUNT = 12
+
+        /**
+         * The unshuffled table: every ring drawn at its own class's cell. This
+         * is what the catalog carries and what a surface with no run to ask —
+         * the requirement board, the query editor's pickers — shows.
+         */
+        val CATALOG = RingGems((0 until RING_CLASS_COUNT).toList())
+    }
+}
 
 /** One rolled quest: which giver spawned, the variant it rolled, and its host floor. */
 data class ScoutQuest(
