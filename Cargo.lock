@@ -994,6 +994,7 @@ dependencies = [
 name = "shpd-seedfinder-ffi"
 version = "0.8.0"
 dependencies = [
+ "mimalloc",
  "serde_json",
  "shpd-seedfinder-core",
  "shpd-seedfinder-session",
@@ -1006,6 +1007,7 @@ dependencies = [
  "glib-build-tools",
  "gtk4",
  "libadwaita",
+ "mimalloc",
  "serde",
  "serde_json",
  "shpd-seedfinder-core",

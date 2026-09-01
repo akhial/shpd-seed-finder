@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Re-records pgo/seed-seeker.profdata, the profile scripts/build-macos-native.sh
-# feeds to `-Cprofile-use`.
+# Re-records pgo/seed-seeker-$TARGET.profdata, the profile the native build for
+# that target feeds to `-Cprofile-use`.
 #
 # The profile has to be re-recorded whenever the engine changes shape, and it
 # rots *silently*: rustc keys profile entries on the mangled symbol name, which
@@ -13,11 +13,20 @@
 # just gets dropped without an error. So the instrumented build here uses the
 # same target and the same package set as the consuming build, and the last
 # step re-runs that consuming build to prove the hot functions were found.
+#
+# The target is part of the disambiguator too, so every target needs its own
+# file and they cannot be shared:
+#
+#     PGO_TARGET=x86_64-pc-windows-msvc bash scripts/record-pgo-profile.sh
+#
+# Recording needs a target whose standard library carries `profiler_builtins`.
+# The MSVC targets do; the `*-windows-gnu` ones do not, and fail the
+# instrumented build with `can't find crate for profiler_builtins`.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TARGET="${PGO_TARGET:-aarch64-apple-darwin}"
-PROFILE="$ROOT/pgo/seed-seeker.profdata"
+PROFILE="$ROOT/pgo/seed-seeker-$TARGET.profdata"
 
 LLVM_BIN="$(rustc --print target-libdir)/../bin"
 PROFDATA="$LLVM_BIN/llvm-profdata"
@@ -43,12 +52,14 @@ RUSTFLAGS="-Cprofile-generate=$RAW" \
         --manifest-path "$ROOT/Cargo.toml"
 
 SEEKER="$WORK/target/$TARGET/release/seed-seeker"
+[ -x "$SEEKER" ] || SEEKER="$SEEKER.exe"
 
 # The training set has to cover the shapes real searches take, because a
 # function the workload never reaches gets no profile at all. The canonical
-# benchmark only reaches depth 9 (the Wandmaker window), so on its own it never
-# trains the caves, the city, or the Imp's Vault — the most expensive level in
-# the game.
+# benchmark does reach the Imp's Vault — in v4.0.0 the Imp is a +3 wand source
+# too, so the plan runs to its depth-19 deadline rather than stopping at the
+# Wandmaker — but it never sees the Halls, and it exercises only one shape of
+# requirement, so the queries below widen the coverage.
 echo "==> recording the training workload"
 cat > "$WORK/deep-wand.json" <<'JSON'
 {"max_depth":19,"requirements":[{"kind":"wand","upgrade":2}]}

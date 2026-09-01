@@ -9,6 +9,12 @@
 use crate::geometry::{GridMap, terrain};
 
 /// Derived terrain flags for one fully painted level.
+///
+/// [`Self::build`] fills every map. [`Self::build_for_generation`], which is
+/// what the search runs, fills only the four maps generation reads and leaves
+/// the rest empty rather than paying for an allocation and a zeroing pass per
+/// floor, so indexing them after that constructor panics rather than reading
+/// `false`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LevelFlags {
     pub passable: Vec<bool>,
@@ -34,6 +40,15 @@ impl LevelFlags {
     #[must_use]
     pub fn build(map: &GridMap, sewer: bool) -> Self {
         let mut flags = Self::build_for_generation(map);
+        // `build_for_generation` leaves the maps generation never reads
+        // empty; the full build is the one that populates them.
+        let length = map.len();
+        flags.flammable = vec![false; length];
+        flags.secret = vec![false; length];
+        flags.avoid = vec![false; length];
+        flags.water = vec![false; length];
+        flags.pit = vec![false; length];
+        flags.discoverable = vec![false; length];
 
         for (cell, &tile) in map.cells.iter().enumerate() {
             let terrain_flags = terrain::flags(tile);
@@ -94,7 +109,8 @@ impl LevelFlags {
     /// `los_blocking`, `solid`, and `open_space` — in the official operation
     /// order. The remaining maps (`flammable`, `secret`, `avoid`, `water`,
     /// `pit`, `discoverable`) are never read during seed generation, so they
-    /// stay allocated but all-false; use [`Self::build`] when those matter.
+    /// are left empty rather than allocated and zeroed once per floor; use
+    /// [`Self::build`] when those matter.
     ///
     /// # Panics
     ///
@@ -107,14 +123,14 @@ impl LevelFlags {
         let mut flags = Self {
             passable: vec![false; length],
             los_blocking: vec![false; length],
-            flammable: vec![false; length],
-            secret: vec![false; length],
+            flammable: Vec::new(),
+            secret: Vec::new(),
             solid: vec![false; length],
-            avoid: vec![false; length],
-            water: vec![false; length],
-            pit: vec![false; length],
+            avoid: Vec::new(),
+            water: Vec::new(),
+            pit: Vec::new(),
             open_space: vec![false; length],
-            discoverable: vec![false; length],
+            discoverable: Vec::new(),
         };
 
         for (((&tile, passable), los_blocking), solid) in map
@@ -211,9 +227,11 @@ fn build_open_space(flags: &mut LevelFlags, width_i32: i32, length: usize, width
     }
 }
 
+// `avoid` is deliberately absent: `build_for_generation` leaves it empty, and
+// `build` recomputes it from terrain and reapplies its own border pass after
+// this one, so writing it here was always overwritten.
 fn force_solid_border(flags: &mut LevelFlags, cell: usize) {
     flags.passable[cell] = false;
-    flags.avoid[cell] = false;
     flags.los_blocking[cell] = true;
     flags.solid[cell] = true;
 }

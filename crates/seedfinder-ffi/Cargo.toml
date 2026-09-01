@@ -11,6 +11,10 @@ name = "shpd_seedfinder_ffi"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
+# The search allocates thousands of short-lived buffers per seed, so the
+# frontends need the same allocator the CLI uses; the system allocator costs
+# roughly a third of the throughput on Windows.
+mimalloc = "0.1.52"
 shpd-seedfinder-core = { path = "../seedfinder-core", features = ["json-query"] }
 shpd-seedfinder-session = { path = "../seedfinder-session" }
 
