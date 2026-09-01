@@ -11,9 +11,11 @@ use adw::prelude::*;
 use shpd_seedfinder_core::catalog::{Effect, item};
 use shpd_seedfinder_core::model::{Accessibility, GeneratedWorld, WorldItem};
 use shpd_seedfinder_core::query::{SearchQuery, scout_matches};
+use shpd_seedfinder_core::run::RingGems;
 use shpd_seedfinder_core::seed::{DungeonSeed, format_input};
 use shpd_seedfinder_session::production_scout_world;
 
+use crate::sprites::ItemSprite;
 use crate::state::{AppState, QuestRow, quest_rows, region, source_label};
 use crate::{glow, sprites};
 
@@ -279,6 +281,11 @@ impl DetailPane {
         self.stack.set_visible_child_name("manifest");
         self.copy_button.set_visible(true);
 
+        // Which gem each ring class wears is shuffled once per run, so the
+        // manifest has to draw this run's table rather than the catalog's.
+        // Scouting rolls it with the rest of the run and hangs it on the world,
+        // so the world being rendered already carries the answer.
+        let gems = world.ring_gems;
         let marks = scout_matches(world, &manifest_query(state));
         let matched = marks.matched_requirements;
         let total = marks.total_requirements;
@@ -322,7 +329,7 @@ impl DetailPane {
                 .description(description)
                 .build();
             for index in indices {
-                group.add(&item_row(&world.items[*index], marks.matched[*index]));
+                group.add(&item_row(&world.items[*index], gems, marks.matched[*index]));
             }
             self.manifest_box.append(&group);
         }
@@ -366,7 +373,7 @@ fn quest_summary_line(quests: &[QuestRow]) -> String {
     line
 }
 
-fn item_row(world_item: &WorldItem, matched: bool) -> adw::ActionRow {
+fn item_row(world_item: &WorldItem, gems: RingGems, matched: bool) -> adw::ActionRow {
     let mut subtitle = source_label(world_item.source).to_owned();
     match world_item.accessibility {
         Accessibility::Independent => {}
@@ -391,7 +398,7 @@ fn item_row(world_item: &WorldItem, matched: bool) -> adw::ActionRow {
         .subtitle(gtk::glib::markup_escape_text(&subtitle))
         .build();
     row.add_prefix(&sprites::item_image(
-        definition,
+        ItemSprite::in_run(definition, gems),
         glow::item(world_item.cursed, world_item.effect),
     ));
 
