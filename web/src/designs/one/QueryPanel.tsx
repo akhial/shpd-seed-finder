@@ -1,26 +1,51 @@
-import { useState } from 'react'
-import { useStore } from '@tanstack/react-store'
-import { LEVEL_GEN_CHALLENGES, challenges as challengeOptions } from '../../lib/catalog'
-import { probabilityLabel } from '../../lib/format'
-import { CheckIcon, CommandIcon, LinkIcon, ReturnIcon, XIcon } from '../../lib/icons'
-import { BLACKSMITH_LAST_FLOOR, FLOOR_LIMIT_OPTIONS, emptyRequirement, fromQueryJson, toQueryJson } from '../../lib/query'
-import type { ValidationResult } from '../../lib/query'
-import { questVariantLabel } from '../../lib/quests'
-import { builtInPresets, loadPresets, maxWorkers, queryStore, savePresets, setWorkerCount, workerCountStore } from '../../lib/store'
-import type { Preset } from '../../lib/store'
-import { encodeShareLink } from '../../lib/wasm'
-import { WANDMAKER_QUESTS } from '../../lib/wasm/types'
-import type { AnalysisResult, ChallengeName, QueryState, RequirementState, WandmakerQuest } from '../../lib/wasm/types'
-import { RequirementBoard } from './RequirementBoard'
-import type { StackShape } from './RequirementBoard'
-import { applyEdit, boardCount } from './relations'
-import { RequirementEditor } from './RequirementEditor'
-import { SliderRow } from './parts'
+import { useState } from "react";
+import { useStore } from "@tanstack/react-store";
+import { LEVEL_GEN_CHALLENGES, challenges as challengeOptions } from "../../lib/catalog";
+import { probabilityLabel } from "../../lib/format";
+import { CheckIcon, CommandIcon, LinkIcon, ReturnIcon, XIcon } from "../../lib/icons";
+import {
+  BLACKSMITH_LAST_FLOOR,
+  FLOOR_LIMIT_OPTIONS,
+  emptyRequirement,
+  fromQueryJson,
+  toQueryJson,
+} from "../../lib/query";
+import type { ValidationResult } from "../../lib/query";
+import { questVariantLabel } from "../../lib/quests";
+import {
+  builtInPresets,
+  loadPresets,
+  maxWorkers,
+  queryStore,
+  savePresets,
+  setWorkerCount,
+  workerCountStore,
+} from "../../lib/store";
+import type { Preset } from "../../lib/store";
+import { encodeShareLink } from "../../lib/wasm";
+import { WANDMAKER_QUESTS } from "../../lib/wasm/types";
+import type {
+  AnalysisResult,
+  ChallengeName,
+  QueryState,
+  RequirementState,
+  WandmakerQuest,
+} from "../../lib/wasm/types";
+import { RequirementBoard } from "./RequirementBoard";
+import type { StackShape } from "./RequirementBoard";
+import { applyEdit, boardCount } from "./relations";
+import { RequirementEditor } from "./RequirementEditor";
+import { SliderRow } from "./parts";
 
-const patchQuery = (patch: Partial<QueryState>) => queryStore.setState((state) => ({ ...state, ...patch }))
-const cloneQuery = (query: QueryState): QueryState => fromQueryJson(toQueryJson(query))
+const patchQuery = (patch: Partial<QueryState>) =>
+  queryStore.setState((state) => ({ ...state, ...patch }));
+const cloneQuery = (query: QueryState): QueryState => fromQueryJson(toQueryJson(query));
 
-interface EditorSession { index: number | null; requirement: RequirementState; stack: StackShape }
+interface EditorSession {
+  index: number | null;
+  requirement: RequirementState;
+  stack: StackShape;
+}
 
 export function QueryPanel({
   analysis,
@@ -32,91 +57,112 @@ export function QueryPanel({
   shareNotice,
   onDismissShareNotice,
 }: {
-  analysis: AnalysisResult | undefined
-  validation: ValidationResult
-  running: boolean
-  engineReady: boolean
-  onToggleSearch: () => void
-  isMac: boolean
-  shareNotice: string | undefined
-  onDismissShareNotice: () => void
+  analysis: AnalysisResult | undefined;
+  validation: ValidationResult;
+  running: boolean;
+  engineReady: boolean;
+  onToggleSearch: () => void;
+  isMac: boolean;
+  shareNotice: string | undefined;
+  onDismissShareNotice: () => void;
 }) {
-  const query = useStore(queryStore)
-  const workerCount = useStore(workerCountStore)
-  const workerCeiling = maxWorkers()
-  const [userPresets, setUserPresets] = useState<Preset[]>(() => loadPresets())
-  const [namingPreset, setNamingPreset] = useState(false)
-  const [presetName, setPresetName] = useState('')
-  const [editor, setEditor] = useState<EditorSession | null>(null)
-  const [linkCopied, setLinkCopied] = useState(false)
+  const query = useStore(queryStore);
+  const workerCount = useStore(workerCountStore);
+  const workerCeiling = maxWorkers();
+  const [userPresets, setUserPresets] = useState<Preset[]>(() => loadPresets());
+  const [namingPreset, setNamingPreset] = useState(false);
+  const [presetName, setPresetName] = useState("");
+  const [editor, setEditor] = useState<EditorSession | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const shareQuery = () => {
     void encodeShareLink(toQueryJson(query))
       .then((link) => navigator.clipboard.writeText(link))
       .then(() => {
-        setLinkCopied(true)
-        window.setTimeout(() => setLinkCopied(false), 1_200)
+        setLinkCopied(true);
+        window.setTimeout(() => setLinkCopied(false), 1_200);
       })
-      .catch(() => undefined)
-  }
+      .catch(() => undefined);
+  };
 
   const applyPreset = (preset: Preset) => {
-    queryStore.setState(() => cloneQuery(preset.query))
-  }
+    queryStore.setState(() => cloneQuery(preset.query));
+  };
 
-  const currentQueryJson = JSON.stringify(toQueryJson(query))
-  const presetFingerprint = (preset: Preset) => JSON.stringify(toQueryJson(preset.query))
-  const builtInMatch = builtInPresets.findIndex((preset) => presetFingerprint(preset) === currentQueryJson)
-  const userMatch = builtInMatch >= 0 ? -1 : userPresets.findIndex((preset) => presetFingerprint(preset) === currentQueryJson)
-  const selectedPreset = builtInMatch >= 0 ? `b:${builtInMatch}` : userMatch >= 0 ? `u:${userMatch}` : ''
+  const currentQueryJson = JSON.stringify(toQueryJson(query));
+  const presetFingerprint = (preset: Preset) => JSON.stringify(toQueryJson(preset.query));
+  const builtInMatch = builtInPresets.findIndex(
+    (preset) => presetFingerprint(preset) === currentQueryJson,
+  );
+  const userMatch =
+    builtInMatch >= 0
+      ? -1
+      : userPresets.findIndex((preset) => presetFingerprint(preset) === currentQueryJson);
+  const selectedPreset =
+    builtInMatch >= 0 ? `b:${builtInMatch}` : userMatch >= 0 ? `u:${userMatch}` : "";
 
   const saveCurrentPreset = () => {
-    const name = presetName.trim()
-    if (!name) return
-    const snapshot = cloneQuery(query)
-    const next = [...userPresets]
-    const existing = next.findIndex((preset) => preset.name.toLowerCase() === name.toLowerCase())
-    if (existing >= 0) next[existing] = { name: next[existing].name, query: snapshot }
-    else next.push({ name, query: snapshot })
-    setUserPresets(next)
-    savePresets(next)
-    setNamingPreset(false)
-    setPresetName('')
-  }
+    const name = presetName.trim();
+    if (!name) return;
+    const snapshot = cloneQuery(query);
+    const next = [...userPresets];
+    const existing = next.findIndex((preset) => preset.name.toLowerCase() === name.toLowerCase());
+    if (existing >= 0) next[existing] = { name: next[existing].name, query: snapshot };
+    else next.push({ name, query: snapshot });
+    setUserPresets(next);
+    savePresets(next);
+    setNamingPreset(false);
+    setPresetName("");
+  };
 
   const deletePreset = (name: string) => {
-    const next = userPresets.filter((preset) => preset.name !== name)
-    setUserPresets(next)
-    savePresets(next)
-  }
+    const next = userPresets.filter((preset) => preset.name !== name);
+    setUserPresets(next);
+    savePresets(next);
+  };
 
   const setRequirements = (requirements: RequirementState[]) => {
-    queryStore.setState((state) => ({ ...state, requirements }))
-  }
+    queryStore.setState((state) => ({ ...state, requirements }));
+  };
 
-  const commitRequirement = (session: EditorSession, requirement: RequirementState, count: number, total: number | undefined, copyDepth: number | undefined) => {
+  const commitRequirement = (
+    session: EditorSession,
+    requirement: RequirementState,
+    count: number,
+    total: number | undefined,
+    copyDepth: number | undefined,
+  ) => {
     queryStore.setState((state) => ({
       ...state,
-      requirements: applyEdit(state.requirements, session.index, requirement, count, total, copyDepth),
-    }))
-    setEditor(null)
-  }
+      requirements: applyEdit(
+        state.requirements,
+        session.index,
+        requirement,
+        count,
+        total,
+        copyDepth,
+      ),
+    }));
+    setEditor(null);
+  };
 
   const toggleChallenge = (name: ChallengeName) => {
-    const active = query.challenges.includes(name)
+    const active = query.challenges.includes(name);
     patchQuery({
-      challenges: active ? query.challenges.filter((value) => value !== name) : [...query.challenges, name],
-    })
-  }
+      challenges: active
+        ? query.challenges.filter((value) => value !== name)
+        : [...query.challenges, name],
+    });
+  };
 
-  const slotTotal = boardCount(query.requirements)
-  const challengeCount = query.challenges.length
-  const wandmakerCount = Number(Boolean(query.wandmakerQuest))
-  const blacksmithCount = Number(query.requireBlacksmith) + Number(query.excludeBlacksmithRewards)
-  const performanceCount = Number(query.fastMode)
-  const hasRequirements = query.requirements.length > 0
-  const impossible = Boolean(analysis?.valid && analysis.impossible)
-  const startDisabled = !running && (!engineReady || !validation.valid || impossible)
+  const slotTotal = boardCount(query.requirements);
+  const challengeCount = query.challenges.length;
+  const wandmakerCount = Number(Boolean(query.wandmakerQuest));
+  const blacksmithCount = Number(query.requireBlacksmith) + Number(query.excludeBlacksmithRewards);
+  const performanceCount = Number(query.fastMode);
+  const hasRequirements = query.requirements.length > 0;
+  const impossible = Boolean(analysis?.valid && analysis.impossible);
+  const startDisabled = !running && (!engineReady || !validation.valid || impossible);
 
   return (
     <>
@@ -124,7 +170,7 @@ export function QueryPanel({
         <span>Query</span>
         <span className="d1-pane-head-side">
           <span className="d1-pane-head-info">
-            {hasRequirements ? `${slotTotal} requirement${slotTotal === 1 ? '' : 's'}` : ''}
+            {hasRequirements ? `${slotTotal} requirement${slotTotal === 1 ? "" : "s"}` : ""}
           </span>
           <button
             type="button"
@@ -135,7 +181,7 @@ export function QueryPanel({
             onClick={shareQuery}
           >
             {linkCopied ? <CheckIcon size={13} /> : <LinkIcon size={13} />}
-            {linkCopied ? 'Copied' : 'Share'}
+            {linkCopied ? "Copied" : "Share"}
           </button>
         </span>
       </div>
@@ -143,37 +189,49 @@ export function QueryPanel({
         {shareNotice && (
           <div className="d1-banner d1-banner-bleed" role="alert">
             <span className="d1-grow">This share link couldn't be loaded: {shareNotice}</span>
-            <button type="button" className="d1-banner-dismiss" aria-label="Dismiss" title="Dismiss" onClick={onDismissShareNotice}>
+            <button
+              type="button"
+              className="d1-banner-dismiss"
+              aria-label="Dismiss"
+              title="Dismiss"
+              onClick={onDismissShareNotice}
+            >
               <XIcon size={14} />
             </button>
           </div>
         )}
         <section className="d1-section">
-          <div className="d1-section-head"><h3>Presets</h3></div>
+          <div className="d1-section-head">
+            <h3>Presets</h3>
+          </div>
           <div className="d1-preset-row">
             <select
               className="d1-select d1-grow"
               value={selectedPreset}
               aria-label="Load preset"
               onChange={(event) => {
-                const value = event.currentTarget.value
-                if (!value) return
-                const [scope, indexText] = value.split(':')
-                const index = Number(indexText)
-                const preset = scope === 'b' ? builtInPresets[index] : userPresets[index]
-                if (preset) applyPreset(preset)
+                const value = event.currentTarget.value;
+                if (!value) return;
+                const [scope, indexText] = value.split(":");
+                const index = Number(indexText);
+                const preset = scope === "b" ? builtInPresets[index] : userPresets[index];
+                if (preset) applyPreset(preset);
               }}
             >
               <option value="">Load preset…</option>
               <optgroup label="Included">
                 {builtInPresets.map((preset, index) => (
-                  <option key={preset.name} value={`b:${index}`}>{preset.name}</option>
+                  <option key={preset.name} value={`b:${index}`}>
+                    {preset.name}
+                  </option>
                 ))}
               </optgroup>
               {userPresets.length > 0 && (
                 <optgroup label="Saved">
                   {userPresets.map((preset, index) => (
-                    <option key={preset.name} value={`u:${index}`}>{preset.name}</option>
+                    <option key={preset.name} value={`u:${index}`}>
+                      {preset.name}
+                    </option>
                   ))}
                 </optgroup>
               )}
@@ -182,8 +240,8 @@ export function QueryPanel({
               type="button"
               className="d1-btn"
               onClick={() => {
-                setNamingPreset((value) => !value)
-                setPresetName('')
+                setNamingPreset((value) => !value);
+                setPresetName("");
               }}
             >
               Save…
@@ -199,11 +257,16 @@ export function QueryPanel({
                 aria-label="Preset name"
                 onChange={(event) => setPresetName(event.currentTarget.value)}
                 onKeyDown={(event) => {
-                  if (event.key === 'Enter') saveCurrentPreset()
-                  if (event.key === 'Escape') setNamingPreset(false)
+                  if (event.key === "Enter") saveCurrentPreset();
+                  if (event.key === "Escape") setNamingPreset(false);
                 }}
               />
-              <button type="button" className="d1-btn d1-btn-primary" disabled={!presetName.trim()} onClick={saveCurrentPreset}>
+              <button
+                type="button"
+                className="d1-btn d1-btn-primary"
+                disabled={!presetName.trim()}
+                onClick={saveCurrentPreset}
+              >
                 Save
               </button>
             </div>
@@ -212,7 +275,12 @@ export function QueryPanel({
             <ul className="d1-preset-chips">
               {userPresets.map((preset) => (
                 <li key={preset.name}>
-                  <button type="button" className="d1-chip-name" title="Apply preset" onClick={() => applyPreset(preset)}>
+                  <button
+                    type="button"
+                    className="d1-chip-name"
+                    title="Apply preset"
+                    onClick={() => applyPreset(preset)}
+                  >
                     {preset.name}
                   </button>
                   <button
@@ -231,20 +299,32 @@ export function QueryPanel({
         </section>
 
         <section className="d1-section">
-          <div className="d1-section-head"><h3>Requirements</h3></div>
+          <div className="d1-section-head">
+            <h3>Requirements</h3>
+          </div>
           <RequirementBoard
             requirements={query.requirements}
             onChange={setRequirements}
-            onEdit={(index, stack) => setEditor({ index, requirement: query.requirements[index], stack })}
-            onAdd={() => setEditor({ index: null, requirement: emptyRequirement('weapon'), stack: { count: 1, inCluster: false } })}
+            onEdit={(index, stack) =>
+              setEditor({ index, requirement: query.requirements[index], stack })
+            }
+            onAdd={() =>
+              setEditor({
+                index: null,
+                requirement: emptyRequirement("weapon"),
+                stack: { count: 1, inCluster: false },
+              })
+            }
           />
         </section>
 
         <section className="d1-section">
-          <div className="d1-section-head"><h3>Search scope</h3></div>
+          <div className="d1-section-head">
+            <h3>Search scope</h3>
+          </div>
           <SliderRow
             label="Floor limit"
-            valueLabel={`first ${query.maxDepth} floor${query.maxDepth === 1 ? '' : 's'}`}
+            valueLabel={`first ${query.maxDepth} floor${query.maxDepth === 1 ? "" : "s"}`}
             values={FLOOR_LIMIT_OPTIONS}
             value={query.maxDepth}
             fill
@@ -264,12 +344,20 @@ export function QueryPanel({
                 <span className="d1-field-control">
                   <select
                     className="d1-select"
-                    value={query.wandmakerQuest ?? ''}
-                    onChange={(event) => patchQuery({ wandmakerQuest: (event.currentTarget.value || undefined) as WandmakerQuest | undefined })}
+                    value={query.wandmakerQuest ?? ""}
+                    onChange={(event) =>
+                      patchQuery({
+                        wandmakerQuest: (event.currentTarget.value || undefined) as
+                          | WandmakerQuest
+                          | undefined,
+                      })
+                    }
                   >
                     <option value="">Any</option>
                     {WANDMAKER_QUESTS.map((variant) => (
-                      <option key={variant} value={variant}>{questVariantLabel(variant)}</option>
+                      <option key={variant} value={variant}>
+                        {questVariantLabel(variant)}
+                      </option>
                     ))}
                   </select>
                 </span>
@@ -285,12 +373,16 @@ export function QueryPanel({
               {blacksmithCount > 0 && <span className="d1-count">{blacksmithCount}</span>}
             </summary>
             <div className="d1-details-body">
-              <label className={`d1-check${query.maxDepth >= BLACKSMITH_LAST_FLOOR ? ' d1-check-disabled' : ''}`}>
+              <label
+                className={`d1-check${query.maxDepth >= BLACKSMITH_LAST_FLOOR ? " d1-check-disabled" : ""}`}
+              >
                 <input
                   type="checkbox"
                   checked={query.requireBlacksmith}
                   disabled={query.maxDepth >= BLACKSMITH_LAST_FLOOR}
-                  onChange={(event) => patchQuery({ requireBlacksmith: event.currentTarget.checked })}
+                  onChange={(event) =>
+                    patchQuery({ requireBlacksmith: event.currentTarget.checked })
+                  }
                 />
                 <span>Require accessible blacksmith</span>
               </label>
@@ -298,12 +390,15 @@ export function QueryPanel({
                 <input
                   type="checkbox"
                   checked={query.excludeBlacksmithRewards}
-                  onChange={(event) => patchQuery({ excludeBlacksmithRewards: event.currentTarget.checked })}
+                  onChange={(event) =>
+                    patchQuery({ excludeBlacksmithRewards: event.currentTarget.checked })
+                  }
                 />
                 <span>Exclude Smith rewards</span>
               </label>
               <p className="d1-caption">
-                Required items cannot come from the 2,000-favor Smith choice, leaving favor available for reforging.
+                Required items cannot come from the 2,000-favor Smith choice, leaving favor
+                available for reforging.
               </p>
             </div>
           </details>
@@ -320,16 +415,14 @@ export function QueryPanel({
                 <>
                   <SliderRow
                     label="Workers"
-                    valueLabel={`${workerCount} of ${workerCeiling} core${workerCeiling === 1 ? '' : 's'}`}
+                    valueLabel={`${workerCount} of ${workerCeiling} core${workerCeiling === 1 ? "" : "s"}`}
                     min={1}
                     max={workerCeiling}
                     value={Math.min(workerCount, workerCeiling)}
                     fill
                     onChange={setWorkerCount}
                   />
-                  <p className="d1-caption d1-caption-spaced">
-                    Number of search threads to spawn.
-                  </p>
+                  <p className="d1-caption d1-caption-spaced">Number of search threads to spawn.</p>
                 </>
               )}
               <label className="d1-check">
@@ -341,7 +434,8 @@ export function QueryPanel({
                 <span>Fast search</span>
               </label>
               <p className="d1-caption">
-                Treats +3 weapons and armor as quest rewards only, skipping the rare Crypt and Sacrificial-fire prizes.
+                Treats +3 weapons and armor as quest rewards only, skipping the rare Crypt and
+                Sacrificial-fire prizes.
               </p>
             </div>
           </details>
@@ -353,7 +447,9 @@ export function QueryPanel({
               <span>Challenges</span>
               {challengeCount > 0 && <span className="d1-count">{challengeCount}</span>}
             </summary>
-            <p className="d1-caption">Searches simulate runs with the selected challenges enabled.</p>
+            <p className="d1-caption">
+              Searches simulate runs with the selected challenges enabled.
+            </p>
             <div className="d1-challenge-list">
               {challengeOptions.map((challenge) => (
                 <label className="d1-check" key={challenge.value}>
@@ -364,7 +460,11 @@ export function QueryPanel({
                   />
                   <span>
                     {challenge.label}
-                    <em>{LEVEL_GEN_CHALLENGES.has(challenge.value) ? 'changes level generation' : 'no effect on seed content'}</em>
+                    <em>
+                      {LEVEL_GEN_CHALLENGES.has(challenge.value)
+                        ? "changes level generation"
+                        : "no effect on seed content"}
+                    </em>
                   </span>
                 </label>
               ))}
@@ -384,9 +484,10 @@ export function QueryPanel({
               <div className="d1-impossible">
                 <strong className="d1-impossible-title">Impossible query</strong>
                 <p>
-                  No seed can satisfy these requirements within the current floor limit. Quest-reward-only items
-                  need their quest floors in range: +3 wands the Wandmaker's quest on floors 7–9 or the Imp's
-                  vault on 17–19; +3/+4 rings, +4 armor and +4/+5 weapons the Imp's vault on floors 17–19.
+                  No seed can satisfy these requirements within the current floor limit.
+                  Quest-reward-only items need their quest floors in range: +3 wands the Wandmaker's
+                  quest on floors 7–9 or the Imp's vault on 17–19; +3/+4 rings, +4 armor and +4/+5
+                  weapons the Imp's vault on floors 17–19.
                 </p>
               </div>
             )}
@@ -394,18 +495,20 @@ export function QueryPanel({
               <span className="d1-inline-error">{validation.errors[0]}</span>
             ) : (
               <span className="d1-analysis-line">
-                {analysis?.valid && !analysis.impossible ? probabilityLabel(analysis.probability) : ''}
+                {analysis?.valid && !analysis.impossible
+                  ? probabilityLabel(analysis.probability)
+                  : ""}
               </span>
             )}
           </div>
         )}
         <button
           type="button"
-          className={`d1-btn d1-btn-big ${running ? 'd1-btn-danger' : impossible ? '' : 'd1-btn-primary'}`}
+          className={`d1-btn d1-btn-big ${running ? "d1-btn-danger" : impossible ? "" : "d1-btn-primary"}`}
           disabled={startDisabled}
           onClick={onToggleSearch}
         >
-          <span>{running ? 'Cancel Search' : 'Start Search'}</span>
+          <span>{running ? "Cancel Search" : "Start Search"}</span>
           <kbd>
             {isMac ? <CommandIcon size={13} /> : <span className="d1-kbd-text">Ctrl</span>}
             <ReturnIcon size={13} />
@@ -415,14 +518,16 @@ export function QueryPanel({
 
       {editor && (
         <RequirementEditor
-          key={editor.index ?? 'new'}
+          key={editor.index ?? "new"}
           requirement={editor.requirement}
           isNew={editor.index === null}
           stack={editor.stack}
-          onSave={(requirement, count, total, copyDepth) => commitRequirement(editor, requirement, count, total, copyDepth)}
+          onSave={(requirement, count, total, copyDepth) =>
+            commitRequirement(editor, requirement, count, total, copyDepth)
+          }
           onCancel={() => setEditor(null)}
         />
       )}
     </>
-  )
+  );
 }

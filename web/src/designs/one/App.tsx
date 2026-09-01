@@ -1,113 +1,119 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useStore } from '@tanstack/react-store'
-import { fromQueryJson, toQueryDocument, toQueryJson, validateQuery } from '../../lib/query'
-import { resultPosition, stepResult } from '../../lib/scout-nav'
-import { SearchCoordinator, scoutSeed, searchStore } from '../../lib/search/coordinator'
-import { hasShareCode, withoutFragment } from '../../lib/share-link'
-import { itemArt } from '../../lib/sprites'
-import { queryStore, workerCountStore } from '../../lib/store'
-import { analyzeQuery, decodeShareText, formatSeedCode, getEngineInfo, parseSeedCode } from '../../lib/wasm'
-import type { AnalysisResult, EngineInfo, ScoutResult } from '../../lib/wasm/types'
-import { DownloadMenu } from './DownloadMenu'
-import { QueryPanel } from './QueryPanel'
-import { ResultsPanel } from './ResultsPanel'
-import { ScoutPanel } from './ScoutPanel'
-import { FooterStatus, StatusSnackbar } from './StatusBar'
-import { Sprite } from './parts'
-import './styles.css'
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useStore } from "@tanstack/react-store";
+import { fromQueryJson, toQueryDocument, toQueryJson, validateQuery } from "../../lib/query";
+import { resultPosition, stepResult } from "../../lib/scout-nav";
+import { SearchCoordinator, scoutSeed, searchStore } from "../../lib/search/coordinator";
+import { hasShareCode, withoutFragment } from "../../lib/share-link";
+import { itemArt } from "../../lib/sprites";
+import { queryStore, workerCountStore } from "../../lib/store";
+import {
+  analyzeQuery,
+  decodeShareText,
+  formatSeedCode,
+  getEngineInfo,
+  parseSeedCode,
+} from "../../lib/wasm";
+import type { AnalysisResult, EngineInfo, ScoutResult } from "../../lib/wasm/types";
+import { DownloadMenu } from "./DownloadMenu";
+import { QueryPanel } from "./QueryPanel";
+import { ResultsPanel } from "./ResultsPanel";
+import { ScoutPanel } from "./ScoutPanel";
+import { FooterStatus, StatusSnackbar } from "./StatusBar";
+import { Sprite } from "./parts";
+import "./styles.css";
 
-type Tab = 'query' | 'results' | 'scout'
+type Tab = "query" | "results" | "scout";
 
 function useDebounced<T>(value: T, delay: number): T {
-  const [debounced, setDebounced] = useState(value)
+  const [debounced, setDebounced] = useState(value);
   useEffect(() => {
-    const timer = window.setTimeout(() => setDebounced(value), delay)
-    return () => window.clearTimeout(timer)
-  }, [value, delay])
-  return debounced
+    const timer = window.setTimeout(() => setDebounced(value), delay);
+    return () => window.clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
 }
 
-const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent)
+const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
 
 export default function App() {
-  const query = useStore(queryStore)
-  const searchState = useStore(searchStore, (state) => state.state)
+  const query = useStore(queryStore);
+  const searchState = useStore(searchStore, (state) => state.state);
   // The badge reports the full accumulated collection, like every seed
   // count; only the listed rows are capped.
-  const matchCount = useStore(searchStore, (state) => state.matches.length)
+  const matchCount = useStore(searchStore, (state) => state.matches.length);
 
-  const [engine, setEngine] = useState<EngineInfo | undefined>(undefined)
-  const coordinator = useRef<SearchCoordinator | undefined>(undefined)
+  const [engine, setEngine] = useState<EngineInfo | undefined>(undefined);
+  const coordinator = useRef<SearchCoordinator | undefined>(undefined);
   useEffect(() => {
-    let active = true
+    let active = true;
     getEngineInfo()
       .then((info) => {
-        if (!active) return
-        setEngine(info)
-        coordinator.current ??= new SearchCoordinator(info.totalSeeds)
+        if (!active) return;
+        setEngine(info);
+        coordinator.current ??= new SearchCoordinator(info.totalSeeds);
       })
-      .catch(() => undefined)
+      .catch(() => undefined);
     return () => {
-      active = false
-    }
-  }, [])
+      active = false;
+    };
+  }, []);
 
   // A share link (#q=CODE) populates the query form, then leaves a clean
   // address bar so reloads and manually copied URLs don't re-apply it. The
   // hashchange listener covers links opened into an already-loaded tab, where
   // the browser navigates without reloading.
-  const [shareNotice, setShareNotice] = useState<string | undefined>(undefined)
+  const [shareNotice, setShareNotice] = useState<string | undefined>(undefined);
   useEffect(() => {
-    let active = true
+    let active = true;
     const openShareLink = () => {
-      if (!hasShareCode(window.location.hash)) return
+      if (!hasShareCode(window.location.hash)) return;
       decodeShareText(window.location.href)
         .then((json) => {
-          if (!active) return
-          if (searchStore.state.state === 'running') {
-            throw new Error('a search is running — stop it first')
+          if (!active) return;
+          if (searchStore.state.state === "running") {
+            throw new Error("a search is running — stop it first");
           }
-          queryStore.setState(() => fromQueryJson(json))
+          queryStore.setState(() => fromQueryJson(json));
         })
         .catch((error: unknown) => {
-          if (active) setShareNotice(error instanceof Error ? error.message : String(error))
+          if (active) setShareNotice(error instanceof Error ? error.message : String(error));
         })
         .finally(() => {
-          if (active) window.history.replaceState(null, '', withoutFragment(window.location.href))
-        })
-    }
-    openShareLink()
-    window.addEventListener('hashchange', openShareLink)
+          if (active) window.history.replaceState(null, "", withoutFragment(window.location.href));
+        });
+    };
+    openShareLink();
+    window.addEventListener("hashchange", openShareLink);
     return () => {
-      active = false
-      window.removeEventListener('hashchange', openShareLink)
-    }
-  }, [])
+      active = false;
+      window.removeEventListener("hashchange", openShareLink);
+    };
+  }, []);
 
   // Debounced query analysis (probability / impossibility).
-  const serialized = toQueryJson(query)
-  const debouncedJson = useDebounced(serialized, 250)
-  const hasRequirements = query.requirements.length > 0
-  const [analysis, setAnalysis] = useState<AnalysisResult | undefined>(undefined)
+  const serialized = toQueryJson(query);
+  const debouncedJson = useDebounced(serialized, 250);
+  const hasRequirements = query.requirements.length > 0;
+  const [analysis, setAnalysis] = useState<AnalysisResult | undefined>(undefined);
   useEffect(() => {
     if (!hasRequirements) {
-      setAnalysis(undefined)
-      return
+      setAnalysis(undefined);
+      return;
     }
-    let active = true
+    let active = true;
     analyzeQuery(debouncedJson)
       .then((result) => {
-        if (active) setAnalysis(result)
+        if (active) setAnalysis(result);
       })
-      .catch(() => undefined)
+      .catch(() => undefined);
     return () => {
-      active = false
-    }
-  }, [debouncedJson, hasRequirements])
+      active = false;
+    };
+  }, [debouncedJson, hasRequirements]);
 
-  const validation = useMemo(() => validateQuery(query), [query])
+  const validation = useMemo(() => validateQuery(query), [query]);
 
-  const [activeTab, setActiveTab] = useState<Tab>('query')
+  const [activeTab, setActiveTab] = useState<Tab>("query");
 
   // Starting is a single action: the coordinator continues the previous
   // finished run instead of rescanning whenever that is sound (same scope,
@@ -115,80 +121,86 @@ export default function App() {
   // user. An unchanged query therefore resumes a cancelled run rather than
   // wiping it. The results panel reports it as a refine when it happens.
   const toggleSearch = useCallback(() => {
-    const controller = coordinator.current
-    if (!controller) return
-    if (searchStore.state.state === 'running' || searchStore.state.state === 'stopping') {
-      controller.cancel()
-      return
+    const controller = coordinator.current;
+    if (!controller) return;
+    if (searchStore.state.state === "running" || searchStore.state.state === "stopping") {
+      controller.cancel();
+      return;
     }
-    const state = queryStore.state
-    if (!validateQuery(state).valid) return
-    controller.start(toQueryDocument(state), workerCountStore.state)
-    setActiveTab('results')
-  }, [])
+    const state = queryStore.state;
+    if (!validateQuery(state).valid) return;
+    controller.start(toQueryDocument(state), workerCountStore.state);
+    setActiveTab("results");
+  }, []);
 
   // Ctrl/Cmd+Enter starts or cancels the search from anywhere.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-        event.preventDefault()
-        toggleSearch()
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+        event.preventDefault();
+        toggleSearch();
       }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [toggleSearch])
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [toggleSearch]);
 
   // Warn before leaving the page while a search is running.
   useEffect(() => {
-    if (searchState !== 'running' && searchState !== 'stopping') return
+    if (searchState !== "running" && searchState !== "stopping") return;
     const warn = (event: BeforeUnloadEvent) => {
-      event.preventDefault()
-    }
-    window.addEventListener('beforeunload', warn)
-    return () => window.removeEventListener('beforeunload', warn)
-  }, [searchState])
+      event.preventDefault();
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [searchState]);
 
   // Scout state, lifted so results can populate the detail pane.
-  const [scoutInput, setScoutInput] = useState('')
+  const [scoutInput, setScoutInput] = useState("");
   // Anchor for result navigation: the seed of the most recent scout request,
   // set synchronously so rapid steps chain even while a scout is in flight.
   // A failed request falls back to the seed whose manifest is still rendered,
   // keeping the indicator honest.
-  const [scoutedSeed, setScoutedSeed] = useState<string | undefined>(undefined)
-  const renderedSeed = useRef<string | undefined>(undefined)
-  const [scout, setScout] = useState<{ loading: boolean; error?: string; result?: ScoutResult }>({ loading: false })
-  const scoutRequest = useRef(0)
+  const [scoutedSeed, setScoutedSeed] = useState<string | undefined>(undefined);
+  const renderedSeed = useRef<string | undefined>(undefined);
+  const [scout, setScout] = useState<{ loading: boolean; error?: string; result?: ScoutResult }>({
+    loading: false,
+  });
+  const scoutRequest = useRef(0);
   // True while the newest scout request is still in flight. A held J/K uses
   // this to pace itself to the scout worker instead of queueing on it.
-  const scoutBusy = useRef(false)
+  const scoutBusy = useRef(false);
   const runScout = useCallback((seed: string) => {
-    const input = formatSeedCode(seed)
-    setScoutInput(input)
-    setActiveTab('scout')
+    const input = formatSeedCode(seed);
+    setScoutInput(input);
+    setActiveTab("scout");
     if (input.length !== 11) {
-      setScout((current) => ({ loading: false, result: current.result, error: 'Seed must use XXX-XXX-XXX format' }))
-      setScoutedSeed(renderedSeed.current)
-      return
+      setScout((current) => ({
+        loading: false,
+        result: current.result,
+        error: "Seed must use XXX-XXX-XXX format",
+      }));
+      setScoutedSeed(renderedSeed.current);
+      return;
     }
-    setScoutedSeed(input)
-    const requestId = ++scoutRequest.current
-    scoutBusy.current = true
-    setScout((current) => ({ loading: true, result: current.result }))
+    setScoutedSeed(input);
+    const requestId = ++scoutRequest.current;
+    scoutBusy.current = true;
+    setScout((current) => ({ loading: true, result: current.result }));
     void (async () => {
       try {
-        const parsed = await parseSeedCode(input)
-        const state = queryStore.state
+        const parsed = await parseSeedCode(input);
+        const state = queryStore.state;
         const result = await scoutSeed({
           seed: parsed.code,
           challenges: state.challenges.length > 0 ? state.challenges : undefined,
           query: state.requirements.length > 0 ? toQueryDocument(state) : undefined,
-        })
+        });
         if (requestId === scoutRequest.current) {
-          setScout({ loading: false, result })
-          setScoutInput(result.seed.code)
-          renderedSeed.current = result.seed.code
-          setScoutedSeed(result.seed.code)
+          setScout({ loading: false, result });
+          setScoutInput(result.seed.code);
+          renderedSeed.current = result.seed.code;
+          setScoutedSeed(result.seed.code);
         }
       } catch (error) {
         if (requestId === scoutRequest.current) {
@@ -196,40 +208,48 @@ export default function App() {
             loading: false,
             result: current.result,
             error: error instanceof Error ? error.message : String(error),
-          }))
-          setScoutedSeed(renderedSeed.current)
+          }));
+          setScoutedSeed(renderedSeed.current);
         }
       } finally {
-        if (requestId === scoutRequest.current) scoutBusy.current = false
+        if (requestId === scoutRequest.current) scoutBusy.current = false;
       }
-    })()
-  }, [])
+    })();
+  }, []);
 
   // Result-to-result navigation while scouting: J/K on desktop, swipe on touch.
   // The joined-string selector keeps referential stability across progress
   // updates that do not add seeds.
-  const matchCodesKey = useStore(searchStore, (state) => state.matches.map((match) => match.code).join(' '))
-  const resultSeeds = useMemo(() => (matchCodesKey ? matchCodesKey.split(' ') : []), [matchCodesKey])
-  const scoutNav = useMemo(() => resultPosition(resultSeeds, scoutedSeed), [resultSeeds, scoutedSeed])
+  const matchCodesKey = useStore(searchStore, (state) =>
+    state.matches.map((match) => match.code).join(" "),
+  );
+  const resultSeeds = useMemo(
+    () => (matchCodesKey ? matchCodesKey.split(" ") : []),
+    [matchCodesKey],
+  );
+  const scoutNav = useMemo(
+    () => resultPosition(resultSeeds, scoutedSeed),
+    [resultSeeds, scoutedSeed],
+  );
   const navigateResults = useCallback(
     (delta: number): boolean => {
-      const next = stepResult(resultSeeds, scoutedSeed, delta)
-      if (!next) return false
-      runScout(next)
-      return true
+      const next = stepResult(resultSeeds, scoutedSeed, delta);
+      if (!next) return false;
+      runScout(next);
+      return true;
     },
     [resultSeeds, scoutedSeed, runScout],
-  )
+  );
 
   // The key handler is installed once and reads the latest navigation state
   // through refs: it owns hold timers that a re-subscribe would cancel, and
   // every step changes `navigateResults`.
-  const navigateRef = useRef(navigateResults)
-  const activeTabRef = useRef(activeTab)
+  const navigateRef = useRef(navigateResults);
+  const activeTabRef = useRef(activeTab);
   useEffect(() => {
-    navigateRef.current = navigateResults
-    activeTabRef.current = activeTab
-  }, [navigateResults, activeTab])
+    navigateRef.current = navigateResults;
+    activeTabRef.current = activeTab;
+  }, [navigateResults, activeTab]);
 
   // J (next) / K (previous) walk the search results while scouting, and
   // holding either key keeps walking. Inert while typing in a field, while a
@@ -240,90 +260,104 @@ export default function App() {
     // worker drains them, so the hold runs on its own clock: a frame loop,
     // which paces steps to what the pane can actually paint and stops on its
     // own while the tab is hidden.
-    const HOLD_DELAY_MS = 300
-    const HOLD_INTERVAL_MS = 70
-    let holdDelta = 0
-    let frame: number | undefined
-    let dueAt = 0
+    const HOLD_DELAY_MS = 300;
+    const HOLD_INTERVAL_MS = 70;
+    let holdDelta = 0;
+    let frame: number | undefined;
+    let dueAt = 0;
 
     const stopHold = () => {
-      if (frame !== undefined) cancelAnimationFrame(frame)
-      frame = undefined
-      holdDelta = 0
-    }
+      if (frame !== undefined) cancelAnimationFrame(frame);
+      frame = undefined;
+      holdDelta = 0;
+    };
 
     const step = (now: number) => {
-      frame = requestAnimationFrame(step)
-      if (now < dueAt) return
+      frame = requestAnimationFrame(step);
+      if (now < dueAt) return;
       // Skip the frame rather than pile on: a slow scout simply slows the
       // hold down instead of running the list away from the manifest.
-      if (scoutBusy.current) return
+      if (scoutBusy.current) return;
       if (!navigateRef.current(holdDelta)) {
-        stopHold()
-        return
+        stopHold();
+        return;
       }
-      dueAt = now + HOLD_INTERVAL_MS
-    }
+      dueAt = now + HOLD_INTERVAL_MS;
+    };
 
     // Match the letter (mnemonic) or the physical key, so the shortcut works
     // on layouts without Latin letters.
     const deltaFor = (event: KeyboardEvent) => {
-      const key = event.key.toLowerCase()
-      return key === 'j' || event.code === 'KeyJ' ? 1 : key === 'k' || event.code === 'KeyK' ? -1 : 0
-    }
+      const key = event.key.toLowerCase();
+      return key === "j" || event.code === "KeyJ"
+        ? 1
+        : key === "k" || event.code === "KeyK"
+          ? -1
+          : 0;
+    };
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return
-      const delta = deltaFor(event)
-      if (delta === 0) return
-      const target = event.target as HTMLElement | null
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return
-      if (document.querySelector('.d1-modal, dialog[open], [role="dialog"]')) return
-      if (window.matchMedia('(max-width: 999px)').matches && activeTabRef.current !== 'scout') return
-      if (!navigateRef.current(delta)) return
-      event.preventDefault()
-      stopHold()
-      holdDelta = delta
-      dueAt = performance.now() + HOLD_DELAY_MS
-      frame = requestAnimationFrame(step)
-    }
+      if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return;
+      const delta = deltaFor(event);
+      if (delta === 0) return;
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      )
+        return;
+      if (document.querySelector('.d1-modal, dialog[open], [role="dialog"]')) return;
+      if (window.matchMedia("(max-width: 999px)").matches && activeTabRef.current !== "scout")
+        return;
+      if (!navigateRef.current(delta)) return;
+      event.preventDefault();
+      stopHold();
+      holdDelta = delta;
+      dueAt = performance.now() + HOLD_DELAY_MS;
+      frame = requestAnimationFrame(step);
+    };
 
     const onKeyUp = (event: KeyboardEvent) => {
-      if (deltaFor(event) !== 0) stopHold()
-    }
+      if (deltaFor(event) !== 0) stopHold();
+    };
 
-    window.addEventListener('keydown', onKeyDown)
-    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
     // A key released while the page is unfocused never reports a keyup.
-    window.addEventListener('blur', stopHold)
+    window.addEventListener("blur", stopHold);
     return () => {
-      window.removeEventListener('keydown', onKeyDown)
-      window.removeEventListener('keyup', onKeyUp)
-      window.removeEventListener('blur', stopHold)
-      stopHold()
-    }
-  }, [])
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", stopHold);
+      stopHold();
+    };
+  }, []);
 
   // Horizontal swipes over the scout pane step through the results on touch
   // devices; mostly-vertical gestures stay scrolls.
-  const swipeStart = useRef<{ x: number; y: number } | undefined>(undefined)
+  const swipeStart = useRef<{ x: number; y: number } | undefined>(undefined);
   const onScoutTouchStart = (event: React.TouchEvent) => {
-    const touch = event.touches[0]
-    swipeStart.current = touch && event.touches.length === 1 ? { x: touch.clientX, y: touch.clientY } : undefined
-  }
+    const touch = event.touches[0];
+    swipeStart.current =
+      touch && event.touches.length === 1 ? { x: touch.clientX, y: touch.clientY } : undefined;
+  };
   const onScoutTouchEnd = (event: React.TouchEvent) => {
-    const start = swipeStart.current
-    swipeStart.current = undefined
-    const touch = event.changedTouches[0]
-    if (!start || !touch) return
-    const deltaX = touch.clientX - start.x
-    const deltaY = touch.clientY - start.y
-    if (Math.abs(deltaX) < 60 || Math.abs(deltaX) < 1.5 * Math.abs(deltaY)) return
-    navigateResults(deltaX < 0 ? 1 : -1)
-  }
+    const start = swipeStart.current;
+    swipeStart.current = undefined;
+    const touch = event.changedTouches[0];
+    if (!start || !touch) return;
+    const deltaX = touch.clientX - start.x;
+    const deltaY = touch.clientY - start.y;
+    if (Math.abs(deltaX) < 60 || Math.abs(deltaX) < 1.5 * Math.abs(deltaY)) return;
+    navigateResults(deltaX < 0 ? 1 : -1);
+  };
 
-  const paneClass = (tab: Tab) => `d1-pane d1-pane-${tab}${activeTab === tab ? ' d1-pane-active' : ''}`
-  const running = searchState === 'running' || searchState === 'stopping'
+  const paneClass = (tab: Tab) =>
+    `d1-pane d1-pane-${tab}${activeTab === tab ? " d1-pane-active" : ""}`;
+  const running = searchState === "running" || searchState === "stopping";
 
   return (
     <div className="d1-app">
@@ -350,28 +384,30 @@ export default function App() {
       </header>
 
       <nav className="d1-tabs" aria-label="Panels">
-        {(
-          [
-            { tab: 'query' as Tab, label: 'Query' },
-            { tab: 'results' as Tab, label: 'Results' },
-            { tab: 'scout' as Tab, label: 'Scout' },
-          ]
-        ).map(({ tab, label }) => (
+        {[
+          { tab: "query" as Tab, label: "Query" },
+          { tab: "results" as Tab, label: "Results" },
+          { tab: "scout" as Tab, label: "Scout" },
+        ].map(({ tab, label }) => (
           <button
             key={tab}
             type="button"
-            className={activeTab === tab ? 'd1-tab-on' : undefined}
+            className={activeTab === tab ? "d1-tab-on" : undefined}
             onClick={() => setActiveTab(tab)}
           >
             {label}
-            {tab === 'results' && running && <span className="d1-live-dot" aria-label="Search running" />}
-            {tab === 'results' && !running && matchCount > 0 && <span className="d1-count">{matchCount}</span>}
+            {tab === "results" && running && (
+              <span className="d1-live-dot" aria-label="Search running" />
+            )}
+            {tab === "results" && !running && matchCount > 0 && (
+              <span className="d1-count">{matchCount}</span>
+            )}
           </button>
         ))}
       </nav>
 
       <main className="d1-main">
-        <section className={paneClass('query')} aria-label="Query builder">
+        <section className={paneClass("query")} aria-label="Query builder">
           <QueryPanel
             analysis={analysis}
             validation={validation}
@@ -383,7 +419,7 @@ export default function App() {
             onDismissShareNotice={() => setShareNotice(undefined)}
           />
         </section>
-        <section className={paneClass('results')} aria-label="Search results">
+        <section className={paneClass("results")} aria-label="Search results">
           <ResultsPanel
             analysis={analysis}
             hasRequirements={hasRequirements}
@@ -393,7 +429,7 @@ export default function App() {
           />
         </section>
         <section
-          className={paneClass('scout')}
+          className={paneClass("scout")}
           aria-label="Seed scout"
           onTouchStart={onScoutTouchStart}
           onTouchEnd={onScoutTouchEnd}
@@ -420,14 +456,20 @@ export default function App() {
               {` v${engine.shpdVersion}`}
             </>
           ) : (
-            'loading engine…'
+            "loading engine…"
           )}
         </span>
-        <span className="d1-footer-sep" aria-hidden="true">·</span>
+        <span className="d1-footer-sep" aria-hidden="true">
+          ·
+        </span>
         <span>GPL-3.0-or-later</span>
-        <span className="d1-footer-sep" aria-hidden="true">·</span>
+        <span className="d1-footer-sep" aria-hidden="true">
+          ·
+        </span>
         <a href="/licenses/COPYING.txt">License</a>
-        <span className="d1-footer-sep" aria-hidden="true">·</span>
+        <span className="d1-footer-sep" aria-hidden="true">
+          ·
+        </span>
         <a href="/third_party/shattered-pixel-dungeon/ATTRIBUTION.md">
           <span className="d1-footer-wide">Asset attribution</span>
           <span className="d1-footer-narrow">Attribution</span>
@@ -436,5 +478,5 @@ export default function App() {
       </footer>
       <StatusSnackbar />
     </div>
-  )
+  );
 }

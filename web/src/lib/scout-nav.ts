@@ -8,16 +8,19 @@
 
 export interface ResultPosition {
   /** 0-based index of the scouted seed in the results list. */
-  index: number
+  index: number;
   /** Number of seeds in the results list. */
-  total: number
+  total: number;
 }
 
 /** Position of `seed` within the ordered search results, or `undefined` when it is not one of them. */
-export function resultPosition(seeds: readonly string[], seed: string | undefined): ResultPosition | undefined {
-  if (!seed) return undefined
-  const index = seeds.indexOf(seed)
-  return index >= 0 ? { index, total: seeds.length } : undefined
+export function resultPosition(
+  seeds: readonly string[],
+  seed: string | undefined,
+): ResultPosition | undefined {
+  if (!seed) return undefined;
+  const index = seeds.indexOf(seed);
+  return index >= 0 ? { index, total: seeds.length } : undefined;
 }
 
 /**
@@ -25,9 +28,13 @@ export function resultPosition(seeds: readonly string[], seed: string | undefine
  * ends. `undefined` when `seed` is not a search result or the step would not
  * move (already at the first or last result).
  */
-export function stepResult(seeds: readonly string[], seed: string | undefined, delta: number): string | undefined {
-  const position = resultPosition(seeds, seed)
-  if (!position) return undefined
-  const target = Math.min(Math.max(position.index + delta, 0), seeds.length - 1)
-  return target === position.index ? undefined : seeds[target]
+export function stepResult(
+  seeds: readonly string[],
+  seed: string | undefined,
+  delta: number,
+): string | undefined {
+  const position = resultPosition(seeds, seed);
+  if (!position) return undefined;
+  const target = Math.min(Math.max(position.index + delta, 0), seeds.length - 1);
+  return target === position.index ? undefined : seeds[target];
 }
