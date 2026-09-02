@@ -100,6 +100,25 @@ describe("stacks", () => {
     expect(shrunk[0].identityGroup).toBeUndefined();
   });
 
+  it("a narrowed weapon stack grows by family-wide copies the engine reads as bare", () => {
+    const base = [
+      req({
+        kind: "melee_weapon",
+        tier: { mode: "exact", value: 4 },
+        upgrade: { mode: "exact", value: 5 },
+      }),
+    ];
+    const next = setStackCount(base, item(base, 0), 3);
+    expect(next).toHaveLength(3);
+    expect(next[0].kind).toBe("melee_weapon");
+    expect(next.slice(1).every((r) => r.kind === "weapon" && r.item === undefined)).toBe(true);
+    expect(new Set(next.map((r) => r.identityGroup)).size).toBe(1);
+    expect(validateQuery(asState(next)).valid).toBe(true);
+    expect(stackCount(boardItems(next)[0])).toBe(3);
+    // The board folds the copies back into the anchor's badge.
+    expect(boardItems(next)).toHaveLength(1);
+  });
+
   it("an either/or cluster anchors a stack: every member carries the label", () => {
     const base = joinAlternatives(
       [req({ item: "runic_blade" }), req({ item: "war_hammer" })],

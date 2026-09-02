@@ -87,6 +87,26 @@ class RelationsTest {
     }
 
     @Test
+    fun aNarrowedWeaponStackGrowsByFamilyWideCopies() {
+        val start = listOf(
+            ItemRequirement(
+                key = 1,
+                item = null,
+                upgrade = 5,
+                kind = ItemKind.MELEE_WEAPON,
+                tier = 4,
+                tierMatch = TierMatch.EXACT,
+                upgradeMatch = UpgradeMatch.EXACT,
+            ),
+        )
+        val grown = start.setStackCount(start.boardItems().single(), count = 3)
+        assertEquals(listOf(ItemKind.MELEE_WEAPON, ItemKind.WEAPON, ItemKind.WEAPON), grown.map { it.kind })
+        assertEquals(listOf(false, true, true), grown.map { it.isBare })
+        assertNull(grown.validationProblem())
+        assertEquals(3, grown.boardItems().single().stackCount)
+    }
+
+    @Test
     fun aWildcardStackEncodesAsBareCopiesSharingAnIdentityGroup() {
         val start = listOf(anyWand(1))
         val grown = start.setStackCount(start.boardItems().single(), count = 3)
