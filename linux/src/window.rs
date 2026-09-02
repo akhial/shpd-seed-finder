@@ -4,7 +4,7 @@
 //! navigation split views (query → results → seed), following GNOME's
 //! multi-pane navigation pattern.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use adw::prelude::*;
@@ -32,6 +32,10 @@ pub fn present(app: &adw::Application) {
 
     let state = Rc::new(RefCell::new(persist::load()));
     let user_presets = Rc::new(RefCell::new(persist::load_presets()));
+    // A device-local preference rather than part of the query: presets, share
+    // links and imported results all replace the state above without ever
+    // touching how many threads this machine wants to run.
+    let workers = Rc::new(Cell::new(persist::load_workers()));
     // The query that produced the current results list, snapshotted at search
     // start (or import) so an export never reflects later editor changes.
     let exported_query: Rc<RefCell<Option<shpd_seedfinder_core::query::SearchQuery>>> =
@@ -41,6 +45,8 @@ pub fn present(app: &adw::Application) {
     let query = query_pane::QueryPane::new(build_menu().upcast_ref());
     let results = results_pane::ResultsPane::new(&toasts);
     let detail = detail_pane::DetailPane::new(&toasts);
+    query.set_worker_count(workers.get());
+    results.set_worker_count(workers.get());
 
     // Results and seed detail form the inner split view; the query sidebar
     // wraps both in the outer one. Nesting the two split views is the
@@ -181,9 +187,18 @@ pub fn present(app: &adw::Application) {
     query.connect_changed({
         let state = Rc::clone(&state);
         let query = Rc::clone(&query);
+        let results = Rc::clone(&results);
+        let workers = Rc::clone(&workers);
         let refresh_all = Rc::clone(&refresh_all);
         move || {
             query.read_scope(&mut state.borrow_mut());
+            // The worker count belongs to the machine, so it is saved on its
+            // own rather than with the query the pane just wrote.
+            let chosen = query.worker_count();
+            if workers.replace(chosen) != chosen {
+                results.set_worker_count(chosen);
+                persist::save_workers(chosen);
+            }
             refresh_all();
         }
     });

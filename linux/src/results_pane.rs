@@ -2,8 +2,9 @@
 
 //! Results pane: streaming search session, live statistics, and seed list.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
+use std::num::NonZeroUsize;
 use std::rc::Rc;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -106,6 +107,9 @@ pub struct ResultsPane {
     pending_refine: RefCell<Option<PendingRefine>>,
     base: RefCell<Option<BaseRun>>,
     target: RefCell<Option<Target>>,
+    /// Threads every search spawns, `None` meaning every core. The session
+    /// clamps whatever it is given to the host's parallelism.
+    workers: Cell<Option<NonZeroUsize>>,
     toasts: adw::ToastOverlay,
     on_select: RefCell<Option<SelectHandler>>,
     on_finished: RefCell<Option<Box<dyn Fn()>>>,
@@ -203,6 +207,7 @@ impl ResultsPane {
             pending_refine: RefCell::new(None),
             base: RefCell::new(None),
             target: RefCell::new(None),
+            workers: Cell::new(None),
             toasts: toasts.clone(),
             on_select: RefCell::new(None),
             on_finished: RefCell::new(None),
@@ -248,6 +253,13 @@ impl ResultsPane {
 
     pub fn is_running(&self) -> bool {
         self.active.borrow().is_some() || self.pending_refine.borrow().is_some()
+    }
+
+    /// Sets how many threads the next search spawns. A running search keeps
+    /// the count it started with; the new one takes effect at the next start,
+    /// resumed continuations included.
+    pub fn set_worker_count(&self, workers: usize) {
+        self.workers.set(NonZeroUsize::new(workers));
     }
 
     /// How a start request for `query` is served, per docs/search-semantics.md:
@@ -487,7 +499,7 @@ impl ResultsPane {
                 "Unrelated query — detached search from previous results",
             ));
         }
-        let session = match NativeSession::production(query.clone()) {
+        let session = match NativeSession::production(query.clone(), self.workers.get()) {
             Ok(session) => Rc::new(session),
             Err(error) => {
                 self.toasts.add_toast(adw::Toast::new(&format!(
@@ -646,6 +658,7 @@ impl ResultsPane {
             pending.query.clone(),
             pending.resume_from,
             pending.remaining,
+            self.workers.get(),
         ) {
             Ok(session) => Rc::new(session),
             Err(error) => {

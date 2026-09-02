@@ -38,6 +38,11 @@ private final class FakeEngine: SeedFinderEngine, @unchecked Sendable {
     private(set) var filteredSeeds: [[String]] = []
     private(set) var resumedCalls: [(resumeFrom: Int64, scanLen: Int64)] = []
     private(set) var freshCalls = 0
+    /// The worker count each native start was handed, in call order: the
+    /// controller must pass the device-local preference through untouched to
+    /// both the fresh scan and a refine's resumed remainder.
+    private(set) var startWorkers: [Int] = []
+    private(set) var resumedWorkers: [Int] = []
 
     /// An unscripted call must not trap — tests assert on the call counters to
     /// tell a fresh scan from a refine, so an unexpected one has to survive
@@ -46,15 +51,18 @@ private final class FakeEngine: SeedFinderEngine, @unchecked Sendable {
         queue.isEmpty ? FakeSearchSession(batches: [], hint: ResumeHint(position: 0, remaining: 0))
                       : queue.removeFirst()
     }
-    func startSearch(_ request: SearchRequest) async throws -> any SeedFinderSearchSession {
+    func startSearch(_ request: SearchRequest, workers: Int) async throws -> any SeedFinderSearchSession {
         lock.withLock {
             freshCalls += 1
+            startWorkers.append(workers)
             return nextSession(&startSessions)
         }
     }
-    func startResumedSearch(_ request: SearchRequest, resumeFrom: Int64, scanLen: Int64) async throws -> any SeedFinderSearchSession {
+    func startResumedSearch(_ request: SearchRequest, resumeFrom: Int64, scanLen: Int64,
+                            workers: Int) async throws -> any SeedFinderSearchSession {
         lock.withLock {
             resumedCalls.append((resumeFrom, scanLen))
+            resumedWorkers.append(workers)
             return nextSession(&resumedSessions)
         }
     }
@@ -168,6 +176,48 @@ final class RefineSearchTests: XCTestCase {
         XCTAssertEqual(controller.baseRun?.remaining, 0)
         XCTAssertTrue(controller.canRefine(with: try wandRequest(count: 3)),
                       "a finished refine must itself be refinable")
+    }
+
+    /// The worker count is a device-local setting, so the controller carries it
+    /// to every native start of the run it was given for — the fresh scan and
+    /// the resumed remainder of a later refine alike — and changes nothing else.
+    func testWorkerCountReachesBothNativeStarts() async throws {
+        let engine = FakeEngine()
+        let controller = SearchController(engine: engine)
+        let base = try wandRequest(count: 1)
+        let refined = try wandRequest(count: 2)
+
+        engine.startSessions = [FakeSearchSession(
+            batches: [[result("AAA-AAA-AAA")]],
+            hint: ResumeHint(position: 500, remaining: 100))]
+        controller.start(base, workers: 3)
+        try await waitUntilIdle(controller)
+        XCTAssertEqual(engine.startWorkers, [3])
+
+        engine.filterResult = ["AAA-AAA-AAA"]
+        engine.resumedSessions = [FakeSearchSession(
+            batches: [[result("AAA-AAA-AAB", matched: 2)]],
+            hint: ResumeHint(position: 0, remaining: 0))]
+        // A different count on the next start: nothing about the run is
+        // pinned to the previous choice.
+        controller.start(refined, workers: 5)
+        try await waitUntilIdle(controller)
+        XCTAssertEqual(engine.resumedWorkers, [5])
+        XCTAssertEqual(engine.startWorkers, [3], "the refine must not have rescanned")
+        XCTAssertEqual(controller.results.map(\.seed), ["AAA-AAA-AAA", "AAA-AAA-AAB"])
+    }
+
+    /// Omitting the count means the FFI's "every available core", not one
+    /// worker: a caller that never learned about the preference still gets a
+    /// full-speed search.
+    func testDefaultedWorkerCountAsksTheEngineForEveryCore() async throws {
+        let engine = FakeEngine()
+        let controller = SearchController(engine: engine)
+        engine.startSessions = [FakeSearchSession(
+            batches: [[result("AAA-AAA-AAA")]], hint: ResumeHint(position: 0, remaining: 0))]
+        controller.start(try wandRequest(count: 1))
+        try await waitUntilIdle(controller)
+        XCTAssertEqual(engine.startWorkers, [WorkerPersistence.unset])
     }
 
     /// Runs a base search then one successful refine, leaving the controller

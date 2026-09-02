@@ -19,11 +19,17 @@ extern "C" {
 // UTF-8 seed code in all remaining bytes. Legacy raw UTF-8 seed codes use mask 0.
 // Scout responses use SSC2; each item's flags byte uses bit 0 for cursed
 // and bit 1 for placement inside a secret room.
-int64_t seedfinder_start_search(const uint8_t *request, size_t request_len); // >0 handle, 0 on invalid request or spawn failure
+// workers is the number of search threads to spawn, clamped to the host's
+// parallelism; 0 uses every available core.
+int64_t seedfinder_start_search(const uint8_t *request, size_t request_len, uint32_t workers); // >0 handle, 0 on invalid request or spawn failure
 // Starts a search that scans only the scan_len seeds beginning at resume_from,
 // wrapping at the end of the seed space. Pass the values reported by
-// seedfinder_resume_hint on the stopped session being refined.
-int64_t seedfinder_start_resumed_search(const uint8_t *request, size_t request_len, uint64_t resume_from, uint64_t scan_len); // >0 handle, 0 on invalid request/hint or spawn failure
+// seedfinder_resume_hint on the stopped session being refined. workers behaves
+// exactly as in seedfinder_start_search.
+int64_t seedfinder_start_resumed_search(const uint8_t *request, size_t request_len, uint64_t resume_from, uint64_t scan_len, uint32_t workers); // >0 handle, 0 on invalid request/hint or spawn failure
+// Logical processors available to search workers, never less than one: the
+// ceiling for a frontend's worker selector.
+uint32_t seedfinder_available_workers(void);
 int32_t seedfinder_poll(int64_t handle, uint32_t max_results, uint8_t **out_packet, size_t *out_len);
 // [state, scanned, total, errorCode, probabilityBits]; state: 0 running,
 // 1 completed, 2 cancelled, 3 failed. A stopped search keeps reporting

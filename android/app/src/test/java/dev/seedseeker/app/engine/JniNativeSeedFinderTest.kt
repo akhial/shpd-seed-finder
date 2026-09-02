@@ -30,7 +30,8 @@ class JniNativeSeedFinderTest {
             ),
         )
 
-        val session = finder.startSearch(request)
+        val session = finder.startSearch(request, workers = 3)
+        assertEquals(3, bindings.workers)
         assertTrue(bindings.request.contentEquals(QueryDocument.encode(request)))
         assertEquals("AAA-AAA-AAA", session.poll(24).results.single().seed)
         assertEquals(1, session.poll(24).results.single().matchedRequirements)
@@ -66,7 +67,7 @@ class JniNativeSeedFinderTest {
 
         for ((native, kotlin) in expected) {
             bindings.statusPacket = longArrayOf(native, 7, 9, 41, 0.25.toBits())
-            val session = finder.startSearch(request)
+            val session = finder.startSearch(request, workers = 1)
             val status = session.status()
             assertEquals(kotlin, status.state)
             assertEquals(41, status.errorCode)
@@ -83,10 +84,17 @@ class JniNativeSeedFinderTest {
             listOf(ItemRequirement(1, ItemCatalog.rings.first(), 2)),
         )
 
-        val session = finder.startResumedSearch(request, resumeFrom = 5_000L, scanLen = 77L)
+        val session = finder.startResumedSearch(
+            request,
+            resumeFrom = 5_000L,
+            scanLen = 77L,
+            workers = 2,
+        )
         assertTrue(bindings.resumedRequest.contentEquals(QueryDocument.encode(request)))
         assertEquals(5_000L, bindings.resumedFrom)
         assertEquals(77L, bindings.resumedScanLen)
+        // A resumed run spawns the same chosen thread count as a fresh one.
+        assertEquals(2, bindings.resumedWorkers)
         assertEquals("AAA-AAA-AAA", session.poll(24).results.single().seed)
         assertEquals(SearchState.COMPLETED, session.status().state)
         session.close()
@@ -100,7 +108,7 @@ class JniNativeSeedFinderTest {
             listOf(ItemRequirement(1, ItemCatalog.wands.first(), 1)),
         )
 
-        val session = finder.startSearch(request)
+        val session = finder.startSearch(request, workers = 0)
         bindings.resumeHintPacket = longArrayOf(1_000L, 2_000L)
         assertEquals(1_000L, session.resumeHint().position)
         assertEquals(2_000L, session.resumeHint().remaining)
@@ -181,11 +189,13 @@ class JniNativeSeedFinderTest {
 
     private class RecordingBindings : NativeBindings {
         var request = byteArrayOf()
+        var workers = -1
         var statusPacket = longArrayOf(1, 123, 456, 0, 0.125.toBits())
         var resumeHintPacket = longArrayOf(0, 0)
         var resumedRequest = byteArrayOf()
         var resumedFrom = -1L
         var resumedScanLen = -1L
+        var resumedWorkers = -1
         var filterRequest = byteArrayOf()
         var filterValues = longArrayOf()
         var scoutMatchRequest = byteArrayOf()
@@ -199,17 +209,26 @@ class JniNativeSeedFinderTest {
         var cancelCalls = 0
         var closeCalls = 0
 
-        override fun startSearch(request: ByteArray): Long {
+        override fun startSearch(request: ByteArray, workers: Int): Long {
             this.request = request.copyOf()
+            this.workers = workers
             return 42
         }
 
-        override fun startResumedSearch(request: ByteArray, resumeFrom: Long, scanLen: Long): Long {
+        override fun startResumedSearch(
+            request: ByteArray,
+            resumeFrom: Long,
+            scanLen: Long,
+            workers: Int,
+        ): Long {
             resumedRequest = request.copyOf()
             resumedFrom = resumeFrom
             resumedScanLen = scanLen
+            resumedWorkers = workers
             return 42
         }
+
+        override fun availableWorkers(): Int = 8
 
         override fun poll(handle: Long, maxResults: Int): ByteArray {
             assertEquals(42, handle)

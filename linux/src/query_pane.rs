@@ -17,6 +17,7 @@ use shpd_seedfinder_core::query::{
     EffectRequirement, EffectSet, MAX_SEARCH_DEPTH, TierRequirement, UpgradeRequirement,
 };
 use shpd_seedfinder_core::quests::WandmakerQuestType;
+use shpd_seedfinder_session::available_workers;
 
 use crate::relations::{BoardItem, STACK_MAX};
 use crate::state::{
@@ -104,6 +105,9 @@ pub struct QueryPane {
     blacksmith_row: adw::SwitchRow,
     exclude_row: adw::SwitchRow,
     wandmaker_row: adw::ComboRow,
+    /// The search worker count, a device-local preference the window saves
+    /// beside the query rather than inside it.
+    workers_row: adw::SpinRow,
     start_content: adw::ButtonContent,
     start_button: gtk::Button,
     challenges_button: gtk::Button,
@@ -223,12 +227,36 @@ impl QueryPane {
         blacksmith_group.add(&blacksmith_row);
         blacksmith_group.add(&exclude_row);
 
+        // How many threads a search spawns. This is a preference about the
+        // machine rather than about the query, so it never reaches the search
+        // document; a single-core host has nothing to choose and sees no row.
+        let ceiling = available_workers();
+        let workers_row = adw::SpinRow::builder()
+            .title("Workers")
+            .subtitle(worker_subtitle(ceiling, ceiling))
+            .adjustment(&gtk::Adjustment::new(
+                usize_to_f64(ceiling),
+                1.0,
+                usize_to_f64(ceiling),
+                1.0,
+                1.0,
+                0.0,
+            ))
+            .build();
+        let performance_group = adw::PreferencesGroup::builder()
+            .title("Performance")
+            .description("Number of search threads to spawn.")
+            .visible(ceiling > 1)
+            .build();
+        performance_group.add(&workers_row);
+
         let preferences_page = adw::PreferencesPage::new();
         preferences_page.add(&presets_group);
         preferences_page.add(&requirements_group);
         preferences_page.add(&scope_group);
         preferences_page.add(&wandmaker_group);
         preferences_page.add(&blacksmith_group);
+        preferences_page.add(&performance_group);
 
         let challenges_button = gtk::Button::builder()
             .css_classes(["flat", "caption"])
@@ -297,6 +325,7 @@ impl QueryPane {
             blacksmith_row,
             exclude_row,
             wandmaker_row,
+            workers_row,
             start_content,
             start_button,
             challenges_button,
@@ -341,6 +370,16 @@ impl QueryPane {
             let pane = Rc::clone(&pane);
             move |_| pane.notify_changed()
         });
+        pane.workers_row.connect_value_notify({
+            let pane = Rc::clone(&pane);
+            move |row| {
+                row.set_subtitle(&worker_subtitle(
+                    round_to_usize(row.value()),
+                    available_workers(),
+                ));
+                pane.notify_changed();
+            }
+        });
         pane
     }
 
@@ -380,6 +419,22 @@ impl QueryPane {
             .ok()
             .and_then(|index| index.checked_sub(1))
             .and_then(|index| WandmakerQuestType::ALL.get(index).copied());
+    }
+
+    /// The chosen number of search threads, always at least one.
+    #[must_use]
+    pub fn worker_count(&self) -> usize {
+        round_to_usize(self.workers_row.value()).max(1)
+    }
+
+    /// Sets the saved worker count on the row, without echoing the change
+    /// back as an edit. The caller has already clamped it to this machine.
+    pub fn set_worker_count(&self, workers: usize) {
+        self.updating.set(true);
+        self.workers_row.set_value(usize_to_f64(workers));
+        self.workers_row
+            .set_subtitle(&worker_subtitle(workers, available_workers()));
+        self.updating.set(false);
     }
 
     /// Rebuilds every control from `state` without echoing change signals.
@@ -1183,13 +1238,48 @@ fn requirements_title(entries: usize) -> String {
     }
 }
 
+/// The worker row's subtitle: how much of the machine the search will use.
+fn worker_subtitle(workers: usize, ceiling: usize) -> String {
+    format!("{workers} of {ceiling} cores")
+}
+
+/// A spin row's value as a count. Values come from an adjustment that is
+/// already bounded to `[1, ceiling]`, so this only has to round.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn round_to_usize(value: f64) -> usize {
+    value.round().max(0.0) as usize
+}
+
+/// A count as a spin-row value. Worker counts are small enough to convert
+/// exactly; an implausibly huge one saturates rather than losing precision
+/// silently.
+#[allow(clippy::cast_precision_loss)]
+fn usize_to_f64(value: usize) -> f64 {
+    u32::try_from(value).map_or(f64::from(u32::MAX), f64::from)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::requirements_title;
+    use super::{requirements_title, round_to_usize, usize_to_f64, worker_subtitle};
 
     #[test]
     fn requirements_header_counts_board_entries() {
         assert_eq!(requirements_title(0), "Requirements");
         assert_eq!(requirements_title(3), "Requirements (3)");
+    }
+
+    #[test]
+    fn the_worker_row_says_how_much_of_the_machine_it_uses() {
+        assert_eq!(worker_subtitle(1, 8), "1 of 8 cores");
+        assert_eq!(worker_subtitle(8, 8), "8 of 8 cores");
+    }
+
+    #[test]
+    fn worker_counts_survive_the_trip_through_the_spin_row() {
+        for workers in [1_usize, 3, 8, 64] {
+            assert_eq!(round_to_usize(usize_to_f64(workers)), workers);
+        }
+        assert_eq!(round_to_usize(2.6), 3);
+        assert_eq!(round_to_usize(-1.0), 0);
     }
 }

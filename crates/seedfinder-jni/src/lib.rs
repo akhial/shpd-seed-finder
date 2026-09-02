@@ -2,18 +2,26 @@
 
 #![allow(unsafe_code)]
 
+use std::num::NonZeroUsize;
+
 use jni::JNIEnv;
 use jni::objects::{JByteArray, JClass, JLongArray};
 use jni::sys::{JNI_FALSE, jboolean, jint, jlong};
 use shpd_seedfinder_core::{deep_link, engine_info, json_query, results_export, seed};
 use shpd_seedfinder_session::{
     FilterPacketError, MAX_RESULTS, NativeSession, ScoutCallError, ScoutMatchError,
-    ScoutPacketError, SearchError, StartSessionError, close_session, json,
+    ScoutPacketError, SearchError, StartSessionError, available_workers, close_session, json,
     production_filter_packet, production_scout_packet, queries_continue, registry,
 };
 
 fn throw_illegal_argument(env: &mut JNIEnv<'_>, message: impl AsRef<str>) {
     let _ = env.throw_new("java/lang/IllegalArgumentException", message.as_ref());
+}
+
+/// Maps the JNI boundary's "0 or negative = every available core" onto the
+/// session API's `None`.
+fn requested_workers(workers: jint) -> Option<NonZeroUsize> {
+    usize::try_from(workers).ok().and_then(NonZeroUsize::new)
 }
 
 fn throw_illegal_state(env: &mut JNIEnv<'_>, message: impl AsRef<str>) {
@@ -120,11 +128,14 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_scoutMatches<'
     }
 }
 
+/// `workers` is the number of search threads to spawn, clamped to the host's
+/// parallelism; 0 or a negative value uses every available core.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_startSearch<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     request: JByteArray<'local>,
+    workers: jint,
 ) -> jlong {
     let bytes = match env.convert_byte_array(&request) {
         Ok(bytes) => bytes,
@@ -133,7 +144,7 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_startSearch<'l
             return 0;
         }
     };
-    let session = match NativeSession::production_from_packet(&bytes) {
+    let session = match NativeSession::production_from_packet(&bytes, requested_workers(workers)) {
         Ok(session) => session,
         Err(StartSessionError::Request(error)) => {
             throw_illegal_argument(&mut env, error.to_string());
@@ -150,7 +161,8 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_startSearch<'l
 /// Starts a search which resumes a previous traversal: it scans only the
 /// `scanLen` seeds beginning at `resumeFrom`, wrapping at the end of the seed
 /// space. Callers obtain both values from `resumeHint` on the stopped or
-/// completed session being refined.
+/// completed session being refined. `workers` behaves exactly as in
+/// `startSearch`.
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_startResumedSearch<'local>(
     mut env: JNIEnv<'local>,
@@ -158,6 +170,7 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_startResumedSe
     request: JByteArray<'local>,
     resume_from: jlong,
     scan_len: jlong,
+    workers: jint,
 ) -> jlong {
     let bytes = match env.convert_byte_array(&request) {
         Ok(bytes) => bytes,
@@ -171,19 +184,31 @@ pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_startResumedSe
         throw_illegal_argument(&mut env, "resumeFrom and scanLen must be non-negative");
         return 0;
     };
-    let session = match NativeSession::production_resumed_from_packet(&bytes, resume_from, scan_len)
-    {
-        Ok(session) => session,
-        Err(StartSessionError::Request(error)) => {
-            throw_illegal_argument(&mut env, error.to_string());
-            return 0;
-        }
-        Err(StartSessionError::Spawn(error)) => {
-            throw_illegal_argument(&mut env, format!("cannot start resumed search: {error:?}"));
-            return 0;
-        }
-    };
+    let workers = requested_workers(workers);
+    let session =
+        match NativeSession::production_resumed_from_packet(&bytes, resume_from, scan_len, workers)
+        {
+            Ok(session) => session,
+            Err(StartSessionError::Request(error)) => {
+                throw_illegal_argument(&mut env, error.to_string());
+                return 0;
+            }
+            Err(StartSessionError::Spawn(error)) => {
+                throw_illegal_argument(&mut env, format!("cannot start resumed search: {error:?}"));
+                return 0;
+            }
+        };
     registry().insert(session)
+}
+
+/// Logical processors available to search workers, never less than one: the
+/// ceiling for the app's worker selector.
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_seedseeker_app_engine_JniBindings_availableWorkers<'local>(
+    _env: JNIEnv<'local>,
+    _class: JClass<'local>,
+) -> jint {
+    jint::try_from(available_workers()).unwrap_or(jint::MAX)
 }
 
 /// Returns `[resumePosition, remaining]` for a session: where and how much a

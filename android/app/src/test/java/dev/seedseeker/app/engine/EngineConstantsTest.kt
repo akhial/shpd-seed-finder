@@ -17,6 +17,7 @@ import dev.seedseeker.app.model.UpgradeMatch
 import dev.seedseeker.app.ui.RESULT_CAP
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -90,6 +91,19 @@ class EngineConstantsTest {
         // document this test reads.
         assertEquals(limits.getInt("resultsFileMaxBytes"), EngineInfo.resultsFileMaxBytes)
         assertEquals(info.getString("shpdVersion"), EngineInfo.shpdVersion)
+    }
+
+    /**
+     * The worker ceiling is not in the constants document: it is a property of
+     * the host, asked for at runtime. The contract the selector relies on is
+     * that it is never below one, so a device always has a count to search
+     * with even when the engine can see no parallelism at all.
+     */
+    @Test
+    fun availableWorkersOffersAtLeastOneCore() {
+        val workers = JniBindings.availableWorkers()
+        assertTrue("availableWorkers returned $workers", workers >= 1)
+        assertEquals(workers, SearchWorkers.ceiling)
     }
 
     @Test

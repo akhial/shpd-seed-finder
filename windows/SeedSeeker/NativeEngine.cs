@@ -7,8 +7,9 @@ namespace SeedSeeker;
 internal static partial class Native
 {
     private const string Library = "shpd_seedfinder_ffi";
-    [LibraryImport(Library)] internal static partial long seedfinder_start_search(byte[] request, nuint length);
-    [LibraryImport(Library)] internal static partial long seedfinder_start_resumed_search(byte[] request, nuint length, ulong resumeFrom, ulong scanLength);
+    [LibraryImport(Library)] internal static partial long seedfinder_start_search(byte[] request, nuint length, uint workers);
+    [LibraryImport(Library)] internal static partial long seedfinder_start_resumed_search(byte[] request, nuint length, ulong resumeFrom, ulong scanLength, uint workers);
+    [LibraryImport(Library)] internal static partial uint seedfinder_available_workers();
     [LibraryImport(Library)] internal static partial int seedfinder_poll(long handle, uint maximum, out nint packet, out nuint length);
     [LibraryImport(Library)] internal static partial int seedfinder_status(long handle, [Out] long[] status);
     [LibraryImport(Library)] internal static partial int seedfinder_resume_hint(long handle, [Out] long[] hint);
@@ -105,19 +106,34 @@ public static class SeedCode
 
 public sealed class NativeEngine
 {
-    public NativeSearch Start(QuerySettings query)
+    /// <summary>
+    /// Logical processors available to search workers, never less than one:
+    /// the ceiling for the worker selector. The engine's own count
+    /// (<c>seedfinder_available_workers</c>), so the selector can never offer
+    /// more threads than the search would actually spawn.
+    /// </summary>
+    public static int AvailableWorkers { get; } =
+        (int)Math.Clamp(Native.seedfinder_available_workers(), 1u, int.MaxValue);
+
+    /// <param name="workers">Search threads to spawn; the engine clamps it to
+    /// <see cref="AvailableWorkers"/> and 0 means every available core.</param>
+    public NativeSearch Start(QuerySettings query, int workers = 0)
     {
-        var packet = EncodeQuery(query); var handle = Native.seedfinder_start_search(packet, (nuint)packet.Length);
+        var packet = EncodeQuery(query); var handle = Native.seedfinder_start_search(packet, (nuint)packet.Length, Workers(workers));
         if (handle == 0) throw new InvalidOperationException("The native engine rejected the query.");
         return new NativeSearch(handle);
     }
 
-    public NativeSearch StartResumed(QuerySettings query, long resumeFrom, long scanLength)
+    /// <param name="workers">As in <see cref="Start"/>.</param>
+    public NativeSearch StartResumed(QuerySettings query, long resumeFrom, long scanLength, int workers = 0)
     {
-        var packet = EncodeQuery(query); var handle = Native.seedfinder_start_resumed_search(packet, (nuint)packet.Length, (ulong)resumeFrom, (ulong)scanLength);
+        var packet = EncodeQuery(query); var handle = Native.seedfinder_start_resumed_search(packet, (nuint)packet.Length, (ulong)resumeFrom, (ulong)scanLength, Workers(workers));
         if (handle == 0) throw new InvalidOperationException("The native engine rejected the query.");
         return new NativeSearch(handle);
     }
+
+    /// <summary>A worker count as the FFI takes it: negatives, like 0, mean every core.</summary>
+    private static uint Workers(int workers) => workers <= 0 ? 0u : (uint)workers;
 
     public IReadOnlyList<string> FilterSeeds(QuerySettings query, IReadOnlyList<string> seeds)
     {

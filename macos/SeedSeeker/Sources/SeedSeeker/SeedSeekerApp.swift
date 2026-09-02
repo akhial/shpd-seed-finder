@@ -548,6 +548,11 @@ private struct QueryView: View {
     let onSavePreset: (String) -> Void
     let onDeletePreset: (QueryPreset) -> Void
     let controller: SearchController
+    /// A machine-local preference, so it lives in its own defaults key rather
+    /// than in the saved query: it must not ride along in a preset, an export
+    /// or a share link. `WorkerPersistence.unset` — the absent-value default —
+    /// means every core.
+    @AppStorage(WorkerPersistence.defaultsKey) private var workerCount = WorkerPersistence.unset
     @State private var editor: EditorSession?
     @State private var showingSavePreset = false
     @State private var presetName = ""
@@ -580,7 +585,7 @@ private struct QueryView: View {
             // so there is no second button here.
             Button {
                 if controller.isRunning { controller.cancel() }
-                else if let request = builtRequest { controller.start(request) }
+                else if let request = builtRequest { controller.start(request, workers: workers) }
             } label: {
                 Label(controller.isRunning ? "Cancel Search" : "Start Search",
                       systemImage: controller.isRunning ? "stop.fill" : "play.fill")
@@ -612,6 +617,25 @@ private struct QueryView: View {
     }
 
     private var builtRequest: SearchRequest? { try? buildRequest() }
+
+    /// How many threads a search may use on this machine.
+    private var workerCeiling: Int { EngineInfo.availableWorkers }
+
+    /// The preference as it applies here: unset means every core, and a count
+    /// saved on a machine with more of them is clamped down on the way in, so
+    /// the slider always shows a reachable stop.
+    private var workers: Int {
+        WorkerPersistence.resolve(saved: workerCount, ceiling: workerCeiling)
+    }
+
+    private var workerSummary: String { "\(workers) of \(workerCeiling) cores" }
+
+    /// Writes back the clamped choice, so an out-of-range saved value is
+    /// corrected the moment the user touches the slider.
+    private var workerCountBinding: Binding<Double> {
+        Binding(get: { Double(workers) },
+                set: { workerCount = WorkerPersistence.clamp(Int($0.rounded()), ceiling: workerCeiling) })
+    }
 
     /// Why the query cannot be searched as it stands (a combined-level
     /// group that no longer adds up, say), or nil when it can.
@@ -700,6 +724,19 @@ private struct QueryView: View {
                     Slider(value: floorLimitBinding($maximumDepth),
                            in: 0...Double(FloorLimits.options.count - 1), step: 1)
                         .accessibilityValue(Text("first \(maximumDepth) floor\(maximumDepth == 1 ? "" : "s")"))
+                }
+                // A single-core machine has no choice to offer, so the group
+                // does not appear at all rather than showing a slider pinned
+                // to its only stop.
+                if workerCeiling > 1 {
+                    SettingsGroup("Performance") {
+                        LabeledContent("Workers") {
+                            Text(workerSummary).monospacedDigit().foregroundStyle(.secondary)
+                        }
+                        Slider(value: workerCountBinding, in: 1...Double(workerCeiling), step: 1)
+                            .accessibilityValue(Text(workerSummary))
+                        SettingsCaption("Number of search threads to spawn.")
+                    }
                 }
             }
             VStack(alignment: .leading, spacing: 14) {
