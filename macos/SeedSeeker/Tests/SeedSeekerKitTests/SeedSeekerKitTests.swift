@@ -561,7 +561,7 @@ final class SeedSeekerKitTests: XCTestCase {
         let requirement = try ItemRequirement(key: 1, item: ItemCatalog.findById("wand_frost"),
             upgrade: 2, kind: .wand)
         let session = try await ProductionSeedFinderEngine().startSearch(
-            try SearchRequest(requirements: [requirement]))
+            try SearchRequest(requirements: [requirement]), workers: 0)
         await session.cancel()
         let deadline = ContinuousClock.now + .seconds(5)
         var terminal = false
@@ -580,7 +580,9 @@ final class SeedSeekerKitTests: XCTestCase {
         let request = try SearchRequest(requirements: [requirement])
         let engine = ProductionSeedFinderEngine()
 
-        let session = try await engine.startSearch(request)
+        // An explicit worker count the engine clamps to the host, rather
+        // than the 0 that means "every core".
+        let session = try await engine.startSearch(request, workers: 2)
         await session.cancel()
         try await waitForTerminal(session)
         let hint = try await session.resumeHint()
@@ -589,7 +591,7 @@ final class SeedSeekerKitTests: XCTestCase {
         await session.close()
 
         // A one-seed resumed scan finishes almost immediately.
-        let resumed = try await engine.startResumedSearch(request, resumeFrom: hint.position, scanLen: 1)
+        let resumed = try await engine.startResumedSearch(request, resumeFrom: hint.position, scanLen: 1, workers: 1)
         try await waitForTerminal(resumed)
         let status = try await resumed.status()
         XCTAssertEqual(status.state, .completed)

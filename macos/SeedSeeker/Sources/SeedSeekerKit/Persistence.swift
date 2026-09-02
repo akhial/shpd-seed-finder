@@ -166,6 +166,42 @@ public enum QueryPersistence {
     }
 }
 
+/// The worker count — how many search threads the engine spawns — as a
+/// device-local preference.
+///
+/// Deliberately not a `SavedQuery` field: it describes this machine's cores,
+/// not the seeds a query matches, so it stays out of query documents, presets,
+/// results exports, share links and the continuation predicate. A query that
+/// travels to another machine must search the same seeds there.
+///
+/// The stored form is a plain `UserDefaults` integer under
+/// `WorkerPersistence.defaultsKey`, read through `@AppStorage` like the other
+/// preferences; `unset` is the absent-value default, so a machine that has
+/// never touched the selector searches on every core.
+public enum WorkerPersistence {
+    public static let defaultsKey = "workerCount"
+
+    /// The stored value meaning "never chosen": use every available core.
+    /// It is also what the FFI reads as "all cores", so it needs no
+    /// translation on the way down.
+    public static let unset = 0
+
+    /// The saved preference read back against this machine's ceiling: unset
+    /// (or nonsense, including a negative left by a hand-edited defaults
+    /// entry) means every core, and a count saved on a bigger machine is
+    /// clamped down rather than discarded.
+    public static func resolve(saved: Int, ceiling: Int) -> Int {
+        let ceiling = max(1, ceiling)
+        guard saved > 0 else { return ceiling }
+        return clamp(saved, ceiling: ceiling)
+    }
+
+    /// A chosen count confined to `1...ceiling`.
+    public static func clamp(_ value: Int, ceiling: Int) -> Int {
+        min(max(1, value), max(1, ceiling))
+    }
+}
+
 public enum PresetPersistence {
     public static func encode(_ presets: [QueryPreset]) -> String? {
         guard let data = try? JSONEncoder().encode(presets) else { return nil }

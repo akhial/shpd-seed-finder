@@ -10,7 +10,7 @@ final class ImpossibleQueryTests: XCTestCase {
         let requirement = try ItemRequirement(key: 1, item: nil, upgrade: 4, kind: .ring,
             upgradeMatch: .exactly)
         let session = try await ProductionSeedFinderEngine().startSearch(
-            try SearchRequest(requirements: [requirement], maximumDepth: 14))
+            try SearchRequest(requirements: [requirement], maximumDepth: 14), workers: 0)
         let deadline = ContinuousClock.now + .seconds(5)
         var status = try await session.status()
         while status.state == .running && ContinuousClock.now < deadline {
@@ -22,7 +22,7 @@ final class ImpossibleQueryTests: XCTestCase {
         await session.close()
 
         let satisfiable = try await ProductionSeedFinderEngine().startSearch(
-            try SearchRequest(requirements: [requirement], maximumDepth: 24))
+            try SearchRequest(requirements: [requirement], maximumDepth: 24), workers: 0)
         let runningStatus = try await satisfiable.status()
         XCTAssertEqual(runningStatus.state, .running)
         await satisfiable.cancel()

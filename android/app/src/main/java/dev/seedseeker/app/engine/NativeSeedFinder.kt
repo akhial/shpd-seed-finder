@@ -31,8 +31,21 @@ import kotlin.math.min
 internal const val TOTAL_SEEDS = 5_429_503_678_976L
 
 interface NativeSeedFinder {
-    fun startSearch(request: SearchRequest): NativeSearchSession
-    fun startResumedSearch(request: SearchRequest, resumeFrom: Long, scanLen: Long): NativeSearchSession
+    /**
+     * Starts a fresh traversal. [workers] is how many search threads the engine spawns, clamped
+     * by the engine to the host's parallelism; 0 or less asks for every available core. It is a
+     * device-local preference — never part of [request], and so never part of a preset, an export
+     * or a share link.
+     */
+    fun startSearch(request: SearchRequest, workers: Int): NativeSearchSession
+
+    /** Resumes a traversal over `scanLen` seeds from [resumeFrom]; [workers] is [startSearch]'s. */
+    fun startResumedSearch(
+        request: SearchRequest,
+        resumeFrom: Long,
+        scanLen: Long,
+        workers: Int,
+    ): NativeSearchSession
     fun filterSeeds(request: SearchRequest, seeds: List<String>): List<String>
     fun scoutSeed(seed: String, challenges: Int = 0): ScoutWorld
 
@@ -117,12 +130,16 @@ object NativeSeedFinderFactory {
  * library every APK packages.
  */
 class DemoNativeSeedFinder : NativeSeedFinder {
-    override fun startSearch(request: SearchRequest): NativeSearchSession = DemoSession(request)
+    // The demo emits its samples on a timer rather than scanning, so it has no
+    // workers to spawn and the requested count is simply not used here.
+    override fun startSearch(request: SearchRequest, workers: Int): NativeSearchSession =
+        DemoSession(request)
 
     override fun startResumedSearch(
         request: SearchRequest,
         resumeFrom: Long,
         scanLen: Long,
+        workers: Int,
     ): NativeSearchSession {
         require(resumeFrom >= 0 && scanLen > 0) { "Resume window must be non-empty" }
         // Emit the odd-indexed samples so a refine visibly appends seeds the demo filter dropped.
@@ -329,20 +346,23 @@ class DemoNativeSeedFinder : NativeSeedFinder {
  *
  * JNI contract (all integers are signed JVM primitives; packets use unsigned big-endian fields):
  *
- * 1. `startSearch(requestBytes) -> handle` creates a search or throws.
+ * 1. `startSearch(requestBytes, workers) -> handle` creates a search or throws; `workers` is the
+ *    thread count, clamped natively, with 0 or less meaning every available core.
  * 2. `poll(handle, maxResults) -> resultBytes` drains, never blocks for new results.
  * 3. `status(handle) -> long[5]` returns state, scanned, total, error, and probability bits.
  * 4. `cancel(handle)` is cooperative and safe to repeat.
  * 5. `close(handle)` joins/releases native resources and is safe after any terminal state.
  * 6. `scoutSeed(requestBytes) -> scoutBytes` generates one canonical seed through depth 24.
- * 7. `startResumedSearch(requestBytes, resumeFrom, scanLen) -> handle` scans `scanLen` seeds
- *    from `resumeFrom`, wrapping at 26^9, with the same lifecycle as `startSearch`.
+ * 7. `startResumedSearch(requestBytes, resumeFrom, scanLen, workers) -> handle` scans `scanLen`
+ *    seeds from `resumeFrom`, wrapping at 26^9, with the same lifecycle as `startSearch`.
  * 8. `resumeHint(handle) -> long[2]` returns where and how much a follow-up traversal must
  *    scan to finish this session's coverage; exact once the session has stopped.
  * 9. `filterSeeds(requestBytes, seedValues) -> resultBytes` re-verifies numeric seed values
  *    against the full query and returns the survivors, in input order, as a result packet.
  * 10. `queryContinues(candidateBytes, baseBytes) -> boolean` reports whether the candidate query
  *    may reuse a run of the base query, throwing for an undecodable packet.
+ * 11. `availableWorkers() -> int` reports the logical processors available to search workers,
+ *    never less than one: the ceiling the app's worker selector offers.
  *
  * Every query-taking call receives the canonical UTF-8 JSON query document
  * (docs/results-export-format.md) that [QueryDocument] writes; an invalid document fails the
@@ -381,8 +401,8 @@ class JniNativeSeedFinder(
             ),
         )
 
-    override fun startSearch(request: SearchRequest): NativeSearchSession {
-        val handle = bindings.startSearch(QueryDocument.encode(request))
+    override fun startSearch(request: SearchRequest, workers: Int): NativeSearchSession {
+        val handle = bindings.startSearch(QueryDocument.encode(request), workers)
         check(handle != 0L) { "Native seed finder returned an invalid handle" }
         return JniSession(handle, request.slotCount, bindings)
     }
@@ -391,8 +411,10 @@ class JniNativeSeedFinder(
         request: SearchRequest,
         resumeFrom: Long,
         scanLen: Long,
+        workers: Int,
     ): NativeSearchSession {
-        val handle = bindings.startResumedSearch(QueryDocument.encode(request), resumeFrom, scanLen)
+        val handle =
+            bindings.startResumedSearch(QueryDocument.encode(request), resumeFrom, scanLen, workers)
         check(handle != 0L) { "Native seed finder returned an invalid handle" }
         return JniSession(handle, request.slotCount, bindings)
     }
@@ -481,8 +503,9 @@ class JniNativeSeedFinder(
 }
 
 interface NativeBindings {
-    fun startSearch(request: ByteArray): Long
-    fun startResumedSearch(request: ByteArray, resumeFrom: Long, scanLen: Long): Long
+    fun startSearch(request: ByteArray, workers: Int): Long
+    fun startResumedSearch(request: ByteArray, resumeFrom: Long, scanLen: Long, workers: Int): Long
+    fun availableWorkers(): Int
     fun poll(handle: Long, maxResults: Int): ByteArray
     fun status(handle: Long): LongArray
     fun resumeHint(handle: Long): LongArray
@@ -507,8 +530,18 @@ object JniBindings {
         System.loadLibrary("shpd_seedfinder")
     }
 
-    @JvmStatic external fun startSearch(request: ByteArray): Long
-    @JvmStatic external fun startResumedSearch(request: ByteArray, resumeFrom: Long, scanLen: Long): Long
+    @JvmStatic external fun startSearch(request: ByteArray, workers: Int): Long
+
+    @JvmStatic external fun startResumedSearch(
+        request: ByteArray,
+        resumeFrom: Long,
+        scanLen: Long,
+        workers: Int,
+    ): Long
+
+    /** Logical processors available to search workers, never less than one. */
+    @JvmStatic external fun availableWorkers(): Int
+
     @JvmStatic external fun poll(handle: Long, maxResults: Int): ByteArray
     @JvmStatic external fun status(handle: Long): LongArray
     @JvmStatic external fun resumeHint(handle: Long): LongArray
@@ -551,9 +584,15 @@ object JniBindings {
 }
 
 private object JniBindingsAdapter : NativeBindings {
-    override fun startSearch(request: ByteArray) = JniBindings.startSearch(request)
-    override fun startResumedSearch(request: ByteArray, resumeFrom: Long, scanLen: Long) =
-        JniBindings.startResumedSearch(request, resumeFrom, scanLen)
+    override fun startSearch(request: ByteArray, workers: Int) =
+        JniBindings.startSearch(request, workers)
+    override fun startResumedSearch(
+        request: ByteArray,
+        resumeFrom: Long,
+        scanLen: Long,
+        workers: Int,
+    ) = JniBindings.startResumedSearch(request, resumeFrom, scanLen, workers)
+    override fun availableWorkers() = JniBindings.availableWorkers()
     override fun poll(handle: Long, maxResults: Int) = JniBindings.poll(handle, maxResults)
     override fun status(handle: Long) = JniBindings.status(handle)
     override fun resumeHint(handle: Long) = JniBindings.resumeHint(handle)

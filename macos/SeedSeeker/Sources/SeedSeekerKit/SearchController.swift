@@ -161,13 +161,18 @@ public final class SearchController {
     /// range without touching the Target — continuing the previous detached
     /// scan when that is sound. There is no user-facing choice: eligibility
     /// alone decides, and only `clearResults()` discards anything.
-    public func start(_ request: SearchRequest) {
+    ///
+    /// `workers` is the device-local thread count (see `WorkerPersistence`),
+    /// carried alongside the request rather than in it: it reaches every
+    /// native start this run makes — the fresh scan and the resumed remainder
+    /// of a refine alike — without ever touching what the query means.
+    public func start(_ request: SearchRequest, workers: Int = WorkerPersistence.unset) {
         switch decideStart(request) {
-        case .targetRefine: refineTarget(request, resumesScan: true)
-        case .targetFilter: refineTarget(request, resumesScan: false)
-        case .continueDetached: continueDetached(request)
-        case .anchor: freshSearch(request, as: .anchor)
-        case .detached: freshSearch(request, as: .detached)
+        case .targetRefine: refineTarget(request, workers: workers, resumesScan: true)
+        case .targetFilter: refineTarget(request, workers: workers, resumesScan: false)
+        case .continueDetached: continueDetached(request, workers: workers)
+        case .anchor: freshSearch(request, workers: workers, as: .anchor)
+        case .detached: freshSearch(request, workers: workers, as: .detached)
         }
     }
 
@@ -191,7 +196,7 @@ public final class SearchController {
     /// Scans the whole seed space from scratch, replacing the displayed
     /// results. An `.anchor` run establishes the Target when it concludes; a
     /// `.detached` run leaves the existing Target untouched.
-    private func freshSearch(_ request: SearchRequest, as kind: RunKind) {
+    private func freshSearch(_ request: SearchRequest, workers: Int, as kind: RunKind) {
         task?.cancel(); results = []; collected = []; refinedKept = nil; refinedOf = nil; baseRun = nil; resetProgress()
         isImported = false; importedDropped = 0
         runKind = kind
@@ -204,7 +209,7 @@ public final class SearchController {
         task = Task { [weak self] in
             guard let self else { return }
             await self.run(request, alreadyShown: []) { engine in
-                try await engine.startSearch(request)
+                try await engine.startSearch(request, workers: workers)
             }
         }
     }
@@ -247,7 +252,7 @@ public final class SearchController {
     /// Set rather than the last run's survivors, so loosening back toward the
     /// Target Query brings previously dropped seeds back. A cancelled or
     /// failed filter phase leaves the previous results and the Target intact.
-    private func refineTarget(_ request: SearchRequest, resumesScan: Bool) {
+    private func refineTarget(_ request: SearchRequest, workers: Int, resumesScan: Bool) {
         guard let target else { return }
         // Re-assert the equal-or-superset invariant here rather than trusting
         // the decision: the soundness of resuming depends on it.
@@ -290,7 +295,7 @@ public final class SearchController {
             if resumesScan && target.remaining > 0 {
                 await self.run(request, alreadyShown: Set(kept)) { engine in
                     try await engine.startResumedSearch(request, resumeFrom: target.resumeFrom,
-                                                        scanLen: target.remaining)
+                                                        scanLen: target.remaining, workers: workers)
                 }
             } else {
                 self.state = .completed
@@ -305,7 +310,7 @@ public final class SearchController {
     /// re-verified against `request` and the scan resumes over the range it
     /// never covered. The Target is untouched throughout, and `runKind` stays
     /// `.detached`.
-    private func continueDetached(_ request: SearchRequest) {
+    private func continueDetached(_ request: SearchRequest, workers: Int) {
         guard canRefine(with: request), let base = baseRun else { return }
         task?.cancel(); resetProgress()
         // The last run's full result set, not the capped display: finds
@@ -339,7 +344,8 @@ public final class SearchController {
                 challenges: request.challenges)
             if base.remaining > 0 {
                 await self.run(request, alreadyShown: Set(kept)) { engine in
-                    try await engine.startResumedSearch(request, resumeFrom: base.resumeFrom, scanLen: base.remaining)
+                    try await engine.startResumedSearch(request, resumeFrom: base.resumeFrom,
+                                                        scanLen: base.remaining, workers: workers)
                 }
             } else {
                 self.state = .completed

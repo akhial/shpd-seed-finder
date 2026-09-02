@@ -7,6 +7,13 @@
 //! CLI already speak — and read back with
 //! [`json_query::decode_unvalidated`], which accepts the half-finished
 //! queries an editor holds.
+//!
+//! Preferences that describe this machine rather than the search — the worker
+//! count so far — are kept in a separate file. A canonical query document
+//! admits no keys of its own, so a device-local setting cannot ride along in
+//! `state.json` without making it unreadable to every other tool, and it has
+//! no business travelling with a preset, a share link or an exported results
+//! file either.
 
 use std::fs;
 use std::path::PathBuf;
@@ -16,6 +23,7 @@ use serde_json::Value;
 use shpd_seedfinder_core::json_query;
 use shpd_seedfinder_core::main_world::normalize_floor_limit;
 use shpd_seedfinder_core::query::{MAX_SEARCH_DEPTH, SearchQuery};
+use shpd_seedfinder_session::available_workers;
 
 use crate::config::APP_ID;
 use crate::state::AppState;
@@ -34,8 +42,24 @@ struct SavedPreset {
     query: Value,
 }
 
+/// The device-local preferences file. Unknown keys are accepted and a missing
+/// one falls back to its default, so a file written by any other build of the
+/// app still loads.
+#[derive(Default, Deserialize, Serialize)]
+struct SavedPreferences {
+    /// Search threads to spawn; unset means every core this machine has.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    workers: Option<usize>,
+}
+
 fn state_path() -> PathBuf {
     gtk::glib::user_config_dir().join(APP_ID).join("state.json")
+}
+
+fn preferences_path() -> PathBuf {
+    gtk::glib::user_config_dir()
+        .join(APP_ID)
+        .join("preferences.json")
 }
 
 fn presets_path() -> PathBuf {
@@ -55,6 +79,43 @@ pub fn load() -> AppState {
 /// Saves the current query, quietly giving up on filesystem errors.
 pub fn save(state: &AppState) {
     write_json(state_path(), &save_document(state));
+}
+
+/// Loads the search worker count, falling back to every core when the
+/// preference has never been set or cannot be read.
+#[must_use]
+pub fn load_workers() -> usize {
+    let contents = fs::read_to_string(preferences_path()).unwrap_or_default();
+    decode_workers(&contents, available_workers())
+}
+
+/// Saves the search worker count, quietly giving up on filesystem errors.
+pub fn save_workers(workers: usize) {
+    write_json(
+        preferences_path(),
+        &SavedPreferences {
+            workers: Some(clamp_workers(workers, available_workers())),
+        },
+    );
+}
+
+/// Reads the worker count out of a preferences file. A file the app cannot
+/// parse is treated as absent rather than refused: the setting is a
+/// convenience, and losing it must never cost the user anything else.
+fn decode_workers(contents: &str, ceiling: usize) -> usize {
+    serde_json::from_str::<SavedPreferences>(contents)
+        .ok()
+        .and_then(|preferences| preferences.workers)
+        .map_or_else(
+            || clamp_workers(ceiling, ceiling),
+            |workers| clamp_workers(workers, ceiling),
+        )
+}
+
+/// Fits a worker count into what this machine offers. A count saved on a
+/// bigger machine, or a nonsensical zero, comes back inside `[1, ceiling]`.
+fn clamp_workers(workers: usize, ceiling: usize) -> usize {
+    workers.clamp(1, ceiling.max(1))
 }
 
 /// Loads user-created presets, dropping malformed entries.
@@ -155,7 +216,9 @@ mod tests {
     };
     use shpd_seedfinder_core::quests::WandmakerQuestType;
 
-    use super::{SavedPreset, decode_presets, decode_state, save_document};
+    use super::{
+        SavedPreset, clamp_workers, decode_presets, decode_state, decode_workers, save_document,
+    };
     use crate::state::{AppState, UiRequirement};
 
     /// One saved state written to disk and read back.
@@ -368,6 +431,51 @@ mod tests {
         assert_eq!(restored.max_depth, 11);
         // Saving again writes the current format, without the retired key.
         assert!(save_document(&restored).get("fast_mode").is_none());
+    }
+
+    #[test]
+    fn preferences_saved_before_the_worker_count_existed_still_load() {
+        // Mirror image of the retired-flag case: a preferences file written
+        // before this setting existed — or none at all, or one from a build
+        // that keeps settings this one has never heard of — must load, with
+        // the missing count meaning "every core".
+        for contents in [
+            "",
+            "{}",
+            r#"{"theme":"dark"}"#,
+            "not json at all",
+            r#"{"workers":null}"#,
+        ] {
+            assert_eq!(decode_workers(contents, 8), 8, "{contents:?}");
+        }
+        // A saved count is honoured as written.
+        assert_eq!(decode_workers(r#"{"workers":3}"#, 8), 3);
+    }
+
+    #[test]
+    fn worker_counts_are_clamped_to_this_machine() {
+        // A file carried over from a bigger machine cannot ask for more
+        // threads than this one has, and no file can ask for none.
+        assert_eq!(decode_workers(r#"{"workers":64}"#, 8), 8);
+        assert_eq!(decode_workers(r#"{"workers":0}"#, 8), 1);
+        assert_eq!(decode_workers(r#"{"workers":1}"#, 1), 1);
+        assert_eq!(decode_workers(r#"{"workers":9}"#, 1), 1);
+        // The ceiling is never below one, even if the host reports nothing.
+        assert_eq!(decode_workers("{}", 0), 1);
+        assert_eq!(clamp_workers(4, 4), 4);
+    }
+
+    #[test]
+    fn the_worker_count_never_enters_a_saved_query() {
+        // The setting describes the machine, not the search: it stays out of
+        // the query document the app saves, shares and stores in presets,
+        // which must keep decoding as the engine's canonical format.
+        let document = save_document(&populated_state());
+        assert!(document.get("workers").is_none());
+        assert!(json_query::decode_unvalidated(&document.to_string()).is_ok());
+        // A preset stores the same document, so it cannot carry the setting
+        // either — and a preferences file is not a query the editor loads.
+        assert!(decode_state(r#"{"requirements":[],"workers":3}"#).is_none());
     }
 
     #[test]

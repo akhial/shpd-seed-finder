@@ -22,14 +22,26 @@ public protocol SeedFinderSearchSession: Sendable {
 }
 
 public protocol SeedFinderEngine: Sendable {
-    func startSearch(_ request: SearchRequest) async throws -> any SeedFinderSearchSession
-    func startResumedSearch(_ request: SearchRequest, resumeFrom: Int64, scanLen: Int64) async throws -> any SeedFinderSearchSession
+    /// `workers` is how many search threads to spawn; the engine clamps it to
+    /// the host's parallelism and takes 0 as "every available core". It is a
+    /// property of this machine, not of the query, so it travels beside the
+    /// request rather than inside it.
+    func startSearch(_ request: SearchRequest, workers: Int) async throws -> any SeedFinderSearchSession
+    func startResumedSearch(_ request: SearchRequest, resumeFrom: Int64, scanLen: Int64, workers: Int) async throws -> any SeedFinderSearchSession
     func filterSeeds(_ request: SearchRequest, seeds: [String]) async throws -> [String]
     func scoutSeed(_ seed: String, challenges: Int) async throws -> ScoutWorld
 }
 
 private func ffiError(_ code: Int32) -> SeedFinderEngineError {
     switch code { case -1: .invalidArgument; case -3: .unknownHandle; default: .internalFailure }
+}
+
+/// Narrows a worker count to the FFI's `uint32_t`. A negative or absurd value
+/// cannot be expressed there, and 0 already means "every available core", so
+/// anything out of range becomes that rather than trapping.
+private func ffiWorkers(_ workers: Int) -> UInt32 {
+    guard workers > 0, let count = UInt32(exactly: workers) else { return 0 }
+    return count
 }
 
 private func copiedPacket(_ pointer: UnsafeMutablePointer<UInt8>?, _ length: Int) throws -> Data {
@@ -183,21 +195,23 @@ public struct ScoutMatches: Sendable {
 public struct ProductionSeedFinderEngine: SeedFinderEngine {
     public init() {}
 
-    public func startSearch(_ request: SearchRequest) async throws -> any SeedFinderSearchSession {
+    public func startSearch(_ request: SearchRequest, workers: Int) async throws -> any SeedFinderSearchSession {
         let encoded = try QueryDocument.encode(request)
+        let count = ffiWorkers(workers)
         let handle: Int64 = await Task.detached {
-            encoded.withUnsafeBytes { bytes in seedfinder_start_search(bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count) }
+            encoded.withUnsafeBytes { bytes in seedfinder_start_search(bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count, count) }
         }.value
         guard handle != 0 else { throw SeedFinderEngineError.invalidArgument }
         return NativeSearchSession(handle: handle, requirementCount: request.requirements.slotCount)
     }
 
-    public func startResumedSearch(_ request: SearchRequest, resumeFrom: Int64, scanLen: Int64) async throws -> any SeedFinderSearchSession {
+    public func startResumedSearch(_ request: SearchRequest, resumeFrom: Int64, scanLen: Int64, workers: Int) async throws -> any SeedFinderSearchSession {
         let encoded = try QueryDocument.encode(request)
+        let count = ffiWorkers(workers)
         let handle: Int64 = await Task.detached {
             encoded.withUnsafeBytes { bytes in
                 seedfinder_start_resumed_search(bytes.bindMemory(to: UInt8.self).baseAddress, bytes.count,
-                                                UInt64(bitPattern: resumeFrom), UInt64(bitPattern: scanLen))
+                                                UInt64(bitPattern: resumeFrom), UInt64(bitPattern: scanLen), count)
             }
         }.value
         guard handle != 0 else { throw SeedFinderEngineError.invalidArgument }
