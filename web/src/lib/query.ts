@@ -149,6 +149,7 @@ export const levelSumCapacity = (members: RequirementState[]): number =>
  */
 export const isBareRequirement = (requirement: RequirementState): boolean =>
   requirement.item === undefined &&
+  (requirement.kind === undefined || kindFamily(requirement.kind) === requirement.kind) &&
   requirement.tier.mode === "any" &&
   requirement.upgrade.mode === "any" &&
   requirement.effect === undefined &&

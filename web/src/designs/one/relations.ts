@@ -201,12 +201,16 @@ const countBy = (
 
 /** The bare copy a stack of `anchor`'s kind grows by; it may carry its own
  * floor limit, the one bound that is a placement, not an item property. */
+// The copy names the broad family rather than the anchor's narrowed
+// melee/thrown kind: the identity label already forces it to be the very
+// item the anchor matched, and the engine reads a narrowed copy as a second
+// constrained member of the stack.
 const bareCopy = (
   anchor: RequirementState,
   identityGroup: number,
   maxDepth?: number,
 ): RequirementState => ({
-  kind: anchor.kind ?? (requirementFamily(anchor) as RequirementState["kind"]),
+  kind: requirementFamily(anchor) as RequirementState["kind"],
   tier: { mode: "any", value: 3 },
   upgrade: { mode: "any", value: 1 },
   uncursed: false,
