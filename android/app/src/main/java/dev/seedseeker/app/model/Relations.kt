@@ -180,6 +180,11 @@ private fun List<ItemRequirement>.nextKey(): Long = (maxOfOrNull { it.key } ?: 0
 /**
  * The bare copy a stack of [anchor]'s kind grows by; it may carry its own floor
  * limit, the one bound that is a placement rather than an item property.
+ *
+ * The copy names the broad family rather than the anchor's narrowed
+ * melee/thrown kind: the identity label already forces it to be the very item
+ * the anchor matched, and the engine reads a narrowed copy as a second
+ * constrained member of the stack.
  */
 private fun bareCopy(
     anchor: ItemRequirement,
@@ -190,7 +195,7 @@ private fun bareCopy(
     key = key,
     item = null,
     upgrade = 0,
-    kind = anchor.kind,
+    kind = anchor.kind.family,
     upgradeMatch = UpgradeMatch.ANY,
     identityGroup = identityGroup,
     maximumDepth = maximumDepth,

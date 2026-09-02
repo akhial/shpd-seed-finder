@@ -292,11 +292,13 @@ data class ItemRequirement(
 
     /**
      * Whether this constrains nothing beyond its category — the shape a
-     * stack's extra copies take. A per-item floor limit is a placement bound,
-     * not an item property, and does not count.
+     * stack's extra copies take. A narrowed weapon kind is a constraint; a
+     * per-item floor limit is a placement bound, not an item property, and
+     * does not count.
      */
     val isBare: Boolean
         get() = item == null &&
+            kind == kind.family &&
             tierMatch == TierMatch.ANY &&
             upgradeMatch == UpgradeMatch.ANY &&
             effect == EffectFilter.Any &&
