@@ -1406,7 +1406,6 @@ mod tests {
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
-            fast_mode: false,
         };
         let options = SearchOptions {
             start_seed: 0,

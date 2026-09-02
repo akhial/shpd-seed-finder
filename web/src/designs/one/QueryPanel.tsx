@@ -159,7 +159,6 @@ export function QueryPanel({
   const challengeCount = query.challenges.length;
   const wandmakerCount = Number(Boolean(query.wandmakerQuest));
   const blacksmithCount = Number(query.requireBlacksmith) + Number(query.excludeBlacksmithRewards);
-  const performanceCount = Number(query.fastMode);
   const hasRequirements = query.requirements.length > 0;
   const impossible = Boolean(analysis?.valid && analysis.impossible);
   const startDisabled = !running && (!engineReady || !validation.valid || impossible);
@@ -404,42 +403,29 @@ export function QueryPanel({
           </details>
         </section>
 
-        <section className="d1-section">
-          <details className="d1-details">
-            <summary>
-              <span>Performance</span>
-              {performanceCount > 0 && <span className="d1-count">{performanceCount}</span>}
-            </summary>
-            <div className="d1-details-body">
-              {workerCeiling > 1 && (
-                <>
-                  <SliderRow
-                    label="Workers"
-                    valueLabel={`${workerCount} of ${workerCeiling} core${workerCeiling === 1 ? "" : "s"}`}
-                    min={1}
-                    max={workerCeiling}
-                    value={Math.min(workerCount, workerCeiling)}
-                    fill
-                    onChange={setWorkerCount}
-                  />
-                  <p className="d1-caption d1-caption-spaced">Number of search threads to spawn.</p>
-                </>
-              )}
-              <label className="d1-check">
-                <input
-                  type="checkbox"
-                  checked={query.fastMode}
-                  onChange={(event) => patchQuery({ fastMode: event.currentTarget.checked })}
+        {/* The worker slider is the whole section, so a single-core machine
+            has nothing to show here. */}
+        {workerCeiling > 1 && (
+          <section className="d1-section">
+            <details className="d1-details">
+              <summary>
+                <span>Performance</span>
+              </summary>
+              <div className="d1-details-body">
+                <SliderRow
+                  label="Workers"
+                  valueLabel={`${workerCount} of ${workerCeiling} cores`}
+                  min={1}
+                  max={workerCeiling}
+                  value={Math.min(workerCount, workerCeiling)}
+                  fill
+                  onChange={setWorkerCount}
                 />
-                <span>Fast search</span>
-              </label>
-              <p className="d1-caption">
-                Treats +3 weapons and armor as quest rewards only, skipping the rare Crypt and
-                Sacrificial-fire prizes.
-              </p>
-            </div>
-          </details>
-        </section>
+                <p className="d1-caption">Number of search threads to spawn.</p>
+              </div>
+            </details>
+          </section>
+        )}
 
         <section className="d1-section">
           <details className="d1-details">

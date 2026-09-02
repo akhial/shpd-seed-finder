@@ -71,7 +71,7 @@
               </StackPanel>
             </Border>
             <TextBlock x:Name="NoRequirements" Text="No requirements yet. Add one to describe the item you're hunting for." Style="{StaticResource Caption}" Margin="1,0,1,10"/>
-            <!-- The four setting sections sit two to a row while the sidebar is
+            <!-- The setting sections sit two to a row while the sidebar is
                  wide enough for it, so the wider sidebar buys less scrolling
                  rather than emptier cards; SettingsGrid_SizeChanged moves the
                  cells back into one column when it is not. Each cell is a
@@ -79,7 +79,7 @@
                  of a row share a bottom edge. -->
             <Grid x:Name="SettingsGrid" ColumnSpacing="12" SizeChanged="SettingsGrid_SizeChanged">
               <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-              <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+              <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
 
               <Grid x:Name="ScopeCell">
                 <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
@@ -129,20 +129,6 @@
                       <ToggleSwitch Grid.Column="1" x:Name="ExcludeRewards" Style="{StaticResource CompactToggle}" Toggled="SettingChanged" VerticalAlignment="Top" Margin="0,-4,0,0"/>
                     </Grid>
                   </StackPanel>
-                </Border>
-              </Grid>
-
-              <Grid x:Name="PerformanceCell" Grid.Row="1" Grid.Column="1">
-                <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
-                <TextBlock Text="Performance" Style="{StaticResource SectionHeader}"/>
-                <Border Grid.Row="1" Style="{StaticResource SettingsCard}">
-                  <Grid ColumnSpacing="14" RowSpacing="4">
-                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition/></Grid.RowDefinitions>
-                    <TextBlock Text="Fast search" VerticalAlignment="Center"/>
-                    <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="Treats +3 weapons and armor as quest rewards only, skipping rare Crypt and Sacrificial-fire prizes. Found seeds are always genuine." Style="{StaticResource Caption}" VerticalAlignment="Top"/>
-                    <ToggleSwitch Grid.Column="1" x:Name="FastMode" Style="{StaticResource CompactToggle}" Toggled="SettingChanged" VerticalAlignment="Top" Margin="0,-4,0,0"/>
-                  </Grid>
                 </Border>
               </Grid>
             </Grid>

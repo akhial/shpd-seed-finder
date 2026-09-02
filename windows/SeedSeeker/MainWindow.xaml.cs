@@ -185,7 +185,7 @@ public sealed partial class MainWindow : Window
         query.MaximumDepth = FloorLimits.Normalize(query.MaximumDepth);
         foreach (var requirement in query.Requirements)
             if (requirement.MaximumDepth is int depth) requirement.MaximumDepth = FloorLimits.Normalize(depth);
-        FloorSlider.Value = FloorLimits.IndexOf(query.MaximumDepth); RequireBlacksmith.IsOn = query.RequireBlacksmith; ExcludeRewards.IsOn = query.ExcludeBlacksmithRewards; FastMode.IsOn = query.FastMode;
+        FloorSlider.Value = FloorLimits.IndexOf(query.MaximumDepth); RequireBlacksmith.IsOn = query.RequireBlacksmith; ExcludeRewards.IsOn = query.ExcludeBlacksmithRewards;
         WandmakerQuestPicker.ItemsSource = WandmakerQuests.All.Select(WandmakerQuests.Label).ToList();
         WandmakerQuestPicker.SelectedIndex = Array.IndexOf(WandmakerQuests.All, query.WandmakerQuest);
         restoring = false;
@@ -218,7 +218,7 @@ public sealed partial class MainWindow : Window
         foreach (var requirement in query.Requirements)
             if (requirement.MaximumDepth is int depth) requirement.MaximumDepth = FloorLimits.Normalize(depth);
         FloorSlider.Value = FloorLimits.IndexOf(query.MaximumDepth); RequireBlacksmith.IsOn = query.RequireBlacksmith;
-        ExcludeRewards.IsOn = query.ExcludeBlacksmithRewards; FastMode.IsOn = query.FastMode;
+        ExcludeRewards.IsOn = query.ExcludeBlacksmithRewards;
         WandmakerQuestPicker.SelectedIndex = Array.IndexOf(WandmakerQuests.All, query.WandmakerQuest);
         restoring = false; RefreshQuery(); SaveSettings();
     }
@@ -261,7 +261,7 @@ public sealed partial class MainWindow : Window
         var paired = (e.NewSize.Width - SettingsGrid.ColumnSpacing) / 2 >= SettingsPairMinimum;
         if (paired == settingsPaired) return;
         settingsPaired = paired;
-        FrameworkElement[] cells = [ScopeCell, WandmakerCell, BlacksmithCell, PerformanceCell];
+        FrameworkElement[] cells = [ScopeCell, WandmakerCell, BlacksmithCell];
         for (var i = 0; i < cells.Length; i++)
         {
             Grid.SetRow(cells[i], paired ? i / 2 : i);
@@ -269,7 +269,7 @@ public sealed partial class MainWindow : Window
             Grid.SetColumnSpan(cells[i], paired ? 1 : 2);
         }
     }
-    private void SettingChanged(object sender, RoutedEventArgs e) { if (restoring) return; query.RequireBlacksmith = RequireBlacksmith.IsOn; query.ExcludeBlacksmithRewards = ExcludeRewards.IsOn; query.FastMode = FastMode.IsOn; SaveSettings(); }
+    private void SettingChanged(object sender, RoutedEventArgs e) { if (restoring) return; query.RequireBlacksmith = RequireBlacksmith.IsOn; query.ExcludeBlacksmithRewards = ExcludeRewards.IsOn; SaveSettings(); }
     private void WandmakerQuestChanged(object sender, SelectionChangedEventArgs e)
     {
         if (restoring) return;

@@ -293,7 +293,7 @@ pub fn filter_seeds(query_json: &str, seed_values: Vec<f64>) -> Result<String, J
 }
 
 /// Reports whether the query in `candidate_json` continues the one in
-/// `base_json`: an identical depth, challenge set and fast mode, world
+/// `base_json`: an identical depth and challenge set, world
 /// conditions (the blacksmith flags and the Wandmaker filter) at least as
 /// strict as the base's, and every base requirement covered by a distinct candidate
 /// requirement at least as strict (equal or strengthened). Only a continuing
@@ -733,11 +733,11 @@ mod tests {
     fn share_links_round_trip_the_canonical_document() {
         let document = r#"{"requirements":[{"item":"wand_fireblast","upgrade":{"at_least":3}}]}"#;
         let link = encode_share_link_impl(document).unwrap();
-        assert_eq!(link, "https://shpd-seed-seeker.web.app/#q=MAGWhMAA");
+        assert_eq!(link, "https://shpd-seed-seeker.web.app/#q=QAMtCYAA");
         // Decoding returns the canonical document, which spells out the kind.
         let canonical = r#"{"requirements":[{"item":"wand_fireblast","kind":"wand","upgrade":{"at_least":3}}]}"#;
         assert_eq!(decode_share_text_impl(&link).unwrap(), canonical);
-        assert_eq!(decode_share_text_impl("MAGWhMAA").unwrap(), canonical);
+        assert_eq!(decode_share_text_impl("QAMtCYAA").unwrap(), canonical);
         assert!(encode_share_link_impl(r#"{"requirements":[]}"#).is_err());
         assert!(decode_share_text_impl("https://example.com/").is_err());
     }

@@ -191,7 +191,6 @@ mod tests {
         state.require_blacksmith = true;
         state.exclude_blacksmith_rewards = true;
         state.wandmaker_quest = Some(WandmakerQuestType::Rotberry);
-        state.fast_mode = true;
         state.challenges = Challenges::DARKNESS;
         state
     }
@@ -209,7 +208,6 @@ mod tests {
         assert!(restored.require_blacksmith);
         assert!(restored.exclude_blacksmith_rewards);
         assert_eq!(restored.wandmaker_quest, Some(WandmakerQuestType::Rotberry));
-        assert!(restored.fast_mode);
         assert_eq!(restored.challenges, Challenges::DARKNESS);
         // Saving the restored state again produces the identical document.
         assert_eq!(save_document(&restored), document);
@@ -288,7 +286,6 @@ mod tests {
         state.max_depth = 11;
         state.exclude_blacksmith_rewards = true;
         state.wandmaker_quest = Some(WandmakerQuestType::CorpseDust);
-        state.fast_mode = true;
         state.challenges = Challenges::NO_HERBALISM | Challenges::NO_SCROLLS;
 
         // A query with no requirements yet is not a runnable search, but it is
@@ -302,7 +299,6 @@ mod tests {
             restored.wandmaker_quest,
             Some(WandmakerQuestType::CorpseDust)
         );
-        assert!(restored.fast_mode);
         assert_eq!(
             restored.challenges,
             Challenges::NO_HERBALISM | Challenges::NO_SCROLLS
@@ -355,12 +351,23 @@ mod tests {
         assert!(decode_state("not json at all").is_none());
         // A row the engine would reject is dropped; the rest of the query
         // still loads.
-        let restored = decode_state(
-            r#"{"requirements":[{"kind":"wand","tier":{"exact":3}}],"fast_mode":true}"#,
-        )
-        .unwrap();
+        let restored =
+            decode_state(r#"{"requirements":[{"kind":"wand","tier":{"exact":3}}]}"#).unwrap();
         assert!(restored.requirements.is_empty());
-        assert!(restored.fast_mode);
+    }
+
+    #[test]
+    fn states_saved_before_fast_mode_was_retired_still_load() {
+        // `fast_mode` is a retired flag: a state file written by an older
+        // build must still load, with the key accepted and ignored rather
+        // than refusing the whole document.
+        let restored =
+            decode_state(r#"{"requirements":[{"kind":"wand"}],"max_depth":11,"fast_mode":true}"#)
+                .expect("an old saved state must still load");
+        assert_eq!(restored.requirements.len(), 1);
+        assert_eq!(restored.max_depth, 11);
+        // Saving again writes the current format, without the retired key.
+        assert!(save_document(&restored).get("fast_mode").is_none());
     }
 
     #[test]
@@ -380,6 +387,5 @@ mod tests {
         assert_eq!(presets.len(), 1);
         assert_eq!(presets[0].name, "My preset");
         assert_eq!(predicates(&presets[0].state), predicates(&state));
-        assert!(presets[0].state.fast_mode);
     }
 }

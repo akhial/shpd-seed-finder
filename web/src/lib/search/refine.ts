@@ -4,8 +4,8 @@ import type { CoordinatorState } from "./coordinator-state";
 import type { SeedRange } from "./traversal";
 
 /**
- * Whether a run of `candidate` can continue one of `base`: an identical depth,
- * challenge set and fast mode, world conditions (the blacksmith flags and the
+ * Whether a run of `candidate` can continue one of `base`: an identical depth
+ * and challenge set, world conditions (the blacksmith flags and the
  * Wandmaker filter) at least as strict as the base's, and every base
  * requirement covered by a
  * distinct candidate requirement at least as strict — equal, added-to, or

@@ -153,13 +153,16 @@ public sealed class QueryRelationshipsTests
     public void SavedQueriesFromBeforeEffectSetsStillLoad()
     {
         // The shape MainWindow persisted before this change: a bare Modifier,
-        // no Effect, AlternativeGroup or LevelSum.
+        // no Effect, AlternativeGroup or LevelSum. "FastMode" is deliberately
+        // still here — settings and presets saved before that mode was retired
+        // must keep loading, the flag ignored.
         const string legacy = """
             { "Requirements": [ { "Key": 7, "Item": null, "Upgrade": 2, "Modifier": "Blazing", "Kind": 0, "Tier": 0,
               "TierMatch": 0, "UpgradeMatch": 1, "Source": null, "IdentityGroup": 1, "MaximumDepth": 9, "RequireUncursed": true } ],
-              "MaximumDepth": 12, "RequireBlacksmith": false, "ExcludeBlacksmithRewards": false, "WandmakerQuest": 0, "FastMode": false, "Challenges": 0 }
+              "MaximumDepth": 12, "RequireBlacksmith": false, "ExcludeBlacksmithRewards": false, "WandmakerQuest": 0, "FastMode": true, "Challenges": 0 }
             """;
         var query = JsonSerializer.Deserialize<QuerySettings>(legacy)!;
+        Assert.Equal(12, query.MaximumDepth);
         var requirement = Assert.Single(query.Requirements);
         Assert.Equal("Blazing", requirement.Modifier);
         Assert.Equal(["Blazing"], requirement.Effect.Effects);

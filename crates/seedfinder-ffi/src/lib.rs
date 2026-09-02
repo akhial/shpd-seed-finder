@@ -995,7 +995,7 @@ mod tests {
         let link = unsafe { take_packet(pointer, len) };
         assert_eq!(
             std::str::from_utf8(&link).unwrap(),
-            "https://shpd-seed-seeker.web.app/#q=MAGWhMAA"
+            "https://shpd-seed-seeker.web.app/#q=QAMtCYAA"
         );
         assert_eq!(
             seedfinder_share_decode(link.as_ptr(), link.len(), &raw mut pointer, &raw mut len),

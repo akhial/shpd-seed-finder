@@ -310,14 +310,12 @@ fun scopeSummaryText(
     requireBlacksmith: Boolean,
     excludeBlacksmithRewards: Boolean,
     wandmakerQuest: WandmakerQuest? = null,
-    fastMode: Boolean,
     challenges: Int,
 ): String = buildList {
     add("≤ floor $maximumDepth")
     wandmakerQuest?.let { add(it.label.lowercase()) }
     if (requireBlacksmith) add("smith")
     if (excludeBlacksmithRewards) add("no smith rewards")
-    if (fastMode) add("fast")
     when (val count = Integer.bitCount(challenges)) {
         0 -> Unit
         1 -> add("1 challenge")

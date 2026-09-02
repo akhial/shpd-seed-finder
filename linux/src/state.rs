@@ -206,7 +206,6 @@ pub struct AppState {
     pub require_blacksmith: bool,
     pub exclude_blacksmith_rewards: bool,
     pub wandmaker_quest: Option<WandmakerQuestType>,
-    pub fast_mode: bool,
     pub challenges: Challenges,
     next_key: u64,
 }
@@ -219,7 +218,6 @@ impl Default for AppState {
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
-            fast_mode: false,
             challenges: Challenges::NONE,
             next_key: 1,
         }
@@ -244,7 +242,6 @@ impl AppState {
             require_blacksmith: query.require_blacksmith,
             exclude_blacksmith_rewards: query.exclude_blacksmith_rewards,
             wandmaker_quest: query.wandmaker_quest,
-            fast_mode: query.fast_mode,
             challenges: query.challenges,
             next_key: 1,
         };
@@ -281,7 +278,6 @@ impl AppState {
             require_blacksmith: self.require_blacksmith,
             exclude_blacksmith_rewards: self.exclude_blacksmith_rewards,
             wandmaker_quest: self.wandmaker_quest,
-            fast_mode: self.fast_mode,
         }
     }
 
@@ -724,9 +720,6 @@ mod tests {
         let mut deeper = extended.clone();
         deeper.max_depth = 9;
         assert!(!deeper.continues(&base));
-        let mut fast = extended.clone();
-        fast.fast_mode = true;
-        assert!(!fast.continues(&base));
 
         // Duplicates are counted as a multiset: two copies of the base
         // requirement satisfy a two-copy base, one copy does not.
@@ -956,7 +949,6 @@ mod tests {
         state.max_depth = 13;
         state.require_blacksmith = true;
         state.wandmaker_quest = Some(WandmakerQuestType::ElementalEmbers);
-        state.fast_mode = true;
         state.challenges = Challenges::NO_SCROLLS;
 
         let query = state.to_query().unwrap();

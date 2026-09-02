@@ -121,7 +121,6 @@ public enum ResultsExport {
         if query.requireBlacksmith { output["require_blacksmith"] = true }
         if query.excludeBlacksmithRewards { output["exclude_blacksmith_rewards"] = true }
         if let quest = query.wandmakerQuest { output["wandmaker_quest"] = quest.documentName }
-        if query.fastMode { output["fast_mode"] = true }
         let challenges = challengeNames
             .filter { query.challenges & $0.challenge.rawValue != 0 }
             .map(\.name)
@@ -205,13 +204,15 @@ public enum ResultsExport {
             }
             wandmakerQuest = quest
         }
+        // A `fast_mode` key from a document written before the flag was
+        // retired is read past and ignored, exactly as the engine's own
+        // decoder does, so those files and links still open.
         return SavedQuery(
             requirements: requirements,
             maximumDepth: intField(value, "max_depth") ?? 24,
             requireBlacksmith: boolField(value, "require_blacksmith"),
             excludeBlacksmithRewards: boolField(value, "exclude_blacksmith_rewards"),
             wandmakerQuest: wandmakerQuest,
-            fastMode: boolField(value, "fast_mode"),
             challenges: challenges)
     }
 
@@ -315,7 +316,7 @@ public enum QueryDocument {
             requirements: request.requirements, maximumDepth: request.maximumDepth,
             requireBlacksmith: request.requireBlacksmith,
             excludeBlacksmithRewards: request.excludeBlacksmithRewards,
-            wandmakerQuest: request.wandmakerQuest, fastMode: request.fastMode,
+            wandmakerQuest: request.wandmakerQuest,
             challenges: request.challenges))
     }
 

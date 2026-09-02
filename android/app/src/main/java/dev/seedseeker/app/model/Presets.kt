@@ -10,7 +10,6 @@ data class PresetQuery(
     val requireBlacksmith: Boolean = false,
     val excludeBlacksmithRewards: Boolean = false,
     val wandmakerQuest: WandmakerQuest? = null,
-    val fastMode: Boolean = false,
     val challenges: Int = 0,
 )
 

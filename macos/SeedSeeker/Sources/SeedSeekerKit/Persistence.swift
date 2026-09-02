@@ -6,21 +6,20 @@ public struct SavedQuery: Codable, Sendable {
     public var requireBlacksmith: Bool
     public var excludeBlacksmithRewards: Bool
     public var wandmakerQuest: WandmakerQuest?
-    public var fastMode: Bool
     public var challenges: Int
     public init(requirements: [ItemRequirement] = [], maximumDepth: Int = 24,
                 requireBlacksmith: Bool = false, excludeBlacksmithRewards: Bool = false,
                 wandmakerQuest: WandmakerQuest? = nil,
-                fastMode: Bool = false, challenges: Int = 0) {
+                challenges: Int = 0) {
         self.requirements = requirements; self.maximumDepth = maximumDepth
         self.requireBlacksmith = requireBlacksmith
         self.excludeBlacksmithRewards = excludeBlacksmithRewards
-        self.wandmakerQuest = wandmakerQuest; self.fastMode = fastMode
+        self.wandmakerQuest = wandmakerQuest
         self.challenges = challenges
     }
     private enum CodingKeys: String, CodingKey {
         case requirements, maximumDepth, requireBlacksmith, excludeBlacksmithRewards
-        case wandmakerQuest, fastMode, challenges
+        case wandmakerQuest, challenges
     }
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -34,8 +33,9 @@ public struct SavedQuery: Codable, Sendable {
         // A quest id a newer build knows falls back to "any" rather than
         // discarding the whole saved query.
         wandmakerQuest = (try? container.decodeIfPresent(WandmakerQuest.self, forKey: .wandmakerQuest)) ?? nil
-        // Saved queries predating the fast-mode toggle omit the key.
-        fastMode = try container.decodeIfPresent(Bool.self, forKey: .fastMode) ?? false
+        // Queries saved while the fast-mode toggle existed carry a `fastMode`
+        // key; it has no coding key any more, so decoding skips it and the
+        // query loads as an ordinary full search.
         challenges = try container.decodeIfPresent(Int.self, forKey: .challenges) ?? 0
     }
     public func validated() -> SavedQuery? {

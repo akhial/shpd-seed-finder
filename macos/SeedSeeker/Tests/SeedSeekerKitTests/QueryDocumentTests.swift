@@ -52,12 +52,12 @@ final class QueryDocumentTests: XCTestCase {
             upgradeMatch: .atLeast, requireUncursed: true)
         let request = try SearchRequest(requirements: [first, second], maximumDepth: 12,
                                         requireBlacksmith: true, excludeBlacksmithRewards: true,
-                                        wandmakerQuest: .rotberry, fastMode: true, challenges: 104)
+                                        wandmakerQuest: .rotberry, challenges: 104)
         let bytes = try QueryDocument.encode(request)
         XCTAssertEqual(bytes.first, UInt8(ascii: "{"), "the engine tells JSON from a packet by its first byte")
         XCTAssertEqual(String(data: bytes, encoding: .utf8), """
             {"challenges":["barren_land","into_darkness","forbidden_runes"],"exclude_blacksmith_rewards":true,\
-            "fast_mode":true,"max_depth":12,"require_blacksmith":true,"requirements":[\
+            "max_depth":12,"require_blacksmith":true,"requirements":[\
             {"effect":"Lucky","identity_group":1,"item":"dagger","kind":"weapon","max_depth":4,\
             "source":"chest","upgrade":2},\
             {"kind":"thrown_weapon","uncursed":true,"upgrade":{"at_least":0}}],\
@@ -65,7 +65,7 @@ final class QueryDocumentTests: XCTestCase {
             """)
         try assertEngineAgrees(SavedQuery(requirements: [first, second], maximumDepth: 12,
                                           requireBlacksmith: true, excludeBlacksmithRewards: true,
-                                          wandmakerQuest: .rotberry, fastMode: true, challenges: 104))
+                                          wandmakerQuest: .rotberry, challenges: 104))
     }
 
     /// Effect lists are written in the shared asset's order: non-curse
@@ -451,12 +451,15 @@ final class QueryDocumentTests: XCTestCase {
     // MARK: Persistence
 
     func testSavedQueriesFromOlderBuildsStillLoad() throws {
+        // `fastMode` is a retired key kept in this fixture deliberately: a
+        // query saved while the toggle existed must still load, the flag read
+        // past and ignored, as an ordinary full search.
         let legacy = """
         {"requirements":[{"key":1,"upgrade":2,"modifier":"Lucky","kind":0,"tier":0,"tierMatch":0,\
         "upgradeMatch":1,"requireUncursed":false},\
         {"key":2,"upgrade":0,"kind":3,"tier":0,"tierMatch":0,"upgradeMatch":0,"identityGroup":1,\
         "requireUncursed":true}],\
-        "maximumDepth":12,"requireBlacksmith":false,"excludeBlacksmithRewards":false,"fastMode":false,"challenges":0}
+        "maximumDepth":12,"requireBlacksmith":false,"excludeBlacksmithRewards":false,"fastMode":true,"challenges":0}
         """
         let decoded = QueryPersistence.decode(legacy)
         XCTAssertEqual(decoded.requirements.count, 2)

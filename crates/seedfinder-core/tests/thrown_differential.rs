@@ -32,7 +32,7 @@ fn requirement(category: Option<WeaponCategory>, upgrade: UpgradeRequirement) ->
     }
 }
 
-fn query(requirements: Vec<Requirement>, fast_mode: bool) -> SearchQuery {
+fn query(requirements: Vec<Requirement>) -> SearchQuery {
     SearchQuery {
         requirements,
         max_depth: 24,
@@ -40,7 +40,6 @@ fn query(requirements: Vec<Requirement>, fast_mode: bool) -> SearchQuery {
         require_blacksmith: false,
         exclude_blacksmith_rewards: false,
         wandmaker_quest: None,
-        fast_mode,
     }
 }
 
@@ -86,65 +85,46 @@ fn thrown_plans_never_skip_a_matching_seed() {
     let mut checked = 0_u64;
     let mut positive = 0_u64;
     let mut unsat_queries = 0_u64;
-    for fast_mode in [false, true] {
-        for &category in &categories {
-            for &upgrade in &upgrades {
-                for &source in &sources {
-                    let q = query(
-                        vec![Requirement {
-                            source,
-                            ..requirement(category, upgrade)
-                        }],
-                        fast_mode,
-                    );
-                    if q.validate().is_err() {
-                        continue;
-                    }
-                    let plan = QueryPlan::analyze(&q);
-                    if plan.is_unsatisfiable() {
-                        unsat_queries += 1;
-                        // The plan's impossibility claim must hold against
-                        // brute force: no fully generated world may match.
-                        // (Only exact for non-fast mode; fast mode is
-                        // documented as deliberately lossy.)
-                        if !fast_mode {
-                            for (index, world) in full_worlds.iter().enumerate() {
-                                assert!(
-                                    !q.matches(world),
-                                    "plan called {q:?} unsatisfiable but seed {} matches",
-                                    seeds[index]
-                                );
-                            }
-                        }
-                        continue;
-                    }
-                    let gated = CanonicalMainWorldGenerator.generate_batch_gated(
-                        &seeds,
-                        plan.generation_depth(),
-                        &plan,
-                    );
-                    for (index, gated_world) in gated.iter().enumerate() {
-                        let expected = q.matches(&full_worlds[index]);
-                        let actual = gated_world.as_ref().is_some_and(|world| q.matches(world));
-                        if fast_mode {
-                            // Fast mode may miss exotic matches by design but
-                            // must never invent one.
-                            assert!(
-                                !actual || expected,
-                                "fast mode invented a match for seed {} under {q:?}",
-                                seeds[index]
-                            );
-                        } else {
-                            assert_eq!(
-                                actual, expected,
-                                "seed {} disagreed for {q:?}",
-                                seeds[index]
-                            );
-                        }
-                        positive += u64::from(expected);
-                    }
-                    checked += 1;
+    for &category in &categories {
+        for &upgrade in &upgrades {
+            for &source in &sources {
+                let q = query(vec![Requirement {
+                    source,
+                    ..requirement(category, upgrade)
+                }]);
+                if q.validate().is_err() {
+                    continue;
                 }
+                let plan = QueryPlan::analyze(&q);
+                if plan.is_unsatisfiable() {
+                    unsat_queries += 1;
+                    // The plan's impossibility claim must hold against
+                    // brute force: no fully generated world may match.
+                    for (index, world) in full_worlds.iter().enumerate() {
+                        assert!(
+                            !q.matches(world),
+                            "plan called {q:?} unsatisfiable but seed {} matches",
+                            seeds[index]
+                        );
+                    }
+                    continue;
+                }
+                let gated = CanonicalMainWorldGenerator.generate_batch_gated(
+                    &seeds,
+                    plan.generation_depth(),
+                    &plan,
+                );
+                for (index, gated_world) in gated.iter().enumerate() {
+                    let expected = q.matches(&full_worlds[index]);
+                    let actual = gated_world.as_ref().is_some_and(|world| q.matches(world));
+                    assert_eq!(
+                        actual, expected,
+                        "seed {} disagreed for {q:?}",
+                        seeds[index]
+                    );
+                    positive += u64::from(expected);
+                }
+                checked += 1;
             }
         }
     }
@@ -154,11 +134,11 @@ fn thrown_plans_never_skip_a_matching_seed() {
     assert!(positive > 0);
 }
 
-/// Outside fast mode the plan is exact: gated search must agree with brute
-/// force for every thrown query, including +3 via special-room chest prizes.
+/// The plan is exact: gated search must agree with brute force for every
+/// thrown query, including +3 via special-room chest prizes.
 #[test]
 #[ignore = "one-off verification sweep"]
-fn non_fast_thrown_queries_agree_with_brute_force() {
+fn thrown_queries_agree_with_brute_force() {
     let seeds = (0..SEEDS)
         .map(|value| DungeonSeed::new(value).unwrap())
         .collect::<Vec<_>>();
@@ -172,10 +152,7 @@ fn non_fast_thrown_queries_agree_with_brute_force() {
         UpgradeRequirement::AtLeast(2),
         UpgradeRequirement::AtLeast(3),
     ] {
-        let q = query(
-            vec![requirement(Some(WeaponCategory::Thrown), upgrade)],
-            false,
-        );
+        let q = query(vec![requirement(Some(WeaponCategory::Thrown), upgrade)]);
         let plan = QueryPlan::analyze(&q);
         assert!(!plan.is_unsatisfiable());
         let gated = CanonicalMainWorldGenerator.generate_batch_gated(

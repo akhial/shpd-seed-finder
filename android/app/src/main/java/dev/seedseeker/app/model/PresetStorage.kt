@@ -35,7 +35,6 @@ class PresetStorage(private val preferences: SharedPreferences) {
         put("requireBlacksmith", query.requireBlacksmith)
         put("excludeBlacksmithRewards", query.excludeBlacksmithRewards)
         put("wandmakerQuest", query.wandmakerQuest?.documentName ?: JSONObject.NULL)
-        put("fastMode", query.fastMode)
         put("challenges", query.challenges)
         put("requirements", JSONArray().apply {
             query.requirements.forEach { requirement ->
@@ -126,7 +125,9 @@ class PresetStorage(private val preferences: SharedPreferences) {
             // A quest name a newer build wrote falls back to "any" rather than
             // discarding the whole saved preset.
             wandmakerQuest = value.stringOrNull("wandmakerQuest")?.let(WandmakerQuest::named),
-            fastMode = value.optBoolean("fastMode"),
+            // Presets saved before fast mode was retired carry a "fastMode"
+            // key; like the engine's codecs this reader simply ignores it, so
+            // those presets still load and run as ordinary searches.
             challenges = challenges,
         )
     }

@@ -11,7 +11,7 @@ public struct DeepLinkError: Error, LocalizedError, Equatable {
 /// Shareable-link codec for search queries, backed by the Rust core.
 ///
 /// A deep link carries a whole query as a compact code in a web link like
-/// `https://shpd-seed-seeker.web.app/#q=MAGWhMAA`. Decoding accepts any link
+/// `https://shpd-seed-seeker.web.app/#q=QAMtCYAA`. Decoding accepts any link
 /// form the core recognizes: the full web link, a `seedseeker://` link, or
 /// the bare code.
 ///

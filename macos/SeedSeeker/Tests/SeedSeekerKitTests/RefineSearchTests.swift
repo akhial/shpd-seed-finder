@@ -737,7 +737,6 @@ final class RefineSearchTests: XCTestCase {
         let requirements = [try wand(key: 9, upgrade: 3), try wand(key: 10, upgrade: 0)]
         XCTAssertTrue(try SearchRequest(requirements: requirements).isRefinement(of: base))
         XCTAssertFalse(try SearchRequest(requirements: requirements, maximumDepth: 12).isRefinement(of: base))
-        XCTAssertFalse(try SearchRequest(requirements: requirements, fastMode: true).isRefinement(of: base))
         XCTAssertFalse(try SearchRequest(requirements: requirements, challenges: 32).isRefinement(of: base))
 
         // The blacksmith flags and the Wandmaker filter only narrow the match
