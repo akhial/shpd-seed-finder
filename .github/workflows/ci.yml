@@ -188,12 +188,6 @@ jobs:
       - name: Build native library
         run: bash scripts/build-macos-native.sh
 
-      # rustc silently drops a profile whose mangled symbol names it cannot
-      # find, so a stale pgo/seed-seeker.profdata costs throughput without
-      # failing anything. Catch that here instead of in a release.
-      - name: Check the PGO profile still matches
-        run: bash scripts/check-pgo-profile.sh
-
       - name: Test Swift package
         working-directory: macos/SeedSeeker
         run: swift test

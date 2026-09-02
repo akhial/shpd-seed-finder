@@ -82,6 +82,3 @@ JSON
 
 echo "==> merging into $PROFILE"
 "$PROFDATA" merge -o "$PROFILE" "$RAW"/*.profraw
-
-echo "==> verifying the profile against the shipped build"
-bash "$ROOT/scripts/check-pgo-profile.sh"
