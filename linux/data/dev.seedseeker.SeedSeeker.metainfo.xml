@@ -40,6 +40,11 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.9.0" date="2026-09-02">
+      <description>
+        <p>Match Shattered Pixel Dungeon v4.0.0, search the Imp's vault and the new enchantments, and pick how many workers a search runs.</p>
+      </description>
+    </release>
     <release version="0.8.0" date="2026-08-27">
       <description>
         <p>Build complex requirements with either/or alternatives, upgrade totals and effect sets, and share searches with deep links.</p>
