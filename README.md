@@ -280,7 +280,6 @@ bash scripts/build-macos-app.sh
 #### PGO
 
 ```sh
-bash scripts/check-pgo-profile.sh                            # CI runs this
 rustup component add llvm-tools && bash scripts/record-pgo-profile.sh
 ```
 
@@ -316,7 +315,6 @@ Pass `-EngineIsa avx2` to build the engine for x86-64-v3.
 
 ```sh
 PGO_TARGET=x86_64-pc-windows-msvc bash scripts/record-pgo-profile.sh
-PGO_TARGET=x86_64-pc-windows-msvc bash scripts/check-pgo-profile.sh
 ```
 
 ### Testing

@@ -12,7 +12,6 @@ PROFILE="$ROOT/pgo/seed-seeker-aarch64-apple-darwin.profdata"
 # The profile only applies if its mangled symbol names match the ones this
 # command produces, and rustc says nothing when they do not, so the shape of
 # this invocation — the target, the profile, the package set — is load bearing.
-# scripts/check-pgo-profile.sh, which CI runs, fails when they drift apart.
 RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-Cprofile-use=$PROFILE" \
     cargo build --locked --release --target aarch64-apple-darwin \
         -p shpd-seedfinder-ffi --manifest-path "$ROOT/Cargo.toml"
