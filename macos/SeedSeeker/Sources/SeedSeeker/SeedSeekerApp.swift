@@ -1346,6 +1346,71 @@ private enum EffectMode: Hashable {
     case any, anyEnchantment, specific
 }
 
+/// A segmented control that spends the whole width it is offered.
+///
+/// SwiftUI's `.segmented` picker sizes itself to its labels and centres what
+/// is left over, so on a wide row it floats in the middle with no way to say
+/// otherwise. `NSSegmentedControl` distributes its segments instead, which is
+/// what lets the effect segments start and end where the grids under them do.
+private struct WideSegmentedPicker<Tag: Hashable>: NSViewRepresentable {
+    let options: [(label: String, tag: Tag)]
+    @Binding var selection: Tag
+    /// Read by VoiceOver in place of the label the caller draws by hand.
+    let accessibilityLabel: String
+
+    func makeNSView(context: Context) -> NSSegmentedControl {
+        let control = NSSegmentedControl()
+        control.trackingMode = .selectOne
+        control.segmentDistribution = .fillEqually
+        // Segments are drawn from the width SwiftUI hands down, not from the
+        // labels, so the control must not insist on its own.
+        control.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        control.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        control.target = context.coordinator
+        control.action = #selector(Coordinator.selectionChanged(_:))
+        control.setAccessibilityLabel(accessibilityLabel)
+        return control
+    }
+
+    func updateNSView(_ control: NSSegmentedControl, context: Context) {
+        context.coordinator.options = options
+        context.coordinator.selection = $selection
+        // The labels move with the item kind — "any glyph" for armour, "any
+        // enchantment" for a weapon — so they are rewritten, not just counted.
+        if control.segmentCount != options.count { control.segmentCount = options.count }
+        for (index, option) in options.enumerated() where control.label(forSegment: index) != option.label {
+            control.setLabel(option.label, forSegment: index)
+        }
+        let selected = options.firstIndex { $0.tag == selection } ?? -1
+        if control.selectedSegment != selected { control.selectedSegment = selected }
+    }
+
+    /// Take the offered width whole; only the height is the control's to pick.
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSSegmentedControl,
+                      context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? nsView.intrinsicContentSize.width,
+               height: nsView.intrinsicContentSize.height)
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(options: options, selection: $selection) }
+
+    /// AppKit sends the action on the main thread, where the control lives.
+    @MainActor final class Coordinator: NSObject {
+        var options: [(label: String, tag: Tag)]
+        var selection: Binding<Tag>
+
+        init(options: [(label: String, tag: Tag)], selection: Binding<Tag>) {
+            self.options = options
+            self.selection = selection
+        }
+
+        @objc func selectionChanged(_ sender: NSSegmentedControl) {
+            guard options.indices.contains(sender.selectedSegment) else { return }
+            selection.wrappedValue = options[sender.selectedSegment].tag
+        }
+    }
+}
+
 private struct RequirementEditor: View {
     let original: ItemRequirement
     let isNew: Bool
@@ -1580,14 +1645,14 @@ private struct RequirementEditor: View {
                         // the effect grids below them start at.
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Effect").font(.caption).foregroundStyle(.secondary)
-                            Picker("Effect", selection: $effectMode) {
-                                Text("Any").tag(EffectMode.any)
-                                Text("Any \(label.lowercased())").tag(EffectMode.anyEnchantment)
-                                Text("Specific…").tag(EffectMode.specific)
-                            }
-                            .pickerStyle(.segmented)
-                            .labelsHidden()
+                            WideSegmentedPicker(
+                                options: [("Any", EffectMode.any),
+                                          ("Any \(label.lowercased())", .anyEnchantment),
+                                          ("Specific…", .specific)],
+                                selection: $effectMode,
+                                accessibilityLabel: "Effect")
                         }
+                        .frame(maxWidth: .infinity)
                         if effectMode == .specific {
                             effectGrid(kind.family == .weapon ? "Enchantments" : "Glyphs",
                                        names: kind.family == .weapon ? ItemCatalog.enchantments : ItemCatalog.glyphs)
