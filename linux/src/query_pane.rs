@@ -104,7 +104,6 @@ pub struct QueryPane {
     blacksmith_row: adw::SwitchRow,
     exclude_row: adw::SwitchRow,
     wandmaker_row: adw::ComboRow,
-    fast_row: adw::SwitchRow,
     start_content: adw::ButtonContent,
     start_button: gtk::Button,
     challenges_button: gtk::Button,
@@ -224,28 +223,12 @@ impl QueryPane {
         blacksmith_group.add(&blacksmith_row);
         blacksmith_group.add(&exclude_row);
 
-        let fast_row = adw::SwitchRow::builder()
-            .title("Fast search")
-            .subtitle(
-                "Treats +3 weapons and armor as quest rewards only — the Ghost, the \
-                 Blacksmith and the Imp's vault — skipping the rare Crypt, \
-                 Sacrificial-fire and special-room chest prizes, so such a search \
-                 ends at floor 19 rather than the floor limit. Found seeds are \
-                 always genuine",
-            )
-            .build();
-        let performance_group = adw::PreferencesGroup::builder()
-            .title("Performance")
-            .build();
-        performance_group.add(&fast_row);
-
         let preferences_page = adw::PreferencesPage::new();
         preferences_page.add(&presets_group);
         preferences_page.add(&requirements_group);
         preferences_page.add(&scope_group);
         preferences_page.add(&wandmaker_group);
         preferences_page.add(&blacksmith_group);
-        preferences_page.add(&performance_group);
 
         let challenges_button = gtk::Button::builder()
             .css_classes(["flat", "caption"])
@@ -314,7 +297,6 @@ impl QueryPane {
             blacksmith_row,
             exclude_row,
             wandmaker_row,
-            fast_row,
             start_content,
             start_button,
             challenges_button,
@@ -349,7 +331,7 @@ impl QueryPane {
             let pane = Rc::clone(&pane);
             move |_| pane.notify_changed()
         });
-        for row in [&pane.blacksmith_row, &pane.exclude_row, &pane.fast_row] {
+        for row in [&pane.blacksmith_row, &pane.exclude_row] {
             row.connect_active_notify({
                 let pane = Rc::clone(&pane);
                 move |_| pane.notify_changed()
@@ -387,7 +369,7 @@ impl QueryPane {
         }
     }
 
-    /// Copies the scope and performance controls into `state`.
+    /// Copies the scope controls into `state`.
     pub fn read_scope(&self, state: &mut AppState) {
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let depth = self.depth_row.value().round() as u8;
@@ -398,7 +380,6 @@ impl QueryPane {
             .ok()
             .and_then(|index| index.checked_sub(1))
             .and_then(|index| WandmakerQuestType::ALL.get(index).copied());
-        state.fast_mode = self.fast_row.is_active();
     }
 
     /// Rebuilds every control from `state` without echoing change signals.
@@ -418,7 +399,6 @@ impl QueryPane {
                 .wandmaker_quest
                 .map_or(0, |variant| u32::from(variant.wire_id())),
         );
-        self.fast_row.set_active(state.fast_mode);
         self.rebuild_board(state);
         let enabled = state.challenges.bits().count_ones();
         self.challenges_button.set_visible(enabled > 0);

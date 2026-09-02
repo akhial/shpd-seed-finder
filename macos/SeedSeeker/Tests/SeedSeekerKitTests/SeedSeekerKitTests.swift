@@ -197,7 +197,7 @@ final class SeedSeekerKitTests: XCTestCase {
         {"id":"6F9619FF-8B86-D011-B42D-00C04FC964FF","name":"Future","query":{"requirements":\
         [{"key":1,"upgrade":0,"kind":99,"tier":0,"tierMatch":0,"upgradeMatch":0,\
         "requireUncursed":false}],"maximumDepth":24,"requireBlacksmith":false,\
-        "excludeBlacksmithRewards":false,"fastMode":false,"challenges":0}}
+        "excludeBlacksmithRewards":false,"challenges":0}}
         """
         // Splice the valid preset into an array after two unreadable elements.
         let futuristic = "[" + future + ",\"garbage\"," + String(encoded.dropFirst())

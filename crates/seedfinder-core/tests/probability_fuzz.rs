@@ -312,7 +312,6 @@ fn query(requirements: Vec<Requirement>, max_depth: u8) -> SearchQuery {
         require_blacksmith: false,
         exclude_blacksmith_rewards: false,
         wandmaker_quest: None,
-        fast_mode: false,
     }
 }
 

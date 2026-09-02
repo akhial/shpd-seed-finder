@@ -48,8 +48,8 @@ interface NativeSeedFinder {
     fun scoutMatches(seed: String, challenges: Int, request: SearchRequest): ScoutMatches?
 
     /**
-     * Whether [candidate] never widens [base]: an identical floor limit, challenge set and fast
-     * mode, world conditions (blacksmith flags, Wandmaker quest) at least as strict as the base's,
+     * Whether [candidate] never widens [base]: an identical floor limit and challenge set,
+     * world conditions (blacksmith flags, Wandmaker quest) at least as strict as the base's,
      * and every base requirement covered by a distinct candidate requirement
      * at least as strict — equal or strengthened (a named item, a tightened bound)
      * (UI list keys are not part of the wire query, so re-keying is invisible here). Only such a

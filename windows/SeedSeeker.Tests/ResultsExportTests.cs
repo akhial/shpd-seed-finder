@@ -32,7 +32,6 @@ public sealed class ResultsExportTests
         Assert.Equal(12, query.MaximumDepth);
         Assert.True(query.RequireBlacksmith);
         Assert.False(query.ExcludeBlacksmithRewards);
-        Assert.False(query.FastMode);
         Assert.Equal(8, query.Challenges); // barren_land
         Assert.Equal(WandmakerQuest.Any, query.WandmakerQuest);
 
@@ -117,6 +116,25 @@ public sealed class ResultsExportTests
     public void TheEngineRefusesQueriesTheOldDecoderAccepted(string requirements) =>
         Assert.Throws<ResultsExportException>(() => ResultsExport.Decode(
             $$"""{ "format": "seed-seeker-results", "query": { "requirements": [{{requirements}}] }, "results": [] }"""));
+
+    [Fact]
+    public void AFileCarryingTheRetiredFastModeFlagStillImports()
+    {
+        // Fast mode is gone, but files written while it existed have to keep
+        // opening: unlike the unknown field above, "fast_mode" is accepted and
+        // ignored — by the engine's decoder and by the mapping here — and is
+        // never written back.
+        var imported = ResultsExport.Decode(
+            """
+            { "format": "seed-seeker-results",
+              "query": { "requirements": [{ "kind": "ring" }], "max_depth": 12, "fast_mode": true },
+              "results": [{ "seed": "AAA-AAA-BUH" }] }
+            """);
+        Assert.Equal(["AAA-AAA-BUH"], imported.Seeds);
+        Assert.Equal(12, imported.Query.MaximumDepth);
+        Assert.Equal("""{"requirements":[{"kind":"ring"}],"max_depth":12}""",
+            ResultsExport.EncodeQueryDocument(imported.Query));
+    }
 
     [Fact]
     public void ImportedSeedsAreDeduplicatedAndCappedByTheEngine()

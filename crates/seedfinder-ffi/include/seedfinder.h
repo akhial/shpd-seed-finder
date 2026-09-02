@@ -36,7 +36,7 @@ int32_t seedfinder_status(int64_t handle, int64_t out_status[5]);
 // running — never resume from a running session's hint.
 int32_t seedfinder_resume_hint(int64_t handle, int64_t out_hint[2]);
 // Reports whether the query in candidate continues the one in base:
-// an identical depth, challenge set and fast mode, world conditions (the
+// an identical depth and challenge set, world conditions (the
 // blacksmith flags and the Wandmaker filter) at least as strict as base's,
 // and every
 // base requirement covered by a distinct candidate requirement at least as

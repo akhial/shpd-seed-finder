@@ -500,12 +500,6 @@ data class SearchRequest(
     val excludeBlacksmithRewards: Boolean = false,
     /** Which Wandmaker quest the run must roll; null accepts any. */
     val wandmakerQuest: WandmakerQuest? = null,
-    /**
-     * Faster but non-exhaustive: +3 weapon/armor requirements only consider
-     * quest rewards, skipping seeds whose sole match is a Crypt or
-     * Sacrificial-fire prize. Found seeds are always genuine matches.
-     */
-    val fastMode: Boolean = false,
 ) {
     init {
         require(requirements.isNotEmpty()) { "At least one requirement is needed" }

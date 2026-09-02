@@ -626,18 +626,12 @@ public struct SearchRequest: Codable, Sendable {
     public var excludeBlacksmithRewards: Bool
     /// Which Wandmaker quest the run must roll; `nil` accepts any.
     public var wandmakerQuest: WandmakerQuest?
-    /// Faster but non-exhaustive: +3 weapon/armor requirements only consider
-    /// quest rewards — the Ghost's, the Blacksmith's and the Imp's vault
-    /// prizes, so such a search ends at the Imp's floor 19 — skipping seeds
-    /// whose sole match is a Crypt, Sacrificial-fire or special-room chest
-    /// prize. Found seeds are always genuine matches.
-    public var fastMode: Bool
     public var challenges: Int
 
     public init(requirements: [ItemRequirement], maximumDepth: Int = SearchLimits.maxDepth,
                 requireBlacksmith: Bool = false, excludeBlacksmithRewards: Bool = false,
                 wandmakerQuest: WandmakerQuest? = nil,
-                fastMode: Bool = false, challenges: Int = 0) throws {
+                challenges: Int = 0) throws {
         guard !requirements.isEmpty else { throw ModelValidationError.emptyRequirements }
         guard (1...SearchLimits.maxDepth).contains(maximumDepth) else { throw ModelValidationError.maximumDepth }
         guard (0...SearchLimits.challengeMask).contains(challenges) else { throw ModelValidationError.challenges }
@@ -646,14 +640,13 @@ public struct SearchRequest: Codable, Sendable {
         self.requireBlacksmith = requireBlacksmith
         self.excludeBlacksmithRewards = excludeBlacksmithRewards
         self.wandmakerQuest = wandmakerQuest
-        self.fastMode = fastMode
         self.challenges = challenges
     }
 }
 
 extension SearchRequest {
-    /// Whether this request refines `base`: an identical floor limit, fast
-    /// mode and challenge set, world conditions (the blacksmith settings and
+    /// Whether this request refines `base`: an identical floor limit and
+    /// challenge set, world conditions (the blacksmith settings and
     /// the Wandmaker filter) at least as strict as `base`'s, plus, for every base
     /// requirement, a distinct requirement of this request at least as strict
     /// — equal, added-to, or strengthened (a named item, a tightened bound).

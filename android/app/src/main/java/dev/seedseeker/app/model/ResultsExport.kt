@@ -78,7 +78,6 @@ object ResultsExport {
         if (query.requireBlacksmith) put("require_blacksmith", true)
         if (query.excludeBlacksmithRewards) put("exclude_blacksmith_rewards", true)
         query.wandmakerQuest?.let { put("wandmaker_quest", it.documentName) }
-        if (query.fastMode) put("fast_mode", true)
         val challenges = CHALLENGE_NAMES.entries
             .filter { (_, challenge) -> query.challenges and challenge.bit != 0 }
             .map { (name, _) -> name }
@@ -183,7 +182,8 @@ object ResultsExport {
             requireBlacksmith = value.optBoolean("require_blacksmith"),
             excludeBlacksmithRewards = value.optBoolean("exclude_blacksmith_rewards"),
             wandmakerQuest = (value.opt("wandmaker_quest") as? String)?.let(WandmakerQuest::named),
-            fastMode = value.optBoolean("fast_mode"),
+            // A file saved before fast mode was retired may still carry
+            // "fast_mode"; the engine accepts and drops it, and so does this.
             challenges = challenges,
         )
     }
@@ -289,6 +289,5 @@ fun SearchRequest.toPresetQuery() = PresetQuery(
     requireBlacksmith = requireBlacksmith,
     excludeBlacksmithRewards = excludeBlacksmithRewards,
     wandmakerQuest = wandmakerQuest,
-    fastMode = fastMode,
     challenges = challenges,
 )

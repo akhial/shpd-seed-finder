@@ -33,7 +33,7 @@ class DeepLinkTest {
         ),
     )
 
-    private val pinnedLink = "https://shpd-seed-seeker.web.app/#q=MAGWhMAA"
+    private val pinnedLink = "https://shpd-seed-seeker.web.app/#q=QAMtCYAA"
 
     /**
      * The cross-platform pinned vector: a known code must decode identically
@@ -43,7 +43,7 @@ class DeepLinkTest {
     @Test
     fun pinnedCodesAreStable() {
         assertEquals(pinnedLink, DeepLink.encodeLink(pinnedQuery))
-        assertEquals(pinnedQuery.normalized(), DeepLink.decode("MAGWhMAA").normalized())
+        assertEquals(pinnedQuery.normalized(), DeepLink.decode("QAMtCYAA").normalized())
         assertEquals(pinnedQuery.normalized(), DeepLink.decode(pinnedLink).normalized())
         // The same query expressed as the canonical JSON query document.
         val document = """
@@ -100,7 +100,6 @@ class DeepLinkTest {
             requireBlacksmith = true,
             excludeBlacksmithRewards = true,
             wandmakerQuest = WandmakerQuest.ROTBERRY,
-            fastMode = true,
             challenges = Challenge.NO_FOOD.bit or Challenge.STRONGER_BOSSES.bit,
         )
         assertRoundTrips(query)
@@ -139,8 +138,8 @@ class DeepLinkTest {
     }
 
     /**
-     * The new structures travel as version-2 codes; a plain query keeps
-     * writing the identical version-1 code it always did.
+     * Alternative groups, effect sets and combined-level groups all ride the
+     * live format; a plain query keeps writing the identical pinned code.
      */
     @Test
     fun roundTripsAlternativeGroupsEffectSetsAndCombinedLevelGroups() {
@@ -190,13 +189,13 @@ class DeepLinkTest {
     }
 
     /**
-     * The v4.0.0 enchantments and curses sit above the 24 effect codes a
-     * version-2 mask can carry, so a set naming one makes the codec write a
-     * version-3 link. The app never names a version — it only has to keep
+     * The v4.0.0 enchantments and curses sit above the 24 effect codes the
+     * retired narrow mask could carry; the live format's 32-bit mask holds
+     * them all. The app never names a version — it only has to keep
      * round-tripping what the wider mask now holds.
      */
     @Test
-    fun roundTripsEffectSetsNeedingTheVersionThreeMask() {
+    fun roundTripsEffectSetsNeedingTheWideEffectMask() {
         assertRoundTrips(
             minimal(
                 wildcard(ItemKind.WEAPON).copy(
@@ -213,7 +212,7 @@ class DeepLinkTest {
                 ),
             )
         }
-        // A plain query is untouched by the wider mask and keeps its version-1 code.
+        // A plain query is untouched by the wider mask and keeps the pinned code.
         assertEquals(pinnedLink, DeepLink.encodeLink(pinnedQuery))
     }
 
@@ -241,13 +240,13 @@ class DeepLinkTest {
         assertDecodeFails("no share code", "https://example.com/")
         assertDecodeFails("not part of a share link", "!!!")
         assertDecodeFails("truncated", "A")
-        assertDecodeFails("truncated", "MAGWhM")
-        assertDecodeFails("trailing data", "MAGWhMAAAAAA")
-        // Unsupported future version (bits 0100 in the top nibble).
+        assertDecodeFails("truncated", "QAMtCY")
+        assertDecodeFails("trailing data", "QAMtCYAAAAAA")
+        // Unsupported future version (bits 0101 in the top nibble).
         val versioned = assertThrows(IllegalArgumentException::class.java) {
-            DeepLink.decode("QAAA")
+            DeepLink.decode("UAAA")
         }
-        assertTrue(versioned.message!!.contains("version 4"))
+        assertTrue(versioned.message!!.contains("version 5"))
         assertTrue(versioned.message!!.contains("different"))
     }
 

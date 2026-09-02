@@ -277,7 +277,6 @@ export const defaultQueryState = (): QueryState => ({
   maxDepth: MAX_DEPTH,
   requireBlacksmith: false,
   excludeBlacksmithRewards: false,
-  fastMode: false,
   challenges: [],
 });
 
@@ -325,7 +324,6 @@ export function toQueryDocument(state: QueryState): QueryDocument {
   if (state.requireBlacksmith) output.require_blacksmith = true;
   if (state.excludeBlacksmithRewards) output.exclude_blacksmith_rewards = true;
   if (state.wandmakerQuest) output.wandmaker_quest = state.wandmakerQuest;
-  if (state.fastMode) output.fast_mode = true;
   if (state.challenges.length) output.challenges = [...state.challenges];
   return output;
 }
@@ -446,6 +444,12 @@ function requirementsFromDocument(entries: RequirementEntryDocument[]): Requirem
   return requirements;
 }
 
+/**
+ * Decodes a stored query document. Keys this release no longer writes are
+ * ignored rather than rejected, matching the engine's codec: a saved query, a
+ * preset or a share link written before fast mode was removed still loads, and
+ * its `fast_mode` flag simply has no effect.
+ */
 export function fromQueryJson(json: string): QueryState {
   const document = JSON.parse(json) as QueryDocument;
   if (!isRecord(document) || !Array.isArray(document.requirements))
@@ -458,7 +462,6 @@ export function fromQueryJson(json: string): QueryState {
     requireBlacksmith: document.require_blacksmith ?? false,
     excludeBlacksmithRewards: document.exclude_blacksmith_rewards ?? false,
     wandmakerQuest: wandmakerQuestFromDocument(document.wandmaker_quest),
-    fastMode: document.fast_mode ?? false,
     challenges: document.challenges ? [...document.challenges] : [],
   };
 }

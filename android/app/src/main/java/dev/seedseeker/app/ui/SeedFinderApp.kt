@@ -162,7 +162,6 @@ fun SeedFinderApp(
     var requireBlacksmith by remember { mutableStateOf(false) }
     var excludeBlacksmithRewards by remember { mutableStateOf(false) }
     var wandmakerQuest by remember { mutableStateOf<WandmakerQuest?>(null) }
-    var fastMode by remember { mutableStateOf(false) }
     var challenges by remember {
         mutableStateOf(
             preferences.getInt(CHALLENGES_KEY, 0).takeIf { it in 0..Challenge.ALL_MASK } ?: 0,
@@ -259,7 +258,6 @@ fun SeedFinderApp(
                 requireBlacksmith = imported.query.requireBlacksmith
                 excludeBlacksmithRewards = imported.query.excludeBlacksmithRewards
                 wandmakerQuest = imported.query.wandmakerQuest
-                fastMode = imported.query.fastMode
                 challenges = imported.query.challenges
                 preferences.edit().putInt(CHALLENGES_KEY, challenges).apply()
                 // The engine already deduplicated and capped the list and
@@ -285,7 +283,6 @@ fun SeedFinderApp(
                             requireBlacksmith = imported.query.requireBlacksmith,
                             excludeBlacksmithRewards = imported.query.excludeBlacksmithRewards,
                             wandmakerQuest = imported.query.wandmakerQuest,
-                            fastMode = imported.query.fastMode,
                         ),
                         results = importedResults,
                         resumeFrom = 0,
@@ -328,7 +325,6 @@ fun SeedFinderApp(
             requireBlacksmith = query.requireBlacksmith
             excludeBlacksmithRewards = query.excludeBlacksmithRewards
             wandmakerQuest = query.wandmakerQuest
-            fastMode = query.fastMode
             challenges = query.challenges
             preferences.edit().putInt(CHALLENGES_KEY, challenges).apply()
             results = emptyList()
@@ -573,7 +569,6 @@ fun SeedFinderApp(
             requireBlacksmith = requireBlacksmith,
             excludeBlacksmithRewards = excludeBlacksmithRewards,
             wandmakerQuest = wandmakerQuest,
-            fastMode = fastMode,
         )
     }.getOrNull()
     // Anything a Clear would actually erase: listed seeds, the Target and refine base,
@@ -626,7 +621,6 @@ fun SeedFinderApp(
                 requireBlacksmith = requireBlacksmith,
                 excludeBlacksmithRewards = excludeBlacksmithRewards,
                 wandmakerQuest = wandmakerQuest,
-                fastMode = fastMode,
                 challenges = challenges,
                 presets = BuiltInPresets.all + userPresets,
                 compactChips = compactChips,
@@ -653,7 +647,6 @@ fun SeedFinderApp(
                     requireBlacksmith = preset.query.requireBlacksmith
                     excludeBlacksmithRewards = preset.query.excludeBlacksmithRewards
                     wandmakerQuest = preset.query.wandmakerQuest
-                    fastMode = preset.query.fastMode
                     challenges = preset.query.challenges
                     preferences.edit().putInt(CHALLENGES_KEY, challenges).apply()
                 },
@@ -666,7 +659,6 @@ fun SeedFinderApp(
                             requireBlacksmith = requireBlacksmith,
                             excludeBlacksmithRewards = excludeBlacksmithRewards,
                             wandmakerQuest = wandmakerQuest,
-                            fastMode = fastMode,
                             challenges = challenges,
                         )
                         val existing = userPresets.indexOfFirst { it.name.equals(cleanName, ignoreCase = true) }
@@ -704,7 +696,6 @@ fun SeedFinderApp(
                 onRequireBlacksmithChange = { requireBlacksmith = it },
                 onExcludeBlacksmithRewardsChange = { excludeBlacksmithRewards = it },
                 onWandmakerQuestChange = { wandmakerQuest = it },
-                onFastModeChange = { fastMode = it },
                 validationMessage = validationMessage,
                 onSearch = {
                     if (currentRequest != null) {
@@ -783,7 +774,6 @@ fun SeedFinderApp(
                                 requireBlacksmith = requireBlacksmith,
                                 excludeBlacksmithRewards = excludeBlacksmithRewards,
                                 wandmakerQuest = wandmakerQuest,
-                                fastMode = fastMode,
                                 challenges = challenges,
                             ),
                         )

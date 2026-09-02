@@ -1015,7 +1015,6 @@ struct Predicate {
     source: Option<ItemSource>,
     max_depth: u8,
     exclude_blacksmith: bool,
-    fast_mode: bool,
 }
 
 impl Predicate {
@@ -1048,7 +1047,6 @@ impl Predicate {
             source: requirement.source,
             max_depth: requirement.max_depth.unwrap_or(DEEPEST_FLOOR),
             exclude_blacksmith: false,
-            fast_mode: false,
         }
     }
 
@@ -1056,7 +1054,6 @@ impl Predicate {
     fn within(mut self, query: &SearchQuery, requirement: &Requirement) -> Self {
         self.max_depth = effective_depth(query, requirement);
         self.exclude_blacksmith = query.exclude_blacksmith_rewards;
-        self.fast_mode = query.fast_mode;
         self
     }
 
@@ -1105,7 +1102,6 @@ impl Predicate {
             source,
             max_depth: self.max_depth.min(other.max_depth),
             exclude_blacksmith: self.exclude_blacksmith || other.exclude_blacksmith,
-            fast_mode: self.fast_mode || other.fast_mode,
         })
     }
 
@@ -1162,7 +1158,7 @@ impl Predicate {
         // Each tier is worth only its own share of the levels this filter
         // accepts, not the whole source's: asking for a tier and a level that
         // never came off the same shelf has to score zero.
-        let allowed = self.allowed_upgrades(supply);
+        let allowed = self.upgrades;
         let mut reachable = [0.0_f32; TIERS];
         for ((share, tabled), carried) in reachable.iter_mut().zip(tiers).zip(levels) {
             let held: f64 = carried
@@ -1234,21 +1230,10 @@ impl Predicate {
     /// The tabled share of the upgrade levels this filter accepts, over a
     /// source's items as a whole rather than one of its tiers.
     fn upgrade_probability(self, supply: &Supply) -> f64 {
-        let allowed = self.allowed_upgrades(supply);
         (0..supply.upgrades.len())
-            .filter(|upgrade| allowed & (1 << upgrade) != 0)
+            .filter(|upgrade| self.upgrades & (1 << upgrade) != 0)
             .map(|upgrade| f64::from(supply.upgrades[upgrade]))
             .sum()
-    }
-
-    /// The upgrade levels this filter accepts, as a bit set, once fast mode
-    /// has given up the ones it skips.
-    fn allowed_upgrades(self, supply: &Supply) -> u8 {
-        let mut allowed = self.upgrades;
-        if self.fast_mode && fast_mode_skips(supply.source, self.kind) {
-            allowed &= (1 << (FAST_MODE_UPGRADE_CAP + 1)) - 1;
-        }
-        allowed
     }
 
     fn effect_probability(self, supply: &Supply) -> f64 {
@@ -1382,17 +1367,6 @@ const TIPPED_DART_IDS: [ItemId; TIPPED_DARTS] = [
     ItemId::BlindingDart,
 ];
 
-/// Fast mode drops the Crypt and Sacrificial-fire +3 prizes, making +3 weapon
-/// and armor requirements quest-only. See [`crate::feasibility`].
-const FAST_MODE_UPGRADE_CAP: u8 = 2;
-
-const fn fast_mode_skips(source: ItemSource, kind: ItemKind) -> bool {
-    matches!(
-        (source, kind),
-        (ItemSource::Tomb, ItemKind::Armor) | (ItemSource::SacrificialFire, ItemKind::Weapon)
-    )
-}
-
 /// Curses are drawn uniformly from the family's list.
 fn curse_count(effect: Effect) -> f64 {
     match effect {
@@ -1504,7 +1478,6 @@ mod tests {
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
-            fast_mode: false,
         }
     }
 

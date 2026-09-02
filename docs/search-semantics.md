@@ -25,10 +25,10 @@ only action that discards results is the explicit **Clear** button.
   where none was demanded, only ever *removes* seeds, so one query's
   conditions can be **at least as strict** as another's: every flag the base
   sets is also set, and a base quest is demanded unchanged (an unfiltered base
-  accepts any). The floor limit, challenges and fast mode are not world
-  conditions — they change which world is generated, or how it is searched.
-- **Continuation**: query B continues query A when the floor limit, challenge
-  set and fast mode are identical, B's world conditions are at least as
+  accepts any). The floor limit and challenges are not world
+  conditions — they change which world is generated.
+- **Continuation**: query B continues query A when the floor limit and
+  challenge set are identical, B's world conditions are at least as
   strict as A's, and every
   slot of A is covered by a *distinct* slot of B at least as strict — a slot
   being one requirement, or one "any of these" group of alternatives — where

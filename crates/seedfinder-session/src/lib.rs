@@ -280,7 +280,7 @@ pub enum FilterPacketError {
 }
 
 /// Decodes two query requests and reports whether `candidate`
-/// continues `base`: an identical depth, challenge set and fast mode, world
+/// continues `base`: an identical depth and challenge set, world
 /// conditions (the blacksmith flags and the Wandmaker filter) at least as
 /// strict as the base's, and every requirement of `base` covered by a distinct
 /// candidate requirement at least as strict (equal or strengthened).
@@ -720,7 +720,6 @@ mod tests {
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
-            fast_mode: false,
         }
     }
 
@@ -884,7 +883,6 @@ mod tests {
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
-            fast_mode: false,
         };
 
         let matches = filter_matching_seeds(&satisfiable, &[seed.value()]).unwrap();
@@ -968,7 +966,6 @@ mod tests {
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
-            fast_mode: false,
         };
         let session = NativeSession::production_resumed(impossible, 42, 1_000).unwrap();
         wait(&session);
@@ -1061,7 +1058,6 @@ mod tests {
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
-            fast_mode: false,
         }
     }
 

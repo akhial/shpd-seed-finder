@@ -24,8 +24,10 @@ struct QueryDocument {
     exclude_blacksmith_rewards: bool,
     #[serde(default)]
     wandmaker_quest: Option<String>,
-    #[serde(default)]
-    fast_mode: bool,
+    /// Accepted so documents saved before fast mode was retired still load;
+    /// the value is ignored and never written back.
+    #[serde(default, rename = "fast_mode")]
+    _fast_mode: bool,
     #[serde(default)]
     challenges: Vec<FileChallenge>,
 }
@@ -364,7 +366,6 @@ pub fn decode_unvalidated(contents: &str) -> Result<SearchQuery, String> {
         require_blacksmith: document.require_blacksmith,
         exclude_blacksmith_rewards: document.exclude_blacksmith_rewards,
         wandmaker_quest,
-        fast_mode: document.fast_mode,
     })
 }
 
@@ -537,9 +538,6 @@ pub fn encode(query: &SearchQuery) -> Value {
     }
     if let Some(variant) = query.wandmaker_quest {
         document.insert("wandmaker_quest".to_owned(), json!(variant.document_name()));
-    }
-    if query.fast_mode {
-        document.insert("fast_mode".to_owned(), json!(true));
     }
     let challenges = CHALLENGE_NAMES
         .iter()
@@ -812,6 +810,8 @@ mod tests {
 
     #[test]
     fn parse_only_decoding_keeps_editor_state_without_requirements() {
+        // `fast_mode` is a retired flag kept in this document deliberately:
+        // documents saved before its removal must still load, ignored.
         let contents = r#"{
             "requirements": [],
             "max_depth": 11,
@@ -827,7 +827,6 @@ mod tests {
         assert_eq!(query.max_depth, 11);
         assert!(query.require_blacksmith);
         assert!(query.exclude_blacksmith_rewards);
-        assert!(query.fast_mode);
         assert_eq!(
             query.challenges,
             Challenges::NO_HERBALISM | Challenges::NO_SCROLLS
@@ -1044,7 +1043,6 @@ mod tests {
             require_blacksmith: true,
             exclude_blacksmith_rewards: true,
             wandmaker_quest: None,
-            fast_mode: true,
         };
         let document = encode(&query);
         assert_eq!(
@@ -1066,7 +1064,6 @@ mod tests {
                 "max_depth": 19,
                 "require_blacksmith": true,
                 "exclude_blacksmith_rewards": true,
-                "fast_mode": true,
                 "challenges": ["barren_land", "forbidden_runes"],
             })
         );
@@ -1095,7 +1092,6 @@ mod tests {
             require_blacksmith: false,
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
-            fast_mode: false,
         };
         assert_eq!(
             encode(&query).to_string(),

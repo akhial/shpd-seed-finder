@@ -111,15 +111,15 @@ class QuerySummaryTest {
     fun scopeSummaryListsOnlyActiveConstraints() {
         assertEquals(
             "≤ floor 24",
-            scopeSummaryText(24, requireBlacksmith = false, excludeBlacksmithRewards = false, fastMode = false, challenges = 0),
+            scopeSummaryText(24, requireBlacksmith = false, excludeBlacksmithRewards = false, challenges = 0),
         )
         assertEquals(
-            "≤ floor 12 · smith · no smith rewards · fast · 2 challenges",
-            scopeSummaryText(12, requireBlacksmith = true, excludeBlacksmithRewards = true, fastMode = true, challenges = 0b101),
+            "≤ floor 12 · smith · no smith rewards · 2 challenges",
+            scopeSummaryText(12, requireBlacksmith = true, excludeBlacksmithRewards = true, challenges = 0b101),
         )
         assertEquals(
             "≤ floor 1 · 1 challenge",
-            scopeSummaryText(1, requireBlacksmith = false, excludeBlacksmithRewards = false, fastMode = false, challenges = 16),
+            scopeSummaryText(1, requireBlacksmith = false, excludeBlacksmithRewards = false, challenges = 16),
         )
         assertEquals(
             "≤ floor 9 · corpse dust",
@@ -128,7 +128,6 @@ class QuerySummaryTest {
                 requireBlacksmith = false,
                 excludeBlacksmithRewards = false,
                 wandmakerQuest = WandmakerQuest.CORPSE_DUST,
-                fastMode = false,
                 challenges = 0,
             ),
         )

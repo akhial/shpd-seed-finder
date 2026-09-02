@@ -345,7 +345,6 @@ fn manifest_query(state: &AppState) -> SearchQuery {
     SearchQuery {
         require_blacksmith: false,
         wandmaker_quest: None,
-        fast_mode: false,
         ..state.unvalidated_query()
     }
 }

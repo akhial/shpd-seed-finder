@@ -79,7 +79,6 @@ class QueryDocumentTest {
             maximumDepth = 14,
             requireBlacksmith = true,
             excludeBlacksmithRewards = true,
-            fastMode = true,
             wandmakerQuest = WandmakerQuest.ROTBERRY,
             challenges = 257,
         )
@@ -89,7 +88,7 @@ class QueryDocumentTest {
                   "source":"sacrificial_fire","identity_group":2,"max_depth":5},
                  {"kind":"ring","upgrade":{"at_least":3}}],
                "max_depth":14,"require_blacksmith":true,"exclude_blacksmith_rewards":true,
-               "wandmaker_quest":"rotberry","fast_mode":true,
+               "wandmaker_quest":"rotberry",
                "challenges":["on_diet","badder_bosses"]}""",
             request,
         )

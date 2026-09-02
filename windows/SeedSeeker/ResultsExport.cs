@@ -101,7 +101,6 @@ public static class ResultsExport
         if (query.RequireBlacksmith) output["require_blacksmith"] = true;
         if (query.ExcludeBlacksmithRewards) output["exclude_blacksmith_rewards"] = true;
         if (WandmakerQuests.DocumentName(query.WandmakerQuest) is string quest) output["wandmaker_quest"] = quest;
-        if (query.FastMode) output["fast_mode"] = true;
         var challenges = ChallengeNames.Where(c => (query.Challenges & c.Bit) != 0).Select(c => c.Name).ToArray();
         if (challenges.Length != 0)
             output["challenges"] = new JsonArray([.. challenges.Select(name => (JsonNode)name)]);
@@ -186,7 +185,9 @@ public static class ResultsExport
             WandmakerQuest = TolerantString(value, "wandmaker_quest") is string questName
                 ? WandmakerQuests.Named(questName) ?? WandmakerQuest.Any
                 : WandmakerQuest.Any,
-            FastMode = BoolField(value, "fast_mode"),
+            // A "fast_mode" flag written before that mode was retired is simply
+            // not read here, matching the engine's own decoder: documents that
+            // carry it still load, as an ordinary full-depth search.
             Challenges = challenges,
         };
     }

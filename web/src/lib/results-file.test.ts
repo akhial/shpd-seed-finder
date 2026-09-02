@@ -44,7 +44,6 @@ const loadedQuery: QueryState = {
   maxDepth: 12,
   requireBlacksmith: true,
   excludeBlacksmithRewards: false,
-  fastMode: false,
   challenges: ["barren_land"],
 };
 

@@ -7,8 +7,8 @@ import type { QueryState } from "./wasm/types";
 
 describe("share link fragments", () => {
   it("detects share codes in fragments", () => {
-    expect(hasShareCode("#q=MAGWhMAA")).toBe(true);
-    expect(hasShareCode("#other&q=MAGWhMAA")).toBe(true);
+    expect(hasShareCode("#q=QAMtCYAA")).toBe(true);
+    expect(hasShareCode("#other&q=QAMtCYAA")).toBe(true);
     expect(hasShareCode("")).toBe(false);
     expect(hasShareCode("#")).toBe(false);
     expect(hasShareCode("#squire")).toBe(false);
@@ -16,7 +16,7 @@ describe("share link fragments", () => {
   });
 
   it("strips the fragment from an href", () => {
-    expect(withoutFragment("https://x.app/#q=MAGWhMAA")).toBe("https://x.app/");
+    expect(withoutFragment("https://x.app/#q=QAMtCYAA")).toBe("https://x.app/");
     expect(withoutFragment("https://x.app/")).toBe("https://x.app/");
   });
 });

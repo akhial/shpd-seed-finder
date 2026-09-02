@@ -140,7 +140,7 @@ public sealed class SearchPlanTests
         {
             Kind = ItemKind.Ring, UpgradeMatch = UpgradeMatch.AtLeast, Upgrade = 4,
         });
-        narrowed.MaximumDepth = 5; narrowed.Challenges = 4; narrowed.FastMode = true;
+        narrowed.MaximumDepth = 5; narrowed.Challenges = 4;
         Assert.Equal(StartMode.TargetFilter, Decide(narrowed, Query(Ring())));
     }
 

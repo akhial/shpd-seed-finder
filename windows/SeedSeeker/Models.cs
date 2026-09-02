@@ -1106,7 +1106,6 @@ public sealed class QuerySettings
     public bool RequireBlacksmith { get; set; }
     public bool ExcludeBlacksmithRewards { get; set; }
     public WandmakerQuest WandmakerQuest { get; set; } = WandmakerQuest.Any;
-    public bool FastMode { get; set; }
     public int Challenges { get; set; }
 
     public QuerySettings Clone() => new()
@@ -1116,14 +1115,13 @@ public sealed class QuerySettings
         RequireBlacksmith = RequireBlacksmith,
         ExcludeBlacksmithRewards = ExcludeBlacksmithRewards,
         WandmakerQuest = WandmakerQuest,
-        FastMode = FastMode,
         Challenges = Challenges,
     };
 }
 
 /// <summary>
 /// Decides whether a query can continue a finished run instead of rescanning it:
-/// an identical floor limit, challenge set and fast mode, world conditions (the
+/// an identical floor limit and challenge set, world conditions (the
 /// blacksmith flags and the Wandmaker quest) at least as strict as the
 /// baseline's, and every baseline requirement still present (counting
 /// duplicates). Extra requirements are allowed but not required — an unchanged
