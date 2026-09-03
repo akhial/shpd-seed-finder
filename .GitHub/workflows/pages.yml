@@ -1,0 +1,49 @@
+name: Pages  
+on:  
+  push:  
+    branches: [build-0.8.0]  
+  workflow_dispatch:  
+  
+permissions:  
+  contents: read  
+  pages: write  
+  id-token: write  
+  
+concurrency:  
+  group: pages  
+  cancel-in-progress: true  
+  
+jobs:  
+  build-deploy:  
+    runs-on: ubuntu-latest  
+    timeout-minutes: 20  
+    environment:  
+      name: github-pages  
+      url: ${{ steps.deploy.outputs.page_url }}  
+    steps:  
+      - uses: actions/checkout@v6  
+      - uses: dtolnay/rust-toolchain@stable  
+        with:  
+          targets: wasm32-unknown-unknown  
+      - uses: taiki-e/install-action@v2  
+        with:  
+          tool: wasm-pack  
+      - uses: actions/setup-node@v4  
+        with:  
+          node-version: 22  
+          cache: npm  
+          cache-dependency-path: web/package-lock.json  
+      - name: Build browser engine  
+        run: ./scripts/build-web-wasm.sh  
+      - name: Build web app  
+        working-directory: web  
+        run: |  
+          npm ci  
+          npm run build -- --base=/shpd-seed-seeker/  
+      - name: SPA fallback  
+        run: cp web/dist/index.html web/dist/404.html  
+      - uses: actions/upload-pages-artifact@v3  
+        with:  
+          path: web/dist  
+      - id: deploy  
+        uses: actions/deploy-pages@v4
