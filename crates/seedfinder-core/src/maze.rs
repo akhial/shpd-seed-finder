@@ -2,8 +2,8 @@
 //! loop, used by both the sewer connection maze and secret maze rooms.
 //!
 //! The maze is one `u64` per column with bit `y` set for a wall, so a
-//! valid-move probe collapses from six bounds-checked byte loads into two
-//! masked bit tests. Every RNG draw — the cell picks, the three direction
+//! valid starting directions can be cached as four bit masks per column and
+//! reused until walls change. Every RNG draw — the cell picks, the three direction
 //! draws, and the per-step continuation draw — happens in exactly the
 //! canonical order; only the draw-free wall probes changed representation.
 
@@ -25,6 +25,8 @@ pub(crate) fn grow_maze(cols: &mut [u64], width: i32, height: i32, random: &mut 
     let generator = random.current_generator();
     let x_bound = FastBound::new(width);
     let y_bound = FastBound::new(height);
+    let mut directions = vec![[0_u64; 4]; cols.len()];
+    build_directions(cols, height, &mut directions);
     let mut fails = 0_i32;
     while fails < 2_500 {
         let (mut x, mut y) = loop {
@@ -35,7 +37,11 @@ pub(crate) fn grow_maze(cols: &mut [u64], width: i32, height: i32, random: &mut 
                 break (x, y);
             }
         };
-        let Some((dx, dy)) = direction(cols, width, height, x, y, generator) else {
+        let Some((dx, dy)) = cached_direction(
+            directions[usize::try_from(x).expect("maze pick is in bounds")],
+            y,
+            generator,
+        ) else {
             fails += 1;
             continue;
         };
@@ -52,9 +58,50 @@ pub(crate) fn grow_maze(cols: &mut [u64], width: i32, height: i32, random: &mut 
                 break;
             }
         }
+        // Only a successful growth changes the wall map. Failed rounds reuse
+        // the same direction masks while consuming every canonical RNG draw.
+        build_directions(cols, height, &mut directions);
     }
 }
 
+/// Valid starting cells for N/E/S/W moves, one bit per row. Each mask tests
+/// both forward cells and their four side neighbours at once. Border starts
+/// are allowed; only the two destination cells must be strictly interior.
+fn build_directions(cols: &[u64], height: i32, directions: &mut [[u64; 4]]) {
+    let interior = ((1_u64 << (height - 1)) - 1) & !1;
+    for (x, masks) in directions.iter_mut().enumerate() {
+        *masks = [0; 4];
+        if x > 0 && x + 1 < cols.len() {
+            let clear = !(cols[x - 1] | cols[x] | cols[x + 1]) & interior;
+            masks[0] = (clear << 1) & (clear << 2);
+            masks[2] = (clear >> 1) & (clear >> 2);
+        }
+        if x + 3 < cols.len() {
+            let clear = !(cols[x + 1] | cols[x + 2]);
+            masks[1] = clear & (clear << 1) & (clear >> 1) & interior;
+        }
+        if x >= 3 {
+            let clear = !(cols[x - 1] | cols[x - 2]);
+            masks[3] = clear & (clear << 1) & (clear >> 1) & interior;
+        }
+    }
+}
+
+fn cached_direction(masks: [u64; 4], y: i32, generator: &mut JavaRandom) -> Option<(i32, i32)> {
+    let bit = 1_u64 << y;
+    if generator.next_i32_bound(4) == 0 && masks[0] & bit != 0 {
+        return Some((0, -1));
+    }
+    if generator.next_i32_bound(3) == 0 && masks[1] & bit != 0 {
+        return Some((1, 0));
+    }
+    if generator.next_i32_bound(2) == 0 && masks[2] & bit != 0 {
+        return Some((0, 1));
+    }
+    (masks[3] & bit != 0).then_some((-1, 0))
+}
+
+#[cfg(test)]
 fn direction(
     cols: &[u64],
     width: i32,
@@ -139,9 +186,98 @@ pub(crate) fn cols_to_column_major(cols: &[u64], height: i32) -> Vec<bool> {
     let height = usize::try_from(height).expect("positive maze height");
     let mut maze = vec![false; cols.len() * height];
     for (column, cells) in cols.iter().zip(maze.chunks_exact_mut(height)) {
-        for (y, cell) in cells.iter_mut().enumerate() {
-            *cell = (column >> y) & 1 != 0;
-        }
+        crate::bit_rows::unpack(*column, cells);
     }
     maze
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{build_directions, direction, grow_maze, valid_move, walled_border_cols};
+    use crate::rng::{FastBound, JavaRandom, RandomStack};
+
+    fn grow_maze_reference(cols: &mut [u64], width: i32, height: i32, random: &mut RandomStack) {
+        let generator = random.current_generator();
+        let x_bound = FastBound::new(width);
+        let y_bound = FastBound::new(height);
+        let mut fails = 0_i32;
+        while fails < 2_500 {
+            let (mut x, mut y) = loop {
+                let x = generator.next_i32_fast_bound(&x_bound);
+                let y = generator.next_i32_fast_bound(&y_bound);
+                let column = cols[usize::try_from(x).expect("maze pick is in bounds")];
+                if (column >> y) & 1 != 0 {
+                    break (x, y);
+                }
+            };
+            let Some((dx, dy)) = direction(cols, width, height, x, y, generator) else {
+                fails += 1;
+                continue;
+            };
+            fails = 0;
+            let mut moves = 0_i32;
+            loop {
+                x += dx;
+                y += dy;
+                cols[usize::try_from(x).expect("maze carve is in bounds")] |= 1 << y;
+                moves += 1;
+                if generator.next_i32_bound(moves) != 0
+                    || !valid_move(cols, width, height, x, y, dx, dy)
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn direction_masks_match_probes_on_arbitrary_walls() {
+        let mut rng = JavaRandom::new(123);
+        for height in 3..=64 {
+            for width in [3, 4, 5, 8, 17, 65] {
+                for _ in 0..8 {
+                    let cols = (0..width)
+                        .map(|_| u64::from_ne_bytes(rng.next_i64().to_ne_bytes()))
+                        .collect::<Vec<_>>();
+                    let mut masks = vec![[0; 4]; cols.len()];
+                    build_directions(&cols, height, &mut masks);
+                    for x in 0..width {
+                        for y in 0..height {
+                            for (index, (dx, dy)) in
+                                [(0, -1), (1, 0), (0, 1), (-1, 0)].into_iter().enumerate()
+                            {
+                                assert_eq!(
+                                    masks[usize::try_from(x).unwrap()][index] & (1 << y) != 0,
+                                    valid_move(&cols, width, height, x, y, dx, dy),
+                                    "{width}x{height}, ({x},{y}), ({dx},{dy})"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn cached_growth_preserves_maze_and_rng_stream() {
+        for (width, height) in [(3, 3), (4, 4), (5, 7), (8, 11), (17, 19), (65, 64)] {
+            for seed in 0..24 {
+                let mut actual = walled_border_cols(width, height);
+                actual[0] &= !(1 << (height / 2));
+                actual[usize::try_from(width).unwrap() - 1] &= !(1 << (height / 2));
+                let mut expected = actual.clone();
+                let mut rng = RandomStack::with_base_seed(seed);
+                let mut reference_rng = rng.clone();
+                grow_maze(&mut actual, width, height, &mut rng);
+                grow_maze_reference(&mut expected, width, height, &mut reference_rng);
+                assert_eq!(actual, expected, "{width}x{height}, seed {seed}");
+                assert_eq!(
+                    rng.long(),
+                    reference_rng.long(),
+                    "RNG after {width}x{height}, seed {seed}"
+                );
+            }
+        }
+    }
 }

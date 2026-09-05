@@ -161,11 +161,7 @@ fn build_open_space(flags: &mut LevelFlags, width_i32: i32, length: usize, width
         };
         let mut clear_rows = vec![0_u64; height];
         for (row, clear) in flags.solid.chunks_exact(width).zip(&mut clear_rows) {
-            let mut bits = 0_u64;
-            for (x, &solid) in row.iter().enumerate() {
-                bits |= u64::from(!solid) << x;
-            }
-            *clear = bits & row_mask;
+            *clear = !crate::bit_rows::pack(row) & row_mask;
         }
         for y in 1..height.saturating_sub(1) {
             let above = clear_rows[y - 1];
@@ -177,9 +173,7 @@ fn build_open_space(flags: &mut LevelFlags, width_i32: i32, length: usize, width
             let west = (row << 1) & (above << 1) & above;
             let open = row & (north | east | south | west) & row_mask;
             let base = y * width;
-            for x in 0..width {
-                flags.open_space[base + x] = open & (1 << x) != 0;
-            }
+            crate::bit_rows::unpack(open, &mut flags.open_space[base..base + width]);
         }
         return;
     }

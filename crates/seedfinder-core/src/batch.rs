@@ -1,8 +1,8 @@
 //! Data-parallel seed primitives.
 //!
-//! Floor generation itself is branch-heavy. The useful SIMD boundary is across
-//! independent candidate seeds, before those candidates enter spatial level
-//! generation. ARM64 builds use NEON lanes for MX3 and Java LCG arithmetic.
+//! Independent candidate seeds provide a SIMD boundary before branch-heavy
+//! spatial generation. ARM64 builds use NEON lanes for MX3 and Java LCG
+//! arithmetic; `bit_rows` handles x86-64 SIMD conversion of terrain cells.
 
 #![allow(unsafe_code)]
 

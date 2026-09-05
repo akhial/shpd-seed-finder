@@ -332,9 +332,7 @@ pub fn generate_patch(
         let height_usize = usize::try_from(height).expect("patch height is non-negative");
         let mut rows = vec![0_u64; height_usize];
         for (bits, cells) in rows.iter_mut().zip(output.chunks_exact(width_usize)) {
-            for (x, &cell) in cells.iter().enumerate() {
-                *bits |= u64::from(cell) << x;
-            }
+            *bits = crate::bit_rows::pack(cells);
         }
         if clustering > 0 {
             let mut next_rows = vec![0_u64; height_usize];
@@ -352,9 +350,7 @@ pub fn generate_patch(
             correct_fill_bits(&mut rows, width, height, fill_difference, generator);
         }
         for (bits, cells) in rows.iter().zip(output.chunks_exact_mut(width_usize)) {
-            for (x, cell) in cells.iter_mut().enumerate() {
-                *cell = bits & (1 << x) != 0;
-            }
+            crate::bit_rows::unpack(*bits, cells);
         }
         return output;
     }

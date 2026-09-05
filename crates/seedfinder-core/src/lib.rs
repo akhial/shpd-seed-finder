@@ -5,6 +5,7 @@
 //! higher-level dungeon generation.
 
 pub mod batch;
+mod bit_rows;
 pub mod builder;
 pub mod catalog;
 pub mod caves_floor;
