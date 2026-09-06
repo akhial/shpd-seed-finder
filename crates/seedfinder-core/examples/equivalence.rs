@@ -39,54 +39,51 @@ fn main() {
         let result = std::panic::catch_unwind(|| {
             CanonicalMainWorldGenerator.generate(DungeonSeed::new(seed).unwrap(), 24)
         });
-        match result {
-            Ok(world) => {
-                let mut actual: Vec<String> = world
-                    .items
-                    .iter()
-                    .map(|i| {
-                        format!(
-                            "{},{:?},{},{},{},{}",
-                            i.depth,
-                            i.source,
-                            item(i.item).stable_id,
-                            i.upgrade,
-                            u8::from(i.cursed),
-                            i.effect.map_or("-", |e| e.wire_name())
-                        )
-                    })
-                    .collect();
-                actual.sort();
-                entries += expected.len() as u64;
-                if actual
-                    .iter()
-                    .map(String::as_str)
-                    .ne(expected.iter().copied())
-                {
-                    deviations += 1;
-                    // Multiset difference: remove one occurrence at a time, retaining duplicates.
-                    let mut extra = actual.clone();
-                    let mut missing = Vec::new();
-                    for e in &expected {
-                        if let Some(n) = extra.iter().position(|a| a == e) {
-                            extra.remove(n);
-                        } else {
-                            missing.push(*e);
-                        }
+        if let Ok(world) = result {
+            let mut actual: Vec<String> = world
+                .items
+                .iter()
+                .map(|i| {
+                    format!(
+                        "{},{:?},{},{},{},{}",
+                        i.depth,
+                        i.source,
+                        item(i.item).stable_id,
+                        i.upgrade,
+                        u8::from(i.cursed),
+                        i.effect.map_or("-", |e| e.wire_name())
+                    )
+                })
+                .collect();
+            actual.sort();
+            entries += expected.len() as u64;
+            if actual
+                .iter()
+                .map(String::as_str)
+                .ne(expected.iter().copied())
+            {
+                deviations += 1;
+                // Multiset difference: remove one occurrence at a time, retaining duplicates.
+                let mut extra = actual.clone();
+                let mut missing = Vec::new();
+                for e in &expected {
+                    if let Some(n) = extra.iter().position(|a| a == e) {
+                        extra.remove(n);
+                    } else {
+                        missing.push(*e);
                     }
-                    println!(
-                        "{}",
-                        serde_json::json!({"seed":seed,"code":world.seed.to_code(),"missing":missing,"extra":extra})
-                    );
                 }
-            }
-            Err(_) => {
-                errors += 1;
                 println!(
                     "{}",
-                    serde_json::json!({"seed":seed,"engine_error":"panic"})
+                    serde_json::json!({"seed":seed,"code":world.seed.to_code(),"missing":missing,"extra":extra})
                 );
             }
+        } else {
+            errors += 1;
+            println!(
+                "{}",
+                serde_json::json!({"seed":seed,"engine_error":"panic"})
+            );
         }
         tested += 1;
         if tested % 1000 == 0 {
