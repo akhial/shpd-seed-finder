@@ -267,8 +267,43 @@ The Caves fixture includes `CVB-VKT-LUY` floor 13. Under the oracle's canonical
 no-challenge/no-trinket profile, BETA-4 generates a +0 Kinetic Sword at cell 243
 and a +0 Battle Axe at cell 244, both `BlacksmithRoom` heaps, plus a +0 Wand of
 Warding heap and +0 Bulk Mail Armor in a locked chest. The old engine instead
-reported Annoying Sword and Dazzling Bolas heaps. A reported in-game Longsword
-and golden-chest Bolas have not been reproduced under this canonical profile.
+reported Annoying Sword and Dazzling Bolas heaps.
+
+#### Continuing a BETA-3 save on BETA-4
+
+The reported Longsword and golden-chest Bolas are reproduced by retaining
+BETA-3 generation through the floor-7 ritual room and using BETA-4 for floor
+13. The game's saved state includes `Generator`'s overall category weights,
+each item deck's remaining weights, category seeds and draw counters;
+`Dungeon.saveGame`/`loadGame` call `Generator.storeInBundle`/`restoreFromBundle`.
+Updating the game does not regenerate that state from scratch.
+
+The old ritual room changes floor 7's random draws and the persistent item
+decks. By the end of floor 12, for example, the mixed run has consumed two
+tier-4 weapon draws while a fresh BETA-4 run has consumed three. The BETA-4
+blacksmith layout then draws from these different decks:
+
+| Floor-13 loot | Fresh BETA-4 | BETA-3 save continued on BETA-4 |
+| --- | --- | --- |
+| Blacksmith heap, cell 243 | +0 Kinetic Sword | +0 Kinetic Sword |
+| Blacksmith heap, cell 244 | +0 Battle Axe | +0 Longsword |
+| Other equipment | Wand of Warding heap; Bulk Mail Armor locked chest | +0 Bolas in a locked golden chest, cell 944 |
+
+The mixed-run Bolas have the Explosive curse in the diagnostic output. They
+come from regular floor-item generation, which applies the game's normal
+locked-chest roll and adds a Golden Key; they are not one of the two smithy
+heaps. Both BETA-4 cases have the same 37x45 floor-13 map (hash 1536306267),
+but different loot because their persistent decks differ.
+
+This was checked with an isolated compatibility probe restoring BETA-3's
+ritual-room size, door and painting rules ahead of the BETA-4 JAR, and an
+independent Rust experiment restoring those rules from the BETA-3 engine.
+The probe's floors 1-12 match the original engine, and its floors 1-13 match
+the mixed Rust run. Switching after any floor from 7 through 12 reproduces
+the three reported items; switching before floor 7 gives the fresh-BETA-4
+result. This is a compatibility reconstruction, not a run of an archived
+BETA-3 JAR. The canonical scout still models a run generated entirely on
+its advertised version; a seed alone does not specify an upgrade history.
 
 All versioned oracle fixtures are regenerated from the pinned BETA-4 JAR;
 historical BETA-3 benchmark measurements and probability estimates retain their
