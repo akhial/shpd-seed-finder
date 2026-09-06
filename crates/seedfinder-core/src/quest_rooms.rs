@@ -335,10 +335,14 @@ where
     }
 
     fn drop(&mut self, cell: usize, heap: QuestHeapKind, item: RegularItem, haunted: bool) {
-        if let Some(world_item) = searchable_world_item(
+        if let Some(mut world_item) = searchable_world_item(
             item,
             u8::try_from(self.level.depth()).expect("main-dungeon depth fits u8"),
         ) {
+            world_item.source = match heap {
+                QuestHeapKind::Heap => ItemSource::Heap,
+                QuestHeapKind::Skeleton => ItemSource::Skeleton,
+            };
             self.report.searchable_items.push(world_item);
         }
         self.level.record(QuestPaintEvent::Drop {
@@ -1421,7 +1425,7 @@ mod tests {
                 effect: Some(Effect::Armor(ArmorEffect::Metabolism)),
                 cursed: true,
                 depth: 8,
-                source: ItemSource::Heap,
+                source: ItemSource::Skeleton,
                 accessibility: Accessibility::Independent,
                 secret: false,
             }]

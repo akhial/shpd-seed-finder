@@ -302,7 +302,8 @@ fn try_place_mob<R: RoomCharacterRules>(
             || cell == exit_cell
             || level.traps.iter().any(|trap| trap.cell == cell)
             || level.plants.iter().any(|plant| plant.cell == cell);
-        if !invalid {
+        // Java consumes a 31st candidate but rejects it after the retry budget expires.
+        if !invalid && tries >= 0 {
             return Some(cell);
         }
         if tries < 0 {
