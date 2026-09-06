@@ -61,6 +61,7 @@ pub enum QuestMobKind {
 pub enum QuestFeatureKind {
     MassGraveBones,
     RitualMarker,
+    RitualTable,
     BlacksmithEntrance,
     ImpEntrance,
     ImpBarrier,
@@ -646,13 +647,75 @@ where
     fill_room(inputs.level, inputs.bounds, terrain::WALL);
     fill_room_margin(inputs.level, inputs.bounds, 1, terrain::EMPTY);
 
-    let center = room_center(inputs.bounds, inputs.random);
-    let marker = Point::new(center.x.wrapping_sub(1), center.y.wrapping_sub(1));
-    inputs.feature(marker, 3, 3, QuestFeatureKind::RitualMarker);
+    // BETA-4 puts cages and tables along the top wall before drawing the
+    // ritual marker. Preserve the furniture draws even though it drops no loot.
+    let bounds = inputs.bounds;
+    let mut valid = [true; 10];
+    for index in [0, 3, 6, 9] {
+        valid[index] = false;
+    }
+    for connection in &inputs.rooms[inputs.room].connected {
+        let door = connection.door.expect("validated door").point;
+        if door.y == bounds.top {
+            valid[usize::try_from(door.x - bounds.left).expect("door inside room")] = false;
+        } else if door.y <= bounds.top + 2 {
+            valid[if door.x == bounds.left { 1 } else { 8 }] = false;
+        }
+    }
+    let mut cage_row = inputs.random.int_bound(2);
+    for x in (bounds.left..bounds.right).step_by(3) {
+        let mut point = Point::new(x, bounds.top);
+        draw::draw_inside(inputs.level.map_mut(), bounds, point, 2, terrain::WALL);
+        let index = usize::try_from(x - bounds.left).expect("column inside room");
+        if !valid[index + 1] && !valid[index + 2] {
+            continue;
+        }
+        point.x += if !valid[index + 2] {
+            1
+        } else if !valid[index + 1] {
+            2
+        } else {
+            inputs.random.int_range(1, 2)
+        };
+        valid[usize::try_from(point.x - bounds.left).expect("column inside room")] = false;
+        let value = if cage_row == 0 {
+            terrain::REGION_DECO
+        } else {
+            terrain::CUSTOM_DECO
+        };
+        draw::draw_inside(inputs.level.map_mut(), bounds, point, 2, value);
+        if cage_row != 0 {
+            inputs.feature(
+                Point::new(point.x, point.y + 1),
+                1,
+                2,
+                QuestFeatureKind::RitualTable,
+            );
+        }
+        cage_row -= 1;
+    }
+    for _ in 0..=100 {
+        let index = inputs.random.int_range(1, 9);
+        if valid[usize::try_from(index).expect("non-negative column")] {
+            draw::draw_inside(
+                inputs.level.map_mut(),
+                bounds,
+                Point::new(bounds.left + index, bounds.top),
+                1,
+                terrain::REGION_DECO,
+            );
+            break;
+        }
+    }
+
+    let mut center = room_center(inputs.bounds, inputs.random);
+    center.y += 1;
+    let marker = Point::new(center.x - 2, center.y - 2);
+    inputs.feature(marker, 5, 5, QuestFeatureKind::RitualMarker);
     draw::fill(
         inputs.level.map_mut(),
-        marker.x,
-        marker.y,
+        center.x - 1,
+        center.y - 1,
         3,
         3,
         terrain::CUSTOM_DECO_EMPTY,
@@ -1374,6 +1437,8 @@ mod tests {
 
     #[test]
     fn ritual_site_and_placement_radius_match_official_fixture() {
+        // BETA-4 JAR: paint bounds (2,2)-(11,11), left door (2,6),
+        // 15x15 wall-filled map and Random.pushGenerator(0).
         let result = fixture(
             RoomKind::Quest(QuestRoomKind::RitualSite),
             8,
@@ -1381,9 +1446,9 @@ mod tests {
             10,
             Point::new(2, 6),
         );
-        assert_eq!(result.map_hash, -901_739_966);
+        assert_eq!(result.map_hash, -1_123_988_254);
         assert_eq!(result.door, DoorType::Regular);
-        assert_eq!(result.next, 4_437_113_781_045_784_766);
+        assert_eq!(result.next, 4_662_897_195_779_605_027);
         assert_eq!(result.state.ritual_position, Some(112));
         assert_eq!(
             result.queue,

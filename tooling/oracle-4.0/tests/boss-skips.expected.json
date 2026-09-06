@@ -1,7 +1,7 @@
 {
   "schema": "shpd-boss-transition-fixture/v3",
-  "game_version": "4.0.0-BETA-3",
-  "game_jar_sha256": "f62f8ac2ef6d36c72223c1a4e78f18e98d0bb1282cd4f1fca123082d43edccc9",
+  "game_version": "4.0.0-BETA-4",
+  "game_jar_sha256": "76f6983e7b619267666621de9f1ecbbc3645d4925c2c446736987c3011b9dfd1",
   "runtime": {
     "java_version": "21.0.11",
     "java_vendor": "Oracle Corporation",
@@ -39,8 +39,8 @@
         "depth": 10,
         "class": "PrisonBossLevel",
         "generator_hash": [
-          -1562739026,
-          -1562739026
+          -1851823764,
+          -1851823764
         ],
         "unchanged": {
           "generator": true,
@@ -55,8 +55,8 @@
         "depth": 15,
         "class": "CavesBossLevel",
         "generator_hash": [
-          -2111138786,
-          -2111138786
+          390619280,
+          390619280
         ],
         "unchanged": {
           "generator": true,
@@ -71,8 +71,8 @@
         "depth": 20,
         "class": "CityBossLevel",
         "generator_hash": [
-          -50636863,
-          -1050420611
+          883677465,
+          -116106283
         ],
         "unchanged": {
           "generator": false,
@@ -124,8 +124,8 @@
         "depth": 25,
         "class": "HallsBossLevel",
         "generator_hash": [
-          -1478525431,
-          -1478525431
+          1896347053,
+          1896347053
         ],
         "unchanged": {
           "generator": true,
@@ -174,8 +174,8 @@
         "depth": 15,
         "class": "CavesBossLevel",
         "generator_hash": [
-          1652502520,
-          1652502520
+          -1448575199,
+          -1448575199
         ],
         "unchanged": {
           "generator": true,
@@ -190,8 +190,8 @@
         "depth": 20,
         "class": "CityBossLevel",
         "generator_hash": [
-          1736502888,
-          557935746
+          447762386,
+          -1331280392
         ],
         "unchanged": {
           "generator": false,
@@ -221,7 +221,7 @@
           ],
           [
             18,
-            "Greatsword",
+            "Glaive",
             "weapon",
             0,
             false,
@@ -243,8 +243,8 @@
         "depth": 25,
         "class": "HallsBossLevel",
         "generator_hash": [
-          -1927869291,
-          -1927869291
+          1732747152,
+          1732747152
         ],
         "unchanged": {
           "generator": true,
@@ -277,8 +277,8 @@
         "depth": 10,
         "class": "PrisonBossLevel",
         "generator_hash": [
-          1168254752,
-          1168254752
+          1225386440,
+          1225386440
         ],
         "unchanged": {
           "generator": true,
@@ -293,8 +293,8 @@
         "depth": 15,
         "class": "CavesBossLevel",
         "generator_hash": [
-          -1972664426,
-          -1972664426
+          1323116360,
+          1323116360
         ],
         "unchanged": {
           "generator": true,
@@ -309,8 +309,8 @@
         "depth": 20,
         "class": "CityBossLevel",
         "generator_hash": [
-          386677459,
-          -1199265901
+          381266552,
+          -446452040
         ],
         "unchanged": {
           "generator": false,
@@ -322,7 +322,7 @@
         "items": [
           [
             3,
-            "ThrowingHammer",
+            "ForceCube",
             "weapon",
             0,
             false,
@@ -362,8 +362,8 @@
         "depth": 25,
         "class": "HallsBossLevel",
         "generator_hash": [
-          1692265753,
-          1692265753
+          1190972913,
+          1190972913
         ],
         "unchanged": {
           "generator": true,

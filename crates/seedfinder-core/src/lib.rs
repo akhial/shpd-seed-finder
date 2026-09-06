@@ -74,10 +74,10 @@ pub mod vault_rooms;
 pub mod wire;
 
 /// Upstream generation line this engine targets.
-pub const SHPD_VERSION: &str = "4.0.0-BETA-3";
+pub const SHPD_VERSION: &str = "4.0.0-BETA-4";
 
 /// Exact upstream build used while implementing and validating parity. No
 /// 4.0.0 source revision has been published, so this is the SHA-256 digest of
-/// the official `ShatteredPD-v4.0.0-BETA-3-Java.jar` release asset that the
+/// the official `ShatteredPD-v4.0.0-BETA-4-Java.jar` release asset that the
 /// parity oracle in `tooling/oracle-4.0` runs against.
-pub const SHPD_COMMIT: &str = "f62f8ac2ef6d36c72223c1a4e78f18e98d0bb1282cd4f1fca123082d43edccc9";
+pub const SHPD_COMMIT: &str = "76f6983e7b619267666621de9f1ecbbc3645d4925c2c446736987c3011b9dfd1";

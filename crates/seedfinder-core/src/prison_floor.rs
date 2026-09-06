@@ -943,20 +943,22 @@ mod tests {
                 9,
                 Feeling::None,
                 (27, 45),
-                -782_393_744,
+                -2_111_462_339,
                 462,
                 856,
-                Some(465),
+                Some(441),
                 vec![
-                    (PrisonMobKind::Thief, 252),
-                    (PrisonMobKind::Dm100, 321),
-                    (PrisonMobKind::Necromancer, 499),
-                    (PrisonMobKind::Guard, 872),
-                    (PrisonMobKind::Skeleton, 922),
-                    (PrisonMobKind::Dm100, 937),
-                    (PrisonMobKind::Necromancer, 1_131),
+                    (PrisonMobKind::Necromancer, 88),
+                    (PrisonMobKind::Guard, 318),
+                    (PrisonMobKind::Dm100, 418),
+                    (PrisonMobKind::Dm100, 426),
+                    (PrisonMobKind::Skeleton, 499),
+                    (PrisonMobKind::Necromancer, 509),
+                    (PrisonMobKind::Guard, 825),
+                    (PrisonMobKind::Dm100, 829),
+                    (PrisonMobKind::Thief, 1_130),
                 ],
-                vec![252, 321, 465, 499, 872, 922, 937, 1_131],
+                vec![88, 318, 418, 426, 441, 499, 509, 825, 829, 1_128, 1_130],
             ),
         ];
 
@@ -1284,13 +1286,13 @@ mod tests {
                 && item.source == ItemSource::Heap
         }));
         assert!(world.items.iter().any(|item| {
-            item.item == ItemId::BattleAxe
+            item.item == ItemId::RoundShield
                 && item.depth == 9
-                && item.effect == Some(Effect::Weapon(WeaponEffect::Elastic))
+                && item.effect == Some(Effect::Weapon(WeaponEffect::Chilling))
                 && item.source == ItemSource::Statue
         }));
         assert!(world.items.iter().any(|item| {
-            item.item == ItemId::Katana && item.depth == 9 && item.source == ItemSource::Mimic
+            item.item == ItemId::MailArmor && item.depth == 9 && item.source == ItemSource::Mimic
         }));
 
         let rewards: Vec<_> = world

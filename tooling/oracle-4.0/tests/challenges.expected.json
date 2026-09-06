@@ -95,45 +95,45 @@
         ],
         [
           9,
-          -782393744,
-          8,
-          14,
-          -1562739026
+          -2111462339,
+          11,
+          11,
+          -1851823764
         ],
         [
           10,
           -1257001624,
           0,
           1,
-          -1562739026
+          -1851823764
         ],
         [
           11,
           1191484531,
-          6,
-          50,
-          1688066276
+          7,
+          47,
+          -1454505068
         ],
         [
           12,
           516872055,
           9,
-          17,
-          1807289623
+          18,
+          -317901988
         ],
         [
           13,
-          -426331088,
-          7,
-          16,
-          -1990358758
+          -46924005,
+          8,
+          18,
+          1102585394
         ],
         [
           14,
           -593991188,
-          11,
           10,
-          -2111138786
+          11,
+          390619280
         ]
       ],
       "items": [
@@ -409,30 +409,12 @@
         ],
         [
           11,
-          "heap",
-          826,
+          "mimic",
+          1445,
           "Bolas",
           0,
-          false,
-          null
-        ],
-        [
-          11,
-          "locked_chest",
-          443,
-          "Katana",
-          0,
-          false,
-          null
-        ],
-        [
-          11,
-          "locked_chest",
-          1545,
-          "Sword",
-          0,
-          false,
-          null
+          true,
+          "Pressurized"
         ],
         [
           11,
@@ -473,8 +455,17 @@
         [
           12,
           "chest",
+          1089,
+          "Mace",
+          0,
+          false,
+          null
+        ],
+        [
+          12,
+          "chest",
           1872,
-          "Sai",
+          "Sword",
           1,
           false,
           null
@@ -483,7 +474,16 @@
           12,
           "heap",
           755,
-          "MailArmor",
+          "Sai",
+          0,
+          false,
+          null
+        ],
+        [
+          12,
+          "locked_chest",
+          542,
+          "Javelin",
           0,
           false,
           null
@@ -536,29 +536,20 @@
         [
           13,
           "heap",
-          1375,
-          "Bolas",
+          1253,
+          "ScaleArmor",
           0,
           true,
-          "Explosive"
+          "Multiplicity"
         ],
         [
           13,
           "heap",
-          1376,
-          "MailArmor",
-          0,
-          true,
-          "Overgrowth"
-        ],
-        [
-          14,
-          "mimic",
-          818,
-          "MailArmor",
+          1254,
+          "Bolas",
           0,
           false,
-          null
+          "Eldritch"
         ],
         [
           14,
@@ -649,45 +640,45 @@
         ],
         [
           9,
-          -782393744,
-          8,
-          14,
-          -1562739026
+          -2111462339,
+          11,
+          11,
+          -1851823764
         ],
         [
           10,
           -1257001624,
           0,
           1,
-          -1562739026
+          -1851823764
         ],
         [
           11,
           1191484531,
-          6,
-          50,
-          1688066276
+          7,
+          47,
+          -1454505068
         ],
         [
           12,
           516872055,
           9,
-          17,
-          1807289623
+          18,
+          -317901988
         ],
         [
           13,
-          -426331088,
-          7,
-          16,
-          -1990358758
+          -46924005,
+          8,
+          18,
+          1102585394
         ],
         [
           14,
           -593991188,
-          11,
           10,
-          -2111138786
+          11,
+          390619280
         ]
       ],
       "items": [
@@ -963,30 +954,12 @@
         ],
         [
           11,
-          "heap",
-          826,
+          "mimic",
+          1445,
           "Bolas",
           0,
-          false,
-          null
-        ],
-        [
-          11,
-          "locked_chest",
-          443,
-          "Katana",
-          0,
-          false,
-          null
-        ],
-        [
-          11,
-          "locked_chest",
-          1545,
-          "Sword",
-          0,
-          false,
-          null
+          true,
+          "Pressurized"
         ],
         [
           11,
@@ -1027,8 +1000,17 @@
         [
           12,
           "chest",
+          1089,
+          "Mace",
+          0,
+          false,
+          null
+        ],
+        [
+          12,
+          "chest",
           1872,
-          "Sai",
+          "Sword",
           1,
           false,
           null
@@ -1037,7 +1019,16 @@
           12,
           "heap",
           755,
-          "MailArmor",
+          "Sai",
+          0,
+          false,
+          null
+        ],
+        [
+          12,
+          "locked_chest",
+          542,
+          "Javelin",
           0,
           false,
           null
@@ -1090,29 +1081,20 @@
         [
           13,
           "heap",
-          1375,
-          "Bolas",
+          1253,
+          "ScaleArmor",
           0,
           true,
-          "Explosive"
+          "Multiplicity"
         ],
         [
           13,
           "heap",
-          1376,
-          "MailArmor",
-          0,
-          true,
-          "Overgrowth"
-        ],
-        [
-          14,
-          "mimic",
-          818,
-          "MailArmor",
+          1254,
+          "Bolas",
           0,
           false,
-          null
+          "Eldritch"
         ],
         [
           14,
@@ -1203,45 +1185,45 @@
         ],
         [
           9,
-          -782393744,
-          8,
-          15,
-          -1562739026
+          -1062678038,
+          11,
+          12,
+          -1851823764
         ],
         [
           10,
           -1257001624,
           0,
           1,
-          -1562739026
+          -1851823764
         ],
         [
           11,
           1191484531,
-          6,
-          51,
-          1688066276
+          7,
+          48,
+          -1454505068
         ],
         [
           12,
           516872055,
           9,
-          18,
-          1807289623
+          19,
+          -317901988
         ],
         [
           13,
-          -426331088,
-          7,
-          17,
-          -1990358758
+          -46924005,
+          8,
+          19,
+          1102585394
         ],
         [
           14,
           -593991188,
-          11,
-          11,
-          -2111138786
+          10,
+          12,
+          390619280
         ]
       ],
       "items": [
@@ -1517,30 +1499,12 @@
         ],
         [
           11,
-          "heap",
-          826,
+          "mimic",
+          1445,
           "Bolas",
           0,
-          false,
-          null
-        ],
-        [
-          11,
-          "locked_chest",
-          443,
-          "Katana",
-          0,
-          false,
-          null
-        ],
-        [
-          11,
-          "locked_chest",
-          1545,
-          "Sword",
-          0,
-          false,
-          null
+          true,
+          "Pressurized"
         ],
         [
           11,
@@ -1581,8 +1545,17 @@
         [
           12,
           "chest",
+          1089,
+          "Mace",
+          0,
+          false,
+          null
+        ],
+        [
+          12,
+          "chest",
           1872,
-          "Sai",
+          "Sword",
           1,
           false,
           null
@@ -1591,7 +1564,16 @@
           12,
           "heap",
           755,
-          "MailArmor",
+          "Sai",
+          0,
+          false,
+          null
+        ],
+        [
+          12,
+          "locked_chest",
+          542,
+          "Javelin",
           0,
           false,
           null
@@ -1644,29 +1626,20 @@
         [
           13,
           "heap",
-          1375,
-          "Bolas",
+          1253,
+          "ScaleArmor",
           0,
           true,
-          "Explosive"
+          "Multiplicity"
         ],
         [
           13,
           "heap",
-          1376,
-          "MailArmor",
-          0,
-          true,
-          "Overgrowth"
-        ],
-        [
-          14,
-          "mimic",
-          818,
-          "MailArmor",
+          1254,
+          "Bolas",
           0,
           false,
-          null
+          "Eldritch"
         ],
         [
           14,
@@ -1757,45 +1730,45 @@
         ],
         [
           9,
-          -782393744,
-          8,
-          14,
-          -1562739026
+          -2111462339,
+          11,
+          11,
+          -1851823764
         ],
         [
           10,
           -1257001624,
           0,
           1,
-          -1562739026
+          -1851823764
         ],
         [
           11,
           1191484531,
-          6,
-          50,
-          1688066276
+          7,
+          47,
+          -1454505068
         ],
         [
           12,
           516872055,
           9,
-          16,
-          1807289623
+          17,
+          -317901988
         ],
         [
           13,
-          -426331088,
-          7,
-          16,
-          -1990358758
+          -46924005,
+          8,
+          18,
+          1102585394
         ],
         [
           14,
           -593991188,
-          11,
           10,
-          -2111138786
+          11,
+          390619280
         ]
       ],
       "items": [
@@ -2071,30 +2044,12 @@
         ],
         [
           11,
-          "heap",
-          826,
+          "mimic",
+          1445,
           "Bolas",
           0,
-          false,
-          null
-        ],
-        [
-          11,
-          "locked_chest",
-          443,
-          "Katana",
-          0,
-          false,
-          null
-        ],
-        [
-          11,
-          "locked_chest",
-          1545,
-          "Sword",
-          0,
-          false,
-          null
+          true,
+          "Pressurized"
         ],
         [
           11,
@@ -2135,8 +2090,17 @@
         [
           12,
           "chest",
+          1089,
+          "Mace",
+          0,
+          false,
+          null
+        ],
+        [
+          12,
+          "chest",
           1872,
-          "Sai",
+          "Sword",
           1,
           false,
           null
@@ -2145,7 +2109,16 @@
           12,
           "heap",
           755,
-          "MailArmor",
+          "Sai",
+          0,
+          false,
+          null
+        ],
+        [
+          12,
+          "locked_chest",
+          542,
+          "Javelin",
           0,
           false,
           null
@@ -2198,29 +2171,20 @@
         [
           13,
           "heap",
-          1375,
-          "Bolas",
+          1253,
+          "ScaleArmor",
           0,
           true,
-          "Explosive"
+          "Multiplicity"
         ],
         [
           13,
           "heap",
-          1376,
-          "MailArmor",
-          0,
-          true,
-          "Overgrowth"
-        ],
-        [
-          14,
-          "mimic",
-          818,
-          "MailArmor",
+          1254,
+          "Bolas",
           0,
           false,
-          null
+          "Eldritch"
         ],
         [
           14,
@@ -2311,45 +2275,45 @@
         ],
         [
           9,
-          -782393744,
-          8,
-          15,
-          -1562739026
+          -1062678038,
+          11,
+          12,
+          -1851823764
         ],
         [
           10,
           -1257001624,
           0,
           1,
-          -1562739026
+          -1851823764
         ],
         [
           11,
           1191484531,
-          6,
-          51,
-          1688066276
+          7,
+          48,
+          -1454505068
         ],
         [
           12,
           516872055,
           9,
-          17,
-          1807289623
+          18,
+          -317901988
         ],
         [
           13,
-          -426331088,
-          7,
-          17,
-          -1990358758
+          -46924005,
+          8,
+          19,
+          1102585394
         ],
         [
           14,
           -593991188,
-          11,
-          11,
-          -2111138786
+          10,
+          12,
+          390619280
         ]
       ],
       "items": [
@@ -2625,30 +2589,12 @@
         ],
         [
           11,
-          "heap",
-          826,
+          "mimic",
+          1445,
           "Bolas",
           0,
-          false,
-          null
-        ],
-        [
-          11,
-          "locked_chest",
-          443,
-          "Katana",
-          0,
-          false,
-          null
-        ],
-        [
-          11,
-          "locked_chest",
-          1545,
-          "Sword",
-          0,
-          false,
-          null
+          true,
+          "Pressurized"
         ],
         [
           11,
@@ -2689,8 +2635,17 @@
         [
           12,
           "chest",
+          1089,
+          "Mace",
+          0,
+          false,
+          null
+        ],
+        [
+          12,
+          "chest",
           1872,
-          "Sai",
+          "Sword",
           1,
           false,
           null
@@ -2699,7 +2654,16 @@
           12,
           "heap",
           755,
-          "MailArmor",
+          "Sai",
+          0,
+          false,
+          null
+        ],
+        [
+          12,
+          "locked_chest",
+          542,
+          "Javelin",
           0,
           false,
           null
@@ -2752,29 +2716,20 @@
         [
           13,
           "heap",
-          1375,
-          "Bolas",
+          1253,
+          "ScaleArmor",
           0,
           true,
-          "Explosive"
+          "Multiplicity"
         ],
         [
           13,
           "heap",
-          1376,
-          "MailArmor",
-          0,
-          true,
-          "Overgrowth"
-        ],
-        [
-          14,
-          "mimic",
-          818,
-          "MailArmor",
+          1254,
+          "Bolas",
           0,
           false,
-          null
+          "Eldritch"
         ],
         [
           14,
@@ -2893,17 +2848,17 @@
         ],
         [
           13,
-          814901041,
-          9,
-          13,
-          -1598948480
+          395750173,
+          7,
+          12,
+          -874468250
         ],
         [
           14,
-          1194169471,
+          2118236882,
           13,
           19,
-          -1871142179
+          1614744545
         ]
       ],
       "items": [
@@ -3234,8 +3189,17 @@
         [
           13,
           "heap",
-          481,
-          "RoundShield",
+          766,
+          "MailArmor",
+          1,
+          false,
+          null
+        ],
+        [
+          13,
+          "heap",
+          767,
+          "MailArmor",
           0,
           false,
           null
@@ -3243,29 +3207,20 @@
         [
           13,
           "heap",
-          482,
-          "Tomahawk",
+          1012,
+          "Flail",
           0,
           true,
-          "Pressurized"
-        ],
-        [
-          13,
-          "skeleton",
-          1587,
-          "WandOfWarding",
-          2,
-          true,
-          null
+          "Sacrificial"
         ],
         [
           14,
-          "chest",
-          867,
-          "Kunai",
+          "skeleton",
+          1157,
+          "WandOfWarding",
           0,
-          true,
-          "Dazzling"
+          false,
+          null
         ],
         [
           14,
@@ -3384,17 +3339,17 @@
         ],
         [
           13,
-          814901041,
-          9,
-          13,
-          -1598948480
+          395750173,
+          7,
+          12,
+          -874468250
         ],
         [
           14,
-          1194169471,
+          2118236882,
           13,
           19,
-          -1871142179
+          1614744545
         ]
       ],
       "items": [
@@ -3725,8 +3680,17 @@
         [
           13,
           "heap",
-          481,
-          "RoundShield",
+          766,
+          "MailArmor",
+          1,
+          false,
+          null
+        ],
+        [
+          13,
+          "heap",
+          767,
+          "MailArmor",
           0,
           false,
           null
@@ -3734,29 +3698,20 @@
         [
           13,
           "heap",
-          482,
-          "Tomahawk",
+          1012,
+          "Flail",
           0,
           true,
-          "Pressurized"
-        ],
-        [
-          13,
-          "skeleton",
-          1587,
-          "WandOfWarding",
-          2,
-          true,
-          null
+          "Sacrificial"
         ],
         [
           14,
-          "chest",
-          867,
-          "Kunai",
+          "skeleton",
+          1157,
+          "WandOfWarding",
           0,
-          true,
-          "Dazzling"
+          false,
+          null
         ],
         [
           14,
@@ -3875,17 +3830,17 @@
         ],
         [
           13,
-          814901041,
-          9,
-          14,
-          -1598948480
+          395750173,
+          7,
+          13,
+          -874468250
         ],
         [
           14,
-          1194169471,
+          2118236882,
           13,
           21,
-          -1871142179
+          1614744545
         ]
       ],
       "items": [
@@ -4216,8 +4171,17 @@
         [
           13,
           "heap",
-          481,
-          "RoundShield",
+          766,
+          "MailArmor",
+          1,
+          false,
+          null
+        ],
+        [
+          13,
+          "heap",
+          767,
+          "MailArmor",
           0,
           false,
           null
@@ -4225,29 +4189,20 @@
         [
           13,
           "heap",
-          482,
-          "Tomahawk",
+          1012,
+          "Flail",
           0,
           true,
-          "Pressurized"
-        ],
-        [
-          13,
-          "skeleton",
-          1587,
-          "WandOfWarding",
-          2,
-          true,
-          null
+          "Sacrificial"
         ],
         [
           14,
-          "chest",
-          867,
-          "Kunai",
+          "skeleton",
+          1157,
+          "WandOfWarding",
           0,
-          true,
-          "Dazzling"
+          false,
+          null
         ],
         [
           14,
@@ -4366,17 +4321,17 @@
         ],
         [
           13,
-          814901041,
-          9,
-          13,
-          -1598948480
+          395750173,
+          7,
+          12,
+          -874468250
         ],
         [
           14,
-          1194169471,
+          2118236882,
           13,
           19,
-          -1871142179
+          1614744545
         ]
       ],
       "items": [
@@ -4707,8 +4662,17 @@
         [
           13,
           "heap",
-          481,
-          "RoundShield",
+          766,
+          "MailArmor",
+          1,
+          false,
+          null
+        ],
+        [
+          13,
+          "heap",
+          767,
+          "MailArmor",
           0,
           false,
           null
@@ -4716,29 +4680,20 @@
         [
           13,
           "heap",
-          482,
-          "Tomahawk",
+          1012,
+          "Flail",
           0,
           true,
-          "Pressurized"
-        ],
-        [
-          13,
-          "skeleton",
-          1587,
-          "WandOfWarding",
-          2,
-          true,
-          null
+          "Sacrificial"
         ],
         [
           14,
-          "chest",
-          867,
-          "Kunai",
+          "skeleton",
+          1157,
+          "WandOfWarding",
           0,
-          true,
-          "Dazzling"
+          false,
+          null
         ],
         [
           14,
@@ -4857,17 +4812,17 @@
         ],
         [
           13,
-          814901041,
-          9,
-          14,
-          -1598948480
+          395750173,
+          7,
+          13,
+          -874468250
         ],
         [
           14,
-          1194169471,
+          2118236882,
           13,
           21,
-          -1871142179
+          1614744545
         ]
       ],
       "items": [
@@ -5198,8 +5153,17 @@
         [
           13,
           "heap",
-          481,
-          "RoundShield",
+          766,
+          "MailArmor",
+          1,
+          false,
+          null
+        ],
+        [
+          13,
+          "heap",
+          767,
+          "MailArmor",
           0,
           false,
           null
@@ -5207,29 +5171,20 @@
         [
           13,
           "heap",
-          482,
-          "Tomahawk",
+          1012,
+          "Flail",
           0,
           true,
-          "Pressurized"
-        ],
-        [
-          13,
-          "skeleton",
-          1587,
-          "WandOfWarding",
-          2,
-          true,
-          null
+          "Sacrificial"
         ],
         [
           14,
-          "chest",
-          867,
-          "Kunai",
+          "skeleton",
+          1157,
+          "WandOfWarding",
           0,
-          true,
-          "Dazzling"
+          false,
+          null
         ],
         [
           14,
@@ -5243,8 +5198,8 @@
       ]
     }
   },
-  "game_version": "4.0.0-BETA-3",
-  "game_jar_sha256": "f62f8ac2ef6d36c72223c1a4e78f18e98d0bb1282cd4f1fca123082d43edccc9",
+  "game_version": "4.0.0-BETA-4",
+  "game_jar_sha256": "76f6983e7b619267666621de9f1ecbbc3645d4925c2c446736987c3011b9dfd1",
   "runtime": {
     "java_version": "21.0.11",
     "java_vendor": "Oracle Corporation",

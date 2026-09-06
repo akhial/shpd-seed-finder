@@ -1,7 +1,7 @@
 {
   "schema": "shpd-caves-parity-fixture/v3",
-  "game_version": "4.0.0-BETA-3",
-  "game_jar_sha256": "f62f8ac2ef6d36c72223c1a4e78f18e98d0bb1282cd4f1fca123082d43edccc9",
+  "game_version": "4.0.0-BETA-4",
+  "game_jar_sha256": "76f6983e7b619267666621de9f1ecbbc3645d4925c2c446736987c3011b9dfd1",
   "runtime": {
     "java_version": "21.0.11",
     "java_vendor": "Oracle Corporation",
@@ -83,32 +83,32 @@
         [
           9,
           "PrisonLevel",
-          -1562739026
+          -1851823764
         ],
         [
           10,
           "PrisonBossLevel",
-          -1562739026
+          -1851823764
         ],
         [
           11,
           "CavesLevel",
-          1688066276
+          -1454505068
         ],
         [
           12,
           "CavesLevel",
-          1807289623
+          -317901988
         ],
         [
           13,
           "CavesLevel",
-          -1990358758
+          1102585394
         ],
         [
           14,
           "CavesLevel",
-          -2111138786
+          390619280
         ]
       ],
       "levels": [
@@ -123,7 +123,7 @@
           "map_hash": 1191484531,
           "entrance": 478,
           "exit": 1718,
-          "generator_state_hash": 1688066276,
+          "generator_state_hash": -1454505068,
           "mobs": [
             [
               "Shopkeeper",
@@ -136,6 +136,10 @@
             [
               "Shaman$RedShaman",
               1264
+            ],
+            [
+              "Mimic",
+              1445
             ],
             [
               "ArmoredBrute",
@@ -162,7 +166,7 @@
           "map_hash": 516872055,
           "entrance": 414,
           "exit": 1435,
-          "generator_state_hash": 1807289623,
+          "generator_state_hash": -317901988,
           "mobs": [
             [
               "Shaman$PurpleShaman",
@@ -207,41 +211,45 @@
           "class": "CavesLevel",
           "feeling": "TRAPS",
           "size": [
-            37,
-            42
+            45,
+            35
           ],
-          "map_hash": -426331088,
-          "entrance": 803,
-          "exit": 938,
-          "generator_state_hash": -1990358758,
+          "map_hash": -46924005,
+          "entrance": 668,
+          "exit": 861,
+          "generator_state_hash": 1102585394,
           "mobs": [
             [
-              "Shaman$PurpleShaman",
-              90
+              "Shaman$RedShaman",
+              278
             ],
             [
-              "Bat",
-              239
-            ],
-            [
-              "Brute",
-              351
-            ],
-            [
-              "Spinner",
-              786
-            ],
-            [
-              "Shaman$BlueShaman",
-              937
+              "Shaman$RedShaman",
+              500
             ],
             [
               "DM200",
-              1055
+              746
+            ],
+            [
+              "Spinner",
+              767
+            ],
+            [
+              "Brute",
+              870
             ],
             [
               "Blacksmith",
-              1262
+              1162
+            ],
+            [
+              "Spinner",
+              1420
+            ],
+            [
+              "Bat",
+              1422
             ]
           ]
         },
@@ -256,7 +264,7 @@
           "map_hash": -593991188,
           "entrance": 416,
           "exit": 996,
-          "generator_state_hash": -2111138786,
+          "generator_state_hash": 390619280,
           "mobs": [
             [
               "Bat",
@@ -269,10 +277,6 @@
             [
               "DM200",
               792
-            ],
-            [
-              "Mimic",
-              818
             ],
             [
               "Brute",
@@ -308,45 +312,15 @@
       "items": [
         [
           11,
-          "heap",
-          0,
-          826,
-          "HEAP",
+          "mimic",
+          1,
+          1445,
+          null,
           "Bolas",
           "weapon",
           0,
-          false,
-          null,
-          {
-            "kind": "independent"
-          }
-        ],
-        [
-          11,
-          "locked_chest",
-          0,
-          443,
-          "LOCKED_CHEST",
-          "Katana",
-          "weapon",
-          0,
-          false,
-          null,
-          {
-            "kind": "independent"
-          }
-        ],
-        [
-          11,
-          "locked_chest",
-          0,
-          1545,
-          "LOCKED_CHEST",
-          "Sword",
-          "weapon",
-          0,
-          false,
-          null,
+          true,
+          "Pressurized",
           {
             "kind": "independent"
           }
@@ -415,9 +389,24 @@
           12,
           "chest",
           0,
+          1089,
+          "CHEST",
+          "Mace",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          12,
+          "chest",
+          0,
           1872,
           "CHEST",
-          "Sai",
+          "Sword",
           "weapon",
           1,
           false,
@@ -432,8 +421,23 @@
           0,
           755,
           "HEAP",
-          "MailArmor",
-          "armor",
+          "Sai",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          12,
+          "locked_chest",
+          0,
+          542,
+          "LOCKED_CHEST",
+          "Javelin",
+          "weapon",
           0,
           false,
           null,
@@ -528,13 +532,13 @@
           13,
           "heap",
           0,
-          1375,
+          1253,
           "HEAP",
-          "Bolas",
-          "weapon",
+          "ScaleArmor",
+          "armor",
           0,
           true,
-          "Explosive",
+          "Multiplicity",
           {
             "kind": "independent"
           }
@@ -543,28 +547,13 @@
           13,
           "heap",
           0,
-          1376,
+          1254,
           "HEAP",
-          "MailArmor",
-          "armor",
-          0,
-          true,
-          "Overgrowth",
-          {
-            "kind": "independent"
-          }
-        ],
-        [
-          14,
-          "mimic",
-          1,
-          818,
-          null,
-          "MailArmor",
-          "armor",
+          "Bolas",
+          "weapon",
           0,
           false,
-          null,
+          "Eldritch",
           {
             "kind": "independent"
           }
@@ -857,17 +846,17 @@
         [
           9,
           "PrisonLevel",
-          1168254752
+          1225386440
         ],
         [
           10,
           "PrisonBossLevel",
-          1168254752
+          1225386440
         ],
         [
           11,
           "CavesLevel",
-          1258171420
+          1434482620
         ]
       ],
       "levels": [
@@ -882,7 +871,7 @@
           "map_hash": 1231044119,
           "entrance": 218,
           "exit": 1215,
-          "generator_state_hash": 1258171420,
+          "generator_state_hash": 1434482620,
           "mobs": [
             [
               "Shopkeeper",
@@ -905,10 +894,6 @@
               869
             ],
             [
-              "Mimic",
-              997
-            ],
-            [
               "Bat",
               1183
             ],
@@ -920,21 +905,6 @@
         }
       ],
       "items": [
-        [
-          11,
-          "locked_chest",
-          0,
-          1047,
-          "LOCKED_CHEST",
-          "MailArmor",
-          "armor",
-          0,
-          true,
-          "Stench",
-          {
-            "kind": "independent"
-          }
-        ],
         [
           11,
           "shop",
@@ -1241,6 +1211,259 @@
           0,
           false,
           "Crystal",
+          {
+            "kind": "independent"
+          }
+        ]
+      ]
+    },
+    "CVB-VKT-LUY": {
+      "seed": 586885479204,
+      "challenges": 0,
+      "requested_depths": [
+        13
+      ],
+      "generator_checkpoints": [
+        [
+          1,
+          "SewerLevel",
+          -514863938
+        ],
+        [
+          2,
+          "SewerLevel",
+          -1526036076
+        ],
+        [
+          3,
+          "SewerLevel",
+          1753846007
+        ],
+        [
+          4,
+          "SewerLevel",
+          -2079115719
+        ],
+        [
+          5,
+          "SewerBossLevel",
+          -2079115719
+        ],
+        [
+          6,
+          "PrisonLevel",
+          1139187959
+        ],
+        [
+          7,
+          "PrisonLevel",
+          1669837460
+        ],
+        [
+          8,
+          "PrisonLevel",
+          72274525
+        ],
+        [
+          9,
+          "PrisonLevel",
+          -855135322
+        ],
+        [
+          10,
+          "PrisonBossLevel",
+          -855135322
+        ],
+        [
+          11,
+          "CavesLevel",
+          596352938
+        ],
+        [
+          12,
+          "CavesLevel",
+          -1346646957
+        ],
+        [
+          13,
+          "CavesLevel",
+          -1826951685
+        ]
+      ],
+      "levels": [
+        {
+          "depth": 13,
+          "class": "CavesLevel",
+          "feeling": "SECRETS",
+          "size": [
+            37,
+            45
+          ],
+          "map_hash": 1536306267,
+          "entrance": 937,
+          "exit": 448,
+          "generator_state_hash": -1826951685,
+          "mobs": [
+            [
+              "Blacksmith",
+              168
+            ],
+            [
+              "Spinner",
+              352
+            ],
+            [
+              "Shaman$RedShaman",
+              449
+            ],
+            [
+              "Shaman$PurpleShaman",
+              578
+            ],
+            [
+              "Bat",
+              763
+            ],
+            [
+              "Spinner",
+              788
+            ],
+            [
+              "Brute",
+              821
+            ],
+            [
+              "Brute",
+              1275
+            ]
+          ]
+        }
+      ],
+      "items": [
+        [
+          13,
+          "blacksmith_quest",
+          0,
+          null,
+          null,
+          "Greatsword",
+          "weapon",
+          1,
+          false,
+          null,
+          {
+            "kind": "choice",
+            "group": "blacksmith_quest@13",
+            "option": 0
+          }
+        ],
+        [
+          13,
+          "blacksmith_quest",
+          1,
+          null,
+          null,
+          "RunicBlade",
+          "weapon",
+          1,
+          false,
+          null,
+          {
+            "kind": "choice",
+            "group": "blacksmith_quest@13",
+            "option": 1
+          }
+        ],
+        [
+          13,
+          "blacksmith_quest",
+          2,
+          null,
+          null,
+          "Kunai",
+          "weapon",
+          1,
+          false,
+          null,
+          {
+            "kind": "choice",
+            "group": "blacksmith_quest@13",
+            "option": 2
+          }
+        ],
+        [
+          13,
+          "blacksmith_quest",
+          3,
+          null,
+          null,
+          "PlateArmor",
+          "armor",
+          1,
+          false,
+          null,
+          {
+            "kind": "choice",
+            "group": "blacksmith_quest@13",
+            "option": 3
+          }
+        ],
+        [
+          13,
+          "heap",
+          0,
+          243,
+          "HEAP",
+          "Sword",
+          "weapon",
+          0,
+          false,
+          "Kinetic",
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          13,
+          "heap",
+          0,
+          244,
+          "HEAP",
+          "BattleAxe",
+          "weapon",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          13,
+          "heap",
+          0,
+          714,
+          "HEAP",
+          "WandOfWarding",
+          "wand",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          13,
+          "locked_chest",
+          0,
+          456,
+          "LOCKED_CHEST",
+          "MailArmor",
+          "armor",
+          0,
+          true,
+          "Bulk",
           {
             "kind": "independent"
           }

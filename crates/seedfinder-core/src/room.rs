@@ -709,7 +709,7 @@ impl Room {
                     .size_category
                     .expect("RitualSiteRoom has a size category")
                     .min_dimension()
-                    .max(9),
+                    .max(10),
                 QuestRoomKind::RotGarden => 10,
                 QuestRoomKind::Blacksmith => self
                     .size_category
@@ -845,9 +845,8 @@ impl Room {
                 QuestRoomKind::MassGrave | QuestRoomKind::RotGarden | QuestRoomKind::AmbitiousImp,
             ) => 1,
             RoomKind::Connection(ConnectionRoomKind::Maze) => 2,
-            // v4.0.0 BlacksmithRoom compares the direction ordinal against its
-            // `top` coordinate (`direction == this.top`), not against TOP.
-            RoomKind::Quest(QuestRoomKind::Blacksmith) if direction as i32 == self.bounds.top => 1,
+            // BETA-4 fixes the coordinate/constant mix-up: only TOP is capped.
+            RoomKind::Quest(QuestRoomKind::Blacksmith) if direction == Direction::Top => 1,
             _ if direction == Direction::All => 16,
             _ => 4,
         }
@@ -857,6 +856,12 @@ impl Room {
     /// `SentryRoom.canConnect` calls `center()` in a way that can consume a
     /// draw for the unused coordinate.
     pub fn can_connect_point(&self, point: Point, rng: &mut RandomStack) -> bool {
+        if matches!(self.kind, RoomKind::Quest(QuestRoomKind::RitualSite))
+            && point.y == self.bounds.top
+            && (point.x == self.bounds.left + 3 || point.x == self.bounds.left + 6)
+        {
+            return false;
+        }
         // MassGraveRoom (v4.0.0) replaces the edge test entirely and draws the
         // unused `center()` y jitter on every call.
         if matches!(self.kind, RoomKind::Quest(QuestRoomKind::MassGrave)) {
@@ -1598,23 +1603,44 @@ mod tests {
                     RoomKind::Quest(QuestRoomKind::RitualSite),
                     Some(SizeCategory::Normal),
                     10,
-                    9,
+                    10,
                     16
                 ),
                 (RoomKind::Quest(QuestRoomKind::RotGarden), None, 10, 10, 1),
-                // Unplaced rooms sit at top == 0, so Java's
-                // `direction == this.top` quirk reports one connection.
                 (
                     RoomKind::Quest(QuestRoomKind::Blacksmith),
                     Some(SizeCategory::Normal),
                     9,
                     9,
-                    1
+                    16
                 ),
                 (RoomKind::Quest(QuestRoomKind::AmbitiousImp), None, 9, 9, 1),
             ]
         );
         assert_eq!(rng.int(), -504_935_820);
+    }
+
+    #[test]
+    fn beta4_quest_door_rules_are_independent_of_room_position() {
+        let mut rng = RandomStack::with_base_seed(0);
+        for top in [0, 2, 4, 20] {
+            let mut smith = create_quest_room(QuestRoomKind::Blacksmith, &mut rng);
+            smith.bounds = Rect::new(3, top, 12, top + 9);
+            assert_eq!(smith.max_connections(Direction::Top), 1);
+            assert_eq!(smith.max_connections(Direction::Bottom), 4);
+            assert_eq!(smith.max_connections(Direction::All), 16);
+
+            let mut ritual = create_quest_room(QuestRoomKind::RitualSite, &mut rng);
+            ritual.bounds = smith.bounds;
+            assert_eq!((ritual.min_width(), ritual.min_height()), (10, 10));
+            for offset in 1..9 {
+                assert_eq!(
+                    ritual.can_connect_point(Point::new(3 + offset, top), &mut rng),
+                    offset != 3 && offset != 6,
+                );
+                assert!(ritual.can_connect_point(Point::new(3 + offset, top + 9), &mut rng));
+            }
+        }
     }
 
     #[test]
