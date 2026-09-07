@@ -9,13 +9,14 @@ import org.junit.Test
 class TrinketRequirementsTest {
     init { PackagedCatalog.install() }
 
-    @Test fun namedTrinketsJoinAnOrGroupAndRoundTrip() {
+    @Test fun namedTrinketsJoinAnOrGroupAndEncode() {
         val requirements = ItemCatalog.trinkets.take(2).mapIndexed { index, item ->
             ItemRequirement(key = index.toLong(), item = item, upgrade = 0, upgradeMatch = UpgradeMatch.ANY)
         }.joinAlternatives(0, 1)
         assertEquals(1, requirements.slotCount())
         assertEquals("Trinket", requirements.first().description)
-        assertEquals("Rat Skull", requirements.first().title)
+        // Joining moves the dragged source after the target, just like other categories.
+        assertEquals(listOf("Parchment Scrap", "Rat Skull"), requirements.map { it.title })
         assertNull(requirements.validationProblem())
         val document = ResultsExport.encodeQuery(SearchRequest(requirements))
         assertTrue(document.toString().contains("any_of"))
