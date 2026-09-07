@@ -61,11 +61,19 @@ python tooling/parity/replay_equivalence.py \
   /absolute/path/to/frozen-fixed-equivalence
 ```
 
+An optional third argument sets a new evidence label (default `fixed`) for
+another replay of the same archives without overwriting prior results.
+
 This follows an active archive or reads a completed one and writes separate
 `fixed-*` evidence. Preserve the supplied binary while replay is running.
 The gzip end marker and exact seed counts are checked before completion.
 
-The checked-in `beta4-mob-retry-equipment.txt` fixture records three failures
+The checked-in `beta4-mob-retry-equipment.txt` fixture records three retry failures
 from the large run (667551, 1334551, 1334612). They exposed Sewer mob placement
 accepting the 31st candidate after Java's retry budget expired, changing later
 item draws. The quest-room fixture also checks Mass Grave loot's Skeleton source.
+
+Seed 905410 additionally covers disconnected adjacent Platform Rooms in the
+Caves. Their shared wall must preserve the requested solid decorative terrain;
+only connected Platform Rooms substitute chasm and restore the doorway. The
+wrong wall changes entrance-distance exclusions, mob placement, and later loot.
