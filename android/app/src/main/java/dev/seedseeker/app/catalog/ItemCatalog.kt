@@ -47,6 +47,7 @@ object ItemCatalog {
     val armor: List<CatalogItem> get() = loaded.armor
     val wands: List<CatalogItem> get() = loaded.wands
     val rings: List<CatalogItem> get() = loaded.rings
+    val trinkets: List<CatalogItem> get() = loaded.trinkets
     val all: List<CatalogItem> get() = loaded.all
 
     val enchantments: List<String> get() = loaded.enchantments
@@ -61,6 +62,7 @@ object ItemCatalog {
         ItemKind.ARMOR -> armor
         ItemKind.WAND -> wands
         ItemKind.RING -> rings
+        ItemKind.TRINKET -> trinkets
     }
 
     fun findById(id: String): CatalogItem? = loaded.byId[id]
@@ -91,7 +93,8 @@ object ItemCatalog {
         val armor = entries.filter { it.kind == ItemKind.ARMOR }
         val wands = entries.filter { it.kind == ItemKind.WAND }
         val rings = entries.filter { it.kind == ItemKind.RING }
-        val all = weapons + armor + wands + rings
+        val trinkets = entries.filter { it.kind == ItemKind.TRINKET }
+        val all = weapons + armor + wands + rings + trinkets
         val byId = all.associateBy(CatalogItem::id)
 
         val enchantments = names(modifiers, "weaponEnchantments")
@@ -124,6 +127,7 @@ object ItemCatalog {
             "armor" -> ItemKind.ARMOR
             "wand" -> ItemKind.WAND
             "ring" -> ItemKind.RING
+            "trinket" -> ItemKind.TRINKET
             else -> error("Unknown catalog item type '$type' for '$id'")
         }
         return CatalogItem(

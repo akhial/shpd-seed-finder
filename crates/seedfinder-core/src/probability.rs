@@ -1763,7 +1763,7 @@ mod tests {
         wanted.wandmaker_quest = Some(crate::quests::WandmakerQuestType::Rotberry);
         assert!((estimate_match_probability(&wanted) - (4.0 / 17.0) / 3.0).abs() < 1e-10);
         wanted.max_depth = 6;
-        assert_eq!(estimate_match_probability(&wanted), 0.0);
+        assert!(estimate_match_probability(&wanted).abs() < f64::EPSILON);
     }
 
     /// A `+4` armor and a `+4` ring are each common enough — the Imp hands one

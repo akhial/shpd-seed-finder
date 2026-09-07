@@ -260,7 +260,13 @@ class DemoNativeSeedFinder : NativeSeedFinder {
                 ScoutQuest(variant = ScoutQuestVariant.VAULT, depth = 18),
             ),
             ringGems = RingGems.CATALOG,
-        )
+            trinketOrder = ItemCatalog.trinkets,
+        ).let { world ->
+            world.copy(items = world.items + ItemCatalog.trinkets.take(4).map {
+                ScoutItem(item = it, depth = 2, upgrade = 0, effect = null,
+                    cursed = false, source = ScoutItemSource.CHEST, accessibility = ScoutAccessibility.Independent)
+            })
+        }
     }
 
     private class DemoSession(
@@ -710,7 +716,8 @@ object ScoutResultCodec {
     fun decode(packet: ByteArray): ScoutWorld =
         DataInputStream(ByteArrayInputStream(packet)).use { input ->
             val magic = ByteArray(4).also(input::readFully)
-            check(magic.contentEquals(MAGIC)) { "Unexpected native scout packet" }
+            val hasTrinketOrder = magic.contentEquals(byteArrayOf(83, 83, 67, 52))
+            check(hasTrinketOrder || magic.contentEquals(MAGIC)) { "Unexpected native scout packet" }
 
             val seed = readAscii(input, input.readUnsignedByte())
             check(SeedCode.isCanonical(seed)) { "Malformed seed from native scout" }
@@ -795,8 +802,18 @@ object ScoutResultCodec {
                     accessibility = accessibility,
                 )
             }
+            val trinketOrder = if (hasTrinketOrder) {
+                val count = input.readUnsignedByte()
+                check(count == 17) { "Scout trinket deck must contain 17 items" }
+                List(count) {
+                    val id = readUtf8(input, input.readUnsignedShort())
+                    checkNotNull(ItemCatalog.findById(id)?.takeIf { it.kind == dev.seedseeker.app.model.ItemKind.TRINKET }) {
+                        "Unknown trinket '$id' in native scout packet"
+                    }
+                }.also { deck -> check(deck.map { it.id }.distinct().size == 17) { "Repeated scout trinket" } }
+            } else emptyList()
             check(input.available() == 0) { "Trailing bytes in native scout packet" }
-            ScoutWorld(seed = seed, items = items, quests = quests, ringGems = ringGems)
+            ScoutWorld(seed = seed, items = items, quests = quests, ringGems = ringGems, trinketOrder = trinketOrder)
         }
 
     private fun readUtf8(input: DataInputStream, length: Int): String {

@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+package dev.seedseeker.app.model
+
+import dev.seedseeker.app.catalog.ItemCatalog
+import dev.seedseeker.app.catalog.PackagedCatalog
+import org.junit.Assert.*
+import org.junit.Test
+
+class TrinketRequirementsTest {
+    init { PackagedCatalog.install() }
+
+    @Test fun namedTrinketsJoinAnOrGroupAndRoundTrip() {
+        val requirements = ItemCatalog.trinkets.take(2).mapIndexed { index, item ->
+            ItemRequirement(key = index.toLong(), item = item, upgrade = 0, upgradeMatch = UpgradeMatch.ANY)
+        }.joinAlternatives(0, 1)
+        assertEquals(1, requirements.slotCount())
+        assertEquals("Trinket", requirements.first().description)
+        assertEquals("Rat Skull", requirements.first().title)
+        assertNull(requirements.validationProblem())
+        val document = ResultsExport.encodeQuery(SearchRequest(requirements))
+        assertTrue(document.toString().contains("any_of"))
+        assertTrue(document.toString().contains("rat_skull"))
+        assertFalse(document.toString().contains("upgrade"))
+    }
+
+    @Test fun wildcardTrinketIsRejected() {
+        assertThrows(IllegalArgumentException::class.java) {
+            ItemRequirement(key = 0, item = null, kind = ItemKind.TRINKET, upgrade = 0, upgradeMatch = UpgradeMatch.ANY)
+        }
+    }
+}

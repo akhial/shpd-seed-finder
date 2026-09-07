@@ -1010,9 +1010,14 @@ mod tests {
                 .any(|offer| offer["id"] == "mimic_tooth" && offer["matched"] == true)
         );
         let catalog: Value =
-            serde_json::from_str(include_str!("../../../web/src/lib/trinket-catalog.json"))
+            serde_json::from_str(include_str!("../../../android/app/src/main/assets/third_party/shattered-pixel-dungeon/catalog-v4.0.0.json"))
                 .unwrap();
-        for entry in catalog.as_array().unwrap() {
+        for entry in catalog["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|entry| entry["type"] == "trinket")
+        {
             let wire = order.iter().find(|wire| wire["id"] == entry["id"]).unwrap();
             assert_eq!(wire["name"], entry["name"]);
             assert_eq!(wire["spriteIndex"], entry["sprite"]);

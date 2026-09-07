@@ -1,5 +1,4 @@
 import catalogJson from "../generated/catalog.json";
-import trinketCatalog from "./trinket-catalog.json";
 import type {
   ChallengeName,
   ItemCategory,
@@ -32,7 +31,7 @@ interface CatalogDocument {
 }
 
 const catalog = catalogJson as CatalogDocument;
-export const items: CatalogItem[] = [...catalog.entries, ...(trinketCatalog as CatalogItem[])];
+export const items: CatalogItem[] = catalog.entries;
 export const itemsByCategory = Object.fromEntries(
   (["weapon", "armor", "wand", "ring", "trinket"] as ItemCategory[]).map((category) => [
     category,

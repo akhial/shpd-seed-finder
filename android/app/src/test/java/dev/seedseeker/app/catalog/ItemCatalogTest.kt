@@ -42,7 +42,7 @@ class ItemCatalogTest {
 
     @Test
     fun everyAssetEntryIsLoadedWithItsIdNameSpriteAndTier() {
-        assertEquals(88, entries.size)
+        assertEquals(105, entries.size)
         assertEquals(entries.size, ItemCatalog.all.size)
         for (entry in entries) {
             val item = ItemCatalog.findById(entry.getString("id"))

@@ -50,6 +50,7 @@ pub const ALL_KIND_CHOICES: &[KindChoice] = &[
     (ItemKind::Armor, None),
     (ItemKind::Wand, None),
     (ItemKind::Ring, None),
+    (ItemKind::Trinket, None),
 ];
 
 /// One item requirement as edited in the interface. All predicate fields
@@ -133,6 +134,9 @@ impl UiRequirement {
         if let Some(item_id) = self.item {
             return item(item_id).name.to_owned();
         }
+        if self.kind == ItemKind::Trinket {
+            return "Trinket".to_owned();
+        }
         let singular = kind_choice_singular(self.kind_choice());
         match self.tier {
             TierRequirement::Any => format!("Any {singular}"),
@@ -154,6 +158,7 @@ impl UiRequirement {
     pub fn chip_name(&self) -> String {
         match self.item {
             Some(item_id) => item(item_id).name.to_owned(),
+            None if self.kind == ItemKind::Trinket => "Trinket".to_owned(),
             None => format!("Any {}", chip_family(self.kind_choice())),
         }
     }
@@ -162,6 +167,9 @@ impl UiRequirement {
     /// order the editor lays the controls out.
     #[must_use]
     pub fn subtitle(&self) -> String {
+        if self.kind == ItemKind::Trinket {
+            return String::new();
+        }
         let mut text = match self.upgrade {
             UpgradeRequirement::Any => "any upgrade".to_owned(),
             UpgradeRequirement::Exact(upgrade) => format!("exactly +{upgrade}"),
@@ -474,6 +482,7 @@ pub const fn kind_choice_label(choice: KindChoice) -> &'static str {
         (ItemKind::Armor, _) => "Armor",
         (ItemKind::Wand, _) => "Wand",
         (ItemKind::Ring, _) => "Ring",
+        (ItemKind::Trinket, _) => "Trinket",
     }
 }
 
@@ -485,6 +494,7 @@ pub const fn kind_choice_singular(choice: KindChoice) -> &'static str {
         (ItemKind::Armor, _) => "armor",
         (ItemKind::Wand, _) => "wand",
         (ItemKind::Ring, _) => "ring",
+        (ItemKind::Trinket, _) => "trinket",
     }
 }
 
@@ -498,6 +508,7 @@ pub const fn chip_family(choice: KindChoice) -> &'static str {
         (ItemKind::Armor, _) => "armor",
         (ItemKind::Wand, _) => "wand",
         (ItemKind::Ring, _) => "ring",
+        (ItemKind::Trinket, _) => "trinket",
     }
 }
 
@@ -510,6 +521,7 @@ pub const fn kind_icon(kind: ItemKind, weapon_category: Option<WeaponCategory>) 
         (ItemKind::Armor, _) => "kind-armor-symbolic",
         (ItemKind::Wand, _) => "kind-wand-symbolic",
         (ItemKind::Ring, _) => "kind-ring-symbolic",
+        (ItemKind::Trinket, _) => "starred-symbolic",
     }
 }
 
@@ -679,6 +691,30 @@ mod tests {
         AppState, QuestRow, UiRequirement, blacksmith_quest_label, floor_limit_skip_target,
         ghost_quest_label, imp_target_label, quest_rows, source_label, wandmaker_quest_label,
     };
+
+    #[test]
+    fn trinkets_round_trip_in_or_groups_without_equipment_details() {
+        let mut state = AppState::default();
+        state.requirements = [ItemId::MimicTooth, ItemId::RatSkull]
+            .into_iter()
+            .enumerate()
+            .map(|(index, id)| UiRequirement {
+                kind: ItemKind::Trinket,
+                item: Some(id),
+                alternative_group: Some(1),
+                ..UiRequirement::new(index as u64 + 1)
+            })
+            .collect();
+        assert_eq!(state.requirements[0].title(), "Mimic Tooth");
+        assert_eq!(state.requirements[0].subtitle(), "");
+        let query = state.to_query().unwrap();
+        assert_eq!(AppState::from_query(&query).to_query().unwrap(), query);
+        assert_eq!(
+            query.requirements[0].alternative_group,
+            query.requirements[1].alternative_group
+        );
+        assert!(super::ALL_KIND_CHOICES.contains(&(ItemKind::Trinket, None)));
+    }
 
     #[test]
     fn refinement_requires_identical_scope_and_no_fewer_requirements() {

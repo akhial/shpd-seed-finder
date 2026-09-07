@@ -356,18 +356,8 @@ fn depth_queries() -> Vec<(String, SearchQuery)> {
     queries
 }
 
-/// Identity, upgrade, curse, and enchantment rolls.
-fn modifier_queries() -> Vec<(String, SearchQuery)> {
-    let mut queries = vec![(
-        "one named wand".to_owned(),
-        query(
-            vec![Requirement {
-                item: Some(ItemId::WandFireblast),
-                ..base(ItemKind::Wand)
-            }],
-            24,
-        ),
-    )];
+fn trinket_queries() -> Vec<(String, SearchQuery)> {
+    let mut queries = Vec::new();
     for (name, identities, group) in [
         ("one named trinket", vec![ItemId::MimicTooth], None),
         (
@@ -396,6 +386,22 @@ fn modifier_queries() -> Vec<(String, SearchQuery)> {
             ),
         ));
     }
+    queries
+}
+
+/// Identity, upgrade, curse, and enchantment rolls.
+fn modifier_queries() -> Vec<(String, SearchQuery)> {
+    let mut queries = vec![(
+        "one named wand".to_owned(),
+        query(
+            vec![Requirement {
+                item: Some(ItemId::WandFireblast),
+                ..base(ItemKind::Wand)
+            }],
+            24,
+        ),
+    )];
+    queries.extend(trinket_queries());
     // The Ghost always offers an armor, so this is a pure upgrade roll.
     queries.push((
         "the Ghost's armor at +2".to_owned(),

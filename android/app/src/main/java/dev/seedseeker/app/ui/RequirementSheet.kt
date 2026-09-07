@@ -117,7 +117,7 @@ fun RequirementSheet(
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val identity = editing?.key ?: -1L
     var step by remember(identity) {
-        mutableStateOf(if (editing == null || startWithItemPicker) SheetStep.ITEM else SheetStep.DETAILS)
+        mutableStateOf(if (editing == null || startWithItemPicker || editing.kind == ItemKind.TRINKET) SheetStep.ITEM else SheetStep.DETAILS)
     }
     var kind by remember(identity) { mutableStateOf(editing?.kind ?: ItemKind.WEAPON) }
     var selectedItem by remember(identity) {
@@ -194,7 +194,7 @@ fun RequirementSheet(
         ItemRequirement(
             key = editing?.key ?: 0L,
             item = selectedItem,
-            upgrade = upgrade,
+            upgrade = if (kind == ItemKind.TRINKET) 0 else upgrade,
             effect = when (effectMode) {
                 EffectMode.ANY -> EffectFilter.Any
                 EffectMode.ANY_ENCHANTMENT -> EffectFilter.AnyEnchantment
@@ -203,13 +203,13 @@ fun RequirementSheet(
             kind = kind,
             tier = if (tierMatch == TierMatch.ANY) 0 else tier,
             tierMatch = tierMatch,
-            upgradeMatch = upgradeMatch,
-            source = source,
-            identityGroup = editing?.identityGroup,
-            maximumDepth = maximumDepth,
-            requireUncursed = requireUncursed,
+            upgradeMatch = if (kind == ItemKind.TRINKET) UpgradeMatch.ANY else upgradeMatch,
+            source = if (kind == ItemKind.TRINKET) null else source,
+            identityGroup = if (kind == ItemKind.TRINKET) null else editing?.identityGroup,
+            maximumDepth = if (kind == ItemKind.TRINKET) null else maximumDepth,
+            requireUncursed = kind != ItemKind.TRINKET && requireUncursed,
             alternativeGroup = editing?.alternativeGroup,
-            levelSum = editing?.levelSum,
+            levelSum = if (kind == ItemKind.TRINKET) null else editing?.levelSum,
         )
     }
 
@@ -241,7 +241,7 @@ fun RequirementSheet(
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    if (step == SheetStep.ITEM) "1/2 · Item" else "2/2 · Details",
+                    if (kind == ItemKind.TRINKET) "Trinket" else if (step == SheetStep.ITEM) "1/2 · Item" else "2/2 · Details",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -257,7 +257,7 @@ fun RequirementSheet(
                             .padding(horizontal = 20.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(3.dp),
                     ) {
-                        listOf(ItemKind.WEAPON, ItemKind.ARMOR, ItemKind.WAND, ItemKind.RING)
+                        listOf(ItemKind.WEAPON, ItemKind.ARMOR, ItemKind.WAND, ItemKind.RING, ItemKind.TRINKET)
                             .forEach { entry ->
                                 ToggleButton(
                                     checked = kind.family == entry,
@@ -291,7 +291,7 @@ fun RequirementSheet(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        FilterChip(
+                        if (kind != ItemKind.TRINKET) FilterChip(
                             selected = selectedItem == null,
                             onClick = { selectedItem = null },
                             label = { Text("Any ${kind.label.lowercase(Locale.ROOT)}") },
@@ -349,8 +349,17 @@ fun RequirementSheet(
                         }
                     }
 
+                    if (kind == ItemKind.TRINKET && editing != null && onRemove != null) {
+                        TextButton(onClick = onRemove, modifier = Modifier.padding(horizontal = 20.dp)) {
+                            Text(if (inAlternativeGroup) "Remove alternative" else "Remove requirement", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
                     Button(
-                        onClick = { step = SheetStep.DETAILS },
+                        onClick = {
+                            if (kind == ItemKind.TRINKET) draft.getOrNull()?.let { onSave(it, 1, null, null) }
+                            else step = SheetStep.DETAILS
+                        },
+                        enabled = kind != ItemKind.TRINKET || draft.isSuccess,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 20.dp)
@@ -358,7 +367,7 @@ fun RequirementSheet(
                             .height(52.dp),
                         shapes = ButtonDefaults.shapes(),
                     ) {
-                        Text("Next", style = MaterialTheme.typography.titleMedium)
+                        Text(if (kind == ItemKind.TRINKET) { if (editing == null) "Add" else "Save" } else "Next", style = MaterialTheme.typography.titleMedium)
                     }
                 }
 
@@ -937,7 +946,7 @@ fun RequirementSheet(
 private fun searchableItems(kind: ItemKind): List<CatalogItem> =
     ItemCatalog.forKind(kind).filter { it.tier != 1 && !it.isTippedDart }
 
-private fun normalizedUpgrade(value: Int, match: UpgradeMatch, ceiling: Int): Int = when (match) {
+private fun normalizedUpgrade(value: Int, match: UpgradeMatch, ceiling: Int): Int = if (ceiling == 0) 0 else when (match) {
     UpgradeMatch.ANY -> 0
     UpgradeMatch.EXACT -> value.coerceIn(1, ceiling)
     UpgradeMatch.AT_LEAST -> value.coerceIn(1, ceiling - 1)

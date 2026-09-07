@@ -11,7 +11,7 @@ namespace SeedSeeker;
 // MeleeWeapon and ThrownWeapon narrow a weapon requirement to one weapon
 // class; the enum value indexes the document kind-name table in
 // ResultsExport, so they must stay appended after the original four families.
-public enum ItemKind { Weapon, Armor, Wand, Ring, MeleeWeapon, ThrownWeapon }
+public enum ItemKind { Weapon, Armor, Wand, Ring, MeleeWeapon, ThrownWeapon, Trinket }
 
 /// <summary>Melee/thrown classification of weapon catalog entries.</summary>
 public enum WeaponClass { Melee, Thrown }
@@ -39,6 +39,7 @@ public static class ItemKindExtensions
     {
         ItemKind.Weapon => SearchLimits.MaxUpgradeWeapon,
         ItemKind.Ring => SearchLimits.MaxUpgradeRing,
+        ItemKind.Trinket => 0,
         _ => SearchLimits.MaxUpgradeDefault,
     };
 
@@ -184,7 +185,7 @@ public static partial class KindStyle
 
 public static class Labels
 {
-    public static string Kind(ItemKind value) => value switch { ItemKind.Weapon => "Weapons", ItemKind.Armor => "Armor", ItemKind.Wand => "Wands", ItemKind.MeleeWeapon => "Melee weapons", ItemKind.ThrownWeapon => "Thrown weapons", _ => "Rings" };
+    public static string Kind(ItemKind value) => value switch { ItemKind.Weapon => "Weapons", ItemKind.Armor => "Armor", ItemKind.Wand => "Wands", ItemKind.MeleeWeapon => "Melee weapons", ItemKind.ThrownWeapon => "Thrown weapons", ItemKind.Trinket => "Trinket", _ => "Rings" };
     public static string Singular(ItemKind value) => Kind(value).TrimEnd('s').ToLowerInvariant();
     public static string Source(ScoutItemSource value) => value switch
     {
@@ -299,11 +300,12 @@ public sealed partial class ItemRequirement
     [JsonIgnore] public int SpriteIndex => Item?.SpriteIndex ?? -1;
     /// <summary>The ring glyph drawn over the sprite, or -1 when there is none.</summary>
     [JsonIgnore] public int TypeIconIndex => Item?.TypeIconIndex ?? -1;
-    [JsonIgnore] public string Title => Item?.Name ?? (TierMatch switch { TierMatch.Exactly => $"Any Tier {Tier} {Labels.Singular(Kind)}", TierMatch.AtLeast => $"Any Tier {Tier}+ {Labels.Singular(Kind)}", TierMatch.AtMost => $"Any Tier {Tier} or lower {Labels.Singular(Kind)}", _ => $"Any {Labels.Singular(Kind)}" });
+    [JsonIgnore] public string Title => Item?.Name ?? (Kind == ItemKind.Trinket ? "Trinket" : (TierMatch switch { TierMatch.Exactly => $"Any Tier {Tier} {Labels.Singular(Kind)}", TierMatch.AtLeast => $"Any Tier {Tier}+ {Labels.Singular(Kind)}", TierMatch.AtMost => $"Any Tier {Tier} or lower {Labels.Singular(Kind)}", _ => $"Any {Labels.Singular(Kind)}" }));
     [JsonIgnore] public string Description
     {
         get
         {
+            if (Kind == ItemKind.Trinket) return "";
             var parts = new List<string> { UpgradeMatch switch { UpgradeMatch.Exactly => $"+{Upgrade} exactly", UpgradeMatch.AtLeast => $"+{Upgrade} or higher", _ => "Any upgrade" } };
             if (Effect.Describe() is string effect) parts.Add(effect); if (RequireUncursed) parts.Add("uncursed"); if (Source is not null) parts.Add(Labels.Source(Source.Value));
             if (IdentityGroup is not null) parts.Add("same-kind stack");
@@ -315,7 +317,7 @@ public sealed partial class ItemRequirement
     /// <summary>The short name a chip shows: the item, or its wildcard family.</summary>
     [JsonIgnore] public string ShortTitle => Item?.Name ?? (Kind switch
     {
-        ItemKind.MeleeWeapon => "Any melee", ItemKind.ThrownWeapon => "Any thrown", _ => $"Any {Labels.Singular(Kind)}",
+        ItemKind.MeleeWeapon => "Any melee", ItemKind.ThrownWeapon => "Any thrown", ItemKind.Trinket => "Trinket", _ => $"Any {Labels.Singular(Kind)}",
     });
     /// <summary>The tiny qualifiers beside a chip's name: tier (wildcards only), upgrade, floor.</summary>
     [JsonIgnore] public IReadOnlyList<ChipTag> Tags
@@ -1317,7 +1319,7 @@ public sealed record RingGems
 /// <param name="Gems">The run's ring gems, which decide what cell each scouted
 /// ring is drawn in.</param>
 public sealed record ScoutWorld(string Seed, IReadOnlyList<ScoutQuest> Quests, IReadOnlyList<ScoutItem> Items,
-    RingGems Gems);
+    RingGems Gems, IReadOnlyList<CatalogItem>? TrinketOrder = null);
 public sealed record SearchStatus(SearchState State, long Scanned, long Total, long ErrorCode, double Probability);
 
 /// <summary>

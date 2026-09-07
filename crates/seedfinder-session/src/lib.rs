@@ -26,6 +26,7 @@ use shpd_seedfinder_core::search::{
 use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
 use shpd_seedfinder_core::wire::{
     WireError, decode_query, decode_scout_request, encode_results, encode_scout_world,
+    encode_scout_world_with_trinkets,
 };
 
 pub const STATE_RUNNING: i64 = 0;
@@ -134,7 +135,7 @@ pub fn production_scout_packet(request: &[u8]) -> Result<Vec<u8>, ScoutCallError
         .map_err(ScoutPacketError::Request)
         .map_err(ScoutCallError::Packet)?;
     let world = production_scout_world(seed, challenges)?;
-    encode_scout_world(&world)
+    encode_scout_world_with_trinkets(&world)
         .map_err(ScoutPacketError::Response)
         .map_err(ScoutCallError::Packet)
 }
@@ -142,8 +143,6 @@ pub fn production_scout_packet(request: &[u8]) -> Result<Vec<u8>, ScoutCallError
 /// Scouts one depth-24 world with the cached canonical production generator,
 /// returning it typed for in-process Rust frontends. Generation panics are
 /// contained like in [`production_scout_packet`].
-/// The trinket offer UI is a web-only pilot: native catalogs do not yet know
-/// these identities. Keep their legacy manifest and match indices unchanged.
 ///
 /// # Errors
 ///
@@ -154,13 +153,6 @@ pub fn production_scout_world(
 ) -> Result<GeneratedWorld, ScoutCallError> {
     let generator = canonical_generator(challenges);
     catch_unwind(AssertUnwindSafe(|| generator.generate(seed, 24)))
-        .map(|mut world| {
-            world.items.retain(|entry| {
-                shpd_seedfinder_core::catalog::item(entry.item).kind
-                    != shpd_seedfinder_core::catalog::ItemKind::Trinket
-            });
-            world
-        })
         .map_err(|_| ScoutCallError::Panicked)
 }
 
@@ -1298,12 +1290,17 @@ mod tests {
         let packet = production_scout_packet(b"SSQ2\x00\x00AAA-AAA-AAF").unwrap();
 
         assert_eq!(world, decode_scout_world(&packet).unwrap());
-        assert!(
+        assert_eq!(&packet[..4], b"SSC4");
+        assert_eq!(
             world
                 .items
                 .iter()
-                .all(|entry| shpd_seedfinder_core::catalog::item(entry.item).kind
-                    != shpd_seedfinder_core::catalog::ItemKind::Trinket)
+                .filter(|entry| {
+                    shpd_seedfinder_core::catalog::item(entry.item).kind
+                        == shpd_seedfinder_core::catalog::ItemKind::Trinket
+                })
+                .count(),
+            4
         );
 
         let challenged = production_scout_world(seed, Challenges::new(0x68).unwrap()).unwrap();

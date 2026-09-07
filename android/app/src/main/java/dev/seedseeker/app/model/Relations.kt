@@ -47,7 +47,8 @@ data class BoardItem(
  * folds into its stack.
  */
 private fun isPlainItemCopy(copy: ItemRequirement, item: CatalogItem): Boolean =
-    copy.item?.id == item.id &&
+    item.kind != ItemKind.TRINKET &&
+        copy.item?.id == item.id &&
         copy.tierMatch == TierMatch.ANY &&
         copy.upgradeMatch == UpgradeMatch.ANY &&
         copy.effect == EffectFilter.Any &&

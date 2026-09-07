@@ -945,7 +945,7 @@ public sealed partial class MainWindow : Window
         // list hides.
         var itemChoices = new List<CatalogItem>();
         var tierMatch = Combo(["Any tier", "Exactly", "At least", "At most"], (int)r.TierMatch); var selectedTier = r.Tier is >= SearchLimits.ExactTierMin and <= SearchLimits.ExactTierMax ? r.Tier : SearchLimits.ExactTierMin; var tier = Number("Tier", selectedTier, SearchLimits.ExactTierMin, SearchLimits.ExactTierMax); var tierBound = Combo(Enumerable.Range(SearchLimits.BoundedTierMin, SearchLimits.BoundedTierMax - SearchLimits.BoundedTierMin + 1).Select(value => $"Tier {value}"), Math.Clamp(selectedTier, SearchLimits.BoundedTierMin, SearchLimits.BoundedTierMax) - SearchLimits.BoundedTierMin);
-        var maximumUpgrade = r.UpgradeCeiling; var selectedMinimumUpgrade = Math.Clamp(r.Upgrade, 1, maximumUpgrade - 1);
+        var maximumUpgrade = Math.Max(2, r.UpgradeCeiling); var selectedMinimumUpgrade = Math.Clamp(r.Upgrade, 1, maximumUpgrade - 1);
         var upgradeMatch = Combo(["Any", "Exactly", "At least"], (int)r.UpgradeMatch); var upgrade = Number("Upgrade level", Math.Clamp(r.Upgrade, 1, maximumUpgrade), 1, maximumUpgrade); var upgradeBound = Combo(Enumerable.Range(1, maximumUpgrade - 1).Select(value => $"+{value} or higher"), selectedMinimumUpgrade - 1);
         // Effect: any / any enchantment / a specific set picked from a per-family
         // checkbox grid (enchantments or glyphs, then curses).
@@ -1031,20 +1031,23 @@ public sealed partial class MainWindow : Window
         }
         void SyncVisibility()
         {
-            var k = (ItemKind)Math.Max(0, kind.SelectedIndex); var generic = item.SelectedIndex == 0 && k.Family() is ItemKind.Weapon or ItemKind.Armor;
+            var k = (ItemKind)Math.Max(0, kind.SelectedIndex); var trinket = k == ItemKind.Trinket; var generic = item.SelectedIndex == 0 && k.Family() is ItemKind.Weapon or ItemKind.Armor;
             var predicate = (TierMatch)Math.Max(0, tierMatch.SelectedIndex); var ranged = predicate is TierMatch.AtLeast or TierMatch.AtMost;
             tierMatch.Visibility = generic ? Visibility.Visible : Visibility.Collapsed;
             tier.Visibility = generic && predicate == TierMatch.Exactly ? Visibility.Visible : Visibility.Collapsed;
             tierBound.Visibility = generic && ranged ? Visibility.Visible : Visibility.Collapsed;
+            uncursed.Visibility = source.Visibility = depthRow.Visibility = trinket ? Visibility.Collapsed : Visibility.Visible;
+            depth.Visibility = !trinket && depthToggle.IsOn ? Visibility.Visible : Visibility.Collapsed;
+            Relabel(item, trinket ? "Trinket" : "Item");
             Relabel(tierBound, predicate == TierMatch.AtLeast ? "Minimum tier" : "Maximum tier");
             // A stack that counts its levels together has identical any-upgrade
             // members, so the upgrade predicate has nothing left to say.
             var counting = CountingLevels();
             var upgradePredicate = (UpgradeMatch)Math.Max(0, upgradeMatch.SelectedIndex); var ringMinimum = k == ItemKind.Ring && upgradePredicate == UpgradeMatch.AtLeast;
-            upgradeMatch.Visibility = counting ? Visibility.Collapsed : Visibility.Visible;
-            upgrade.Visibility = !counting && (upgradePredicate == UpgradeMatch.Exactly || ringMinimum) ? Visibility.Visible : Visibility.Collapsed;
+            upgradeMatch.Visibility = counting || trinket ? Visibility.Collapsed : Visibility.Visible;
+            upgrade.Visibility = !trinket && !counting && (upgradePredicate == UpgradeMatch.Exactly || ringMinimum) ? Visibility.Visible : Visibility.Collapsed;
             Relabel(upgrade, ringMinimum ? "Minimum upgrade" : "Upgrade level");
-            upgradeBound.Visibility = !counting && upgradePredicate == UpgradeMatch.AtLeast && !ringMinimum ? Visibility.Visible : Visibility.Collapsed;
+            upgradeBound.Visibility = !trinket && !counting && upgradePredicate == UpgradeMatch.AtLeast && !ringMinimum ? Visibility.Visible : Visibility.Collapsed;
         }
         // How many items the stack asks for; a half-typed box reads as one.
         int Counted() => double.IsNaN(count.Value) ? 1 : Math.Clamp((int)count.Value, 1, SearchLimits.StackMax);
@@ -1055,7 +1058,9 @@ public sealed partial class MainWindow : Window
         // concrete ring, whose copies are the same item over again.
         void SyncStack()
         {
-            var many = !stack.InCluster && Counted() > 1;
+            var trinket = (ItemKind)Math.Max(0, kind.SelectedIndex) == ItemKind.Trinket;
+            count.Visibility = trinket || stack.InCluster ? Visibility.Collapsed : Visibility.Visible;
+            var many = !trinket && !stack.InCluster && Counted() > 1;
             // A combined level is a property of a concrete stack of two or more
             // — and of rings only, whose effects scale with their level.
             var ring = ((ItemKind)Math.Max(0, kind.SelectedIndex)).Family() == ItemKind.Ring;
@@ -1082,7 +1087,7 @@ public sealed partial class MainWindow : Window
         {
             var k = (ItemKind)Math.Max(0, kind.SelectedIndex);
             var chosen = item.SelectedIndex > 0 && item.SelectedIndex <= itemChoices.Count ? itemChoices[item.SelectedIndex - 1] : null;
-            maximumUpgrade = k.MaximumSearchUpgrade(chosen, (TierMatch)Math.Max(0, tierMatch.SelectedIndex), selectedTier);
+            maximumUpgrade = Math.Max(2, k.MaximumSearchUpgrade(chosen, (TierMatch)Math.Max(0, tierMatch.SelectedIndex), selectedTier));
             var atLeast = upgradeMatch.SelectedIndex == (int)UpgradeMatch.AtLeast;
             upgrade.Maximum = atLeast ? maximumUpgrade - 1 : maximumUpgrade;
             upgrade.Value = Math.Clamp(double.IsNaN(upgrade.Value) ? 1 : upgrade.Value, 1, upgrade.Maximum);
@@ -1114,7 +1119,7 @@ public sealed partial class MainWindow : Window
         }
         void Populate()
         {
-            var k = (ItemKind)Math.Max(0, kind.SelectedIndex); var oldId = r.Item?.Id; itemChoices.Clear(); itemChoices.AddRange(ItemCatalog.EditorItems(k, r.Item)); item.Items.Clear(); item.Items.Add($"Any {Labels.Singular(k)}"); foreach (var value in itemChoices) item.Items.Add(value.Name); item.SelectedIndex = Math.Max(0, itemChoices.FindIndex(x => x.Id == oldId) + 1);
+            var k = (ItemKind)Math.Max(0, kind.SelectedIndex); var oldId = r.Item?.Id; itemChoices.Clear(); itemChoices.AddRange(ItemCatalog.EditorItems(k, r.Item)); item.Items.Clear(); if (k != ItemKind.Trinket) item.Items.Add($"Any {Labels.Singular(k)}"); foreach (var value in itemChoices) item.Items.Add(value.Name); item.SelectedIndex = Math.Max(0, itemChoices.FindIndex(x => x.Id == oldId) + (k == ItemKind.Trinket ? 0 : 1));
             PopulateEffects(r.Effect.Effects);
             NormalizeUpgrade(); SyncStack();
         }
@@ -1122,10 +1127,10 @@ public sealed partial class MainWindow : Window
         count.ValueChanged += (_, _) => SyncStack(); totalToggle.Checked += (_, _) => SyncStack(); totalToggle.Unchecked += (_, _) => SyncStack(); copyDepthToggle.Checked += (_, _) => SyncStack(); copyDepthToggle.Unchecked += (_, _) => SyncStack();
         total.ValueChanged += (_, _) => total.Header = $"Levels reach \u2265 {(int)total.Value} across up to {Counted()}";
         copyDepth.ValueChanged += (_, _) => copyDepth.Header = $"Copies within first {FloorOf(copyDepth)} floor{(FloorOf(copyDepth) == 1 ? "" : "s")}";
-        Populate(); NormalizeTier(); SyncStack(); depth.Visibility = depthToggle.IsOn ? Visibility.Visible : Visibility.Collapsed;
+        Populate(); NormalizeTier(); SyncStack();
         var dialog = new ContentDialog { XamlRoot = Content.XamlRoot, Title = title, PrimaryButtonText = accept, CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Primary, Content = VerticalScrollView(content, 510, 460) };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return null;
-        r.Kind = (ItemKind)kind.SelectedIndex; r.Item = item.SelectedIndex > 0 ? itemChoices[item.SelectedIndex - 1] : null; r.TierMatch = r.Item is null && r.Kind.Family() is ItemKind.Weapon or ItemKind.Armor ? (TierMatch)tierMatch.SelectedIndex : TierMatch.Any; r.Tier = r.TierMatch == TierMatch.Any ? 0 : selectedTier;
+        r.Kind = (ItemKind)kind.SelectedIndex; r.Item = r.Kind == ItemKind.Trinket ? itemChoices[Math.Max(0, item.SelectedIndex)] : item.SelectedIndex > 0 ? itemChoices[item.SelectedIndex - 1] : null; r.TierMatch = r.Item is null && r.Kind.Family() is ItemKind.Weapon or ItemKind.Armor ? (TierMatch)tierMatch.SelectedIndex : TierMatch.Any; r.Tier = r.TierMatch == TierMatch.Any ? 0 : selectedTier;
         r.UpgradeMatch = (UpgradeMatch)upgradeMatch.SelectedIndex; r.Upgrade = r.UpgradeMatch switch { UpgradeMatch.Any => 0, UpgradeMatch.Exactly => (int)upgrade.Value, UpgradeMatch.AtLeast when r.Kind == ItemKind.Ring => (int)upgrade.Value, UpgradeMatch.AtLeast => selectedMinimumUpgrade, _ => 0 };
         r.RequireUncursed = uncursed.IsChecked == true;
         // One checked effect is a single name, as before effect sets existed; an empty "Specific" means any.
@@ -1139,6 +1144,13 @@ public sealed partial class MainWindow : Window
         r.MaximumDepth = depthToggle.IsOn ? FloorLimits.Normalize(Math.Clamp((int)depth.Value, 1, SearchLimits.MaxDepth)) : null;
         // The identity label and the combined level themselves are the stack's
         // encoding, which ApplyEdit writes from the shape returned here.
+        if (r.Kind == ItemKind.Trinket)
+        {
+            r.Source = null; r.MaximumDepth = null; r.RequireUncursed = false;
+            r.UpgradeMatch = UpgradeMatch.Any; r.Upgrade = 0; r.Effect = EffectFilter.Any();
+            r.IdentityGroup = null; r.LevelSum = null;
+            return new StackShape(1, null, null, stack.InCluster);
+        }
         var settled = CountingLevels();
         return new StackShape(
             stack.InCluster ? 1 : Counted(),
@@ -1852,7 +1864,16 @@ public sealed partial class MainWindow : Window
                 .GroupBy(x => x.Item.Depth).OrderBy(g => g.Key).Select(g =>
             {
                 var group = new ScoutGroup { Floor = $"Floor {g.Key}", Region = Region(g.Key), Quest = QuestLabel(world.Quests, g.Key) };
-                group.AddRange(g.Select(entry => ScoutRow.From(entry.Item, matches.Matched.Contains(entry.Index), world.Gems))); return group;
+                var trinkets = g.Where(entry => entry.Item.Item.Kind == ItemKind.Trinket).ToList();
+                foreach (var entry in g)
+                {
+                    if (entry.Item.Item.Kind != ItemKind.Trinket)
+                        group.Add(ScoutRow.From(entry.Item, matches.Matched.Contains(entry.Index), world.Gems));
+                    else if (entry.Index == trinkets[0].Index)
+                        group.Add(ScoutRow.Catalyst(entry.Item, world.TrinketOrder ?? trinkets.Select(x => x.Item.Item).ToList(),
+                            trinkets.Where(x => matches.Matched.Contains(x.Index)).Select(x => x.Item.Item.Id).ToHashSet()));
+                }
+                return group;
             }).ToList();
             ScoutList.ItemsSource = new CollectionViewSource { IsSourceGrouped = true, Source = groups }.View;
             QuestStrip.Children.Clear();
@@ -1909,6 +1930,15 @@ public sealed class ScoutGroup : List<ScoutRow>
 
 public sealed class ScoutRow
 {
+    public UIElement? TrinketDeck { get; init; }
+    public static ScoutRow Catalyst(ScoutItem catalyst, IReadOnlyList<CatalogItem> order, IReadOnlySet<string> matches) => new()
+    {
+        ItemName = "Magical Catalyst", SpriteIndex = 70, Source = Labels.Source(catalyst.Source),
+        SecretVisibility = catalyst.Secret ? Visibility.Visible : Visibility.Collapsed,
+        Accessibility = catalyst.AccessibilityTag switch { 1 => $"One reward of choice group {catalyst.AccessibilityGroup}", 2 => $"Only in some outcomes of scenario group {catalyst.AccessibilityGroup}", _ => "" },
+        AccessibilityVisibility = catalyst.AccessibilityTag == 0 ? Visibility.Collapsed : Visibility.Visible,
+        TrinketDeck = new TrinketDeckView(order, matches),
+    };
     public string ItemName { get; init; } = "";
     public string Upgrade { get; init; } = "";
     public Visibility UpgradeVisibility { get; init; } = Visibility.Collapsed;

@@ -29,3 +29,15 @@ The app requests no Android permissions. It targets API 36, supports API 23+, op
 This project is licensed under GPL-3.0-or-later. The unmodified `items.png` atlas is redistributed from Shattered Pixel Dungeon v3.3.8 under that license; details and integrity metadata live under `app/src/main/assets/third_party/shattered-pixel-dungeon/`.
 
 Shattered Pixel Dungeon is copyright © 2014–2026 Evan Debenham. Pixel Dungeon is copyright © 2012–2015 Oleg Dolya. Seed Seeker is not affiliated with or endorsed by Shattered Pixel Dungeon or its authors.
+
+## Trinkets
+
+The requirement picker has a named Trinket category, including either/or groups.
+Trinkets save directly from the item picker without equipment details. Scout shows
+four square choices beneath the catalyst on its actual floor, highlights matching
+choices with a flat green fill and border, and keeps the remaining thirteen icons
+in one row. Sprite drawing uses nearest-neighbor filtering.
+
+The native scout decoder reads SSC4 (the SSC3 layout followed by a 17-entry
+trinket deck: one-byte count and UTF-8 IDs with unsigned 16-bit lengths), while
+retaining SSC3 compatibility. The deck ordering is independent of item sorting.

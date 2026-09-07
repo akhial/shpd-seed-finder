@@ -394,7 +394,7 @@ pub fn item_image(sprite: ItemSprite, glow: Option<Glow>) -> gtk::Widget {
     area.update_property(&[gtk::accessible::Property::Label(definition.name)]);
 
     area.set_draw_func(move |area, context, width, height| {
-        draw(&atlas, area, context, width, height, sprite, glow);
+        draw(&atlas, area, context, width, height, sprite, glow, SIZE);
     });
     if let Some(glow) = glow {
         animate(&area, glow.period);
@@ -402,7 +402,7 @@ pub fn item_image(sprite: ItemSprite, glow: Option<Glow>) -> gtk::Widget {
     area.upcast()
 }
 
-#[allow(clippy::needless_pass_by_value)] // Both are Copy; taking them by value reads better here.
+#[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)] // Drawing geometry and Copy sprite parameters.
 fn draw(
     atlas: &Atlas,
     area: &gtk::DrawingArea,
@@ -411,14 +411,15 @@ fn draw(
     height: i32,
     sprite: ItemSprite,
     glow: Option<Glow>,
+    size: i32,
 ) {
     let factor = area.scale_factor().max(1);
-    let box_size = SIZE * factor;
+    let box_size = size * factor;
     // Draw in device pixels so every blit lands on exact pixel boundaries.
     let scale = 1.0 / f64::from(factor);
     context.scale(scale, scale);
-    let origin_x = f64::from((width - SIZE) * factor) / 2.0;
-    let origin_y = f64::from((height - SIZE) * factor) / 2.0;
+    let origin_x = f64::from((width - size) * factor) / 2.0;
+    let origin_y = f64::from((height - size) * factor) / 2.0;
 
     let Some(art) = atlas.art(sprite.art_index(), box_size) else {
         return;
@@ -492,6 +493,89 @@ fn animate(area: &gtk::DrawingArea, period: f64) {
             id.remove();
         }
     });
+}
+
+/// A responsive trinket tile. The aspect frame gives all four choices identical
+/// square geometry; drawing the name lets it shrink without imposing a minimum
+/// width on the pane. Artwork uses the same nearest-neighbour atlas as items.
+#[must_use]
+pub fn trinket_tile(
+    definition: &'static ItemDefinition,
+    matched: bool,
+    primary: bool,
+) -> gtk::Widget {
+    let area = gtk::DrawingArea::builder()
+        .content_width(0)
+        .content_height(if primary { 0 } else { 24 })
+        .hexpand(true)
+        .accessible_role(gtk::AccessibleRole::Img)
+        .tooltip_text(definition.name)
+        .build();
+    let description = if matched {
+        format!("{}, matches requirement", definition.name)
+    } else {
+        definition.name.to_owned()
+    };
+    area.update_property(&[gtk::accessible::Property::Label(&description)]);
+    if primary {
+        area.add_css_class("trinket-choice");
+        if matched {
+            area.add_css_class("trinket-match");
+        }
+    }
+    area.set_draw_func(move |area, context, width, height| {
+        let art_height = if primary { height * 3 / 4 } else { height };
+        let size = (width - 8)
+            .min(art_height - 8)
+            .min(if primary { 48 } else { 24 })
+            .max(1);
+        if let Some(atlas) = atlas() {
+            let _ = context.save();
+            draw(
+                &atlas,
+                area,
+                context,
+                width,
+                art_height,
+                ItemSprite::from_catalog(definition),
+                None,
+                size,
+            );
+            let _ = context.restore();
+        }
+        if primary {
+            let color = area.color();
+            context.set_source_rgba(
+                f64::from(color.red()),
+                f64::from(color.green()),
+                f64::from(color.blue()),
+                f64::from(color.alpha()),
+            );
+            context.select_font_face("Sans", cairo::FontSlant::Normal, cairo::FontWeight::Normal);
+            context.set_font_size(11.0);
+            if let Ok(extents) = context.text_extents(definition.name) {
+                let available = f64::from((width - 10).max(1));
+                let scale = (available / extents.x_advance().max(1.0)).min(1.0);
+                context.set_font_size(11.0 * scale);
+                context.move_to(
+                    (f64::from(width) - extents.x_advance() * scale) / 2.0,
+                    f64::from(height) * 0.88,
+                );
+                let _ = context.show_text(definition.name);
+            }
+        }
+    });
+    if primary {
+        gtk::AspectFrame::builder()
+            .ratio(1.0)
+            .obey_child(false)
+            .child(&area)
+            .hexpand(true)
+            .build()
+            .upcast()
+    } else {
+        area.upcast()
+    }
 }
 
 #[cfg(test)]
