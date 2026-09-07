@@ -2841,3 +2841,65 @@ input[type="range"]::-moz-range-thumb {
     opacity: 0.3;
   }
 }
+
+/* Catalyst offers: four primary choices, then the preserved diagnostic deck. */
+.d1-catalyst {
+  list-style: none;
+  padding: 16px 14px;
+  background: #bba0ee08;
+  border-bottom: 1px solid var(--d1-border);
+}
+.d1-catalyst-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.d1-trinket-choices {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  padding: 0;
+  margin: 12px 0;
+  list-style: none;
+}
+.d1-trinket-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 9px 3px;
+  font-size: 11px;
+  border: 1px solid #bba0ee30;
+  border-radius: 6px;
+  min-width: 0;
+}
+.d1-trinket-number {
+  font-size: 10px;
+  opacity: 0.55;
+}
+.d1-trinket-match {
+  border-color: #59cb89;
+  background: #59cb891c;
+  color: #8ee9af;
+}
+.d1-trinket-tail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+  margin: 10px 0 0;
+  list-style: none;
+}
+.d1-trinket-tail li {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  color: #999;
+}
+.d1-trinket-tail-label {
+  margin-top: 14px;
+}

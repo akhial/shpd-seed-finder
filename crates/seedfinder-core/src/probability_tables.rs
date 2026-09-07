@@ -261,6 +261,9 @@ pub fn missile_tier_items(tier: u8) -> &'static [MissileKind] {
 }
 
 /// Dense table index for one equipment family.
+///
+/// # Panics
+/// Panics for trinket offers, which have no measured equipment supply row.
 #[must_use]
 pub const fn kind_index(kind: ItemKind) -> usize {
     match kind {
@@ -268,6 +271,7 @@ pub const fn kind_index(kind: ItemKind) -> usize {
         ItemKind::Armor => 1,
         ItemKind::Wand => 2,
         ItemKind::Ring => 3,
+        ItemKind::Trinket => panic!("trinkets have no equipment supply table"),
     }
 }
 

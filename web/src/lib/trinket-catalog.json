@@ -1,0 +1,104 @@
+[
+  {
+    "id": "rat_skull",
+    "name": "Rat skull",
+    "type": "trinket",
+    "sprite": 272
+  },
+  {
+    "id": "parchment_scrap",
+    "name": "Parchment scrap",
+    "type": "trinket",
+    "sprite": 273
+  },
+  {
+    "id": "petrified_seed",
+    "name": "Petrified seed",
+    "type": "trinket",
+    "sprite": 274
+  },
+  {
+    "id": "exotic_crystals",
+    "name": "Exotic crystals",
+    "type": "trinket",
+    "sprite": 275
+  },
+  {
+    "id": "mossy_clump",
+    "name": "Mossy clump",
+    "type": "trinket",
+    "sprite": 276
+  },
+  {
+    "id": "dimensional_sundial",
+    "name": "Dimensional sundial",
+    "type": "trinket",
+    "sprite": 277
+  },
+  {
+    "id": "thirteen_leaf_clover",
+    "name": "Thirteen leaf clover",
+    "type": "trinket",
+    "sprite": 278
+  },
+  {
+    "id": "trap_mechanism",
+    "name": "Trap mechanism",
+    "type": "trinket",
+    "sprite": 279
+  },
+  {
+    "id": "mimic_tooth",
+    "name": "Mimic tooth",
+    "type": "trinket",
+    "sprite": 280
+  },
+  {
+    "id": "wondrous_resin",
+    "name": "Wondrous resin",
+    "type": "trinket",
+    "sprite": 281
+  },
+  {
+    "id": "eye_of_newt",
+    "name": "Eye of newt",
+    "type": "trinket",
+    "sprite": 282
+  },
+  {
+    "id": "salt_cube",
+    "name": "Salt cube",
+    "type": "trinket",
+    "sprite": 283
+  },
+  {
+    "id": "vial_of_blood",
+    "name": "Vial of blood",
+    "type": "trinket",
+    "sprite": 284
+  },
+  {
+    "id": "shard_of_oblivion",
+    "name": "Shard of oblivion",
+    "type": "trinket",
+    "sprite": 285
+  },
+  {
+    "id": "chaotic_censer",
+    "name": "Chaotic censer",
+    "type": "trinket",
+    "sprite": 286
+  },
+  {
+    "id": "ferret_tuft",
+    "name": "Ferret tuft",
+    "type": "trinket",
+    "sprite": 287
+  },
+  {
+    "id": "cracked_spyglass",
+    "name": "Cracked spyglass",
+    "type": "trinket",
+    "sprite": 288
+  }
+]

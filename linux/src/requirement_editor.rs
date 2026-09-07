@@ -776,7 +776,7 @@ fn populate_effects(editor: &Rc<Editor>, selection: EffectRequirement) {
             .iter()
             .map(|effect| Effect::Armor(*effect))
             .collect(),
-        ItemKind::Wand | ItemKind::Ring => Vec::new(),
+        ItemKind::Wand | ItemKind::Ring | ItemKind::Trinket => Vec::new(),
     };
     let selected_set = match selection {
         EffectRequirement::OneOf(set) if set.family() == kind => Some(set),

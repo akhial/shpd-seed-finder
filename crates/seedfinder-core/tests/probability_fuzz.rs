@@ -790,7 +790,7 @@ impl QueryGenerator {
                 ItemKind::Armor => {
                     Some(Effect::Armor(ARMOR_EFFECTS[self.pick(ARMOR_EFFECTS.len())]))
                 }
-                ItemKind::Wand | ItemKind::Ring => None,
+                ItemKind::Wand | ItemKind::Ring | ItemKind::Trinket => None,
             };
             requirement.effect = effect.map_or(EffectRequirement::Any, EffectRequirement::exactly);
         }

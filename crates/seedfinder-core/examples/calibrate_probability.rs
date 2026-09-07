@@ -188,6 +188,9 @@ impl Tally {
         let mut scattered: BTreeMap<usize, u64> = BTreeMap::new();
         for candidate in &world.items {
             let definition = item(candidate.item);
+            if definition.kind == ItemKind::Trinket {
+                continue;
+            }
             let kind = kind_index(definition.kind) + KINDS * line_index(line_of(candidate.item));
             let source = source_index(candidate.source);
             let depth = usize::from(candidate.depth) - 1;

@@ -1,4 +1,4 @@
-export type ItemCategory = "weapon" | "armor" | "wand" | "ring";
+export type ItemCategory = "weapon" | "armor" | "wand" | "ring" | "trinket";
 
 /** Melee/thrown classification carried by weapon catalog entries. */
 export type WeaponClass = "melee" | "thrown";
@@ -250,7 +250,15 @@ export interface ScoutQuest {
   depth: number;
 }
 
+export interface TrinketOffer {
+  id: string;
+  name: string;
+  spriteIndex: number;
+}
+
 export interface ScoutResult {
+  /** Full private-deck order; only entries 0..3 are initial catalyst offers. */
+  trinketOrder?: TrinketOffer[];
   seed: ParsedSeed;
   items: ScoutItem[];
   /**

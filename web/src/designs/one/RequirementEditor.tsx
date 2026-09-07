@@ -39,6 +39,7 @@ const CATEGORY_OPTIONS: { value: ItemCategory; label: string }[] = [
   { value: "armor", label: "Armor" },
   { value: "wand", label: "Wand" },
   { value: "ring", label: "Ring" },
+  { value: "trinket", label: "Trinket" },
 ];
 
 const WEAPON_TYPE_OPTIONS: { value: RequirementKind; label: string }[] = [
@@ -54,6 +55,7 @@ const WILDCARD_LABELS: Record<RequirementKind, string> = {
   armor: "Any armor",
   wand: "Any wand",
   ring: "Any ring",
+  trinket: "Any trinket offered",
 };
 
 const TIER_OPTIONS = [
@@ -183,10 +185,17 @@ export function RequirementEditor({
     reviseDraft((current) => ({
       ...current,
       kind: nextKind,
+      upgrade: nextKind === "trinket" ? { mode: "any", value: 0 } : current.upgrade,
+      uncursed: nextKind === "trinket" ? false : current.uncursed,
       item: undefined,
       tier: { mode: "any", value: 3 },
       effect: undefined,
     }));
+    if (nextKind === "trinket") {
+      setCount(1);
+      setTotal(undefined);
+      setCopyDepth(undefined);
+    }
     setChoosingEffects(false);
   };
 
@@ -256,7 +265,12 @@ export function RequirementEditor({
                 />
               </Field>
             )}
-            <Field label="Item">
+            {family === "trinket" && (
+              <p className="d1-caption">
+                Trinket offered among the first four catalyst choices. The player chooses one.
+              </p>
+            )}
+            <Field label={family === "trinket" ? "Trinket offered" : "Item"}>
               <select
                 className="d1-select"
                 value={draft.item ?? ""}
@@ -341,7 +355,7 @@ export function RequirementEditor({
             )}
           </section>
 
-          {effectiveTotal === undefined && (
+          {effectiveTotal === undefined && family !== "trinket" && (
             <section className="d1-modal-section">
               <h3>Upgrade level</h3>
               <Segmented
@@ -386,7 +400,7 @@ export function RequirementEditor({
             </section>
           )}
 
-          {!stack.inCluster && (
+          {!stack.inCluster && family !== "trinket" && (
             <section className="d1-modal-section">
               <div className="d1-modal-section-head">
                 <h3>Total item count</h3>
@@ -517,29 +531,31 @@ export function RequirementEditor({
                 )}
               </>
             )}
-            <label className="d1-check">
-              <input
-                type="checkbox"
-                checked={draft.uncursed}
-                onChange={(event) => {
-                  const uncursed = event.currentTarget.checked;
-                  // Curses leave the selection as they leave the grid.
-                  reviseDraft((current) => {
-                    if (
-                      !uncursed ||
-                      current.effect === undefined ||
-                      isAnyEnchantment(current.effect)
-                    )
-                      return { ...current, uncursed };
-                    const kept = effectNamesOf(current.effect, kind).filter(
-                      (name) => !curses.includes(name),
-                    );
-                    return { ...current, uncursed, effect: canonicalEffect(kept, kind) };
-                  });
-                }}
-              />
-              <span>Require uncursed</span>
-            </label>
+            {family !== "trinket" && (
+              <label className="d1-check">
+                <input
+                  type="checkbox"
+                  checked={draft.uncursed}
+                  onChange={(event) => {
+                    const uncursed = event.currentTarget.checked;
+                    // Curses leave the selection as they leave the grid.
+                    reviseDraft((current) => {
+                      if (
+                        !uncursed ||
+                        current.effect === undefined ||
+                        isAnyEnchantment(current.effect)
+                      )
+                        return { ...current, uncursed };
+                      const kept = effectNamesOf(current.effect, kind).filter(
+                        (name) => !curses.includes(name),
+                      );
+                      return { ...current, uncursed, effect: canonicalEffect(kept, kind) };
+                    });
+                  }}
+                />
+                <span>Require uncursed</span>
+              </label>
+            )}
             <Field label="Source">
               <select
                 className="d1-select"

@@ -1234,7 +1234,7 @@ mod tests {
                     ItemKind::Weapon => Some(Effect::Weapon(WeaponEffect::Sacrificial)),
                     ItemKind::Armor if index % 2 == 0 => Some(Effect::Armor(ArmorEffect::Thorns)),
                     ItemKind::Armor => Some(Effect::Armor(ArmorEffect::Stench)),
-                    ItemKind::Wand | ItemKind::Ring => None,
+                    ItemKind::Wand | ItemKind::Ring | ItemKind::Trinket => None,
                 };
                 let accessibility = match index % 3 {
                     0 => Accessibility::Independent,
@@ -1249,7 +1249,11 @@ mod tests {
                 };
                 WorldItem {
                     item: definition.id,
-                    upgrade: u8::try_from(index % 4).unwrap(),
+                    upgrade: if definition.kind == ItemKind::Trinket {
+                        0
+                    } else {
+                        u8::try_from(index % 4).unwrap()
+                    },
                     effect,
                     cursed: index % 2 != 0,
                     depth: u8::try_from(index % 24 + 1).unwrap(),
@@ -1292,7 +1296,7 @@ mod tests {
         // Re-pinned from the v4.0.0-BETA-4 oracle (tooling/oracle-4.0): the
         // vault adds fifteen treasure options to the Imp's five prizes.
         let generated = CanonicalMainWorldGenerator.generate(DungeonSeed::MIN, 24);
-        assert_eq!(generated.items.len(), 95);
+        assert_eq!(generated.items.len(), 99);
         assert_eq!(
             generated.quests,
             QuestSummary {

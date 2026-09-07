@@ -84,6 +84,14 @@ use crate::quests::WandmakerQuestType;
 /// the group.
 #[must_use]
 pub fn estimate_match_probability(query: &SearchQuery) -> f64 {
+    // Equipment supply tables do not model correlated catalyst offers.
+    if query
+        .requirements
+        .iter()
+        .any(|r| r.kind == ItemKind::Trinket)
+    {
+        return f64::NAN;
+    }
     let mut linked: BTreeMap<u8, Vec<Requirement>> = BTreeMap::new();
     let mut independent: Vec<Requirement> = Vec::new();
     for requirement in effective_requirements(query) {
@@ -1215,6 +1223,7 @@ impl Predicate {
                 }
             }
             (ItemKind::Wand | ItemKind::Ring, None) => 1.0,
+            (ItemKind::Trinket, _) => 0.0,
         }
     }
 
@@ -1318,6 +1327,7 @@ fn melee_tier_items(tier: u8) -> &'static [Option<ItemId>] {
 /// exact — and much cheaper than resolving all forty-odd weapon identities.
 fn identities(kind: ItemKind) -> Vec<(ItemId, i32)> {
     match kind {
+        ItemKind::Trinket => Vec::new(),
         ItemKind::Weapon => (1..=HIGHEST_TIER)
             .filter_map(|tier| {
                 let items = melee_tier_items(tier);

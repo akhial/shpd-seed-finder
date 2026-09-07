@@ -466,6 +466,13 @@ where
         source: ItemSource,
         accessibility: Accessibility,
     ) {
+        if item == ConsumableItem::Special(SpecialItem::Paint(PaintItem::TrinketCatalyst)) {
+            self.report.searchable_items.push(WorldItem::catalyst(
+                u8::try_from(self.level.depth()).expect("dungeon depth fits u8"),
+                source,
+                accessibility,
+            ));
+        }
         let ConsumableItem::Special(SpecialItem::Paint(PaintItem::Generated(item))) = item else {
             return;
         };

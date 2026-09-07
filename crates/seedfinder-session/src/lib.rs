@@ -130,15 +130,20 @@ pub fn protected_scout_seed_packet<G: WorldGenerator + ?Sized>(
 ///
 /// Returns a packet error or a contained generation panic.
 pub fn production_scout_packet(request: &[u8]) -> Result<Vec<u8>, ScoutCallError> {
-    let (_, challenges) = decode_scout_request(request)
+    let (seed, challenges) = decode_scout_request(request)
         .map_err(ScoutPacketError::Request)
         .map_err(ScoutCallError::Packet)?;
-    protected_scout_seed_packet(canonical_generator(challenges).as_ref(), request)
+    let world = production_scout_world(seed, challenges)?;
+    encode_scout_world(&world)
+        .map_err(ScoutPacketError::Response)
+        .map_err(ScoutCallError::Packet)
 }
 
 /// Scouts one depth-24 world with the cached canonical production generator,
 /// returning it typed for in-process Rust frontends. Generation panics are
 /// contained like in [`production_scout_packet`].
+/// The trinket offer UI is a web-only pilot: native catalogs do not yet know
+/// these identities. Keep their legacy manifest and match indices unchanged.
 ///
 /// # Errors
 ///
@@ -149,6 +154,13 @@ pub fn production_scout_world(
 ) -> Result<GeneratedWorld, ScoutCallError> {
     let generator = canonical_generator(challenges);
     catch_unwind(AssertUnwindSafe(|| generator.generate(seed, 24)))
+        .map(|mut world| {
+            world.items.retain(|entry| {
+                shpd_seedfinder_core::catalog::item(entry.item).kind
+                    != shpd_seedfinder_core::catalog::ItemKind::Trinket
+            });
+            world
+        })
         .map_err(|_| ScoutCallError::Panicked)
 }
 
@@ -887,7 +899,15 @@ mod tests {
         // items so the test does not depend on rare drops.
         let seed = DungeonSeed::from_code("AAA-AAA-AAF").unwrap();
         let world = production_scout_world(seed, Challenges::NONE).unwrap();
-        let known = world.items.first().cloned().unwrap();
+        let known = world
+            .items
+            .iter()
+            .find(|entry| {
+                shpd_seedfinder_core::catalog::item(entry.item).kind
+                    != shpd_seedfinder_core::catalog::ItemKind::Trinket
+            })
+            .cloned()
+            .unwrap();
         let definition = shpd_seedfinder_core::catalog::item(known.item);
         let satisfiable = SearchQuery {
             requirements: vec![Requirement {
@@ -1278,6 +1298,13 @@ mod tests {
         let packet = production_scout_packet(b"SSQ2\x00\x00AAA-AAA-AAF").unwrap();
 
         assert_eq!(world, decode_scout_world(&packet).unwrap());
+        assert!(
+            world
+                .items
+                .iter()
+                .all(|entry| shpd_seedfinder_core::catalog::item(entry.item).kind
+                    != shpd_seedfinder_core::catalog::ItemKind::Trinket)
+        );
 
         let challenged = production_scout_world(seed, Challenges::new(0x68).unwrap()).unwrap();
         assert_eq!(challenged.seed, world.seed);

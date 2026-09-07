@@ -246,7 +246,7 @@ fn family_effects(kind: ItemKind) -> Option<Box<dyn Iterator<Item = Effect>>> {
         ItemKind::Armor => Some(Box::new(
             ALL_ARMOR_EFFECTS.iter().copied().map(Effect::Armor),
         )),
-        ItemKind::Wand | ItemKind::Ring => None,
+        ItemKind::Wand | ItemKind::Ring | ItemKind::Trinket => None,
     }
 }
 
@@ -371,6 +371,9 @@ impl Requirement {
     /// stops there.
     #[must_use]
     pub fn upgrade_ceiling(self) -> u8 {
+        if self.kind == ItemKind::Trinket {
+            return 0;
+        }
         let reaches_the_extra_tier = match self.item {
             Some(item_id) => item(item_id).tier == Some(EXTRA_UPGRADE_TIER),
             None => self.tier.matches(Some(EXTRA_UPGRADE_TIER)),

@@ -64,6 +64,7 @@ pub mod shop;
 pub mod special_consumable;
 pub mod special_equipment;
 pub mod special_forced;
+pub mod trinkets;
 #[cfg(test)]
 mod vault_debug;
 pub mod vault_floor;
