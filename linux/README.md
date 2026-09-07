@@ -17,7 +17,8 @@ push/pop navigation as the window narrows, down to a fully single-pane phone-siz
   on another makes an either/or cluster; dragging a member back onto the board pulls it out
   again; a chip's badges say how many items of its kind it asks for and what combined upgrade
   level they reach. A chip opens in a dialog with category, item, tier, upgrade,
-  enchantment/glyph, source, total item count, and per-item floor limit predicates. Included and user-saved presets are available from the
+  enchantment/glyph, source, total item count, and per-item floor limit predicates.
+  Trinkets use a named selection without equipment details and can join either/or clusters. Included and user-saved presets are available from the
   sidebar and main menu; user presets can be updated or deleted. Challenges live in a
   preferences dialog, and the whole query persists across sessions in the user configuration
   directory. A Performance group sets how many search threads to spawn — a device-local
@@ -30,7 +31,9 @@ push/pop navigation as the window narrows, down to a fully single-pane phone-siz
 - **Seed** scouts one seed — typed in, or selected from the results — and lists every
   searchable item through depth 24, grouped by floor with region names, upgrade and
   enchantment tags, cursed state, source, and choice constraints. Items that jointly
-  satisfy the current requirements are highlighted.
+  satisfy the current requirements are highlighted. The magical catalyst appears on its
+  generated floor with its source, four square trinket choices, and a single smaller row
+  preserving the remaining deck order. Matched choices use a flat green fill and border.
 
 The engine is linked in-process through `shpd-seedfinder-session`. The shell also provides
 the application lifecycle, app actions and shortcuts (with a shortcuts dialog), an About

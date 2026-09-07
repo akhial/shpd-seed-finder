@@ -180,3 +180,14 @@ button.stack-badge:hover {
   color: var(--error-fg-color);
   background-color: var(--error-bg-color);
 }
+
+/* Flat, square trinket choices share the native card palette. */
+.trinket-choice {
+  border: 1px solid alpha(currentColor, 0.16);
+  border-radius: 6px;
+  background-color: alpha(currentColor, 0.03);
+}
+.trinket-choice.trinket-match {
+  border-color: @success_color;
+  background-color: alpha(@success_color, 0.16);
+}

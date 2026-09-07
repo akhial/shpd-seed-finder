@@ -356,6 +356,39 @@ fn depth_queries() -> Vec<(String, SearchQuery)> {
     queries
 }
 
+fn trinket_queries() -> Vec<(String, SearchQuery)> {
+    let mut queries = Vec::new();
+    for (name, identities, group) in [
+        ("one named trinket", vec![ItemId::MimicTooth], None),
+        (
+            "either named trinket",
+            vec![ItemId::MimicTooth, ItemId::RatSkull],
+            Some(1),
+        ),
+        (
+            "both named trinkets",
+            vec![ItemId::MimicTooth, ItemId::RatSkull],
+            None,
+        ),
+    ] {
+        queries.push((
+            name.to_owned(),
+            query(
+                identities
+                    .into_iter()
+                    .map(|identity| Requirement {
+                        item: Some(identity),
+                        alternative_group: group,
+                        ..base(ItemKind::Trinket)
+                    })
+                    .collect(),
+                24,
+            ),
+        ));
+    }
+    queries
+}
+
 /// Identity, upgrade, curse, and enchantment rolls.
 fn modifier_queries() -> Vec<(String, SearchQuery)> {
     let mut queries = vec![(
@@ -368,6 +401,7 @@ fn modifier_queries() -> Vec<(String, SearchQuery)> {
             24,
         ),
     )];
+    queries.extend(trinket_queries());
     // The Ghost always offers an armor, so this is a pure upgrade roll.
     queries.push((
         "the Ghost's armor at +2".to_owned(),
@@ -790,7 +824,7 @@ impl QueryGenerator {
                 ItemKind::Armor => {
                     Some(Effect::Armor(ARMOR_EFFECTS[self.pick(ARMOR_EFFECTS.len())]))
                 }
-                ItemKind::Wand | ItemKind::Ring => None,
+                ItemKind::Wand | ItemKind::Ring | ItemKind::Trinket => None,
             };
             requirement.effect = effect.map_or(EffectRequirement::Any, EffectRequirement::exactly);
         }

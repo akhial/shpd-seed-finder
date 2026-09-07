@@ -35,3 +35,9 @@ swift test
 ```
 
 See [`SeedSeeker/LINKING.md`](SeedSeeker/LINKING.md) for SwiftPM linking details.
+
+The Trinket category selects one named trinket and supports the board's existing
+Either/or grouping. Scout shows the Magical Catalyst on its generated floor,
+with four square choices and the remaining deck in order below them. Matched
+choices use the app's flat mint highlight. The native scout decoder accepts SSC4
+(including the full 17-entry deck) and legacy SSC3 manifests.

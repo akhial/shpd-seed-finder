@@ -10,6 +10,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -101,10 +102,9 @@ private const val ADAPTIVE_ICON_VISIBLE = 72f
 /**
  * 16×16 sprite from the upstream atlas, drawn with nearest-neighbour scaling.
  *
- * The art is anchored to the top-left of its atlas cell, so [LocalItemAtlas]
- * holds a copy whose cells were re-centred on their alpha bounding box at decode
- * time (see `centerSpriteCells`), keeping small items like rings and darts
- * centred at the same pixel scale the web front-end renders them at.
+ * The art is anchored to the top-left of its atlas cell. Draw only its alpha
+ * bounding box, centred within the canvas at the original cell scale, so small
+ * items are centred without enlarging them to fill a full cell.
  *
  * A glow paints the sprite's own opaque pixels with the enchantment or curse
  * colour at the shared pulse clock's current blend factor — the same masked
@@ -132,6 +132,32 @@ fun ItemSprite(
     val iconAtlas = LocalItemIconAtlas.current
     val pulse = LocalGlowPulse.current
     val placeholderColor = MaterialTheme.colorScheme.outline
+    // Measure the artwork itself, excluding the cell’s transparent padding.
+    val spriteBounds = remember(atlas, spriteIndex) {
+        if (atlas == null) return@remember IntRect(0, 0, ITEM_SPRITE_SIZE, ITEM_SPRITE_SIZE)
+        val pixels = IntArray(ITEM_SPRITE_SIZE * ITEM_SPRITE_SIZE)
+        atlas.readPixels(
+            pixels,
+            startX = (spriteIndex % ITEM_ATLAS_COLUMNS) * ITEM_SPRITE_SIZE,
+            startY = (spriteIndex / ITEM_ATLAS_COLUMNS) * ITEM_SPRITE_SIZE,
+            width = ITEM_SPRITE_SIZE,
+            height = ITEM_SPRITE_SIZE,
+        )
+        var minX = ITEM_SPRITE_SIZE
+        var minY = ITEM_SPRITE_SIZE
+        var maxX = -1
+        var maxY = -1
+        pixels.forEachIndexed { index, pixel ->
+            if (pixel ushr 24 != 0) {
+                minX = minOf(minX, index % ITEM_SPRITE_SIZE)
+                minY = minOf(minY, index / ITEM_SPRITE_SIZE)
+                maxX = maxOf(maxX, index % ITEM_SPRITE_SIZE)
+                maxY = maxOf(maxY, index / ITEM_SPRITE_SIZE)
+            }
+        }
+        if (maxX < 0) IntRect(0, 0, ITEM_SPRITE_SIZE, ITEM_SPRITE_SIZE)
+        else IntRect(minX, minY, maxX + 1, maxY + 1)
+    }
     Canvas(
         modifier = modifier.semantics { contentDescription = item.name },
     ) {
@@ -144,16 +170,23 @@ fun ItemSprite(
         val shift = typeIconSize?.let { ringCompositeShift(it, scale) } ?: IntOffset.Zero
         if (atlas != null) {
             val srcOffset = IntOffset(
-                x = (spriteIndex % ITEM_ATLAS_COLUMNS) * ITEM_SPRITE_SIZE,
-                y = (spriteIndex / ITEM_ATLAS_COLUMNS) * ITEM_SPRITE_SIZE,
+                x = (spriteIndex % ITEM_ATLAS_COLUMNS) * ITEM_SPRITE_SIZE + spriteBounds.left,
+                y = (spriteIndex / ITEM_ATLAS_COLUMNS) * ITEM_SPRITE_SIZE + spriteBounds.top,
             )
-            val srcSize = IntSize(ITEM_SPRITE_SIZE, ITEM_SPRITE_SIZE)
-            val dstSize = IntSize(size.width.toInt(), size.height.toInt())
+            val srcSize = IntSize(spriteBounds.width, spriteBounds.height)
+            val dstSize = IntSize(
+                (spriteBounds.width * scale).roundToInt(),
+                (spriteBounds.height * scale).roundToInt(),
+            )
+            val destination = IntOffset(
+                ((size.width - dstSize.width) / 2).roundToInt() + shift.x,
+                ((size.height - dstSize.height) / 2).roundToInt() + shift.y,
+            )
             drawImage(
                 image = atlas,
                 srcOffset = srcOffset,
                 srcSize = srcSize,
-                dstOffset = shift,
+                dstOffset = destination,
                 dstSize = dstSize,
                 filterQuality = FilterQuality.None,
             )
@@ -165,7 +198,7 @@ fun ItemSprite(
                     image = atlas,
                     srcOffset = srcOffset,
                     srcSize = srcSize,
-                    dstOffset = shift,
+                    dstOffset = destination,
                     dstSize = dstSize,
                     colorFilter = ColorFilter.tint(
                         color = blend.color.copy(alpha = blend.alpha),
@@ -202,9 +235,8 @@ fun ItemSprite(
 }
 
 /**
- * Where the ring art sits in its re-centred cell. Every ring sprite is the same
- * 8×10 patch of its 16 px cell (measured from the atlas: x 0..7, y 0..9), which
- * `centerSpriteCells` moves by (4, 3).
+ * Where the ring art sits when centred at draw time. Every ring sprite is the
+ * same 8×10 patch of its 16 px cell (atlas bounds: x 0..7, y 0..9).
  */
 private val RING_ART = IntRect(left = 4, top = 3, right = 12, bottom = 13)
 

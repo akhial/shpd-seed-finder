@@ -9,8 +9,9 @@ import type { ResultPosition } from "../../lib/scout-nav";
 import { itemArt } from "../../lib/sprites";
 import { queryStore } from "../../lib/store";
 import { formatSeedCode } from "../../lib/wasm";
-import type { ScoutItem, ScoutResult } from "../../lib/wasm/types";
+import type { ScoutItem, ScoutResult, TrinketOffer } from "../../lib/wasm/types";
 import { Sprite } from "./parts";
+import { TrinketName, TrinketSprite } from "./TrinketArt";
 
 const groupLetter = (group: number) => "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[group % 26];
 
@@ -224,63 +225,73 @@ export function ScoutPanel({
                     )}
                   </header>
                   <ul className="d1-item-list">
-                    {items.map((item, index) => {
-                      const note = accessibilityNote(item);
-                      return (
-                        <li
-                          className={item.matched ? "d1-item d1-item-matched" : "d1-item"}
-                          key={`${item.id}-${index}`}
-                        >
-                          <Sprite
-                            art={itemArt(item.spriteIndex, result.ringGems)}
-                            size={32}
-                            label={item.name}
-                            glow={itemGlow(item)}
-                          />
-                          <div className="d1-item-body">
-                            <div className="d1-item-name">
-                              <span>{item.name}</span>
-                              {item.upgrade > 0 && (
-                                <b className="d1-badge d1-badge-up">+{item.upgrade}</b>
-                              )}
-                              {item.cursed && <b className="d1-badge d1-badge-curse">cursed</b>}
-                              {item.secret && (
-                                <b
-                                  className="d1-badge d1-badge-secret"
-                                  title="Hidden in a secret room — search to reveal it"
-                                >
-                                  secret
-                                </b>
+                    {items.some((item) => item.category === "trinket") && (
+                      <CatalystEntry
+                        offers={items.filter((item) => item.category === "trinket")}
+                        order={result.trinketOrder ?? []}
+                      />
+                    )}
+                    {items
+                      .filter((item) => item.category !== "trinket")
+                      .map((item, index) => {
+                        const note = accessibilityNote(item);
+                        return (
+                          <li
+                            className={item.matched ? "d1-item d1-item-matched" : "d1-item"}
+                            key={`${item.id}-${index}`}
+                          >
+                            <Sprite
+                              art={itemArt(item.spriteIndex, result.ringGems)}
+                              size={32}
+                              label={item.name}
+                              glow={itemGlow(item)}
+                            />
+                            <div className="d1-item-body">
+                              <div className="d1-item-name">
+                                <span>{item.name}</span>
+                                {item.upgrade > 0 && (
+                                  <b className="d1-badge d1-badge-up">+{item.upgrade}</b>
+                                )}
+                                {item.cursed && <b className="d1-badge d1-badge-curse">cursed</b>}
+                                {item.secret && (
+                                  <b
+                                    className="d1-badge d1-badge-secret"
+                                    title="Hidden in a secret room — search to reveal it"
+                                  >
+                                    secret
+                                  </b>
+                                )}
+                              </div>
+                              <div className="d1-item-meta">
+                                {item.effect && (
+                                  <span
+                                    className={
+                                      item.effect.kind === "curse" ? "d1-fx-curse" : "d1-fx"
+                                    }
+                                  >
+                                    {item.effect.name}
+                                  </span>
+                                )}
+                                <span>{sourceLabel(item.source)}</span>
+                              </div>
+                              {note && (
+                                <p className="d1-item-note">
+                                  <ForkIcon size={12} />
+                                  {note}
+                                </p>
                               )}
                             </div>
-                            <div className="d1-item-meta">
-                              {item.effect && (
-                                <span
-                                  className={item.effect.kind === "curse" ? "d1-fx-curse" : "d1-fx"}
-                                >
-                                  {item.effect.name}
-                                </span>
-                              )}
-                              <span>{sourceLabel(item.source)}</span>
-                            </div>
-                            {note && (
-                              <p className="d1-item-note">
-                                <ForkIcon size={12} />
-                                {note}
-                              </p>
+                            {item.matched && (
+                              <span
+                                className="d1-badge d1-badge-match"
+                                title="Selected as part of a jointly obtainable requirement match"
+                              >
+                                ✓ match
+                              </span>
                             )}
-                          </div>
-                          {item.matched && (
-                            <span
-                              className="d1-badge d1-badge-match"
-                              title="Selected as part of a jointly obtainable requirement match"
-                            >
-                              ✓ match
-                            </span>
-                          )}
-                        </li>
-                      );
-                    })}
+                          </li>
+                        );
+                      })}
                   </ul>
                 </section>
               );
@@ -289,5 +300,55 @@ export function ScoutPanel({
         )}
       </div>
     </>
+  );
+}
+
+export function CatalystEntry({ offers, order }: { offers: ScoutItem[]; order: TrinketOffer[] }) {
+  const catalyst = offers[0];
+  const note = accessibilityNote(catalyst);
+  return (
+    <li className="d1-catalyst">
+      <div className="d1-catalyst-head">
+        <Sprite art={itemArt(70)} size={32} />
+        <div>
+          <strong>Magical catalyst</strong>
+          <div className="d1-item-meta">
+            {sourceLabel(catalyst.source)}
+            {catalyst.secret && " · secret room"}
+          </div>
+        </div>
+      </div>
+      {note && <p className="d1-item-note">{note}</p>}
+      <ol className="d1-trinket-choices" aria-label="Initial trinket choices">
+        {(order.length
+          ? order
+              .slice(0, 4)
+              .map((entry) => offers.find((offer) => offer.id === entry.id)!)
+              .filter(Boolean)
+          : offers
+        ).map((offer) => (
+          <li
+            key={offer.id}
+            className={offer.matched ? "d1-trinket-choice d1-trinket-match" : "d1-trinket-choice"}
+            aria-label={offer.matched ? `${offer.name}, matches requirement` : offer.name}
+          >
+            <TrinketSprite cell={offer.spriteIndex} maximum={48} />
+            <TrinketName name={offer.name} />
+          </li>
+        ))}
+      </ol>
+      {order.length > 4 && (
+        <>
+          <p className="d1-caption d1-trinket-tail-label">Remaining deck order</p>
+          <ol className="d1-trinket-tail" aria-label="Remaining trinket deck order">
+            {order.slice(4).map((trinket) => (
+              <li key={trinket.id} title={trinket.name} aria-label={trinket.name}>
+                <TrinketSprite cell={trinket.spriteIndex} maximum={24} />
+              </li>
+            ))}
+          </ol>
+        </>
+      )}
+    </li>
   );
 }

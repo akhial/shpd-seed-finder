@@ -52,7 +52,7 @@ bits are written.
 
 | Field | Bits | Meaning |
 | --- | --- | --- |
-| `kind` | 3 | `0` weapon · `1` melee_weapon · `2` thrown_weapon · `3` armor · `4` wand · `5` ring. |
+| `kind` | 3 | `0` weapon · `1` melee_weapon · `2` thrown_weapon · `3` armor · `4` wand · `5` ring · `6` trinket offered. |
 | `item` | 1 (+7) | Item code: index into the frozen item table (88 entries today). |
 | `tier` | 2 (+3) | Mode `0` any (no value bits) · `1` exact · `2` at_least · `3` at_most, then the tier value. |
 | `upgrade` | 2 (+3) | Mode `0` any (no value bits) · `1` exact · `2` at_least, then the upgrade value (up to +5 for weapons, +4 otherwise; the three-bit field predates those ceilings). Mode `3` is invalid. |

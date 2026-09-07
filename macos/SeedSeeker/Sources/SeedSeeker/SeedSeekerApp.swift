@@ -1053,7 +1053,7 @@ private struct ChipView: View {
         switch requirement.upgradeMatch {
         case .exactly: parts.append("exactly +\(requirement.upgrade)")
         case .atLeast: parts.append("+\(requirement.upgrade) or higher")
-        case .any: if item.total == nil { parts.append("any upgrade") }
+        case .any: if item.total == nil && requirement.kind != .trinket { parts.append("any upgrade") }
         }
         if let effect = requirement.effect.label(for: requirement.kind) { parts.append(effect) }
         if requirement.requireUncursed { parts.append("uncursed") }
@@ -1282,6 +1282,7 @@ private func chipName(_ requirement: ItemRequirement) -> String {
     case .armor: "Any armor"
     case .wand: "Any wand"
     case .ring: "Any ring"
+    case .trinket: "Trinket"
     }
 }
 
@@ -1470,14 +1471,24 @@ private struct RequirementEditor: View {
                 .font(.headline).padding(.top, 14).padding(.bottom, 4)
             Form {
                 Section("Item") {
-                    Picker("Category", selection: Binding(get: { kind.family }, set: { kind = $0 })) {
-                        ForEach([ItemKind.weapon, .armor, .wand, .ring], id: \.self) { Text($0.label).tag($0) }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Category")
+                        WideSegmentedPicker(
+                            options: [ItemKind.weapon, .armor, .wand, .ring, .trinket].map { ($0.label, $0) },
+                            selection: Binding(get: { kind.family }, set: { kind = $0 }),
+                            accessibilityLabel: "Category")
                     }
-                    .pickerStyle(.segmented)
+                    .frame(maxWidth: .infinity)
                     .onChange(of: kind) { previous, value in
                         if previous.family != value.family {
                             itemID = ""; tierMatch = .any; tier = 2
-                            effectMode = .any; selectedEffects = []; normalizeUpgrade()
+                            effectMode = .any; selectedEffects = []
+                            if value == .trinket {
+                                itemID = ItemCatalog.trinkets.first?.id ?? ""
+                                match = .any; upgrade = 0; sourceRaw = 0; maximumDepth = 0
+                                requireUncursed = false; count = 1; total = nil; copyDepth = nil
+                            }
+                            normalizeUpgrade()
                         } else if let item = ItemCatalog.findById(itemID), !value.accepts(item) {
                             itemID = ""
                         }
@@ -1491,7 +1502,7 @@ private struct RequirementEditor: View {
                         .pickerStyle(.segmented)
                     }
                     Picker("Item", selection: $itemID) {
-                        Text("Any \(kind.singularLabel)").tag("")
+                        if kind != .trinket { Text("Any \(kind.singularLabel)").tag("") }
                         if kind.family == .weapon {
                             // Tier-1 weapons are starting gear and never spawn in the
                             // dungeon; tipped darts are guaranteed shop stock anyone can
@@ -1554,7 +1565,7 @@ private struct RequirementEditor: View {
                 }
                 // A combined level speaks for the whole stack, so its members
                 // take any upgrade and the per-item choice has nothing to say.
-                if effectiveTotal == nil {
+                if kind != .trinket && effectiveTotal == nil {
                     Section("Upgrade level") {
                         Picker("Predicate", selection: $match) {
                             ForEach(UpgradeMatch.allCases, id: \.self) { Text($0.label).tag($0) }
@@ -1589,7 +1600,7 @@ private struct RequirementEditor: View {
                         }
                     }
                 }
-                if !stack.inCluster {
+                if kind != .trinket && !stack.inCluster {
                     Section("Total item count") {
                         Stepper(value: $count, in: 1...SearchLimits.stackMax) {
                             LabeledContent("How many") {
@@ -1663,6 +1674,7 @@ private struct RequirementEditor: View {
                         }
                     }
                 }
+                if kind != .trinket {
                 Section {
                     Toggle("Require uncursed", isOn: $requireUncursed)
                         .toggleStyle(.checkbox)
@@ -1686,6 +1698,7 @@ private struct RequirementEditor: View {
                             .accessibilityValue(Text("\(maximumDepth) floors"))
                     }
                 }
+                }
             }
             .formStyle(.grouped)
             Divider()
@@ -1700,7 +1713,7 @@ private struct RequirementEditor: View {
                     .buttonStyle(.borderedProminent).keyboardShortcut(.defaultAction)
             }.padding(12)
         }
-        .frame(width: 480, height: kind.modifierLabel == nil ? 580 : 660)
+        .frame(width: 480, height: kind == .trinket ? 260 : kind.modifierLabel == nil ? 580 : 660)
     }
 
     /// A combined level is a property of a concrete stack of two or more —
@@ -1739,6 +1752,7 @@ private struct RequirementEditor: View {
     }
 
     private func normalizeUpgrade() {
+        if kind == .trinket { match = .any; upgrade = 0; return }
         switch match {
         case .any:
             upgrade = 0
@@ -1763,18 +1777,18 @@ private struct RequirementEditor: View {
             // The relationships are the board's to write: `applyEdit` turns the
             // count and total below into the stack's own encoding, so the row
             // saved here carries no group of its own.
-            let value = try ItemRequirement(key: original.key, item: item, upgrade: upgrade,
+            let value = try ItemRequirement(key: original.key, item: item, upgrade: kind == .trinket ? 0 : upgrade,
                 effect: effect, kind: kind,
-                tier: tierMatch == .any ? 0 : tier, tierMatch: tierMatch, upgradeMatch: match,
-                source: sourceRaw == 0 ? nil : ScoutItemSource(rawValue: sourceRaw - 1),
-                maximumDepth: maximumDepth == 0 ? nil : maximumDepth,
-                requireUncursed: requireUncursed,
+                tier: tierMatch == .any ? 0 : tier, tierMatch: tierMatch, upgradeMatch: kind == .trinket ? .any : match,
+                source: kind == .trinket || sourceRaw == 0 ? nil : ScoutItemSource(rawValue: sourceRaw - 1),
+                maximumDepth: kind == .trinket || maximumDepth == 0 ? nil : maximumDepth,
+                requireUncursed: kind != .trinket && requireUncursed,
                 alternativeGroup: original.alternativeGroup)
             onFinish(EditorResult(
                 requirement: value,
-                count: stack.inCluster ? 1 : count,
+                count: kind == .trinket || stack.inCluster ? 1 : count,
                 total: effectiveTotal,
-                copyDepth: stack.inCluster || count < 2 || effectiveTotal != nil ? nil : copyDepth))
+                copyDepth: kind == .trinket || stack.inCluster || count < 2 || effectiveTotal != nil ? nil : copyDepth))
         } catch {
             validationMessage = (error as? LocalizedError)?.errorDescription ?? "The requirement is invalid"
         }
@@ -2059,7 +2073,15 @@ private struct SeedDetailView: View {
             List {
                 ForEach(depths, id: \.self) { depth in
                     Section {
-                        ForEach(Array(world.items.enumerated()).filter { $0.element.depth == depth }, id: \.offset) { entry in
+                        if let catalyst = world.items.first(where: { $0.depth == depth && $0.item.kind == .trinket }) {
+                            TrinketScoutRow(catalyst: catalyst, order: world.trinketOrder,
+                                matchedIDs: Set(world.items.enumerated().filter {
+                                    matches.contains($0.offset) && $0.element.item.kind == .trinket
+                                }.map { $0.element.item.id }))
+                        }
+                        ForEach(Array(world.items.enumerated()).filter {
+                            $0.element.depth == depth && $0.element.item.kind != .trinket
+                        }, id: \.offset) { entry in
                             ScoutItemRow(item: entry.element, ringGems: world.ringGems,
                                          matches: matches.contains(entry.offset))
                         }
@@ -2214,6 +2236,73 @@ private struct FlowLayout: Layout {
             subview.place(at: CGPoint(x: bounds.minX + origin.x, y: bounds.minY + origin.y),
                           proposal: .unspecified)
         }
+    }
+}
+
+/// The catalyst is one floor entry; the seed's deck determines its card order.
+private struct TrinketScoutRow: View {
+    let catalyst: ScoutItem
+    let order: [CatalogItem]
+    let matchedIDs: Set<String>
+    private let catalystArt = CatalogItem(id: "trinket_catalyst", name: "Magical Catalyst",
+                                          kind: .trinket, spriteIndex: 70)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                ItemSpriteView(item: catalystArt)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Magical Catalyst").font(.headline)
+                    Text(catalyst.source.label + (catalyst.secret ? " · Secret room" : ""))
+                        .font(.caption).foregroundStyle(.secondary)
+                    switch catalyst.accessibility {
+                    case .independent:
+                        EmptyView()
+                    case .choice(let group, let option):
+                        Label("One reward of choice group \(group) (option \(option + 1))", systemImage: "arrow.triangle.branch")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    case .scenarios(let group, _):
+                        Label("Only in some outcomes of scenario group \(group)", systemImage: "arrow.triangle.branch")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            HStack(spacing: 10) {
+                ForEach(Array(order.prefix(4))) { item in
+                    GeometryReader { geometry in
+                        let edge = geometry.size.width
+                        VStack(spacing: 4) {
+                            Spacer(minLength: 0)
+                            ItemSpriteView(item: item, pointSize: max(1, min(44, Int(edge * 0.5))))
+                            Text(item.name).font(.system(size: 11))
+                                .lineLimit(1).minimumScaleFactor(0.3)
+                                .frame(maxWidth: .infinity)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(8)
+                        .frame(width: edge, height: edge)
+                        .background(matchedIDs.contains(item.id) ? Color.shatteredMint.opacity(0.12) : Color.secondary.opacity(0.05),
+                                    in: RoundedRectangle(cornerRadius: 6))
+                        .overlay(RoundedRectangle(cornerRadius: 6)
+                            .strokeBorder(matchedIDs.contains(item.id) ? Color.shatteredMint : Color.secondary.opacity(0.25)))
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(item.name + (matchedIDs.contains(item.id) ? ", matches requirement" : ""))
+                    }
+                    .aspectRatio(1, contentMode: .fit)
+                }
+            }
+            .padding(.horizontal, 8)
+            Text("Remaining deck order").font(.caption).foregroundStyle(.secondary)
+            GeometryReader { geometry in
+                let size = max(1, min(24, Int((geometry.size.width - 24) / 13)))
+                HStack(spacing: 2) {
+                    ForEach(Array(order.dropFirst(4))) { item in
+                        ItemSpriteView(item: item, pointSize: size, label: item.name)
+                            .frame(maxWidth: .infinity).help(item.name)
+                    }
+                }
+            }.frame(height: 24)
+        }.padding(.vertical, 6)
     }
 }
 

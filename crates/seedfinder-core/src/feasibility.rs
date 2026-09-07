@@ -114,6 +114,20 @@ const fn source_profile(
     use EffectPolicy::{Any, GoodOnly, Never};
     use ItemKind::{Armor, Ring, Wand, Weapon};
     use ItemSource as S;
+    if matches!(kind, ItemKind::Trinket) {
+        return match source {
+            S::Heap
+            | S::Chest
+            | S::LockedChest
+            | S::CrystalChest
+            | S::Tomb
+            | S::Skeleton
+            | S::Mimic
+            | S::GoldenMimic
+            | S::CrystalMimic => Some((0, 0, Never)),
+            _ => None,
+        };
+    }
     // The Ghost and Sacrificial-fire prizes and both statue drops roll
     // exclusively melee weapons, so a thrown-narrowed weapon
     // requirement can never be satisfied by them. Every thrown-capable
@@ -290,8 +304,15 @@ impl QueryPlan {
         for slot in query.slots() {
             let mut members = Vec::with_capacity(slot.len());
             for requirement in slot.iter().map(|index| &query.requirements[*index]) {
-                let requirement_max_depth =
-                    requirement.max_depth.unwrap_or(max_depth).min(max_depth);
+                let requirement_max_depth = requirement
+                    .max_depth
+                    .unwrap_or(max_depth)
+                    .min(max_depth)
+                    .min(if requirement.kind == ItemKind::Trinket {
+                        3
+                    } else {
+                        max_depth
+                    });
                 let mut quests = 0_u8;
                 let mut open_deadline = None;
                 for source in ALL_SOURCES {

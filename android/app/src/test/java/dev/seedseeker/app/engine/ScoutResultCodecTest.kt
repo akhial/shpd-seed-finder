@@ -20,6 +20,28 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ScoutResultCodecTest {
+    init { dev.seedseeker.app.catalog.PackagedCatalog.install() }
+    @Test
+    fun ssc4PreservesDeckOrderAndCatalystPlacement() {
+        val deck = dev.seedseeker.app.catalog.ItemCatalog.trinkets.reversed()
+        val oldPacket = scoutPacket(*deck.take(4).map {
+            item(id = it.id, depth = 3, upgrade = 0, source = 2)
+        }.toTypedArray())
+        oldPacket[3] = '4'.code.toByte()
+        val tail = ByteArrayOutputStream().use { bytes ->
+            DataOutputStream(bytes).use { output ->
+                output.writeByte(deck.size)
+                deck.forEach { writeShortString(output, it.id) }
+            }
+            bytes.toByteArray()
+        }
+        val world = ScoutResultCodec.decode(oldPacket + tail)
+        assertEquals(deck, world.trinketOrder)
+        assertEquals(deck.take(4), world.items.map { it.item })
+        assertTrue(world.items.all { it.depth == 3 && it.source == ScoutItemSource.LOCKED_CHEST })
+        assertThrows(IllegalStateException::class.java) { ScoutResultCodec.decode(oldPacket + byteArrayOf(0)) }
+    }
+
     @Test
     fun decodesAllSsc3FieldsWithoutDroppingDuplicateOrZeroUpgradeItems() {
         val packet = scoutPacket(

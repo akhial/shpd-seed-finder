@@ -26,6 +26,7 @@ use shpd_seedfinder_core::search::{
 use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
 use shpd_seedfinder_core::wire::{
     WireError, decode_query, decode_scout_request, encode_results, encode_scout_world,
+    encode_scout_world_with_trinkets,
 };
 
 pub const STATE_RUNNING: i64 = 0;
@@ -130,10 +131,13 @@ pub fn protected_scout_seed_packet<G: WorldGenerator + ?Sized>(
 ///
 /// Returns a packet error or a contained generation panic.
 pub fn production_scout_packet(request: &[u8]) -> Result<Vec<u8>, ScoutCallError> {
-    let (_, challenges) = decode_scout_request(request)
+    let (seed, challenges) = decode_scout_request(request)
         .map_err(ScoutPacketError::Request)
         .map_err(ScoutCallError::Packet)?;
-    protected_scout_seed_packet(canonical_generator(challenges).as_ref(), request)
+    let world = production_scout_world(seed, challenges)?;
+    encode_scout_world_with_trinkets(&world)
+        .map_err(ScoutPacketError::Response)
+        .map_err(ScoutCallError::Packet)
 }
 
 /// Scouts one depth-24 world with the cached canonical production generator,
@@ -887,7 +891,15 @@ mod tests {
         // items so the test does not depend on rare drops.
         let seed = DungeonSeed::from_code("AAA-AAA-AAF").unwrap();
         let world = production_scout_world(seed, Challenges::NONE).unwrap();
-        let known = world.items.first().cloned().unwrap();
+        let known = world
+            .items
+            .iter()
+            .find(|entry| {
+                shpd_seedfinder_core::catalog::item(entry.item).kind
+                    != shpd_seedfinder_core::catalog::ItemKind::Trinket
+            })
+            .cloned()
+            .unwrap();
         let definition = shpd_seedfinder_core::catalog::item(known.item);
         let satisfiable = SearchQuery {
             requirements: vec![Requirement {
@@ -1278,6 +1290,18 @@ mod tests {
         let packet = production_scout_packet(b"SSQ2\x00\x00AAA-AAA-AAF").unwrap();
 
         assert_eq!(world, decode_scout_world(&packet).unwrap());
+        assert_eq!(&packet[..4], b"SSC4");
+        assert_eq!(
+            world
+                .items
+                .iter()
+                .filter(|entry| {
+                    shpd_seedfinder_core::catalog::item(entry.item).kind
+                        == shpd_seedfinder_core::catalog::ItemKind::Trinket
+                })
+                .count(),
+            4
+        );
 
         let challenged = production_scout_world(seed, Challenges::new(0x68).unwrap()).unwrap();
         assert_eq!(challenged.seed, world.seed);

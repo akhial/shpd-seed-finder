@@ -8,11 +8,12 @@ use std::fmt::Write as _;
 use std::rc::Rc;
 
 use adw::prelude::*;
-use shpd_seedfinder_core::catalog::{Effect, item};
+use shpd_seedfinder_core::catalog::{Effect, ItemId, ItemKind, item};
 use shpd_seedfinder_core::model::{Accessibility, GeneratedWorld, WorldItem};
 use shpd_seedfinder_core::query::{SearchQuery, scout_matches};
 use shpd_seedfinder_core::run::RingGems;
 use shpd_seedfinder_core::seed::{DungeonSeed, format_input};
+use shpd_seedfinder_core::trinkets::trinket_order;
 use shpd_seedfinder_session::production_scout_world;
 
 use crate::sprites::ItemSprite;
@@ -328,8 +329,20 @@ impl DetailPane {
                 .title(format!("Floor {depth}"))
                 .description(description)
                 .build();
+            let mut catalyst_shown = false;
             for index in indices {
-                group.add(&item_row(&world.items[*index], gems, marks.matched[*index]));
+                if item(world.items[*index].item).kind == ItemKind::Trinket {
+                    if !catalyst_shown {
+                        group.add(&trinket_choices(
+                            world,
+                            &world.items[*index],
+                            &marks.matched,
+                        ));
+                        catalyst_shown = true;
+                    }
+                } else {
+                    group.add(&item_row(&world.items[*index], gems, marks.matched[*index]));
+                }
             }
             self.manifest_box.append(&group);
         }
@@ -370,6 +383,53 @@ fn quest_summary_line(quests: &[QuestRow]) -> String {
         let _ = write!(line, "{}: {}", quest.giver, quest.variant);
     }
     line
+}
+
+/// The catalyst keeps the source and accessibility of its generated location.
+fn trinket_choices(world: &GeneratedWorld, location: &WorldItem, matched: &[bool]) -> gtk::Box {
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 8);
+    let mut catalyst = location.clone();
+    catalyst.item = ItemId::TrinketCatalyst;
+    content.append(&item_row(&catalyst, world.ring_gems, false));
+    let choices = gtk::Box::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .homogeneous(true)
+        .spacing(6)
+        .margin_start(12)
+        .margin_end(12)
+        .build();
+    let order = trinket_order(world.seed);
+    for id in &order[..4] {
+        let is_match = world
+            .items
+            .iter()
+            .enumerate()
+            .any(|(index, entry)| entry.item == *id && matched[index]);
+        choices.append(&sprites::trinket_tile(item(*id), is_match, true));
+    }
+    content.append(&choices);
+    content.append(
+        &gtk::Label::builder()
+            .label("Remaining deck order")
+            .css_classes(["caption", "dim-label"])
+            .xalign(0.0)
+            .margin_start(12)
+            .margin_top(4)
+            .build(),
+    );
+    let remaining = gtk::Box::builder()
+        .orientation(gtk::Orientation::Horizontal)
+        .homogeneous(true)
+        .spacing(2)
+        .margin_start(12)
+        .margin_end(12)
+        .margin_bottom(12)
+        .build();
+    for id in &order[4..] {
+        remaining.append(&sprites::trinket_tile(item(*id), false, false));
+    }
+    content.append(&remaining);
+    content
 }
 
 fn item_row(world_item: &WorldItem, gems: RingGems, matched: bool) -> adw::ActionRow {

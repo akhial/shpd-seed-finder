@@ -411,6 +411,7 @@ const fn kind_code(kind: ItemKind, weapon_category: Option<WeaponCategory>) -> u
         (ItemKind::Armor, _) => 3,
         (ItemKind::Wand, _) => 4,
         (ItemKind::Ring, _) => 5,
+        (ItemKind::Trinket, _) => 6,
     }
 }
 
@@ -422,6 +423,7 @@ fn kind_from(code: u32) -> Result<(ItemKind, Option<WeaponCategory>), String> {
         3 => Ok((ItemKind::Armor, None)),
         4 => Ok((ItemKind::Wand, None)),
         5 => Ok((ItemKind::Ring, None)),
+        6 => Ok((ItemKind::Trinket, None)),
         _ => Err(format!("unknown category code {code}")),
     }
 }
@@ -462,7 +464,7 @@ fn effect_from(kind: ItemKind, code: u32) -> Result<Effect, String> {
             .get(code as usize)
             .copied()
             .map(Effect::Armor),
-        ItemKind::Wand | ItemKind::Ring => None,
+        ItemKind::Wand | ItemKind::Ring | ItemKind::Trinket => None,
     };
     effect.ok_or_else(|| format!("effect code {code} is not valid for this kind"))
 }
@@ -681,6 +683,24 @@ const ALL_ITEM_IDS: &[ItemId] = &[
     ItemId::RingSharpshooting,
     ItemId::RingTenacity,
     ItemId::RingWealth,
+    ItemId::RatSkull,
+    ItemId::ParchmentScrap,
+    ItemId::PetrifiedSeed,
+    ItemId::ExoticCrystals,
+    ItemId::MossyClump,
+    ItemId::DimensionalSundial,
+    ItemId::ThirteenLeafClover,
+    ItemId::TrapMechanism,
+    ItemId::MimicTooth,
+    ItemId::WondrousResin,
+    ItemId::EyeOfNewt,
+    ItemId::SaltCube,
+    ItemId::VialOfBlood,
+    ItemId::ShardOfOblivion,
+    ItemId::ChaoticCenser,
+    ItemId::FerretTuft,
+    ItemId::CrackedSpyglass,
+    ItemId::TrinketCatalyst,
 ];
 
 #[cfg(test)]
@@ -924,12 +944,12 @@ mod tests {
         assert!(decode(&format!("{code}AAAA")).is_err());
     }
 
-    /// Six of the eight category codes are spoken for, so a corrupted or
-    /// truncated code can land on 6 or 7. Every rejection has to name what it
+    /// Seven of the eight category codes are spoken for, so a corrupted or
+    /// truncated code can land on 7. Every rejection has to name what it
     /// rejected — a blank reason reaches the user as a bare "requirement 1: ".
     #[test]
     fn unknown_category_codes_are_named_in_the_error() {
-        for code in 6..=7 {
+        for code in 7..=7 {
             let mut bits = super::BitWriter::default();
             bits.push(4, 4); // version
             bits.push(0, 2); // flags
@@ -1064,6 +1084,24 @@ mod tests {
             "ring_sharpshooting",
             "ring_tenacity",
             "ring_wealth",
+            "rat_skull",
+            "parchment_scrap",
+            "petrified_seed",
+            "exotic_crystals",
+            "mossy_clump",
+            "dimensional_sundial",
+            "thirteen_leaf_clover",
+            "trap_mechanism",
+            "mimic_tooth",
+            "wondrous_resin",
+            "eye_of_newt",
+            "salt_cube",
+            "vial_of_blood",
+            "shard_of_oblivion",
+            "chaotic_censer",
+            "ferret_tuft",
+            "cracked_spyglass",
+            "trinket_catalyst",
         ];
         assert_eq!(
             ALL_ITEM_IDS

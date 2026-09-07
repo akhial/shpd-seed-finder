@@ -28,7 +28,7 @@ public static class ResultsExport
     public sealed record Imported(QuerySettings Query, IReadOnlyList<string> Seeds, int Dropped, string? FileShpdVersion);
 
     /// <summary>Stable document names, indexed by the matching enum value.</summary>
-    private static readonly string[] KindNames = ["weapon", "armor", "wand", "ring", "melee_weapon", "thrown_weapon"];
+    private static readonly string[] KindNames = ["weapon", "armor", "wand", "ring", "melee_weapon", "thrown_weapon", "trinket"];
     private static readonly string[] SourceNames = [
         "heap", "chest", "locked_chest", "crystal_chest", "tomb", "skeleton",
         "sacrificial_fire", "mimic", "golden_mimic", "crystal_mimic", "statue",

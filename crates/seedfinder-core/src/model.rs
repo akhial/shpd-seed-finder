@@ -117,6 +117,19 @@ pub struct WorldItem {
 }
 
 impl WorldItem {
+    pub(crate) fn catalyst(depth: u8, source: ItemSource, accessibility: Accessibility) -> Self {
+        Self {
+            item: ItemId::TrinketCatalyst,
+            upgrade: 0,
+            effect: None,
+            cursed: false,
+            depth,
+            source,
+            accessibility,
+            secret: false,
+        }
+    }
+
     /// Builds a searchable record without reinterpreting the equipment roll.
     #[must_use]
     pub const fn from_equipment_roll(

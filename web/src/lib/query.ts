@@ -63,11 +63,13 @@ export const MAX_UPGRADE_RING_STANDARD = 2;
 export const ringStackCapacity = (count: number): number =>
   MAX_UPGRADE_RING + 1 + (count - 1) * (MAX_UPGRADE_RING_STANDARD + 1);
 export const maxUpgradeFor = (family: string | undefined): number =>
-  family === "weapon"
-    ? MAX_UPGRADE_WEAPON
-    : family === "ring"
-      ? MAX_UPGRADE_RING
-      : MAX_UPGRADE_DEFAULT;
+  family === "trinket"
+    ? 0
+    : family === "weapon"
+      ? MAX_UPGRADE_WEAPON
+      : family === "ring"
+        ? MAX_UPGRADE_RING
+        : MAX_UPGRADE_DEFAULT;
 
 /** The highest upgrade the generator puts on any item, whatever its tier. */
 export const MAX_UPGRADE_ANY_TIER = 4;
@@ -474,6 +476,8 @@ export interface ValidationResult {
 
 export function validateRequirement(requirement: RequirementState): string[] {
   const errors: string[] = [];
+  if (requirementFamily(requirement) === "trinket" && !requirement.item)
+    errors.push("Select a trinket.");
   const item = requirement.item ? getItem(requirement.item) : undefined;
   const kind = requirement.kind ?? item?.type;
   const family = kind ? kindFamily(kind) : undefined;

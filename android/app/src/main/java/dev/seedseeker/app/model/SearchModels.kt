@@ -108,6 +108,7 @@ enum class ItemKind(
     // the WEAPON family, never a narrowed kind.
     MELEE_WEAPON("Melee weapons", "melee weapon", "Enchantment", SearchLimits.MAX_UPGRADE_WEAPON),
     THROWN_WEAPON("Thrown weapons", "thrown weapon", "Enchantment", SearchLimits.MAX_UPGRADE_WEAPON),
+    TRINKET("Trinket", "trinket", null, 0),
     ;
 
     /** The broad item family this kind belongs to. */
@@ -228,6 +229,7 @@ data class ItemRequirement(
 ) {
     init {
         require(item == null || kind.accepts(item)) { "Selected item must belong to its category" }
+        require(kind != ItemKind.TRINKET || item != null) { "Select a trinket" }
         val tierable = item == null && kind.family in setOf(ItemKind.WEAPON, ItemKind.ARMOR)
         val validTier = when (tierMatch) {
             TierMatch.ANY -> tier == 0
@@ -314,7 +316,7 @@ data class ItemRequirement(
         }
 
     val description: String
-        get() = buildString {
+        get() = if (kind == ItemKind.TRINKET) "Trinket" else buildString {
             append(
                 when (upgradeMatch) {
                     UpgradeMatch.ANY -> "Any upgrade"
@@ -555,6 +557,7 @@ data class ScoutWorld(
      * behind — the demo engine's — names the catalog table itself.
      */
     val ringGems: RingGems,
+    val trinketOrder: List<CatalogItem> = emptyList(),
 )
 
 /**

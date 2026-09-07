@@ -532,6 +532,9 @@ where
                 Accessibility::Independent,
             ),
             ForcedItem::Shop(ShopStockItem::Searchable(world)) => Some(world.clone()),
+            ForcedItem::Regular(RegularItem::Queued(QueuedItemKind::TrinketCatalyst)) => Some(
+                WorldItem::catalyst(self.depth_u8(), source, Accessibility::Independent),
+            ),
             ForcedItem::Regular(RegularItem::Queued(_))
             | ForcedItem::EnergyCrystal { .. }
             | ForcedItem::AlchemyPage(_)

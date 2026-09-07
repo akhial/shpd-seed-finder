@@ -398,7 +398,10 @@ export function joinAlternatives(
  */
 export const canStack = (requirements: readonly RequirementState[], item: BoardItem): boolean => {
   const family = requirementFamily(requirements[item.members[0]]);
-  return item.members.every((index) => requirementFamily(requirements[index]) === family);
+  return (
+    family !== "trinket" &&
+    item.members.every((index) => requirementFamily(requirements[index]) === family)
+  );
 };
 
 /** Pulls the chip at `index` out of its cluster; it leaves its stack behind. */

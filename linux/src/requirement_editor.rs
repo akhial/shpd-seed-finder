@@ -61,6 +61,7 @@ struct Editor {
     effect_group: adw::PreferencesGroup,
     effect_list: gtk::ListBox,
     effect_checks: RefCell<Vec<EffectCheck>>,
+    details_group: adw::PreferencesGroup,
     uncursed: adw::SwitchRow,
     source_row: adw::ComboRow,
     floor_switch: adw::SwitchRow,
@@ -229,6 +230,7 @@ fn build(context: AppState, requirement: &UiRequirement, stack: StackShape) -> E
         effect_group,
         effect_list,
         effect_checks: RefCell::new(Vec::new()),
+        details_group: adw::PreferencesGroup::builder().title("Details").build(),
         uncursed: adw::SwitchRow::builder().title("Require uncursed").build(),
         source_row: combo_row(
             "Source",
@@ -281,7 +283,7 @@ fn groups(editor: &Rc<Editor>) -> Vec<adw::PreferencesGroup> {
 
     editor.effect_mode_group.add(&editor.effect_mode);
 
-    let details_group = adw::PreferencesGroup::builder().title("Details").build();
+    let details_group = editor.details_group.clone();
     details_group.add(&editor.uncursed);
     details_group.add(&editor.source_row);
     details_group.add(&editor.floor_switch);
@@ -437,7 +439,7 @@ fn restore(editor: &Rc<Editor>, requirement: &UiRequirement, stack: StackShape) 
         UpgradeRequirement::Any => editor.upgrade_row.set_selected(0),
         UpgradeRequirement::Exact(upgrade) => {
             editor.upgrade_row.set_selected(1);
-            let maximum = selected_upgrade_ceiling(editor);
+            let maximum = selected_upgrade_ceiling(editor).max(1);
             editor
                 .exact_upgrade
                 .set_value(f64::from(upgrade.clamp(1, maximum)));
@@ -485,14 +487,16 @@ fn collect(editor: &Rc<Editor>) -> (UiRequirement, usize, Option<u8>, Option<u8>
     let item = selected_item(editor);
     let tier = selected_tier(editor);
     let upgrade = selected_upgrade(editor);
-    let source = match editor.source_row.selected() {
+    let source = match if kind == ItemKind::Trinket {
+        0
+    } else {
+        editor.source_row.selected()
+    } {
         0 => None,
         index => ItemSource::ALL.get(index as usize - 1).copied(),
     };
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let max_depth = editor
-        .floor_switch
-        .is_active()
+    let max_depth = (kind != ItemKind::Trinket && editor.floor_switch.is_active())
         .then(|| normalize_floor_limit(editor.floor_value.value().round() as u8));
     let requirement = UiRequirement {
         key: editor.key,
@@ -502,7 +506,7 @@ fn collect(editor: &Rc<Editor>) -> (UiRequirement, usize, Option<u8>, Option<u8>
         tier,
         upgrade,
         effect: selected_effect(editor),
-        require_uncursed: editor.uncursed.is_active(),
+        require_uncursed: kind != ItemKind::Trinket && editor.uncursed.is_active(),
         source,
         // The stack's own encoding carries these; the board rebuilds them
         // from the count and total this returns.
@@ -609,6 +613,9 @@ fn selected_upgrade_ceiling(editor: &Rc<Editor>) -> u8 {
 }
 
 fn selected_upgrade(editor: &Rc<Editor>) -> UpgradeRequirement {
+    if selected_kind(editor) == ItemKind::Trinket {
+        return UpgradeRequirement::Any;
+    }
     let kind = selected_kind(editor);
     match editor.upgrade_row.selected() {
         1 => {
@@ -663,7 +670,7 @@ fn checked_effects(editor: &Rc<Editor>) -> Vec<Effect> {
 /// How many items the row asks for; a cluster member leaves its stack to the
 /// cluster and always speaks for one.
 fn selected_count(editor: &Rc<Editor>) -> usize {
-    if editor.in_cluster {
+    if editor.in_cluster || selected_kind(editor) == ItemKind::Trinket {
         return 1;
     }
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -719,6 +726,7 @@ fn searchable_items(choice: KindChoice) -> Vec<&'static ItemDefinition> {
             definition.kind == kind
                 && definition.tier != Some(1)
                 && !definition.id.is_tipped_dart()
+                && definition.id != ItemId::TrinketCatalyst
                 && weapon_category
                     .is_none_or(|category| definition.weapon_category() == Some(category))
         })
@@ -731,8 +739,16 @@ fn searchable_items(choice: KindChoice) -> Vec<&'static ItemDefinition> {
 
 fn populate_items(editor: &Rc<Editor>, selection: Option<ItemId>) {
     let choice = selected_choice(editor);
-    let mut ids = vec![None];
-    let mut labels = vec![format!("Any {}", kind_choice_singular(choice))];
+    let trinket = choice.0 == ItemKind::Trinket;
+    editor
+        .item_row
+        .set_title(if trinket { "Trinket" } else { "Item" });
+    let mut ids = if trinket { vec![] } else { vec![None] };
+    let mut labels = if trinket {
+        vec![]
+    } else {
+        vec![format!("Any {}", kind_choice_singular(choice))]
+    };
     for definition in searchable_items(choice) {
         ids.push(Some(definition.id));
         labels.push(match definition.tier {
@@ -776,7 +792,7 @@ fn populate_effects(editor: &Rc<Editor>, selection: EffectRequirement) {
             .iter()
             .map(|effect| Effect::Armor(*effect))
             .collect(),
-        ItemKind::Wand | ItemKind::Ring => Vec::new(),
+        ItemKind::Wand | ItemKind::Ring | ItemKind::Trinket => Vec::new(),
     };
     let selected_set = match selection {
         EffectRequirement::OneOf(set) if set.family() == kind => Some(set),
@@ -836,6 +852,10 @@ fn effect_label(name: &str, is_curse: bool) -> String {
 }
 
 fn normalize_upgrades(editor: &Rc<Editor>) {
+    if selected_kind(editor) == ItemKind::Trinket {
+        editor.upgrade_row.set_selected(0);
+        return;
+    }
     let maximum_upgrade = selected_upgrade_ceiling(editor);
     let maximum = f64::from(maximum_upgrade);
     let adjustment = editor.exact_upgrade.adjustment();
@@ -875,7 +895,7 @@ fn refresh_levels_range(editor: &Rc<Editor>) {
 }
 
 fn populate_minimum_upgrades(editor: &Rc<Editor>, selection: u8) {
-    let maximum = selected_upgrade_ceiling(editor);
+    let maximum = selected_upgrade_ceiling(editor).max(2);
     let labels = minimum_upgrade_labels(maximum);
     editor
         .minimum_upgrade
@@ -887,7 +907,7 @@ fn populate_minimum_upgrades(editor: &Rc<Editor>, selection: u8) {
 
 fn set_minimum_upgrade(editor: &Rc<Editor>, upgrade: u8) {
     populate_minimum_upgrades(editor, upgrade);
-    let maximum = selected_upgrade_ceiling(editor);
+    let maximum = selected_upgrade_ceiling(editor).max(2);
     editor
         .ring_minimum_upgrade
         .set_value(f64::from(upgrade.clamp(1, maximum - 1)));
@@ -923,8 +943,13 @@ fn refresh_visibility(editor: &Rc<Editor>) {
     // level speaks for the whole stack, so the per-item upgrade steps aside.
     let counting_levels = countable_levels(editor);
     let stacked = !editor.in_cluster && selected_count(editor) > 1;
-    editor.upgrade_group.set_visible(!counting_levels);
-    editor.count_group.set_visible(!editor.in_cluster);
+    editor
+        .upgrade_group
+        .set_visible(!counting_levels && kind != ItemKind::Trinket);
+    editor.details_group.set_visible(kind != ItemKind::Trinket);
+    editor
+        .count_group
+        .set_visible(!editor.in_cluster && kind != ItemKind::Trinket);
     editor
         .copy_floor_switch
         .set_visible(stacked && !counting_levels);
@@ -999,4 +1024,25 @@ fn spin_row(title: &str, value: f64, lower: f64, upper: f64) -> adw::SpinRow {
         .title(title)
         .adjustment(&gtk::Adjustment::new(value, lower, upper, 1.0, 1.0, 0.0))
         .build()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trinket_picker_contains_only_the_seventeen_named_choices() {
+        let definitions = searchable_items((ItemKind::Trinket, None));
+        assert_eq!(definitions.len(), 17);
+        assert!(
+            definitions
+                .iter()
+                .all(|definition| definition.id != ItemId::TrinketCatalyst)
+        );
+        assert!(
+            definitions
+                .iter()
+                .any(|definition| definition.name == "Mimic Tooth")
+        );
+    }
 }
