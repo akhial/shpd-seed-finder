@@ -21,7 +21,7 @@ use shpd_seedfinder_session::{
     filter_matching_seeds,
 };
 
-use crate::format::{duration, estimate_duration, group_digits, probability_percent, seed_rate};
+use crate::format::{duration, group_digits, search_statistics};
 use crate::result_navigation;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
@@ -783,7 +783,6 @@ impl ResultsPane {
         let search_state = status[0];
         let tested = status[1].max(0).unsigned_abs();
         let probability = f64::from_bits(u64::from_ne_bytes(status[4].to_ne_bytes()));
-        let probability = (probability > 0.0 && probability.is_finite()).then_some(probability);
 
         let now = Instant::now();
         let elapsed = now.duration_since(active.last_tick).as_secs_f64();
@@ -805,15 +804,8 @@ impl ResultsPane {
         });
 
         if search_state == STATE_RUNNING {
-            let time_to_seed = probability
-                .filter(|_| active.seeds_per_second > 0.0)
-                .map(|probability| 1.0 / probability / active.seeds_per_second);
-            self.stats_line.set_label(&format!(
-                "Match probability {} · {} seeds/s · ~{} to a match",
-                probability_percent(probability),
-                seed_rate(active.seeds_per_second),
-                estimate_duration(time_to_seed),
-            ));
+            self.stats_line
+                .set_label(&search_statistics(probability, active.seeds_per_second));
             self.progress_line.set_label(&format!(
                 "Tested {} · elapsed {}",
                 group_digits(tested),

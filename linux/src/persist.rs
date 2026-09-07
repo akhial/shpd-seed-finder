@@ -420,6 +420,25 @@ mod tests {
     }
 
     #[test]
+    fn artifacts_persist_floor_and_upgrade_limits_and_drop_wildcards() {
+        let restored = decode_state(
+            r#"{"requirements":[{"kind":"artifact"},{"item":"sandals_of_nature","upgrade":{"exact":5},"source":"imp_reward","max_depth":19,"uncursed":true}]}"#,
+        ).expect("artifact state is readable");
+        assert_eq!(restored.requirements.len(), 1);
+        let requirement = restored.requirements[0];
+        assert_eq!(requirement.kind, ItemKind::Artifact);
+        assert_eq!(requirement.item, Some(ItemId::SandalsOfNature));
+        assert_eq!(requirement.upgrade, UpgradeRequirement::Exact(5));
+        assert_eq!(requirement.max_depth, Some(19));
+        assert_eq!(requirement.source, Some(ItemSource::ImpReward));
+        assert!(requirement.require_uncursed);
+        assert_eq!(
+            round_trip(&restored).to_query().unwrap(),
+            restored.to_query().unwrap()
+        );
+    }
+
+    #[test]
     fn named_trinkets_survive_persistence_while_wildcards_are_dropped() {
         let restored =
             decode_state(r#"{"requirements":[{"kind":"trinket"},{"item":"mimic_tooth"}]}"#)

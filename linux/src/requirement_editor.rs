@@ -593,12 +593,11 @@ fn selected_tier(editor: &Rc<Editor>) -> TierRequirement {
     }
 }
 
-/// The highest upgrade the current selection may name: only a tier-4 weapon
-/// is levelled past [`MAX_GENERATED_UPGRADE`], so naming an item of another
-/// tier — or filtering tier 4 away — lowers the ceiling.
+/// The highest upgrade the current selection may name. Weapons only reach
+/// their extra upgrades at tier 4; tierless artifacts retain their +5 ceiling.
 fn selected_upgrade_ceiling(editor: &Rc<Editor>) -> u8 {
     let ceiling = selected_kind(editor).maximum_search_upgrade();
-    if ceiling <= MAX_GENERATED_UPGRADE {
+    if selected_kind(editor) != ItemKind::Weapon || ceiling <= MAX_GENERATED_UPGRADE {
         return ceiling;
     }
     let reaches_the_extra_tier = match selected_item(editor) {
@@ -670,7 +669,12 @@ fn checked_effects(editor: &Rc<Editor>) -> Vec<Effect> {
 /// How many items the row asks for; a cluster member leaves its stack to the
 /// cluster and always speaks for one.
 fn selected_count(editor: &Rc<Editor>) -> usize {
-    if editor.in_cluster || selected_kind(editor) == ItemKind::Trinket {
+    if editor.in_cluster
+        || matches!(
+            selected_kind(editor),
+            ItemKind::Trinket | ItemKind::Artifact
+        )
+    {
         return 1;
     }
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -739,12 +743,14 @@ fn searchable_items(choice: KindChoice) -> Vec<&'static ItemDefinition> {
 
 fn populate_items(editor: &Rc<Editor>, selection: Option<ItemId>) {
     let choice = selected_choice(editor);
-    let trinket = choice.0 == ItemKind::Trinket;
-    editor
-        .item_row
-        .set_title(if trinket { "Trinket" } else { "Item" });
-    let mut ids = if trinket { vec![] } else { vec![None] };
-    let mut labels = if trinket {
+    let named_only = matches!(choice.0, ItemKind::Trinket | ItemKind::Artifact);
+    editor.item_row.set_title(if named_only {
+        kind_choice_label(choice)
+    } else {
+        "Item"
+    });
+    let mut ids = if named_only { vec![] } else { vec![None] };
+    let mut labels = if named_only {
         vec![]
     } else {
         vec![format!("Any {}", kind_choice_singular(choice))]
@@ -949,7 +955,7 @@ fn refresh_visibility(editor: &Rc<Editor>) {
     editor.details_group.set_visible(kind != ItemKind::Trinket);
     editor
         .count_group
-        .set_visible(!editor.in_cluster && kind != ItemKind::Trinket);
+        .set_visible(!editor.in_cluster && !matches!(kind, ItemKind::Trinket | ItemKind::Artifact));
     editor
         .copy_floor_switch
         .set_visible(stacked && !counting_levels);
@@ -1029,6 +1035,22 @@ fn spin_row(title: &str, value: f64, lower: f64, upper: f64) -> adw::SpinRow {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn artifact_picker_contains_all_eleven_spawnable_items() {
+        let definitions = searchable_items((ItemKind::Artifact, None));
+        assert_eq!(definitions.len(), 11);
+        assert!(
+            definitions
+                .iter()
+                .all(|definition| definition.tier.is_none())
+        );
+        assert!(
+            definitions
+                .iter()
+                .any(|definition| definition.id == ItemId::SandalsOfNature)
+        );
+    }
 
     #[test]
     fn trinket_picker_contains_only_the_seventeen_named_choices() {
