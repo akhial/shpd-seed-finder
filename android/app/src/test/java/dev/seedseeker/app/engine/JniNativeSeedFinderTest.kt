@@ -52,6 +52,20 @@ class JniNativeSeedFinderTest {
     }
 
     @Test
+    fun unavailableArtifactProbabilitySurvivesTheNativeStatusBoundary() {
+        val bindings = RecordingBindings()
+        bindings.statusPacket = longArrayOf(0, 7, 9, 0, Double.NaN.toBits())
+        val request = SearchRequest(listOf(ItemRequirement(
+            key = 1, item = ItemCatalog.artifacts.first(), upgrade = 0,
+            upgradeMatch = dev.seedseeker.app.model.UpgradeMatch.ANY,
+        )))
+        val session = JniNativeSeedFinder(bindings).startSearch(request, workers = 1)
+        assertTrue(session.status().matchProbability.isNaN())
+        assertEquals(SearchState.RUNNING, session.status().state)
+        session.close()
+    }
+
+    @Test
     fun allNativeStateCodesAreMappedWithoutLosingTheErrorCode() {
         val bindings = RecordingBindings()
         val finder = JniNativeSeedFinder(bindings)

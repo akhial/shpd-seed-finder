@@ -48,7 +48,10 @@ object SearchLimits {
      */
     const val MAX_UPGRADE_WEAPON = 5
 
-    /** Highest upgrade the generator puts on any item, whatever its tier. */
+    /** Highest generated artifact upgrade: the Imp vault prize is +5. */
+    const val MAX_UPGRADE_ARTIFACT = 5
+
+    /** Highest upgrade the generator puts on ordinary tiered equipment. */
     const val MAX_UPGRADE_ANY_TIER = 4
 
     /**
@@ -68,7 +71,7 @@ object SearchLimits {
      */
     fun maximumUpgrade(kind: ItemKind, item: CatalogItem?, tierMatch: TierMatch, tier: Int): Int {
         val ceiling = kind.maximumSearchUpgrade
-        if (ceiling <= MAX_UPGRADE_ANY_TIER) return ceiling
+        if (kind == ItemKind.ARTIFACT || ceiling <= MAX_UPGRADE_ANY_TIER) return ceiling
         val reachesExtraTier = if (item != null) {
             item.tier == EXTRA_UPGRADE_TIER
         } else {
@@ -109,7 +112,11 @@ enum class ItemKind(
     MELEE_WEAPON("Melee weapons", "melee weapon", "Enchantment", SearchLimits.MAX_UPGRADE_WEAPON),
     THROWN_WEAPON("Thrown weapons", "thrown weapon", "Enchantment", SearchLimits.MAX_UPGRADE_WEAPON),
     TRINKET("Trinket", "trinket", null, 0),
+    ARTIFACT("Artifacts", "artifact", null, SearchLimits.MAX_UPGRADE_ARTIFACT),
     ;
+
+    val requiresNamedItem: Boolean get() = this == TRINKET || this == ARTIFACT
+    val supportsStacks: Boolean get() = !requiresNamedItem
 
     /** The broad item family this kind belongs to. */
     val family: ItemKind
@@ -229,7 +236,10 @@ data class ItemRequirement(
 ) {
     init {
         require(item == null || kind.accepts(item)) { "Selected item must belong to its category" }
-        require(kind != ItemKind.TRINKET || item != null) { "Select a trinket" }
+        require(!kind.requiresNamedItem || item != null) { "Select a ${kind.singularLabel}" }
+        require(kind.supportsStacks || (identityGroup == null && levelSum == null)) {
+            "${kind.label} cannot be stacked"
+        }
         val tierable = item == null && kind.family in setOf(ItemKind.WEAPON, ItemKind.ARMOR)
         val validTier = when (tierMatch) {
             TierMatch.ANY -> tier == 0

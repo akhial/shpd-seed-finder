@@ -206,11 +206,11 @@ fun RequirementSheet(
             tierMatch = tierMatch,
             upgradeMatch = if (kind == ItemKind.TRINKET) UpgradeMatch.ANY else upgradeMatch,
             source = if (kind == ItemKind.TRINKET) null else source,
-            identityGroup = if (kind == ItemKind.TRINKET) null else editing?.identityGroup,
+            identityGroup = if (!kind.supportsStacks) null else editing?.identityGroup,
             maximumDepth = if (kind == ItemKind.TRINKET) null else maximumDepth,
             requireUncursed = kind != ItemKind.TRINKET && requireUncursed,
             alternativeGroup = editing?.alternativeGroup,
-            levelSum = if (kind == ItemKind.TRINKET) null else editing?.levelSum,
+            levelSum = if (!kind.supportsStacks) null else editing?.levelSum,
         )
     }
 
@@ -255,10 +255,11 @@ fun RequirementSheet(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
                             .padding(horizontal = 20.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(3.dp),
                     ) {
-                        listOf(ItemKind.WEAPON, ItemKind.ARMOR, ItemKind.WAND, ItemKind.RING, ItemKind.TRINKET)
+                        listOf(ItemKind.WEAPON, ItemKind.ARMOR, ItemKind.WAND, ItemKind.RING, ItemKind.TRINKET, ItemKind.ARTIFACT)
                             .forEach { entry ->
                                 ToggleButton(
                                     checked = kind.family == entry,
@@ -267,6 +268,17 @@ fun RequirementSheet(
                                             val first = searchableItems(entry).first()
                                             kind = entry
                                             selectedItem = first
+                                            if (!entry.supportsStacks) {
+                                                stackCount = 1
+                                                stackTotal = null
+                                                copyDepth = null
+                                            }
+                                            if (entry.requiresNamedItem) {
+                                                upgradeMatch = UpgradeMatch.ANY
+                                                upgrade = 0
+                                                source = null
+                                                requireUncursed = false
+                                            }
                                             tierMatch = TierMatch.ANY
                                             tier = 2
                                             resetEffects()
@@ -276,11 +288,10 @@ fun RequirementSheet(
                                             )
                                         }
                                     },
-                                    modifier = Modifier.weight(1f),
                                     colors = ToggleButtonDefaults.toggleButtonColors(
                                         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                                     ),
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
                                 ) {
                                     Text(entry.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
@@ -295,7 +306,7 @@ fun RequirementSheet(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        if (kind != ItemKind.TRINKET) FilterChip(
+                        if (!kind.requiresNamedItem) FilterChip(
                             selected = selectedItem == null,
                             onClick = { selectedItem = null },
                             label = { Text("Any ${kind.label.lowercase(Locale.ROOT)}", maxLines = 1, softWrap = false) },
@@ -742,7 +753,7 @@ fun RequirementSheet(
                             },
                         )
 
-                        if (!inAlternativeGroup) {
+                        if (!inAlternativeGroup && kind.supportsStacks) {
                             Spacer(Modifier.height(18.dp))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -919,7 +930,7 @@ fun RequirementSheet(
                                         } else {
                                             copyDepth
                                         }
-                                        onSave(it, stackCount, total, copies)
+                                        onSave(it, if (kind.supportsStacks) stackCount else 1, total, copies)
                                     }
                                 },
                                 enabled = draft.isSuccess,

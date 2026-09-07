@@ -42,7 +42,7 @@ class ItemCatalogTest {
 
     @Test
     fun everyAssetEntryIsLoadedWithItsIdNameSpriteAndTier() {
-        assertEquals(105, entries.size)
+        assertEquals(116, entries.size)
         assertEquals(entries.size, ItemCatalog.all.size)
         for (entry in entries) {
             val item = ItemCatalog.findById(entry.getString("id"))
@@ -66,6 +66,8 @@ class ItemCatalogTest {
         assertEquals(expected.getValue("armor").size, ItemCatalog.armor.size)
         assertEquals(expected.getValue("wand").size, ItemCatalog.wands.size)
         assertEquals(expected.getValue("ring").size, ItemCatalog.rings.size)
+        assertEquals(11, ItemCatalog.artifacts.size)
+        assertEquals(ItemCatalog.artifacts, ItemCatalog.forKind(ItemKind.ARTIFACT))
 
         val melee = entries.filter { it.optString("class") == "melee" }.map { it.getString("id") }
         val thrown = entries.filter { it.optString("class") == "thrown" }.map { it.getString("id") }
