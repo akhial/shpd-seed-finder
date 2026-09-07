@@ -409,7 +409,7 @@ mod tests {
     fn documents_the_engine_cannot_read_fall_back_to_defaults() {
         // An unknown name is refused whole rather than in part, and the
         // caller starts from defaults.
-        assert!(decode_state(r#"{"requirements":[{"kind":"trinket"}]}"#).is_none());
+        assert!(decode_state(r#"{"requirements":[{"kind":"unknown_kind"}]}"#).is_none());
         assert!(decode_state(r#"{"requirements":[],"wandmaker_quest":"newt"}"#).is_none());
         assert!(decode_state("not json at all").is_none());
         // A row the engine would reject is dropped; the rest of the query
@@ -417,6 +417,19 @@ mod tests {
         let restored =
             decode_state(r#"{"requirements":[{"kind":"wand","tier":{"exact":3}}]}"#).unwrap();
         assert!(restored.requirements.is_empty());
+    }
+
+    #[test]
+    fn named_trinkets_survive_persistence_while_wildcards_are_dropped() {
+        let restored =
+            decode_state(r#"{"requirements":[{"kind":"trinket"},{"item":"mimic_tooth"}]}"#)
+                .expect("known trinkets are readable even when a row is invalid");
+        assert_eq!(restored.requirements.len(), 1);
+        assert_eq!(restored.requirements[0].kind, ItemKind::Trinket);
+        assert_eq!(restored.requirements[0].item, Some(ItemId::MimicTooth));
+        let saved_again = round_trip(&restored);
+        assert_eq!(saved_again.requirements.len(), 1);
+        assert_eq!(saved_again.requirements[0].item, Some(ItemId::MimicTooth));
     }
 
     #[test]
