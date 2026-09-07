@@ -18,7 +18,8 @@ AAA=$(mktemp "${TMPDIR:-/tmp}/shpd-caves-aaa.XXXXXX")
 ONE=$(mktemp "${TMPDIR:-/tmp}/shpd-caves-one.XXXXXX")
 ABC=$(mktemp "${TMPDIR:-/tmp}/shpd-caves-abc.XXXXXX")
 MAX=$(mktemp "${TMPDIR:-/tmp}/shpd-caves-max.XXXXXX")
-trap 'rm -f "$AAA" "$ONE" "$ABC" "$MAX"' EXIT
+CVB=$(mktemp "${TMPDIR:-/tmp}/shpd-caves-cvb.XXXXXX")
+trap 'rm -f "$AAA" "$ONE" "$ABC" "$MAX" "$CVB"' EXIT
 
 "$ORACLE_DIR/run.sh" --seed AAA-AAA-AAA --floors 11-14 \
     --format json --run-checkpoints >"$AAA"
@@ -28,6 +29,8 @@ trap 'rm -f "$AAA" "$ONE" "$ABC" "$MAX"' EXIT
     --format json --run-checkpoints >"$ABC"
 "$ORACLE_DIR/run.sh" --seed ZZZ-ZZZ-ZZZ --floors 11 \
     --format json --run-checkpoints >"$MAX"
+"$ORACLE_DIR/run.sh" --seed CVB-VKT-LUY --floors 13 \
+    --format json --run-checkpoints >"$CVB"
 
 MODE="$EXPECTED"
 if [[ "${1:-}" == "--print" ]]; then
@@ -38,7 +41,8 @@ fi
     "AAA-AAA-AAA=$AAA" \
     "AAA-AAA-AAB=$ONE" \
     "ABC-DEF-GHI=$ABC" \
-    "ZZZ-ZZZ-ZZZ=$MAX"
+    "ZZZ-ZZZ-ZZZ=$MAX" \
+    "CVB-VKT-LUY=$CVB"
 
 if [[ "$MODE" != "--print" ]]; then
     echo "Caves floors 11-14 official parity fixtures passed"

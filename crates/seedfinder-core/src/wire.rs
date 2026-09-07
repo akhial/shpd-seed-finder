@@ -1289,10 +1289,10 @@ mod tests {
             WandmakerQuestType,
         };
 
-        // Re-pinned from the v4.0.0-BETA-3 oracle (tooling/oracle-4.0): the
+        // Re-pinned from the v4.0.0-BETA-4 oracle (tooling/oracle-4.0): the
         // vault adds fifteen treasure options to the Imp's five prizes.
         let generated = CanonicalMainWorldGenerator.generate(DungeonSeed::MIN, 24);
-        assert_eq!(generated.items.len(), 94);
+        assert_eq!(generated.items.len(), 95);
         assert_eq!(
             generated.quests,
             QuestSummary {
@@ -1320,7 +1320,7 @@ mod tests {
                 .iter()
                 .filter(|value| item(value.item).kind == ItemKind::Ring)
                 .count(),
-            8
+            9
         );
         let packet = encode_scout_world(&generated).unwrap();
         let decoded = decode_scout_world(&packet).unwrap();
@@ -1332,7 +1332,7 @@ mod tests {
                 && item.upgrade == 2
                 && item.source == ItemSource::Chest
         }));
-        assert_eq!(decoded.items.iter().filter(|item| item.secret).count(), 5);
+        assert_eq!(decoded.items.iter().filter(|item| item.secret).count(), 6);
         assert!(decoded.items.iter().any(|item| {
             item.depth == 2
                 && item.item == ItemId::Kunai
@@ -1384,7 +1384,7 @@ mod tests {
         }));
         assert!(decoded.items.iter().any(|item| {
             item.depth == 24
-                && item.item == ItemId::AssassinsBlade
+                && item.item == ItemId::Longsword
                 && item.upgrade == 2
                 && item.cursed
                 && item.source == ItemSource::SacrificialFire

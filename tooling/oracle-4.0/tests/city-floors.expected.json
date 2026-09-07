@@ -1,7 +1,7 @@
 {
   "schema": "shpd-city-parity-fixture/v3",
-  "game_version": "4.0.0-BETA-3",
-  "game_jar_sha256": "f62f8ac2ef6d36c72223c1a4e78f18e98d0bb1282cd4f1fca123082d43edccc9",
+  "game_version": "4.0.0-BETA-4",
+  "game_jar_sha256": "76f6983e7b619267666621de9f1ecbbc3645d4925c2c446736987c3011b9dfd1",
   "runtime": {
     "java_version": "21.0.11",
     "java_vendor": "Oracle Corporation",
@@ -43,27 +43,27 @@
         [
           15,
           "CavesBossLevel",
-          -2111138786
+          390619280
         ],
         [
           16,
           "CityLevel",
-          -2035984614
+          -1519889268
         ],
         [
           17,
           "CityLevel",
-          -1591784297
+          1989254258
         ],
         [
           18,
           "CityLevel",
-          105915157
+          -556153213
         ],
         [
           19,
           "CityLevel",
-          -50636863
+          883677465
         ]
       ],
       "levels": [
@@ -78,7 +78,7 @@
           "map_hash": -640772373,
           "entrance": 1186,
           "exit": 383,
-          "generator_state_hash": -2035984614,
+          "generator_state_hash": -1519889268,
           "mobs": [
             [
               "Elemental$FireElemental",
@@ -121,7 +121,7 @@
           "map_hash": -1251089393,
           "entrance": 679,
           "exit": 1601,
-          "generator_state_hash": -1591784297,
+          "generator_state_hash": 1989254258,
           "mobs": [
             [
               "Mimic",
@@ -168,7 +168,7 @@
           "map_hash": 435526208,
           "entrance": 338,
           "exit": 1080,
-          "generator_state_hash": 105915157,
+          "generator_state_hash": -556153213,
           "mobs": [
             [
               "SentryRoom$Sentry",
@@ -205,53 +205,53 @@
           "class": "CityLevel",
           "feeling": "NONE",
           "size": [
-            45,
-            45
+            37,
+            46
           ],
-          "map_hash": -293701983,
-          "entrance": 877,
-          "exit": 1088,
-          "generator_state_hash": -50636863,
+          "map_hash": -538847853,
+          "entrance": 461,
+          "exit": 397,
+          "generator_state_hash": 883677465,
           "mobs": [
             [
-              "Golem",
-              118
+              "Elemental$ShockElemental",
+              279
             ],
             [
               "Golem",
-              379
+              325
             ],
             [
-              "Golem",
-              431
+              "Mimic",
+              396
             ],
             [
               "Warlock",
-              639
-            ],
-            [
-              "Monk",
-              645
+              471
             ],
             [
               "Golem",
-              997
+              834
+            ],
+            [
+              "Monk",
+              1135
+            ],
+            [
+              "Golem",
+              1248
+            ],
+            [
+              "Monk",
+              1271
+            ],
+            [
+              "Warlock",
+              1346
             ],
             [
               "Imp",
-              1187
-            ],
-            [
-              "Monk",
-              1426
-            ],
-            [
-              "Warlock",
-              1555
-            ],
-            [
-              "Elemental$ChaosElemental",
-              1643
+              1437
             ]
           ]
         }
@@ -308,7 +308,7 @@
           0,
           1312,
           "FOR_SALE",
-          "Longsword",
+          "Katana",
           "weapon",
           0,
           false,
@@ -383,11 +383,11 @@
           0,
           1121,
           "HEAP",
-          "Bolas",
-          "weapon",
+          "MailArmor",
+          "armor",
           1,
           true,
-          "Sacrificial",
+          "Multiplicity",
           {
             "kind": "independent"
           }
@@ -462,9 +462,9 @@
           null,
           "Greatshield",
           "weapon",
-          4,
+          2,
           false,
-          "Unstable",
+          "Lucky",
           {
             "kind": "choice",
             "group": "imp_quest@19",
@@ -481,7 +481,7 @@
           "weapon",
           4,
           false,
-          "Blazing",
+          "Shocking",
           {
             "kind": "choice",
             "group": "imp_quest@19",
@@ -498,7 +498,7 @@
           "armor",
           3,
           false,
-          "Brimstone",
+          "Stone",
           {
             "kind": "choice",
             "group": "imp_quest@19",
@@ -513,13 +513,43 @@
           null,
           "WandOfCorrosion",
           "wand",
-          4,
+          2,
           false,
           null,
           {
             "kind": "choice",
             "group": "imp_quest@19",
             "option": 5
+          }
+        ],
+        [
+          19,
+          "mimic",
+          1,
+          396,
+          null,
+          "RingOfEvasion",
+          "ring",
+          0,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          19,
+          "skeleton",
+          0,
+          541,
+          "SKELETON",
+          "HeavyBoomerang",
+          "weapon",
+          2,
+          false,
+          null,
+          {
+            "kind": "independent"
           }
         ]
       ]
@@ -534,12 +564,12 @@
         [
           15,
           "CavesBossLevel",
-          1652502520
+          -1448575199
         ],
         [
           16,
           "CityLevel",
-          469473430
+          -379318337
         ]
       ],
       "levels": [
@@ -554,7 +584,7 @@
           "map_hash": 129683275,
           "entrance": 1420,
           "exit": 194,
-          "generator_state_hash": 469473430,
+          "generator_state_hash": -379318337,
           "mobs": [
             [
               "Ghoul",
@@ -599,6 +629,21 @@
         ],
         [
           16,
+          "heap",
+          0,
+          89,
+          "HEAP",
+          "WandOfLightning",
+          "wand",
+          1,
+          false,
+          null,
+          {
+            "kind": "independent"
+          }
+        ],
+        [
+          16,
           "shop",
           0,
           1061,
@@ -618,7 +663,7 @@
           0,
           1063,
           "FOR_SALE",
-          "Javelin",
+          "Tomahawk",
           "weapon",
           0,
           false,
@@ -633,7 +678,7 @@
           0,
           1132,
           "FOR_SALE",
-          "AssassinsBlade",
+          "Katana",
           "weapon",
           0,
           false,
@@ -669,12 +714,12 @@
         [
           15,
           "CavesBossLevel",
-          -1972664426
+          1323116360
         ],
         [
           16,
           "CityLevel",
-          -2017404231
+          1779161899
         ]
       ],
       "levels": [
@@ -689,7 +734,7 @@
           "map_hash": 1928380213,
           "entrance": 997,
           "exit": 667,
-          "generator_state_hash": -2017404231,
+          "generator_state_hash": 1779161899,
           "mobs": [
             [
               "Warlock",
@@ -706,6 +751,10 @@
             [
               "Elemental$FrostElemental",
               822
+            ],
+            [
+              "Mimic",
+              850
             ],
             [
               "Ghoul",
@@ -755,7 +804,7 @@
           0,
           1514,
           "FOR_SALE",
-          "Crossbow",
+          "Longsword",
           "weapon",
           0,
           false,
@@ -791,12 +840,12 @@
         [
           15,
           "CavesBossLevel",
-          -1105196865
+          -521022532
         ],
         [
           16,
           "CityLevel",
-          419533580
+          277775753
         ]
       ],
       "levels": [
@@ -811,7 +860,7 @@
           "map_hash": -1234450086,
           "entrance": 350,
           "exit": 1176,
-          "generator_state_hash": 419533580,
+          "generator_state_hash": 277775753,
           "mobs": [
             [
               "Shopkeeper",
@@ -923,7 +972,7 @@
           0,
           242,
           "FOR_SALE",
-          "HeavyBoomerang",
+          "Tomahawk",
           "weapon",
           0,
           false,

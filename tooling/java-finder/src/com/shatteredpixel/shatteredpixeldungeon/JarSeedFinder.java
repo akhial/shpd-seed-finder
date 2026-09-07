@@ -44,7 +44,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * A seed finder for Shattered Pixel Dungeon v4.0.0-BETA-3, driven headlessly
+ * A seed finder for Shattered Pixel Dungeon v4.0.0-BETA-4, driven headlessly
  * against the unmodified official desktop JAR.
  *
  * <p>It exists so that Seed Seeker's throughput can be compared with what the
@@ -67,8 +67,8 @@ import java.util.Map;
  */
 public final class JarSeedFinder {
 
-	private static final String GAME_VERSION = "4.0.0-BETA-3";
-	private static final int GAME_VERSION_CODE = 904;
+	private static final String GAME_VERSION = "4.0.0-BETA-4";
+	private static final int GAME_VERSION_CODE = 906;
 	/** {@code DeviceCompat.isDebug()} is {@code Game.version.contains("INDEV")}; see the oracle's README. */
 	private static final String EFFECTIVE_GAME_VERSION = GAME_VERSION + "-INDEV";
 

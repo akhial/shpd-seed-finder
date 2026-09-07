@@ -355,7 +355,7 @@ java -cp /tmp RngOracle
 ```
 
 `EquipmentOracle.java` is compiled against the isolated v3.3.8 JAR.
-`tooling/oracle-4.0` drives the v4.0.0-BETA-3 release JAR headlessly.
+`tooling/oracle-4.0` drives the v4.0.0-BETA-4 release JAR headlessly.
 
 ## Acknowledgements<a id="acknowledgements"></a>
 

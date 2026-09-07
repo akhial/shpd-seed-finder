@@ -1148,6 +1148,7 @@ impl RoomPaintDispatch for CavesDecorationMergeDispatch {
             }
             RoomKind::Standard(StandardRoomKind::Platform)
                 if merge_terrain != terrain::CHASM
+                    && rooms[room].connection_to(other).is_some()
                     && matches!(
                         rooms[other].kind,
                         RoomKind::Standard(StandardRoomKind::Platform | StandardRoomKind::Chasm)
@@ -1161,7 +1162,8 @@ impl RoomPaintDispatch for CavesDecorationMergeDispatch {
         if matches!(
             rooms[room].kind,
             RoomKind::Standard(StandardRoomKind::Platform)
-        ) && tile == terrain::CHASM
+        ) && merge_terrain != terrain::CHASM
+            && tile == terrain::CHASM
         {
             if let Some(door) = rooms[room]
                 .connection_to(other)
@@ -1903,6 +1905,28 @@ mod tests {
         assert_eq!(level.java_map_hash(), -1_517_373_050);
         assert_eq!(random.int(), -210_791_023);
         assert!(level.traps.is_empty());
+    }
+
+    #[test]
+    fn disconnected_platform_merge_keeps_requested_solid_terrain() {
+        let mut random = RandomStack::with_base_seed(0);
+        let mut first = Room::standard(StandardRoomKind::Platform, &mut random);
+        first.bounds = Rect::new(1, 1, 7, 7);
+        let mut second = Room::standard(StandardRoomKind::Platform, &mut random);
+        second.bounds = Rect::new(7, 1, 13, 7);
+        first.neighbours.push(1);
+        second.neighbours.push(0);
+        let rooms = vec![first, second];
+        let mut level = Level::new(13, Feeling::None);
+        level.set_size(15, 9);
+        let merge = Rect::new(7, 2, 8, 7);
+        CavesDecorationMergeDispatch.merge(&mut level, &rooms, 0, 1, merge, terrain::REGION_DECO);
+        // PlatformRoom.merge only substitutes CHASM for a connected neighbor.
+        // Solid decorative terrain must survive a disconnected caves merge.
+        for y in 2..7 {
+            let cell = level.point_to_cell(Point::new(7, y));
+            assert_eq!(level.map.cells[cell], terrain::REGION_DECO);
+        }
     }
 
     #[test]
