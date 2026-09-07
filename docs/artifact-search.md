@@ -37,10 +37,9 @@ upgrade field. Query JSON and result files use `artifact`; share links append
 category code 7 and artifact item codes, preserving previous codes. WASM scout
 JSON reports `category: "artifact"` and the normal `matched` flag.
 
-The UI rollout is web-only. The web catalog extension supplies the new picker
-entries, while the native session adapter temporarily omits artifacts from both
-scout packets and the corresponding match-index stream, preserving existing
-native decoders. The core generator and codecs expose the full artifact stream.
+Web, Android, Windows, macOS, and Linux use the shared item catalog for artifact
+pickers and scout results. Native scout packets and match indices include the
+same full artifact stream as the core generator and WASM.
 
 Artifact probability estimates are unavailable because the equipment supply
 tables do not model their unique deck. This does not prevent searches.

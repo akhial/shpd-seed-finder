@@ -978,11 +978,16 @@ mod tests {
     }
 
     #[test]
-    fn artifact_web_catalog_agrees_with_engine_wire_metadata() {
+    fn artifact_shared_catalog_agrees_with_engine_wire_metadata() {
         let entries: Value =
-            serde_json::from_str(include_str!("../../../web/src/lib/artifact-catalog.json"))
+            serde_json::from_str(include_str!("../../../android/app/src/main/assets/third_party/shattered-pixel-dungeon/catalog-v4.0.0.json"))
                 .unwrap();
-        let entries = entries.as_array().unwrap();
+        let entries: Vec<_> = entries["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|entry| entry["type"] == "artifact")
+            .collect();
         assert_eq!(entries.len(), 11);
         for entry in entries {
             let definition =

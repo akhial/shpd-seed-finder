@@ -387,12 +387,6 @@ export function RequirementEditor({
             )}
           </section>
 
-          {family === "artifact" && (
-            <p className="d1-caption">
-              Only deterministic spawn locations are searched. Artifacts in the Imp quest's Dwarven
-              vault are +5; other spawns are +0.
-            </p>
-          )}
           {effectiveTotal === undefined && family !== "trinket" && (
             <section className="d1-modal-section">
               <h3>Upgrade level</h3>

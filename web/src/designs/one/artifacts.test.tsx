@@ -18,7 +18,7 @@ beforeAll(async () => {
 });
 
 describe("artifact search and scout", () => {
-  it("requires a named artifact, exposes floor limits, and explains the vault upgrade", () => {
+  it("requires a named artifact and exposes floor limits", () => {
     const wildcard = fromQueryJson('{"requirements":[{"kind":"artifact"}]}').requirements[0];
     expect(validateRequirement(wildcard)).toContain("Select an artifact.");
     expect(JSON.parse(analyze_query('{"requirements":[{"kind":"artifact"}]}')).valid).toBe(false);
@@ -39,7 +39,6 @@ describe("artifact search and scout", () => {
     expect(html).not.toContain("Any artifact");
     expect(html).not.toContain("Total item count");
     expect(html).toContain("Limit this item");
-    expect(html).toContain("Dwarven vault are +5");
     expect(html).toContain('aria-valuetext="19"');
   });
 

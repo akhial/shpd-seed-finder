@@ -108,7 +108,18 @@
     {"id":"shard_of_oblivion","name":"Shard Of Oblivion","type":"trinket","sprite":285},
     {"id":"chaotic_censer","name":"Chaotic Censer","type":"trinket","sprite":286},
     {"id":"ferret_tuft","name":"Ferret Tuft","type":"trinket","sprite":287},
-    {"id":"cracked_spyglass","name":"Cracked Spyglass","type":"trinket","sprite":288}
+    {"id":"cracked_spyglass","name":"Cracked Spyglass","type":"trinket","sprite":288},
+    {"id":"alchemists_toolkit","name":"Alchemist's Toolkit","type":"artifact","sprite":245},
+    {"id":"chalice_of_blood","name":"Chalice of Blood","type":"artifact","sprite":253},
+    {"id":"dried_rose","name":"Dried Rose","type":"artifact","sprite":260},
+    {"id":"ethereal_chains","name":"Ethereal Chains","type":"artifact","sprite":248},
+    {"id":"horn_of_plenty","name":"Horn of Plenty","type":"artifact","sprite":249},
+    {"id":"master_thieves_armband","name":"Master Thieves' Armband","type":"artifact","sprite":241},
+    {"id":"sandals_of_nature","name":"Sandals of Nature","type":"artifact","sprite":256},
+    {"id":"skeleton_key","name":"Skeleton Key","type":"artifact","sprite":264},
+    {"id":"talisman_of_foresight","name":"Talisman of Foresight","type":"artifact","sprite":243},
+    {"id":"timekeepers_hourglass","name":"Timekeeper's Hourglass","type":"artifact","sprite":244},
+    {"id":"unstable_spellbook","name":"Unstable Spellbook","type":"artifact","sprite":246}
   ],
   "modifiers": {
     "weaponEnchantments": ["Blazing","Chilling","Kinetic","Shocking","Venomous","Blocking","Blooming","Eldritch","Elastic","Lucky","Projecting","Unstable","Vorpal","Corrupting","Crystal","Grim","Vampiric"],
