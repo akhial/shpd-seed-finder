@@ -694,17 +694,19 @@ mod tests {
 
     #[test]
     fn trinkets_round_trip_in_or_groups_without_equipment_details() {
-        let mut state = AppState::default();
-        state.requirements = [ItemId::MimicTooth, ItemId::RatSkull]
-            .into_iter()
-            .enumerate()
-            .map(|(index, id)| UiRequirement {
-                kind: ItemKind::Trinket,
-                item: Some(id),
-                alternative_group: Some(1),
-                ..UiRequirement::new(index as u64 + 1)
-            })
-            .collect();
+        let state = AppState {
+            requirements: [ItemId::MimicTooth, ItemId::RatSkull]
+                .into_iter()
+                .enumerate()
+                .map(|(index, id)| UiRequirement {
+                    kind: ItemKind::Trinket,
+                    item: Some(id),
+                    alternative_group: Some(1),
+                    ..UiRequirement::new(index as u64 + 1)
+                })
+                .collect(),
+            ..AppState::default()
+        };
         assert_eq!(state.requirements[0].title(), "Mimic Tooth");
         assert_eq!(state.requirements[0].subtitle(), "");
         let query = state.to_query().unwrap();

@@ -708,9 +708,10 @@ private fun TrinketCatalystCard(
                         border = BorderStroke(1.dp, if (matched) SpdGreen else MaterialTheme.colorScheme.outlineVariant),
                     ) {
                         BoxWithConstraints {
+                            val iconSize = minOf(48.dp, maxWidth * 0.58f)
                             Column(Modifier.fillMaxSize().padding(4.dp), horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.SpaceEvenly) {
-                                ItemSprite(trinket, modifier = Modifier.size(minOf(48.dp, maxWidth * 0.58f)))
+                                ItemSprite(trinket, modifier = Modifier.size(iconSize))
                                 FittedTrinketName(trinket.name)
                             }
                         }

@@ -566,6 +566,9 @@ pub fn trinket_tile(
         }
     });
     if primary {
+        // GTK 4.22 requests height-for-width here even for a zero-size child:
+        // its natural height is allocated width / ratio, so the row cannot
+        // collapse while its minimum width stays small enough for narrow panes.
         gtk::AspectFrame::builder()
             .ratio(1.0)
             .obey_child(false)
