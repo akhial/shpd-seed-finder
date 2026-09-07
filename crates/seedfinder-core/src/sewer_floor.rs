@@ -377,6 +377,7 @@ pub fn generate_sewer_floor(
         )?
     };
     world_items.extend(regular_items.world_items.iter().cloned());
+    crate::trinkets::expand_catalyst_offers(&mut world_items, &run.generator);
 
     Ok(GeneratedSewerFloor {
         painted,
@@ -671,6 +672,13 @@ fn append_paint_world_item(
     source: ItemSource,
     output: &mut Vec<WorldItem>,
 ) {
+    if item == PaintItem::TrinketCatalyst {
+        output.push(WorldItem::catalyst(
+            depth,
+            source,
+            Accessibility::Independent,
+        ));
+    }
     let PaintItem::Generated(generated) = item else {
         return;
     };
@@ -1256,6 +1264,9 @@ mod tests {
             let mut actual_items = floor
                 .world_items
                 .iter()
+                .filter(|item| {
+                    crate::catalog::item(item.item).kind != crate::catalog::ItemKind::Trinket
+                })
                 .map(|item| (item.item, item.upgrade))
                 .collect::<Vec<_>>();
             actual_items.sort_unstable();
@@ -1337,6 +1348,9 @@ mod tests {
             let mut actual_items = floor
                 .world_items
                 .iter()
+                .filter(|item| {
+                    crate::catalog::item(item.item).kind != crate::catalog::ItemKind::Trinket
+                })
                 .map(|item| (item.item, item.upgrade))
                 .collect::<Vec<_>>();
             actual_items.sort_unstable();
@@ -1380,7 +1394,7 @@ mod tests {
         let batched = generator.generate_batch(&seeds, 4);
 
         assert_eq!(batched, scalar);
-        assert_eq!(scalar[0].items.len(), 12);
+        assert_eq!(scalar[0].items.len(), 16);
         assert_eq!(scalar[0].seed, DungeonSeed::MIN);
     }
 

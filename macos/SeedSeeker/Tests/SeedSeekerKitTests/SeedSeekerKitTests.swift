@@ -77,7 +77,8 @@ final class SeedSeekerKitTests: XCTestCase {
             try JSONSerialization.jsonObject(with: Data(contentsOf: asset)) as? [String: Any])
         let entries = try XCTUnwrap(document["entries"] as? [[String: Any]])
 
-        XCTAssertEqual(entries.count, 88)
+        XCTAssertEqual(entries.count, 105)
+        XCTAssertEqual(ItemCatalog.trinkets.count, 17)
         XCTAssertEqual(ItemCatalog.all.count, entries.count)
         XCTAssertEqual(ItemCatalog.meleeWeapons.count, 31)
         XCTAssertEqual(ItemCatalog.thrownWeapons.count, 27)
@@ -86,7 +87,7 @@ final class SeedSeekerKitTests: XCTestCase {
         XCTAssertEqual(ItemCatalog.rings.count, 12)
 
         let kinds: [String: ItemKind] = ["weapon": .weapon, "armor": .armor,
-                                         "wand": .wand, "ring": .ring]
+                                         "wand": .wand, "ring": .ring, "trinket": .trinket]
         for entry in entries {
             let id = try XCTUnwrap(entry["id"] as? String)
             let item = try XCTUnwrap(ItemCatalog.findById(id), id)

@@ -246,7 +246,7 @@ fn family_effects(kind: ItemKind) -> Option<Box<dyn Iterator<Item = Effect>>> {
         ItemKind::Armor => Some(Box::new(
             ALL_ARMOR_EFFECTS.iter().copied().map(Effect::Armor),
         )),
-        ItemKind::Wand | ItemKind::Ring => None,
+        ItemKind::Wand | ItemKind::Ring | ItemKind::Trinket => None,
     }
 }
 
@@ -371,6 +371,9 @@ impl Requirement {
     /// stops there.
     #[must_use]
     pub fn upgrade_ceiling(self) -> u8 {
+        if self.kind == ItemKind::Trinket {
+            return 0;
+        }
         let reaches_the_extra_tier = match self.item {
             Some(item_id) => item(item_id).tier == Some(EXTRA_UPGRADE_TIER),
             None => self.tier.matches(Some(EXTRA_UPGRADE_TIER)),
@@ -461,6 +464,9 @@ impl Requirement {
     /// another family, an upgrade outside the UI's family-specific range, or
     /// an inconsistent group label.
     pub fn validate(self) -> Result<(), QueryError> {
+        if self.kind == ItemKind::Trinket && self.item.is_none() {
+            return Err(QueryError::TrinketRequiresIdentity);
+        }
         if self
             .item
             .is_some_and(|item_id| item(item_id).kind != self.kind)
@@ -1411,6 +1417,7 @@ pub enum QueryError {
     InvalidUpgrade,
     InvalidTier,
     ItemKindMismatch,
+    TrinketRequiresIdentity,
     InvalidWeaponCategory,
     EffectKindMismatch,
     UncursedWithCurse,
@@ -1469,6 +1476,7 @@ impl fmt::Display for QueryError {
             Self::InvalidTier => {
                 "tier filters require a wildcard weapon or armor and a non-redundant tier"
             }
+            Self::TrinketRequiresIdentity => "select a trinket",
             Self::ItemKindMismatch => "selected item is in a different category",
             Self::InvalidWeaponCategory => {
                 "melee/thrown filters require a weapon requirement and a matching item"

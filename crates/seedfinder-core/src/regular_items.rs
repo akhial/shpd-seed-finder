@@ -634,6 +634,13 @@ fn append_world_item(
     source: ItemSource,
     output: &mut Vec<WorldItem>,
 ) {
+    if item == RegularItem::Queued(QueuedItemKind::TrinketCatalyst) {
+        output.push(WorldItem::catalyst(
+            depth,
+            source,
+            Accessibility::Independent,
+        ));
+    }
     let RegularItem::Generated(generated) = item else {
         return;
     };

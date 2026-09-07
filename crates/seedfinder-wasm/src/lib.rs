@@ -98,6 +98,7 @@ impl From<FileChallenge> for Challenges {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ScoutOutput {
+    trinket_order: Vec<TrinketOutput>,
     seed: SeedOutput,
     quests: Vec<ScoutQuestOutput>,
     items: Vec<ScoutItemOutput>,
@@ -517,6 +518,14 @@ fn parse_seed_code_impl(input: &str) -> Result<String, String> {
     seed::parse_document(input).map_err(|error| error.to_string())
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TrinketOutput {
+    id: &'static str,
+    name: &'static str,
+    sprite_index: u16,
+}
+
 fn scout_impl(request_json: &str) -> Result<String, String> {
     let request: ScoutRequest = serde_json::from_str(request_json)
         .map_err(|error| format!("invalid scout request JSON: {error}"))?;
@@ -544,6 +553,17 @@ fn scout_impl(request_json: &str) -> Result<String, String> {
         .collect();
     Ok(to_json(&ScoutOutput {
         seed: seed.into(),
+        trinket_order: shpd_seedfinder_core::trinkets::trinket_order(seed)
+            .into_iter()
+            .map(|id| {
+                let entry = item(id);
+                TrinketOutput {
+                    id: entry.stable_id,
+                    name: entry.name,
+                    sprite_index: entry.sprite_index,
+                }
+            })
+            .collect(),
         quests: scout_quest_outputs(world.quests),
         items,
         ring_gems: world.ring_gems.ordinals(),
@@ -622,6 +642,7 @@ const fn item_kind_name(kind: ItemKind) -> &'static str {
         ItemKind::Armor => "armor",
         ItemKind::Wand => "wand",
         ItemKind::Ring => "ring",
+        ItemKind::Trinket => "trinket",
     }
 }
 
@@ -920,7 +941,10 @@ mod tests {
             assert_eq!(output_item["secret"], world_item.secret);
             assert_eq!(
                 output_item["spriteIndex"],
-                sprites.get(definition.stable_id).copied().unwrap()
+                sprites
+                    .get(definition.stable_id)
+                    .copied()
+                    .unwrap_or(definition.sprite_index)
             );
         }
         // The canonical seed hides part of its loot behind secret rooms.
@@ -950,6 +974,57 @@ mod tests {
                 entry.id
             );
         }
+    }
+
+    #[test]
+    fn trinket_wire_order_catalog_and_or_search_agree() {
+        let query = serde_json::json!({"requirements": [{"any_of": [
+            {"item": "rat_skull"}, {"item": "mimic_tooth"}
+        ]}], "max_depth": 3});
+        let output: Value = serde_json::from_str(
+            &scout_impl(
+                &serde_json::json!({
+                    "seed": "AAA-AAA-AAA", "query": query
+                })
+                .to_string(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let order = output["trinketOrder"].as_array().unwrap();
+        assert_eq!(order.len(), 17);
+        assert_eq!(order[0]["id"], "dimensional_sundial");
+        assert_eq!(order[1]["id"], "mimic_tooth");
+        assert_eq!(order[16]["id"], "salt_cube");
+        assert_eq!(output["matchedRequirements"], 1);
+        let offers: Vec<_> = output["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|item| item["category"] == "trinket")
+            .collect();
+        assert_eq!(offers.len(), 4);
+        assert!(
+            offers
+                .iter()
+                .any(|offer| offer["id"] == "mimic_tooth" && offer["matched"] == true)
+        );
+        let catalog: Value =
+            serde_json::from_str(include_str!("../../../android/app/src/main/assets/third_party/shattered-pixel-dungeon/catalog-v4.0.0.json"))
+                .unwrap();
+        for entry in catalog["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|entry| entry["type"] == "trinket")
+        {
+            let wire = order.iter().find(|wire| wire["id"] == entry["id"]).unwrap();
+            assert_eq!(wire["name"], entry["name"]);
+            assert_eq!(wire["spriteIndex"], entry["sprite"]);
+        }
+        let filtered: Value =
+            serde_json::from_str(&filter_seeds_impl(&query.to_string(), &[0.0]).unwrap()).unwrap();
+        assert_eq!(filtered.as_array().unwrap().len(), 1);
     }
 
     #[test]

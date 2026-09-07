@@ -229,7 +229,13 @@ public sealed class NativeEngine
         var request = EncodeScoutRequest(seed, challenges);
         var code = Native.seedfinder_scout(request, (nuint)request.Length, out var ptr, out var len);
         if (code != 0) throw new InvalidOperationException($"Native scout failed ({code}).");
-        var bytes = CopyAndFree(ptr, len); var r = new Reader(bytes); r.Magic("SSC3");
+        return DecodeScout(CopyAndFree(ptr, len));
+    }
+
+    public static ScoutWorld DecodeScout(byte[] bytes)
+    {
+        var r = new Reader(bytes); var version = r.Text(4);
+        if (version is not ("SSC3" or "SSC4")) throw new InvalidDataException("Unexpected scout packet");
         var returnedSeed = r.Text(r.U8()); var gems = new RingGems(r.Bytes(RingGems.Count));
         var quests = r.Quests(); var items = new List<ScoutItem>(); var count = r.U16();
         for (var i = 0; i < count; i++)
@@ -240,8 +246,21 @@ public sealed class NativeEngine
             if (tag == 1) { group = r.U16(); value = r.U8(); } else if (tag == 2) { group = r.U16(); value = r.U64(); } else if (tag != 0) throw new InvalidDataException("Unknown accessibility tag");
             items.Add(new(item, depth, upgrade, effect.Length == 0 ? null : effect, (flags & 1) != 0, source, tag, group, value, Secret: (flags & 2) != 0));
         }
+        var order = new List<CatalogItem>();
+        if (version == "SSC4")
+        {
+            var orderCount = r.U8();
+            if (orderCount != 17) throw new InvalidDataException("Unexpected trinket deck size");
+            for (var i = 0; i < orderCount; i++)
+            {
+                var entry = ItemCatalog.Find(r.Text());
+                if (entry is null || entry.Kind != ItemKind.Trinket || order.Any(x => x.Id == entry.Id))
+                    throw new InvalidDataException("Invalid trinket deck");
+                order.Add(entry);
+            }
+        }
         if (r.Remaining != 0) throw new InvalidDataException("Trailing native data");
-        return new(returnedSeed, quests, items, gems);
+        return new(returnedSeed, quests, items, gems, order);
     }
 
     /// <summary>

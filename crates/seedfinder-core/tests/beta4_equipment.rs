@@ -16,6 +16,8 @@ fn mob_placement_and_room_merges_preserve_all_later_equipment() {
         let mut actual = world
             .items
             .iter()
+            // This fixture pins equipment, before catalyst offers were exposed.
+            .filter(|i| item(i.item).kind != shpd_seedfinder_core::catalog::ItemKind::Trinket)
             .map(|i| {
                 format!(
                     "{},{:?},{},{},{},{}",

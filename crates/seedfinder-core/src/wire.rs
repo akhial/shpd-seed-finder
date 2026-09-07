@@ -25,6 +25,7 @@ const SCOUT_REQUEST_MAGIC_V2: &[u8; 4] = b"SSQ2";
 const RING_GEM_COUNT: usize = 12;
 const RESULT_MAGIC: &[u8; 4] = b"SSR1";
 const SCOUT_RESULT_MAGIC: &[u8; 4] = b"SSC3";
+const SCOUT_RESULT_MAGIC_V4: &[u8; 4] = b"SSC4";
 /// Requirement ceiling of a bridge request; far above anything the UIs
 /// produce, and what the retired binary layout's count field could hold.
 #[cfg(feature = "json-query")]
@@ -212,6 +213,25 @@ pub fn encode_scout_world(world: &GeneratedWorld) -> Result<Vec<u8>, WireError> 
     Ok(output)
 }
 
+/// Encodes the native `SSC4` manifest: the `SSC3` layout with its magic
+/// changed to `SSC4`, followed by `trinket_count:u8` (17) and that many
+/// `stable_item_id:utf8_u16` strings in private-deck draw order. The first
+/// four identities are the catalyst choices; their placement metadata lives
+/// in the ordinary item records. All lengths and numeric fields are big-endian.
+///
+/// # Errors
+/// Returns the same validation errors as [`encode_scout_world`].
+pub fn encode_scout_world_with_trinkets(world: &GeneratedWorld) -> Result<Vec<u8>, WireError> {
+    let mut output = encode_scout_world(world)?;
+    output[..4].copy_from_slice(SCOUT_RESULT_MAGIC_V4);
+    let order = crate::trinkets::trinket_order(world.seed);
+    output.push(17);
+    for identity in order {
+        push_utf8_u16(&mut output, item(identity).stable_id)?;
+    }
+    Ok(output)
+}
+
 fn encode_quest_summary(quests: QuestSummary, output: &mut Vec<u8>) -> Result<(), WireError> {
     let entries = [
         quests
@@ -321,7 +341,9 @@ const fn quest_depth_range(quest: u8) -> std::ops::RangeInclusive<u8> {
     }
 }
 
-/// Decodes an `SSC3` scouting response.
+/// Decodes an `SSC3` or `SSC4` scouting response. The latter
+/// validates its deck against the seed; typed Rust callers obtain that
+/// same order from [`crate::trinkets::trinket_order`].
 ///
 /// This is primarily the executable protocol specification and makes native
 /// round-trip tests cover every source/accessibility branch. Android uses the
@@ -333,7 +355,8 @@ const fn quest_depth_range(quest: u8) -> std::ops::RangeInclusive<u8> {
 /// values, accessibility constraints, quest entries, or trailing bytes.
 pub fn decode_scout_world(packet: &[u8]) -> Result<GeneratedWorld, WireError> {
     let mut input = Input::new(packet);
-    if input.take(4)? != SCOUT_RESULT_MAGIC {
+    let magic = input.take(4)?;
+    if magic != SCOUT_RESULT_MAGIC && magic != SCOUT_RESULT_MAGIC_V4 {
         return Err(WireError::BadMagic);
     }
     let seed = DungeonSeed::from_code(input.utf8_u8()?).map_err(|_| WireError::InvalidSeedCode)?;
@@ -400,6 +423,16 @@ pub fn decode_scout_world(packet: &[u8]) -> Result<GeneratedWorld, WireError> {
             accessibility,
             secret: flags & 0b10 != 0,
         });
+    }
+    if magic == SCOUT_RESULT_MAGIC_V4 {
+        if input.u8()? != 17 {
+            return Err(WireError::InvalidTrinketOrder);
+        }
+        for identity in crate::trinkets::trinket_order(seed) {
+            if input.utf8_u16()? != item(identity).stable_id {
+                return Err(WireError::InvalidTrinketOrder);
+            }
+        }
     }
     if !input.is_empty() {
         return Err(WireError::TrailingData);
@@ -538,6 +571,7 @@ pub enum WireError {
     InvalidAccessibility,
     InvalidQuestCount,
     InvalidRingGems,
+    InvalidTrinketOrder,
     InvalidQuestOrder,
     InvalidQuestDepth,
     UnknownQuest,
@@ -569,6 +603,7 @@ impl fmt::Display for WireError {
             Self::UnknownItemSource => "packet names an unknown item source",
             Self::InvalidAccessibility => "packet contains an invalid accessibility constraint",
             Self::InvalidQuestCount => "scouted world lists more than four quests",
+            Self::InvalidTrinketOrder => "packet trinket order does not match its seed",
             Self::InvalidRingGems => "packet ring gems are not a permutation of the twelve gems",
             Self::InvalidQuestOrder => "packet quest entries must have ascending unique IDs",
             Self::InvalidQuestDepth => "packet quest depth leaves its canonical floor range",
@@ -1087,6 +1122,46 @@ mod tests {
     }
 
     #[test]
+    fn native_scout_deck_tail_is_ordered_and_validated() {
+        let world = GeneratedWorld {
+            seed: DungeonSeed::MIN,
+            items: Vec::new(),
+            quests: crate::quests::QuestSummary::default(),
+            ring_gems: RingGems::UNSHUFFLED,
+        };
+        let legacy = encode_scout_world(&world).unwrap();
+        let packet = super::encode_scout_world_with_trinkets(&world).unwrap();
+        assert_eq!(&packet[..4], b"SSC4");
+        assert_eq!(&packet[4..legacy.len()], &legacy[4..]);
+        let mut tail = super::Input::new(&packet[legacy.len()..]);
+        assert_eq!(tail.u8().unwrap(), 17);
+        for identity in crate::trinkets::trinket_order(world.seed) {
+            assert_eq!(tail.utf8_u16().unwrap(), item(identity).stable_id);
+        }
+        assert!(tail.is_empty());
+        assert_eq!(decode_scout_world(&packet), Ok(world));
+        let mut bad_count = packet.clone();
+        bad_count[legacy.len()] = 16;
+        assert_eq!(
+            decode_scout_world(&bad_count),
+            Err(WireError::InvalidTrinketOrder)
+        );
+        let mut bad_identity = packet.clone();
+        bad_identity[legacy.len() + 3] = b'x';
+        assert_eq!(
+            decode_scout_world(&bad_identity),
+            Err(WireError::InvalidTrinketOrder)
+        );
+        assert_eq!(
+            decode_scout_world(&packet[..packet.len() - 1]),
+            Err(WireError::Truncated)
+        );
+        let mut trailing = packet;
+        trailing.push(0);
+        assert_eq!(decode_scout_world(&trailing), Err(WireError::TrailingData));
+    }
+
+    #[test]
     fn scout_packet_quest_block_has_a_fixed_big_endian_fixture() {
         use crate::quests::{
             BlacksmithQuestType, GhostQuestType, ImpQuestType, QuestSummary, ScheduledQuest,
@@ -1234,7 +1309,7 @@ mod tests {
                     ItemKind::Weapon => Some(Effect::Weapon(WeaponEffect::Sacrificial)),
                     ItemKind::Armor if index % 2 == 0 => Some(Effect::Armor(ArmorEffect::Thorns)),
                     ItemKind::Armor => Some(Effect::Armor(ArmorEffect::Stench)),
-                    ItemKind::Wand | ItemKind::Ring => None,
+                    ItemKind::Wand | ItemKind::Ring | ItemKind::Trinket => None,
                 };
                 let accessibility = match index % 3 {
                     0 => Accessibility::Independent,
@@ -1249,7 +1324,11 @@ mod tests {
                 };
                 WorldItem {
                     item: definition.id,
-                    upgrade: u8::try_from(index % 4).unwrap(),
+                    upgrade: if definition.kind == ItemKind::Trinket {
+                        0
+                    } else {
+                        u8::try_from(index % 4).unwrap()
+                    },
                     effect,
                     cursed: index % 2 != 0,
                     depth: u8::try_from(index % 24 + 1).unwrap(),
@@ -1292,7 +1371,7 @@ mod tests {
         // Re-pinned from the v4.0.0-BETA-4 oracle (tooling/oracle-4.0): the
         // vault adds fifteen treasure options to the Imp's five prizes.
         let generated = CanonicalMainWorldGenerator.generate(DungeonSeed::MIN, 24);
-        assert_eq!(generated.items.len(), 95);
+        assert_eq!(generated.items.len(), 99);
         assert_eq!(
             generated.quests,
             QuestSummary {

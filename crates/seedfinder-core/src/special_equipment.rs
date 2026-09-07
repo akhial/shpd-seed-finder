@@ -778,6 +778,9 @@ fn searchable_world_item(
     source: ItemSource,
     accessibility: Accessibility,
 ) -> Option<WorldItem> {
+    if item == SpecialItem::Paint(PaintItem::TrinketCatalyst) {
+        return Some(WorldItem::catalyst(depth, source, accessibility));
+    }
     let SpecialItem::Paint(PaintItem::Generated(item)) = item else {
         return None;
     };

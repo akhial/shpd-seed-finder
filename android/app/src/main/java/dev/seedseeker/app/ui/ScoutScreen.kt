@@ -6,6 +6,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -69,6 +71,10 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import dev.seedseeker.app.model.ItemKind
+import dev.seedseeker.app.model.CatalogItem
 import androidx.compose.ui.unit.sp
 import dev.seedseeker.app.catalog.ItemCatalog
 import dev.seedseeker.app.engine.ScoutMatches
@@ -241,7 +247,13 @@ fun ScoutScreen(
                                     modifier = Modifier.padding(top = 20.dp, bottom = 10.dp),
                                 )
                             }
-                            floorItems.forEach { indexedItem ->
+                            val trinkets = floorItems.filter { it.value.item.kind == ItemKind.TRINKET }
+                            if (trinkets.isNotEmpty()) {
+                                item(key = "catalyst-$depth") {
+                                    TrinketCatalystCard(trinkets, world.trinketOrder, matches)
+                                }
+                            }
+                            floorItems.filter { it.value.item.kind != ItemKind.TRINKET }.forEach { indexedItem ->
                                 val scoutItem = indexedItem.value
                                 item(key = "scout-$depth-${indexedItem.index}-${scoutItem.item.id}") {
                                     ScoutItemCard(
@@ -649,5 +661,86 @@ private fun ScoutItemCard(
                 }
             }
         }
+    }
+}
+
+
+/** The catalyst keeps its placement; its deck retains the engine's order. */
+@Composable
+private fun TrinketCatalystCard(
+    choices: List<IndexedValue<ScoutItem>>,
+    deck: List<CatalogItem>,
+    matches: ScoutMatches?,
+) {
+    val catalyst = CatalogItem("trinket_catalyst", "Magical catalyst", ItemKind.TRINKET, 70)
+    val placement = choices.first().value
+    val ordered = deck.take(4).ifEmpty { choices.map { it.value.item } }
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ItemSprite(catalyst, modifier = Modifier.size(36.dp))
+                Spacer(Modifier.width(10.dp))
+                Column {
+                    Text(catalyst.name, style = MaterialTheme.typography.titleMedium)
+                    Text(placement.source.label, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (placement.secret) Text("Secret room", style = MaterialTheme.typography.labelSmall, color = SpdSecret)
+                    when (val access = placement.accessibility) {
+                        ScoutAccessibility.Independent -> Unit
+                        is ScoutAccessibility.Choice -> Text("Choice group ${access.group + 1} · option ${access.option + 1}", style = MaterialTheme.typography.labelSmall)
+                        is ScoutAccessibility.Scenarios -> Text("Route group ${access.group + 1} · access changes with room choices", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ordered.forEach { trinket ->
+                    val matched = choices.any { it.value.item.id == trinket.id && matches?.items?.contains(it.index) == true }
+                    Surface(
+                        modifier = Modifier.weight(1f).aspectRatio(1f).semantics {
+                            contentDescription = trinket.name + if (matched) ", matches requirement" else ""
+                        },
+                        shape = MaterialTheme.shapes.small,
+                        color = if (matched) SpdGreen.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    ) {
+                        BoxWithConstraints {
+                            val iconSize = minOf(48.dp, maxWidth * 0.58f)
+                            Column(Modifier.fillMaxSize().padding(2.dp), horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.SpaceEvenly) {
+                                ItemSprite(trinket, modifier = Modifier.size(iconSize))
+                                FittedTrinketName(trinket.name)
+                            }
+                        }
+                    }
+                }
+            }
+            if (deck.size > 4) {
+                Text("Remaining deck order", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    deck.drop(4).forEach { trinket ->
+                        BoxWithConstraints(Modifier.weight(1f).height(24.dp), contentAlignment = Alignment.Center) {
+                            ItemSprite(trinket, modifier = Modifier.size(minOf(maxWidth, 24.dp)))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FittedTrinketName(name: String) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        // Restart fitting when the card width changes (rotation or split-screen).
+        // Only width keys the state, so shrinking text cannot restart its own fit.
+        var fontSize by remember(name, maxWidth) { mutableStateOf(11f) }
+        Text(name, modifier = Modifier.fillMaxWidth(), fontSize = fontSize.sp, maxLines = 1,
+            softWrap = false, textAlign = TextAlign.Center,
+            onTextLayout = { result ->
+                if (result.didOverflowWidth && fontSize > 1f) fontSize = (fontSize * 0.9f).coerceAtLeast(1f)
+            })
     }
 }

@@ -52,6 +52,8 @@ pub enum ItemKind {
     Armor,
     Wand,
     Ring,
+    /// Initial catalyst offers, never a selected or equipped trinket.
+    Trinket,
 }
 
 impl ItemKind {
@@ -69,6 +71,7 @@ impl ItemKind {
     #[must_use]
     pub const fn maximum_search_upgrade_for_tier(self, tier: u8) -> u8 {
         match self {
+            Self::Trinket => 0,
             Self::Weapon if tier == EXTRA_UPGRADE_TIER => EXTRA_UPGRADE_MAXIMUM,
             _ => MAX_GENERATED_UPGRADE,
         }
@@ -175,6 +178,24 @@ pub enum ItemId {
     RingSharpshooting,
     RingTenacity,
     RingWealth,
+    RatSkull,
+    ParchmentScrap,
+    PetrifiedSeed,
+    ExoticCrystals,
+    MossyClump,
+    DimensionalSundial,
+    ThirteenLeafClover,
+    TrapMechanism,
+    MimicTooth,
+    WondrousResin,
+    EyeOfNewt,
+    SaltCube,
+    VialOfBlood,
+    ShardOfOblivion,
+    ChaoticCenser,
+    FerretTuft,
+    CrackedSpyglass,
+    TrinketCatalyst,
 }
 
 impl ItemId {
@@ -211,6 +232,7 @@ impl ItemId {
     /// Whether a weapon is wielded (melee) or thrown (missile weapons and
     /// tipped darts). `None` for armor, wands, and rings.
     #[must_use]
+    #[allow(clippy::too_many_lines)] // Exhaustive catalog classification catches unclassified additions.
     pub const fn weapon_category(self) -> Option<WeaponCategory> {
         match self {
             Self::WornShortsword
@@ -302,7 +324,25 @@ impl ItemId {
             | Self::RingMight
             | Self::RingSharpshooting
             | Self::RingTenacity
-            | Self::RingWealth => None,
+            | Self::RingWealth
+            | Self::RatSkull
+            | Self::ParchmentScrap
+            | Self::PetrifiedSeed
+            | Self::ExoticCrystals
+            | Self::MossyClump
+            | Self::DimensionalSundial
+            | Self::ThirteenLeafClover
+            | Self::TrapMechanism
+            | Self::MimicTooth
+            | Self::WondrousResin
+            | Self::EyeOfNewt
+            | Self::SaltCube
+            | Self::VialOfBlood
+            | Self::ShardOfOblivion
+            | Self::ChaoticCenser
+            | Self::FerretTuft
+            | Self::CrackedSpyglass
+            | Self::TrinketCatalyst => None,
         }
     }
 }
@@ -792,6 +832,108 @@ pub const ITEMS: &[ItemDefinition] = &[
         234
     ),
     item!(RingWealth, "ring_wealth", "Ring of wealth", Ring, None, 235),
+    item!(RatSkull, "rat_skull", "Rat Skull", Trinket, None, 272),
+    item!(
+        ParchmentScrap,
+        "parchment_scrap",
+        "Parchment Scrap",
+        Trinket,
+        None,
+        273
+    ),
+    item!(
+        PetrifiedSeed,
+        "petrified_seed",
+        "Petrified Seed",
+        Trinket,
+        None,
+        274
+    ),
+    item!(
+        ExoticCrystals,
+        "exotic_crystals",
+        "Exotic Crystals",
+        Trinket,
+        None,
+        275
+    ),
+    item!(MossyClump, "mossy_clump", "Mossy Clump", Trinket, None, 276),
+    item!(
+        DimensionalSundial,
+        "dimensional_sundial",
+        "Dimensional Sundial",
+        Trinket,
+        None,
+        277
+    ),
+    item!(
+        ThirteenLeafClover,
+        "thirteen_leaf_clover",
+        "Thirteen Leaf Clover",
+        Trinket,
+        None,
+        278
+    ),
+    item!(
+        TrapMechanism,
+        "trap_mechanism",
+        "Trap Mechanism",
+        Trinket,
+        None,
+        279
+    ),
+    item!(MimicTooth, "mimic_tooth", "Mimic Tooth", Trinket, None, 280),
+    item!(
+        WondrousResin,
+        "wondrous_resin",
+        "Wondrous Resin",
+        Trinket,
+        None,
+        281
+    ),
+    item!(EyeOfNewt, "eye_of_newt", "Eye Of Newt", Trinket, None, 282),
+    item!(SaltCube, "salt_cube", "Salt Cube", Trinket, None, 283),
+    item!(
+        VialOfBlood,
+        "vial_of_blood",
+        "Vial Of Blood",
+        Trinket,
+        None,
+        284
+    ),
+    item!(
+        ShardOfOblivion,
+        "shard_of_oblivion",
+        "Shard Of Oblivion",
+        Trinket,
+        None,
+        285
+    ),
+    item!(
+        ChaoticCenser,
+        "chaotic_censer",
+        "Chaotic Censer",
+        Trinket,
+        None,
+        286
+    ),
+    item!(FerretTuft, "ferret_tuft", "Ferret Tuft", Trinket, None, 287),
+    item!(
+        CrackedSpyglass,
+        "cracked_spyglass",
+        "Cracked Spyglass",
+        Trinket,
+        None,
+        288
+    ),
+    item!(
+        TrinketCatalyst,
+        "trinket_catalyst",
+        "Magical catalyst",
+        Trinket,
+        None,
+        70
+    ),
 ];
 
 /// Weapon enchantments and curses in the game journal's order: enchantments
@@ -958,7 +1100,7 @@ impl Effect {
                 .copied()
                 .find(|effect| effect.wire_name().eq_ignore_ascii_case(name))
                 .map(Self::Armor),
-            ItemKind::Wand | ItemKind::Ring => None,
+            ItemKind::Wand | ItemKind::Ring | ItemKind::Trinket => None,
         }
     }
 
@@ -1134,7 +1276,7 @@ mod tests {
                 definition.stable_id
             );
         }
-        assert_eq!(ITEMS.len(), 88);
+        assert_eq!(ITEMS.len(), 106);
         assert_eq!(
             ITEMS
                 .iter()

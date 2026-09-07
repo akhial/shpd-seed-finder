@@ -75,17 +75,17 @@ public enum ItemKind: Int, Codable, CaseIterable, Sendable {
     // The raw value is the saved-query kind ID: 0...3 are the original
     // families and 4/5 narrow a weapon requirement to one weapon class, so
     // saved queries from older builds keep their meaning.
-    case weapon, armor, wand, ring, meleeWeapon, thrownWeapon
+    case weapon, armor, wand, ring, meleeWeapon, thrownWeapon, trinket
 
-    public var label: String { ["Weapons", "Armor", "Wands", "Rings", "Melee weapons", "Thrown weapons"][rawValue] }
-    public var singularLabel: String { ["weapon", "armor", "wand", "ring", "melee weapon", "thrown weapon"][rawValue] }
+    public var label: String { ["Weapons", "Armor", "Wands", "Rings", "Melee weapons", "Thrown weapons", "Trinket"][rawValue] }
+    public var singularLabel: String { ["weapon", "armor", "wand", "ring", "melee weapon", "thrown weapon", "trinket"][rawValue] }
     public var modifierLabel: String? { family == .weapon ? "Enchantment" : family == .armor ? "Glyph" : nil }
     /// The non-curse effects of this family — enchantments or glyphs — in the
     /// shared catalog asset's order.
     public var enchantmentNames: [String] { ItemCatalog.enchantmentsFor(self) }
     /// The highest upgrade a search may name for this family.
     public var maximumSearchUpgrade: Int {
-        family == .weapon ? SearchLimits.maxUpgradeWeapon
+        family == .trinket ? 0 : family == .weapon ? SearchLimits.maxUpgradeWeapon
             : family == .ring ? SearchLimits.maxUpgradeRing : SearchLimits.maxUpgradeDefault
     }
 
@@ -367,6 +367,7 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
                 source: ScoutItemSource? = nil, identityGroup: Int? = nil,
                 maximumDepth: Int? = nil, requireUncursed: Bool = false,
                 alternativeGroup: Int? = nil, levelSum: LevelSum? = nil) throws {
+        guard kind != .trinket || item != nil else { throw ModelValidationError.itemKind }
         guard item == nil || item.map(kind.accepts) == true else { throw ModelValidationError.itemKind }
         let tierable = item == nil && (kind.family == .weapon || kind.family == .armor)
         let validTier = switch tierMatch {
@@ -378,7 +379,7 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
         let maximumUpgrade = SearchLimits.maximumUpgrade(kind: kind, item: item, tier: tier, tierMatch: tierMatch)
         let valid = switch upgradeMatch {
         case .any: upgrade == 0
-        case .exactly: (1...maximumUpgrade).contains(upgrade)
+        case .exactly: upgrade >= 1 && upgrade <= maximumUpgrade
         case .atLeast: (0...maximumUpgrade).contains(upgrade)
         }
         guard valid else { throw ModelValidationError.upgrade }
@@ -694,9 +695,11 @@ public struct ScoutWorld: Sendable {
     /// the world beside the manifest; a world assembled without one (a test
     /// fixture, a stub engine) falls back to the catalog's own table.
     public let ringGems: RingGems
+    public let trinketOrder: [CatalogItem]
     public init(seed: String, quests: [ScoutQuest] = [], items: [ScoutItem],
-                ringGems: RingGems = .catalogDefault) {
+                ringGems: RingGems = .catalogDefault, trinketOrder: [CatalogItem] = []) {
         self.seed = seed; self.quests = quests; self.items = items; self.ringGems = ringGems
+        self.trinketOrder = trinketOrder
     }
 }
 

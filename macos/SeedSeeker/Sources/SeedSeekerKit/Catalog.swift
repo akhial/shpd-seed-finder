@@ -69,6 +69,7 @@ public enum ItemCatalog {
         case "armor": .armor
         case "wand": .wand
         case "ring": .ring
+        case "trinket": .trinket
         default: preconditionFailure("the item catalog names an unknown type \"\(type)\"")
         }
         return document.entries
@@ -82,8 +83,9 @@ public enum ItemCatalog {
     public static let armor = items("armor")
     public static let wands = items("wand")
     public static let rings = items("ring")
+    public static let trinkets = items("trinket")
     public static let weapons = meleeWeapons + thrownWeapons
-    public static let all = weapons + armor + wands + rings
+    public static let all = weapons + armor + wands + rings + trinkets
     private static let thrownIDs = Set(thrownWeapons.map(\.id))
 
     /// Melee/thrown classification of one catalog ID; nil for non-weapons.
@@ -95,7 +97,7 @@ public enum ItemCatalog {
     public static let weaponCurses = document.modifiers.weaponCurses
     public static let glyphs = document.modifiers.armorGlyphs
     public static let armorCurses = document.modifiers.armorCurses
-    public static func forKind(_ kind: ItemKind) -> [CatalogItem] { switch kind { case .weapon: weapons; case .meleeWeapon: meleeWeapons; case .thrownWeapon: thrownWeapons; case .armor: armor; case .wand: wands; case .ring: rings } }
+    public static func forKind(_ kind: ItemKind) -> [CatalogItem] { switch kind { case .weapon: weapons; case .meleeWeapon: meleeWeapons; case .thrownWeapon: thrownWeapons; case .armor: armor; case .wand: wands; case .ring: rings; case .trinket: trinkets } }
     public static func findById(_ id: String) -> CatalogItem? { all.first { $0.id == id } }
     /// Every effect the family can carry in the shared asset's order — the
     /// non-curse effects alphabetically, then the curses alphabetically — which

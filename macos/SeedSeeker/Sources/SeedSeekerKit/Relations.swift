@@ -374,6 +374,7 @@ extension Array where Element == ItemRequirement {
     public func canStack(_ item: BoardItem) -> Bool {
         guard let anchor = item.members.first, indices.contains(anchor) else { return false }
         let family = self[anchor].kind.family
+        guard family != .trinket else { return false }
         return item.members.allSatisfy { indices.contains($0) && self[$0].kind.family == family }
     }
 

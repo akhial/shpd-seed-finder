@@ -324,6 +324,7 @@
               <ListView.ItemTemplate>
                 <DataTemplate>
                   <Grid ColumnSpacing="10" Padding="0,6">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
                     <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
                     <local:SpriteView SpriteIndex="{Binding SpriteIndex}" TypeIconIndex="{Binding TypeIconIndex}" SpriteSize="22"
                                       GlowColor="{Binding GlowColor}" GlowPeriod="{Binding GlowPeriod}"
@@ -353,6 +354,7 @@
                         <TextBlock Text="Match" FontSize="11" FontWeight="SemiBold" Foreground="{ThemeResource SystemFillColorSuccessBrush}"/>
                       </StackPanel>
                     </Border>
+                    <ContentControl Grid.Row="1" Grid.ColumnSpan="3" Content="{Binding TrinketDeck}" HorizontalContentAlignment="Stretch"/>
                   </Grid>
                 </DataTemplate>
               </ListView.ItemTemplate>

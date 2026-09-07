@@ -141,6 +141,11 @@ fn measure() -> Vec<Row> {
                     let mut groups: std::collections::BTreeSet<(usize, Line, String, u16)> =
                         std::collections::BTreeSet::new();
                     for candidate in &world.items {
+                        if item(candidate.item).kind
+                            == shpd_seedfinder_core::catalog::ItemKind::Trinket
+                        {
+                            continue;
+                        }
                         let key = (
                             kind_index(item(candidate.item).kind),
                             line_of(candidate.item),

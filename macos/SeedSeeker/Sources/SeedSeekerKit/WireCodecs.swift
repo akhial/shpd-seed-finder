@@ -119,7 +119,8 @@ public enum ScoutCodec {
 
     public static func decode(_ packet: Data) throws -> ScoutWorld {
         var input = Reader(data: packet)
-        guard try input.bytes(4) == Data("SSC3".utf8) else { throw WireCodecError.badMagic }
+        let magic = try input.bytes(4)
+        guard magic == Data("SSC3".utf8) || magic == Data("SSC4".utf8) else { throw WireCodecError.badMagic }
         let seed = try input.ascii(Int(input.u8()))
         guard SeedCode.isCanonical(seed) else { throw WireCodecError.invalidValue("Malformed seed from native scout") }
         // Twelve gem ordinals, one per ring class in the order the catalog
@@ -177,7 +178,19 @@ public enum ScoutCodec {
                              cursed: flags & 1 != 0, source: source, accessibility: accessibility,
                              secret: flags & 2 != 0)
         }
+        var trinketOrder: [CatalogItem] = []
+        if magic == Data("SSC4".utf8) {
+            guard try input.u8() == 17 else { throw WireCodecError.invalidValue("Trinket deck must contain 17 entries") }
+            for _ in 0..<17 {
+                let id = try input.utf8(input.u16())
+                guard let item = ItemCatalog.findById(id), item.kind == .trinket,
+                      !trinketOrder.contains(item) else {
+                    throw WireCodecError.invalidValue("Malformed trinket deck")
+                }
+                trinketOrder.append(item)
+            }
+        }
         guard input.remaining == 0 else { throw WireCodecError.trailingBytes }
-        return ScoutWorld(seed: seed, quests: quests, items: items, ringGems: ringGems)
+        return ScoutWorld(seed: seed, quests: quests, items: items, ringGems: ringGems, trinketOrder: trinketOrder)
     }
 }
