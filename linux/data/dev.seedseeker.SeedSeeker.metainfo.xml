@@ -40,6 +40,11 @@
   </provides>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="0.10.0" date="2026-09-07">
+      <description>
+        <p>Search for trinkets, scout their upgrade outcomes, and accelerate terrain conversion and maze generation with SIMD.</p>
+      </description>
+    </release>
     <release version="0.9.1" date="2026-09-07">
       <description>
         <p>Match Shattered Pixel Dungeon v4.0.0-BETA-4 quest-room generation and fix equipment and cave-layout deviations.</p>
