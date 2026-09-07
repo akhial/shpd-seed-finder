@@ -1,7 +1,7 @@
 {
   "schema": "shpd-vault-parity-fixture/v1",
-  "game_version": "4.0.0-BETA-3",
-  "game_jar_sha256": "f62f8ac2ef6d36c72223c1a4e78f18e98d0bb1282cd4f1fca123082d43edccc9",
+  "game_version": "4.0.0-BETA-4",
+  "game_jar_sha256": "76f6983e7b619267666621de9f1ecbbc3645d4925c2c446736987c3011b9dfd1",
   "runtime": {
     "java_version": "21.0.11",
     "java_vendor": "Oracle Corporation",
@@ -68,7 +68,7 @@
         ],
         [
           2,
-          "Greataxe",
+          "Glaive",
           "weapon",
           4,
           false,
@@ -115,7 +115,7 @@
         "exit": 2914,
         "mob_count": 48,
         "heap_count": 46,
-        "generator_state_hash": 1712607257,
+        "generator_state_hash": -681257014,
         "rooms": [
           [
             "VaultAlternatingFireRoom",
@@ -505,7 +505,7 @@
             318,
             "VaultFinalRoom",
             "HEAP",
-            "Greataxe",
+            "Glaive",
             "weapon",
             4,
             false,
@@ -529,7 +529,7 @@
             570,
             "VaultFinalRoom",
             "HEAP",
-            "DriedRose",
+            "AlchemistsToolkit",
             "artifact",
             5,
             false,
@@ -980,8 +980,8 @@
           "shop_state": true
         },
         "generator_hash": [
-          1712607257,
-          1712607257
+          -681257014,
+          -681257014
         ]
       },
       "generator_checkpoints": [
@@ -989,37 +989,37 @@
           15,
           0,
           "CavesBossLevel",
-          1670104781
+          44385453
         ],
         [
           16,
           0,
           "CityLevel",
-          -1778116645
+          1483953881
         ],
         [
           17,
           0,
           "CityLevel",
-          -349477001
+          -1864456843
         ],
         [
           18,
           0,
           "CityLevel",
-          38825966
+          2094141541
         ],
         [
           19,
           0,
           "CityLevel",
-          1712607257
+          -681257014
         ],
         [
           17,
           1,
           "VaultLevel",
-          1712607257
+          -681257014
         ]
       ]
     },
@@ -1048,7 +1048,7 @@
         ],
         [
           3,
-          "BattleAxe",
+          "Crossbow",
           "weapon",
           3,
           false,
@@ -1066,7 +1066,7 @@
         ],
         [
           5,
-          "WandOfLightning",
+          "WandOfFrost",
           "wand",
           4,
           false,
@@ -1086,7 +1086,7 @@
         "exit": 1694,
         "mob_count": 46,
         "heap_count": 49,
-        "generator_state_hash": 1736502888,
+        "generator_state_hash": 447762386,
         "rooms": [
           [
             "VaultEnemyCenterRoom",
@@ -1572,7 +1572,7 @@
             1074,
             "VaultFinalRoom",
             "HEAP",
-            "WandOfLightning",
+            "WandOfFrost",
             "wand",
             4,
             false,
@@ -1680,7 +1680,7 @@
             1578,
             "VaultFinalRoom",
             "HEAP",
-            "BattleAxe",
+            "Crossbow",
             "weapon",
             3,
             false,
@@ -1963,8 +1963,8 @@
           "shop_state": true
         },
         "generator_hash": [
-          1736502888,
-          1736502888
+          447762386,
+          447762386
         ]
       },
       "generator_checkpoints": [
@@ -1972,37 +1972,37 @@
           15,
           0,
           "CavesBossLevel",
-          1652502520
+          -1448575199
         ],
         [
           16,
           0,
           "CityLevel",
-          469473430
+          -379318337
         ],
         [
           17,
           0,
           "CityLevel",
-          1441494479
+          1991938797
         ],
         [
           18,
           0,
           "CityLevel",
-          116564550
+          -283033898
         ],
         [
           19,
           0,
           "CityLevel",
-          1736502888
+          447762386
         ],
         [
           18,
           1,
           "VaultLevel",
-          1736502888
+          447762386
         ]
       ]
     },
@@ -2024,9 +2024,9 @@
           2,
           "Greatshield",
           "weapon",
-          4,
+          2,
           false,
-          "Unstable",
+          "Lucky",
           1
         ],
         [
@@ -2035,7 +2035,7 @@
           "weapon",
           4,
           false,
-          "Blazing",
+          "Shocking",
           3
         ],
         [
@@ -2044,14 +2044,14 @@
           "armor",
           3,
           false,
-          "Brimstone",
+          "Stone",
           1
         ],
         [
           5,
           "WandOfCorrosion",
           "wand",
-          4,
+          2,
           false,
           null,
           1
@@ -2069,7 +2069,7 @@
         "exit": 2914,
         "mob_count": 48,
         "heap_count": 51,
-        "generator_state_hash": -50636863,
+        "generator_state_hash": 883677465,
         "rooms": [
           [
             "VaultCircleRoom",
@@ -2481,9 +2481,9 @@
             444,
             "VaultFinalRoom",
             "HEAP",
-            "UnstableSpellbook",
+            "SandalsOfNature",
             "artifact",
-            5,
+            2,
             false,
             null,
             1,
@@ -2495,9 +2495,9 @@
             "HEAP",
             "Greatshield",
             "weapon",
-            4,
+            2,
             false,
-            "Unstable",
+            "Lucky",
             1,
             true
           ],
@@ -2543,7 +2543,7 @@
             "HEAP",
             "WandOfCorrosion",
             "wand",
-            4,
+            2,
             false,
             null,
             1,
@@ -2593,7 +2593,7 @@
             "armor",
             3,
             false,
-            "Brimstone",
+            "Stone",
             1,
             true
           ],
@@ -2617,7 +2617,7 @@
             "weapon",
             4,
             false,
-            "Blazing",
+            "Shocking",
             3,
             true
           ],
@@ -2961,8 +2961,8 @@
           "shop_state": true
         },
         "generator_hash": [
-          -50636863,
-          -50636863
+          883677465,
+          883677465
         ]
       },
       "generator_checkpoints": [
@@ -2970,37 +2970,37 @@
           15,
           0,
           "CavesBossLevel",
-          -2111138786
+          390619280
         ],
         [
           16,
           0,
           "CityLevel",
-          -2035984614
+          -1519889268
         ],
         [
           17,
           0,
           "CityLevel",
-          -1591784297
+          1989254258
         ],
         [
           18,
           0,
           "CityLevel",
-          105915157
+          -556153213
         ],
         [
           19,
           0,
           "CityLevel",
-          -50636863
+          883677465
         ],
         [
           19,
           1,
           "VaultLevel",
-          -50636863
+          883677465
         ]
       ]
     }

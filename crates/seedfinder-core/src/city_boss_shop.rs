@@ -80,14 +80,14 @@ mod tests {
                 &[
                     (13, ItemId::Trident),
                     (14, ItemId::HolyDart),
-                    (18, ItemId::Greatsword),
+                    (18, ItemId::Glaive),
                     (19, ItemId::PlateArmor),
                 ],
             ),
             (
                 "ABC-DEF-GHI",
                 &[
-                    (3, ItemId::ThrowingHammer),
+                    (3, ItemId::ForceCube),
                     (10, ItemId::PlateArmor),
                     (15, ItemId::Greatshield),
                     (17, ItemId::ParalyticDart),

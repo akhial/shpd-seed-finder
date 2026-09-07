@@ -1005,22 +1005,21 @@ mod tests {
             (
                 19,
                 Feeling::None,
-                (45, 45),
-                -293_701_983,
-                877,
-                1_088,
+                (37, 46),
+                -538_847_853,
+                461,
+                397,
                 vec![
-                    (CityMobKind::Golem, 118),
-                    (CityMobKind::Golem, 379),
-                    (CityMobKind::Golem, 431),
-                    (CityMobKind::Warlock, 639),
-                    (CityMobKind::Monk, 645),
-                    (CityMobKind::Golem, 997),
-                    (CityMobKind::Monk, 1_426),
-                    (CityMobKind::Warlock, 1_555),
-                    (CityMobKind::ChaosElemental, 1_643),
+                    (CityMobKind::ShockElemental, 279),
+                    (CityMobKind::Golem, 325),
+                    (CityMobKind::Warlock, 471),
+                    (CityMobKind::Golem, 834),
+                    (CityMobKind::Monk, 1_135),
+                    (CityMobKind::Golem, 1_248),
+                    (CityMobKind::Monk, 1_271),
+                    (CityMobKind::Warlock, 1_346),
                 ],
-                vec![118, 379, 431, 639, 645, 997, 1_187, 1_426, 1_555, 1_643],
+                vec![279, 325, 396, 471, 834, 1_135, 1_248, 1_271, 1_346, 1_437],
             ),
         ];
 
@@ -1116,6 +1115,14 @@ mod tests {
                     Accessibility::Independent,
                 ),
                 (
+                    ItemId::WandMagicMissile,
+                    0,
+                    None,
+                    false,
+                    ItemSource::LockedChest,
+                    Accessibility::Independent,
+                ),
+                (
                     ItemId::Javelin,
                     0,
                     None,
@@ -1124,15 +1131,7 @@ mod tests {
                     Accessibility::Independent,
                 ),
                 (
-                    ItemId::Longsword,
-                    0,
-                    None,
-                    false,
-                    ItemSource::Shop,
-                    Accessibility::Independent,
-                ),
-                (
-                    ItemId::ScaleArmor,
+                    ItemId::Katana,
                     0,
                     None,
                     false,
@@ -1148,11 +1147,11 @@ mod tests {
                     Accessibility::Independent,
                 ),
                 (
-                    ItemId::WandMagicMissile,
+                    ItemId::ScaleArmor,
                     0,
                     None,
                     false,
-                    ItemSource::LockedChest,
+                    ItemSource::Shop,
                     Accessibility::Independent,
                 ),
             ],
@@ -1166,14 +1165,6 @@ mod tests {
             )],
             vec![
                 (
-                    ItemId::RingSharpshooting,
-                    0,
-                    None,
-                    false,
-                    ItemSource::Skeleton,
-                    Accessibility::Independent,
-                ),
-                (
                     ItemId::PlateArmor,
                     0,
                     None,
@@ -1182,10 +1173,10 @@ mod tests {
                     Accessibility::Independent,
                 ),
                 (
-                    ItemId::Trident,
+                    ItemId::MailArmor,
                     1,
-                    None,
-                    false,
+                    Some(Effect::Armor(ArmorEffect::Multiplicity)),
+                    true,
                     ItemSource::Heap,
                     Accessibility::Independent,
                 ),
@@ -1198,11 +1189,19 @@ mod tests {
                     Accessibility::Independent,
                 ),
                 (
-                    ItemId::Bolas,
+                    ItemId::Trident,
                     1,
-                    Some(Effect::Weapon(WeaponEffect::Sacrificial)),
-                    true,
+                    None,
+                    false,
                     ItemSource::Heap,
+                    Accessibility::Independent,
+                ),
+                (
+                    ItemId::RingSharpshooting,
+                    0,
+                    None,
+                    false,
+                    ItemSource::Skeleton,
                     Accessibility::Independent,
                 ),
             ],
@@ -1220,8 +1219,8 @@ mod tests {
                 ),
                 (
                     ItemId::Greatshield,
-                    4,
-                    Some(Effect::Weapon(WeaponEffect::Unstable)),
+                    2,
+                    Some(Effect::Weapon(WeaponEffect::Lucky)),
                     false,
                     ItemSource::ImpReward,
                     Accessibility::Choice {
@@ -1232,7 +1231,7 @@ mod tests {
                 (
                     ItemId::Javelin,
                     4,
-                    Some(Effect::Weapon(WeaponEffect::Blazing)),
+                    Some(Effect::Weapon(WeaponEffect::Shocking)),
                     false,
                     ItemSource::ImpReward,
                     Accessibility::Choice {
@@ -1243,7 +1242,7 @@ mod tests {
                 (
                     ItemId::PlateArmor,
                     3,
-                    Some(Effect::Armor(ArmorEffect::Brimstone)),
+                    Some(Effect::Armor(ArmorEffect::Stone)),
                     false,
                     ItemSource::ImpReward,
                     Accessibility::Choice {
@@ -1253,7 +1252,7 @@ mod tests {
                 ),
                 (
                     ItemId::WandCorrosion,
-                    4,
+                    2,
                     None,
                     false,
                     ItemSource::ImpReward,
@@ -1262,8 +1261,22 @@ mod tests {
                         option: 5,
                     },
                 ),
-                // The vault's treasure follows the six reward options in the
-                // same single-pick group, in cell order (VaultProbe/oracle).
+                (
+                    ItemId::RingEvasion,
+                    0,
+                    None,
+                    false,
+                    ItemSource::Mimic,
+                    Accessibility::Independent,
+                ),
+                (
+                    ItemId::HeavyBoomerang,
+                    2,
+                    None,
+                    false,
+                    ItemSource::Skeleton,
+                    Accessibility::Independent,
+                ),
                 (
                     ItemId::Katana,
                     2,

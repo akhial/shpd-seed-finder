@@ -1,7 +1,7 @@
 {
   "schema": "shpd-prison-parity-fixture/v3",
-  "game_version": "4.0.0-BETA-3",
-  "game_jar_sha256": "f62f8ac2ef6d36c72223c1a4e78f18e98d0bb1282cd4f1fca123082d43edccc9",
+  "game_version": "4.0.0-BETA-4",
+  "game_jar_sha256": "76f6983e7b619267666621de9f1ecbbc3645d4925c2c446736987c3011b9dfd1",
   "runtime": {
     "java_version": "21.0.11",
     "java_vendor": "Oracle Corporation",
@@ -83,7 +83,7 @@
         [
           9,
           "PrisonLevel",
-          -1562739026
+          -1851823764
         ]
       ],
       "levels": [
@@ -260,42 +260,54 @@
             27,
             45
           ],
-          "map_hash": -782393744,
+          "map_hash": -2111462339,
           "entrance": 462,
           "exit": 856,
-          "generator_state_hash": -1562739026,
+          "generator_state_hash": -1851823764,
           "mobs": [
             [
-              "Thief",
-              252
-            ],
-            [
-              "DM100",
-              321
-            ],
-            [
-              "Wandmaker",
-              465
-            ],
-            [
               "Necromancer",
-              499
+              88
             ],
             [
               "Guard",
-              872
-            ],
-            [
-              "Skeleton",
-              922
+              318
             ],
             [
               "DM100",
-              937
+              418
+            ],
+            [
+              "DM100",
+              426
+            ],
+            [
+              "Wandmaker",
+              441
+            ],
+            [
+              "Skeleton",
+              499
             ],
             [
               "Necromancer",
-              1131
+              509
+            ],
+            [
+              "Guard",
+              825
+            ],
+            [
+              "DM100",
+              829
+            ],
+            [
+              "Mimic",
+              1128
+            ],
+            [
+              "Thief",
+              1130
             ]
           ]
         }

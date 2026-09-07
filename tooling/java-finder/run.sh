@@ -5,7 +5,7 @@
 set -euo pipefail
 
 FINDER_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-JAR="$FINDER_DIR/.work/ShatteredPD-v4.0.0-BETA-3-Java.jar"
+JAR="$FINDER_DIR/.work/ShatteredPD-v4.0.0-BETA-4-Java.jar"
 CLASSES=$("$FINDER_DIR/build.sh")
 
 if [[ -n "${JAVA_21_HOME:-}" ]]; then

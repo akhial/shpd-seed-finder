@@ -1,7 +1,7 @@
-# Shattered Pixel Dungeon v4.0.0-BETA-3 parity oracle
+# Shattered Pixel Dungeon v4.0.0-BETA-4 parity oracle
 
 This directory builds an isolated, deterministic generation oracle for
-Shattered Pixel Dungeon `v4.0.0-BETA-3`. Unlike `tooling/oracle/` (v3.3.8),
+Shattered Pixel Dungeon `v4.0.0-BETA-4`. Unlike `tooling/oracle/` (v3.3.8),
 which patches and compiles the official source tree, no 4.0.0 source has been
 published yet, so this oracle drives the **unmodified official desktop JAR**
 headlessly. Nothing from the game is recompiled; the only things placed ahead
@@ -10,10 +10,10 @@ stand-in class (see "Headless technique").
 
 The pin is:
 
-- artifact: `ShatteredPD-v4.0.0-BETA-3-Java.jar`
-- URL: `https://github.com/00-Evan/shattered-pixel-dungeon/releases/download/4.0.0-beta/ShatteredPD-v4.0.0-BETA-3-Java.jar`
-- sha256: `f62f8ac2ef6d36c72223c1a4e78f18e98d0bb1282cd4f1fca123082d43edccc9`
-- manifest: `Specification-Version: 4.0.0-BETA-3`, `Implementation-Version: 904`
+- artifact: `ShatteredPD-v4.0.0-BETA-4-Java.jar`
+- URL: `https://github.com/00-Evan/shattered-pixel-dungeon/releases/download/4.0.0-beta/ShatteredPD-v4.0.0-BETA-4-Java.jar`
+- sha256: `76f6983e7b619267666621de9f1ecbbc3645d4925c2c446736987c3011b9dfd1`
+- manifest: `Specification-Version: 4.0.0-BETA-4`, `Implementation-Version: 906`
   (used as `Game.versionCode`)
 
 `build.sh` downloads the JAR into `.work/` when absent, verifies the sha256
@@ -76,12 +76,12 @@ any game class:
    heap off the first floors (without it, `AAA-AAA-AAA` floor 1 gains an
    eleventh heap and floor 2 changes). The JAR implements `isDebug()` as
    `Game.version.contains("INDEV")`, so the oracle simply sets
-   `Game.version = "4.0.0-BETA-3-INDEV"`. Grepping the decompiled tree shows
+   `Game.version = "4.0.0-BETA-4-INDEV"`. Grepping the decompiled tree shows
    `Game.version` is otherwise read only by `DesktopLauncher`, the title/menu
    version labels, and `SPDSettings.betas()` (an update-checker default), none
    of which are on the generation path; the other `isDebug()` call sites are
    `HeroClass.isUnlocked` (Warrior is always unlocked anyway) and UI scenes.
-   `run_init.game_version` records the true `4.0.0-BETA-3`;
+   `run_init.game_version` records the true `4.0.0-BETA-4`;
    `run_init.effective_game_version` records the string actually installed.
 2. **An eagerly loaded texture atlas.** `ItemSpriteSheet.Icons.film` is
    `new TextureFilm("sprites/item_icons.png", 8, 8)`, whose upstream
@@ -253,6 +253,61 @@ the v3.3.8 caveat about `ShopRoom.ChooseBag` iterating a `HashMap` still
 applies, and the Vault consumable caveat above is new.
 
 ## Comparing against the engine
+
+### BETA-4 generation changes
+
+BETA-4 raises `RitualSiteRoom`'s minimum size to 10x10, reserves two top-wall
+door positions, paints cages/tables before the ritual marker, and moves the
+marker down one tile. The furniture consumes seeded random draws. It also
+fixes `BlacksmithRoom.maxConnections` to compare against the `TOP` direction
+constant instead of the room's `top` coordinate. Both changes affect later
+generation and are mirrored by the engine.
+
+The Caves fixture includes `CVB-VKT-LUY` floor 13. Under the oracle's canonical
+no-challenge/no-trinket profile, BETA-4 generates a +0 Kinetic Sword at cell 243
+and a +0 Battle Axe at cell 244, both `BlacksmithRoom` heaps, plus a +0 Wand of
+Warding heap and +0 Bulk Mail Armor in a locked chest. The old engine instead
+reported Annoying Sword and Dazzling Bolas heaps.
+
+#### Continuing a BETA-3 save on BETA-4
+
+The reported Longsword and golden-chest Bolas are reproduced by retaining
+BETA-3 generation through the floor-7 ritual room and using BETA-4 for floor
+13. The game's saved state includes `Generator`'s overall category weights,
+each item deck's remaining weights, category seeds and draw counters;
+`Dungeon.saveGame`/`loadGame` call `Generator.storeInBundle`/`restoreFromBundle`.
+Updating the game does not regenerate that state from scratch.
+
+The old ritual room changes floor 7's random draws and the persistent item
+decks. By the end of floor 12, for example, the mixed run has consumed two
+tier-4 weapon draws while a fresh BETA-4 run has consumed three. The BETA-4
+blacksmith layout then draws from these different decks:
+
+| Floor-13 loot | Fresh BETA-4 | BETA-3 save continued on BETA-4 |
+| --- | --- | --- |
+| Blacksmith heap, cell 243 | +0 Kinetic Sword | +0 Kinetic Sword |
+| Blacksmith heap, cell 244 | +0 Battle Axe | +0 Longsword |
+| Other equipment | Wand of Warding heap; Bulk Mail Armor locked chest | +0 Bolas in a locked golden chest, cell 944 |
+
+The mixed-run Bolas have the Explosive curse in the diagnostic output. They
+come from regular floor-item generation, which applies the game's normal
+locked-chest roll and adds a Golden Key; they are not one of the two smithy
+heaps. Both BETA-4 cases have the same 37x45 floor-13 map (hash 1536306267),
+but different loot because their persistent decks differ.
+
+This was checked with an isolated compatibility probe restoring BETA-3's
+ritual-room size, door and painting rules ahead of the BETA-4 JAR, and an
+independent Rust experiment restoring those rules from the BETA-3 engine.
+The probe's floors 1-12 match the original engine, and its floors 1-13 match
+the mixed Rust run. Switching after any floor from 7 through 12 reproduces
+the three reported items; switching before floor 7 gives the fresh-BETA-4
+result. This is a compatibility reconstruction, not a run of an archived
+BETA-3 JAR. The canonical scout still models a run generated entirely on
+its advertised version; a seed alone does not specify an upgrade history.
+
+All versioned oracle fixtures are regenerated from the pinned BETA-4 JAR;
+historical BETA-3 benchmark measurements and probability estimates retain their
+original provenance.
 
 `crates/seedfinder-core/examples/dump_floors.rs` prints a seed's floors in a
 reduced text form (size, map hash, entrance, exit, feeling, ordinary mobs,

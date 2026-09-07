@@ -1098,7 +1098,7 @@ mod tests {
         let floors = generate_halls_prefix(DungeonSeed::MIN, 24);
         assert_floor(
             &floors[0],
-            (21, Feeling::None, (48, 53), -1_707_754_159, 339, 1_134),
+            (21, Feeling::None, (48, 53), -1_582_285_692, 339, 1_134),
             &[
                 (HallsMobKind::Succubus, 450),
                 (HallsMobKind::Eye, 897),
@@ -1107,15 +1107,6 @@ mod tests {
             ],
             &[450, 897, 1_313, 1_852, 2_198],
             vec![
-                item(
-                    ItemId::ThrowingHammer,
-                    0,
-                    None,
-                    false,
-                    21,
-                    ItemSource::Heap,
-                    Accessibility::Independent,
-                ),
                 item(
                     ItemId::WandPrismaticLight,
                     1,
@@ -1129,8 +1120,8 @@ mod tests {
                     },
                 ),
                 item(
-                    ItemId::WandRegrowth,
-                    2,
+                    ItemId::ThrowingHammer,
+                    0,
                     None,
                     false,
                     21,
@@ -1150,7 +1141,7 @@ mod tests {
                 (HallsMobKind::Eye, 1_751),
             ],
             &[
-                246, 389, 407, 436, 591, 698, 745, 975, 1_432, 1_480, 1_671, 1_751, 1_842,
+                246, 389, 407, 436, 591, 745, 1_432, 1_480, 1_671, 1_751, 1_842,
             ],
             vec![
                 item(
@@ -1163,21 +1154,21 @@ mod tests {
                     Accessibility::Independent,
                 ),
                 item(
+                    ItemId::RingEvasion,
+                    0,
+                    None,
+                    false,
+                    22,
+                    ItemSource::Heap,
+                    Accessibility::Independent,
+                ),
+                item(
                     ItemId::Greatsword,
                     0,
                     Some(Effect::Weapon(WeaponEffect::Venomous)),
                     false,
                     22,
                     ItemSource::Statue,
-                    Accessibility::Independent,
-                ),
-                item(
-                    ItemId::Greatsword,
-                    0,
-                    None,
-                    false,
-                    22,
-                    ItemSource::Mimic,
                     Accessibility::Independent,
                 ),
             ],
@@ -1208,7 +1199,7 @@ mod tests {
         );
         assert_floor(
             &floors[3],
-            (24, Feeling::None, (38, 47), 1_441_147_504, 549, 676),
+            (24, Feeling::None, (38, 47), 728_473_008, 549, 676),
             &[
                 (HallsMobKind::Eye, 486),
                 (HallsMobKind::Succubus, 520),
@@ -1222,31 +1213,42 @@ mod tests {
             &[486, 520, 556, 657, 688, 878, 961, 1_342, 1_579],
             vec![
                 item(
-                    ItemId::AssassinsBlade,
+                    ItemId::WarScythe,
+                    0,
+                    Some(Effect::Weapon(WeaponEffect::Blooming)),
+                    false,
+                    24,
+                    ItemSource::Heap,
+                    Accessibility::Independent,
+                ),
+                WorldItem {
+                    secret: true,
+                    ..item(
+                        ItemId::WandWarding,
+                        1,
+                        None,
+                        true,
+                        24,
+                        ItemSource::LockedChest,
+                        Accessibility::Independent,
+                    )
+                },
+                item(
+                    ItemId::Greatsword,
+                    0,
+                    None,
+                    false,
+                    24,
+                    ItemSource::LockedChest,
+                    Accessibility::Independent,
+                ),
+                item(
+                    ItemId::Longsword,
                     2,
                     Some(Effect::Weapon(WeaponEffect::Polarized)),
                     true,
                     24,
                     ItemSource::SacrificialFire,
-                    Accessibility::Independent,
-                ),
-                item(
-                    ItemId::WandWarding,
-                    1,
-                    None,
-                    true,
-                    24,
-                    ItemSource::LockedChest,
-                    Accessibility::Independent,
-                )
-                .in_secret_room(),
-                item(
-                    ItemId::RingEvasion,
-                    0,
-                    None,
-                    true,
-                    24,
-                    ItemSource::Heap,
                     Accessibility::Independent,
                 ),
             ],
@@ -1281,29 +1283,18 @@ mod tests {
                     (HallsMobKind::Succubus, 1_780),
                 ],
                 vec![165, 268, 300, 922, 1_229, 1_780],
-                vec![
-                    item(
-                        ItemId::WandMagicMissile,
-                        0,
-                        None,
-                        false,
-                        21,
-                        ItemSource::Chest,
-                        Accessibility::Choice {
-                            group: 0,
-                            option: 1,
-                        },
-                    ),
-                    item(
-                        ItemId::WandBlastWave,
-                        0,
-                        None,
-                        true,
-                        21,
-                        ItemSource::LockedChest,
-                        Accessibility::Independent,
-                    ),
-                ],
+                vec![item(
+                    ItemId::WandMagicMissile,
+                    0,
+                    None,
+                    false,
+                    21,
+                    ItemSource::Chest,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 1,
+                    },
+                )],
             ),
             (
                 "ZZZ-ZZZ-ZZZ",
@@ -1397,10 +1388,10 @@ mod tests {
                     Accessibility::Independent,
                 ),
                 item(
-                    ItemId::Greatsword,
+                    ItemId::WandCorrosion,
                     0,
-                    Some(Effect::Weapon(WeaponEffect::Explosive)),
-                    true,
+                    None,
+                    false,
                     22,
                     ItemSource::Heap,
                     Accessibility::Independent,

@@ -959,23 +959,23 @@ mod tests {
         let fixtures = [
             (
                 Challenges::NONE,
-                [-698_069_368, 315_777_225, 814_901_041, 1_194_169_471],
+                [-698_069_368, 315_777_225, 395_750_173, 2_118_236_882],
             ),
             (
                 Challenges::NO_HERBALISM,
-                [-698_069_368, 315_777_225, 814_901_041, 1_194_169_471],
+                [-698_069_368, 315_777_225, 395_750_173, 2_118_236_882],
             ),
             (
                 Challenges::DARKNESS,
-                [9_529_915, 315_777_225, 814_901_041, 1_194_169_471],
+                [9_529_915, 315_777_225, 395_750_173, 2_118_236_882],
             ),
             (
                 Challenges::NO_SCROLLS,
-                [-698_069_368, 315_777_225, 814_901_041, 1_194_169_471],
+                [-698_069_368, 315_777_225, 395_750_173, 2_118_236_882],
             ),
             (
                 Challenges::NO_HERBALISM | Challenges::DARKNESS | Challenges::NO_SCROLLS,
-                [9_529_915, 315_777_225, 814_901_041, 1_194_169_471],
+                [9_529_915, 315_777_225, 395_750_173, 2_118_236_882],
             ),
         ];
         let seed = DungeonSeed::new(5).unwrap();
@@ -1025,6 +1025,106 @@ mod tests {
     }
 
     #[test]
+    fn cvb_vkt_luy_beta4_blacksmith_floor_matches_official_jar() {
+        // BETA-3 predicted Annoying Sword + Dazzling Bolas heaps here.
+        // Pin the full BETA-4 floor, including both smithy heaps and chest source.
+        let seed = DungeonSeed::from_code("CVB-VKT-LUY").unwrap();
+        let floor = generate_caves_prefix(seed, 13).pop().unwrap();
+        assert_eq!(
+            (floor.painted.level.width(), floor.painted.level.height()),
+            (37, 45)
+        );
+        assert_eq!(floor.painted.level.java_map_hash(), 1_536_306_267);
+        assert_eq!(floor.painted.level.entrance(), Some(937));
+        assert_eq!(floor.painted.level.exit(), Some(448));
+        assert_eq!(
+            occupied_cells(&floor),
+            vec![168, 352, 449, 578, 763, 788, 821, 1_275]
+        );
+        assert_items(
+            &floor,
+            &[
+                (
+                    ItemId::Greatsword,
+                    1,
+                    None,
+                    false,
+                    ItemSource::BlacksmithReward,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 0,
+                    },
+                ),
+                (
+                    ItemId::RunicBlade,
+                    1,
+                    None,
+                    false,
+                    ItemSource::BlacksmithReward,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 1,
+                    },
+                ),
+                (
+                    ItemId::Kunai,
+                    1,
+                    None,
+                    false,
+                    ItemSource::BlacksmithReward,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 2,
+                    },
+                ),
+                (
+                    ItemId::PlateArmor,
+                    1,
+                    None,
+                    false,
+                    ItemSource::BlacksmithReward,
+                    Accessibility::Choice {
+                        group: 0,
+                        option: 3,
+                    },
+                ),
+                (
+                    ItemId::Sword,
+                    0,
+                    Some(Effect::Weapon(WeaponEffect::Kinetic)),
+                    false,
+                    ItemSource::Heap,
+                    Accessibility::Independent,
+                ),
+                (
+                    ItemId::BattleAxe,
+                    0,
+                    None,
+                    false,
+                    ItemSource::Heap,
+                    Accessibility::Independent,
+                ),
+                (
+                    ItemId::WandWarding,
+                    0,
+                    None,
+                    false,
+                    ItemSource::Heap,
+                    Accessibility::Independent,
+                ),
+                (
+                    ItemId::MailArmor,
+                    0,
+                    Some(Effect::Armor(ArmorEffect::Bulk)),
+                    true,
+                    ItemSource::LockedChest,
+                    Accessibility::Independent,
+                ),
+            ],
+        );
+    }
+
+    #[test]
     fn aaa_sequential_caves_maps_mobs_and_npc_cells_match_official_oracle() {
         let floors = generate_caves_prefix(DungeonSeed::MIN, 14);
         let expected = [
@@ -1042,7 +1142,7 @@ mod tests {
                     (CavesMobKind::Bat, 1_632),
                     (CavesMobKind::Bat, 1_680),
                 ],
-                vec![264, 1_095, 1_264, 1_492, 1_632, 1_680],
+                vec![264, 1_095, 1_264, 1_445, 1_492, 1_632, 1_680],
             ),
             (
                 12,
@@ -1064,19 +1164,20 @@ mod tests {
             (
                 13,
                 Feeling::Traps,
-                (37, 42),
-                -426_331_088,
-                803,
-                938,
+                (45, 35),
+                -46_924_005,
+                668,
+                861,
                 vec![
-                    (CavesMobKind::PurpleShaman, 90),
-                    (CavesMobKind::Bat, 239),
-                    (CavesMobKind::Brute, 351),
-                    (CavesMobKind::Spinner, 786),
-                    (CavesMobKind::BlueShaman, 937),
-                    (CavesMobKind::Dm200, 1_055),
+                    (CavesMobKind::RedShaman, 278),
+                    (CavesMobKind::RedShaman, 500),
+                    (CavesMobKind::Dm200, 746),
+                    (CavesMobKind::Spinner, 767),
+                    (CavesMobKind::Brute, 870),
+                    (CavesMobKind::Spinner, 1_420),
+                    (CavesMobKind::Bat, 1_422),
                 ],
-                vec![90, 239, 351, 786, 937, 1_055, 1_262],
+                vec![278, 500, 746, 767, 870, 1_162, 1_420, 1_422],
             ),
             (
                 14,
@@ -1097,7 +1198,7 @@ mod tests {
                     (CavesMobKind::RedShaman, 1_432),
                 ],
                 vec![
-                    537, 643, 792, 818, 1_019, 1_167, 1_197, 1_268, 1_311, 1_411, 1_432,
+                    537, 643, 792, 1_019, 1_167, 1_197, 1_268, 1_311, 1_411, 1_432,
                 ],
             ),
         ];
@@ -1136,6 +1237,14 @@ mod tests {
         let expected: [Vec<ExpectedItem>; 4] = [
             vec![
                 (
+                    ItemId::Bolas,
+                    0,
+                    Some(Effect::Weapon(WeaponEffect::Pressurized)),
+                    true,
+                    ItemSource::Mimic,
+                    Accessibility::Independent,
+                ),
+                (
                     ItemId::ChillingDart,
                     0,
                     None,
@@ -1167,16 +1276,26 @@ mod tests {
                     ItemSource::Shop,
                     Accessibility::Independent,
                 ),
+            ],
+            vec![
                 (
-                    ItemId::Sword,
+                    ItemId::Mace,
                     0,
                     None,
                     false,
-                    ItemSource::LockedChest,
+                    ItemSource::Chest,
                     Accessibility::Independent,
                 ),
                 (
-                    ItemId::Bolas,
+                    ItemId::Sword,
+                    1,
+                    None,
+                    false,
+                    ItemSource::Chest,
+                    Accessibility::Independent,
+                ),
+                (
+                    ItemId::Sai,
                     0,
                     None,
                     false,
@@ -1184,15 +1303,13 @@ mod tests {
                     Accessibility::Independent,
                 ),
                 (
-                    ItemId::Katana,
+                    ItemId::Javelin,
                     0,
                     None,
                     false,
                     ItemSource::LockedChest,
                     Accessibility::Independent,
                 ),
-            ],
-            vec![
                 (
                     ItemId::Greatshield,
                     0,
@@ -1201,40 +1318,8 @@ mod tests {
                     ItemSource::SacrificialFire,
                     Accessibility::Independent,
                 ),
-                (
-                    ItemId::Sai,
-                    1,
-                    None,
-                    false,
-                    ItemSource::Chest,
-                    Accessibility::Independent,
-                ),
-                (
-                    ItemId::MailArmor,
-                    0,
-                    None,
-                    false,
-                    ItemSource::Heap,
-                    Accessibility::Independent,
-                ),
             ],
             vec![
-                (
-                    ItemId::MailArmor,
-                    0,
-                    Some(Effect::Armor(ArmorEffect::Overgrowth)),
-                    true,
-                    ItemSource::Heap,
-                    Accessibility::Independent,
-                ),
-                (
-                    ItemId::Bolas,
-                    0,
-                    Some(Effect::Weapon(WeaponEffect::Explosive)),
-                    true,
-                    ItemSource::Heap,
-                    Accessibility::Independent,
-                ),
                 (
                     ItemId::BattleAxe,
                     2,
@@ -1279,25 +1364,31 @@ mod tests {
                         option: 3,
                     },
                 ),
-            ],
-            vec![
                 (
-                    ItemId::MailArmor,
+                    ItemId::ScaleArmor,
                     0,
-                    Some(Effect::Armor(ArmorEffect::Corrosion)),
+                    Some(Effect::Armor(ArmorEffect::Multiplicity)),
                     true,
-                    ItemSource::Tomb,
+                    ItemSource::Heap,
                     Accessibility::Independent,
                 ),
                 (
-                    ItemId::MailArmor,
+                    ItemId::Bolas,
                     0,
-                    None,
+                    Some(Effect::Weapon(WeaponEffect::Eldritch)),
                     false,
-                    ItemSource::Mimic,
+                    ItemSource::Heap,
                     Accessibility::Independent,
                 ),
             ],
+            vec![(
+                ItemId::MailArmor,
+                0,
+                Some(Effect::Armor(ArmorEffect::Corrosion)),
+                true,
+                ItemSource::Tomb,
+                Accessibility::Independent,
+            )],
         ];
         for (floor, expected) in floors.iter().zip(&expected) {
             assert_items(floor, expected);
@@ -1320,14 +1411,6 @@ mod tests {
                 ],
                 &[
                     (
-                        ItemId::Javelin,
-                        0,
-                        None,
-                        false,
-                        ItemSource::LockedChest,
-                        Accessibility::Independent,
-                    ),
-                    (
                         ItemId::Greataxe,
                         1,
                         None,
@@ -1336,19 +1419,11 @@ mod tests {
                         Accessibility::Independent,
                     ),
                     (
-                        ItemId::ThrowingSpear,
+                        ItemId::Javelin,
                         0,
                         None,
                         false,
-                        ItemSource::Shop,
-                        Accessibility::Independent,
-                    ),
-                    (
-                        ItemId::Whip,
-                        0,
-                        None,
-                        false,
-                        ItemSource::Shop,
+                        ItemSource::LockedChest,
                         Accessibility::Independent,
                     ),
                     (
@@ -1367,6 +1442,22 @@ mod tests {
                         ItemSource::Shop,
                         Accessibility::Independent,
                     ),
+                    (
+                        ItemId::Whip,
+                        0,
+                        None,
+                        false,
+                        ItemSource::Shop,
+                        Accessibility::Independent,
+                    ),
+                    (
+                        ItemId::ThrowingSpear,
+                        0,
+                        None,
+                        false,
+                        ItemSource::Shop,
+                        Accessibility::Independent,
+                    ),
                 ],
             ),
             (
@@ -1376,10 +1467,26 @@ mod tests {
                 1_231_044_119,
                 218,
                 1_215,
-                &[298, 451, 525, 557, 869, 997, 1_183, 1_415],
+                &[298, 451, 525, 557, 869, 1_183, 1_415],
                 &[
                     (
                         ItemId::Kunai,
+                        0,
+                        None,
+                        false,
+                        ItemSource::Shop,
+                        Accessibility::Independent,
+                    ),
+                    (
+                        ItemId::RingEnergy,
+                        0,
+                        None,
+                        false,
+                        ItemSource::Shop,
+                        Accessibility::Independent,
+                    ),
+                    (
+                        ItemId::Sword,
                         0,
                         None,
                         false,
@@ -1400,30 +1507,6 @@ mod tests {
                         None,
                         false,
                         ItemSource::Shop,
-                        Accessibility::Independent,
-                    ),
-                    (
-                        ItemId::Sword,
-                        0,
-                        None,
-                        false,
-                        ItemSource::Shop,
-                        Accessibility::Independent,
-                    ),
-                    (
-                        ItemId::RingEnergy,
-                        0,
-                        None,
-                        false,
-                        ItemSource::Shop,
-                        Accessibility::Independent,
-                    ),
-                    (
-                        ItemId::MailArmor,
-                        0,
-                        Some(Effect::Armor(ArmorEffect::Stench)),
-                        true,
-                        ItemSource::LockedChest,
                         Accessibility::Independent,
                     ),
                 ],
@@ -1458,6 +1541,14 @@ mod tests {
                             group: 0,
                             option: 1,
                         },
+                    ),
+                    (
+                        ItemId::RingEnergy,
+                        0,
+                        None,
+                        true,
+                        ItemSource::Heap,
+                        Accessibility::Independent,
                     ),
                     (
                         ItemId::Bolas,
@@ -1497,14 +1588,6 @@ mod tests {
                         Some(Effect::Weapon(WeaponEffect::Crystal)),
                         false,
                         ItemSource::Statue,
-                        Accessibility::Independent,
-                    ),
-                    (
-                        ItemId::RingEnergy,
-                        0,
-                        None,
-                        true,
-                        ItemSource::Heap,
                         Accessibility::Independent,
                     ),
                 ],
