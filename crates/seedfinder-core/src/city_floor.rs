@@ -65,7 +65,7 @@ use crate::special_forced::{
     ForcedLevelPaintContext, ForcedPaintEvent, ForcedPaintOutcome, ForcedShopRoomState,
     is_forced_special, paint_forced_special,
 };
-use crate::vault_floor::{VaultError, generate_vault};
+use crate::vault_floor::{VaultError, generate_vault_with_trinket};
 
 /// Fully painted state immediately before `buildFlagMaps()`.
 #[derive(Clone, Debug, PartialEq)]
@@ -419,7 +419,12 @@ pub fn generate_city_floor(
         // reward options' choice group, numbered after them.
         if run.generate_vault && quests.imp.room_accessible {
             let depth_u8 = u8::try_from(depth).expect("City depth fits u8");
-            let vault = generate_vault(run.dungeon_seed, depth_u8, run.challenges)?;
+            let vault = generate_vault_with_trinket(
+                run.dungeon_seed,
+                depth_u8,
+                run.challenges,
+                &random.trinket,
+            )?;
             world_items.extend(vault.world_items(depth_u8, imp_group, VAULT_FIRST_OPTION));
         }
     }
@@ -499,8 +504,10 @@ pub fn paint_city_floor(
     let generator = RefCell::new(run.generator.clone());
     let prizes = RefCell::new(PrizePool {
         items_to_spawn: initial_prizes,
-        rat_skull_level: -1,
-        mimic_tooth_level: -1,
+        rat_skull_level: random.trinket.level(crate::catalog::ItemId::RatSkull),
+        mimic_tooth_level: random.trinket.level(crate::catalog::ItemId::MimicTooth),
+        exotic_crystals_level: random.trinket.level(crate::catalog::ItemId::ExoticCrystals),
+        trap_mechanism_level: random.trinket.level(crate::catalog::ItemId::TrapMechanism),
         next_choice_group: 0,
     });
     let shared_generator = SharedGenerator(&generator);
@@ -510,7 +517,8 @@ pub fn paint_city_floor(
         generator: shared_generator,
         prizes: shared_prizes,
     };
-    let regular = CityRoomDispatcher::new(content).set_revealed_trap_chance(0.0);
+    let regular =
+        CityRoomDispatcher::new(content).set_revealed_trap_chance(random.trinket.reveal_chance());
     let mut dispatch = CityCompositeDispatcher {
         regular,
         generator: shared_generator,

@@ -296,6 +296,7 @@ fn base(kind: ItemKind) -> Requirement {
         upgrade: UpgradeRequirement::Any,
         effect: EffectRequirement::Any,
         require_uncursed: false,
+        select_trinket: false,
         source: None,
         identity_group: None,
         max_depth: None,
@@ -450,6 +451,7 @@ fn modifier_queries() -> Vec<(String, SearchQuery)> {
             vec![Requirement {
                 upgrade: UpgradeRequirement::AtLeast(3),
                 require_uncursed: true,
+                select_trinket: false,
                 ..base(ItemKind::Ring)
             }],
             24,
@@ -525,6 +527,7 @@ fn locked_level_queries() -> Vec<(String, SearchQuery)> {
                     item: Some(ItemId::Kunai),
                     upgrade: UpgradeRequirement::Exact(3),
                     require_uncursed: true,
+                    select_trinket: false,
                     ..base(ItemKind::Weapon)
                 }],
                 24,

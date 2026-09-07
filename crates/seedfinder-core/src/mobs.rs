@@ -106,7 +106,7 @@ pub fn sewer_mob_rotation(depth: u32, random: &mut RandomStack) -> Vec<SewerMobK
     }
 
     for kind in &mut rotation {
-        if random.float() < 0.02_f32 {
+        if random.float() < 0.02_f32 * random.trinket.exotic_multiplier() {
             *kind = rare_alt(*kind);
         }
     }

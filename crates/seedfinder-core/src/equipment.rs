@@ -85,13 +85,13 @@ pub fn roll_weapon(random: &mut RandomStack) -> EquipmentRoll {
     let effect_seed = random.long();
     random.push(effect_seed);
     let effect_roll = random.float();
-    let result = if effect_roll < 0.3 {
+    let result = if effect_roll < 0.3 * random.trinket.curse_multiplier() {
         EquipmentRoll {
             upgrade,
             effect: Some(Effect::Weapon(select(random, &WEAPON_CURSES))),
             cursed: true,
         }
-    } else if effect_roll >= 0.9 {
+    } else if effect_roll >= 1.0 - 0.1 * random.trinket.enchant_multiplier() {
         EquipmentRoll {
             upgrade,
             effect: Some(Effect::Weapon(random_weapon_enchantment(random))),
@@ -115,13 +115,13 @@ pub fn roll_armor(random: &mut RandomStack) -> EquipmentRoll {
     let effect_seed = random.long();
     random.push(effect_seed);
     let effect_roll = random.float();
-    let result = if effect_roll < 0.3 {
+    let result = if effect_roll < 0.3 * random.trinket.curse_multiplier() {
         EquipmentRoll {
             upgrade,
             effect: Some(Effect::Armor(select(random, &ARMOR_CURSES))),
             cursed: true,
         }
-    } else if effect_roll >= 0.85 {
+    } else if effect_roll >= 1.0 - 0.15 * random.trinket.enchant_multiplier() {
         EquipmentRoll {
             upgrade,
             effect: Some(Effect::Armor(random_armor_glyph(random))),

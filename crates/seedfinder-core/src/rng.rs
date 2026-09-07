@@ -235,15 +235,23 @@ pub const fn scramble_seed(seed: i64) -> i64 {
 /// depend on it, so this type starts with one explicit deterministic base seed.
 #[derive(Clone, Debug)]
 pub struct RandomStack {
+    pub(crate) trinket: crate::trinkets::TrinketEffects,
     generators: Vec<JavaRandom>,
 }
 
 impl RandomStack {
+    /// Set the run's +3 generation profile after brewing. Child RNG streams
+    /// inherit it; callers must use a fresh stack for each dungeon run.
+    pub fn equip_trinket(&mut self, selected: Option<crate::catalog::ItemId>, dungeon_seed: i64) {
+        self.trinket = crate::trinkets::TrinketEffects::new(selected, dungeon_seed);
+    }
+
     /// Creates a stack with a deterministic base generator.
     #[must_use]
     pub fn with_base_seed(base_seed: i64) -> Self {
         Self {
             generators: vec![JavaRandom::new(base_seed)],
+            trinket: crate::trinkets::TrinketEffects::default(),
         }
     }
 

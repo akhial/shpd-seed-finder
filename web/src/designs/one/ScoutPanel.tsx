@@ -34,6 +34,7 @@ export function ScoutPanel({
   result,
   nav,
   onNavigate,
+  onTrinketChange,
 }: {
   input: string;
   onInput: (value: string) => void;
@@ -44,6 +45,7 @@ export function ScoutPanel({
   /** Position of the scouted seed within the search results, when it is one. */
   nav?: ResultPosition;
   onNavigate?: (delta: number) => void;
+  onTrinketChange?: (trinket: string) => void;
 }) {
   const challengeCount = useStore(queryStore, (state) => state.challenges.length);
   const [copied, setCopied] = useState(false);
@@ -229,6 +231,9 @@ export function ScoutPanel({
                       <CatalystEntry
                         offers={items.filter((item) => item.category === "trinket")}
                         order={result.trinketOrder ?? []}
+                        selectedTrinket={result.selectedTrinket}
+                        onSelect={onTrinketChange}
+                        disabled={loading}
                       />
                     )}
                     {items
@@ -303,7 +308,19 @@ export function ScoutPanel({
   );
 }
 
-export function CatalystEntry({ offers, order }: { offers: ScoutItem[]; order: TrinketOffer[] }) {
+export function CatalystEntry({
+  offers,
+  order,
+  selectedTrinket,
+  onSelect,
+  disabled,
+}: {
+  offers: ScoutItem[];
+  order: TrinketOffer[];
+  selectedTrinket?: string | null;
+  onSelect?: (trinket: string) => void;
+  disabled?: boolean;
+}) {
   const catalyst = offers[0];
   const note = accessibilityNote(catalyst);
   return (
@@ -319,6 +336,28 @@ export function CatalystEntry({ offers, order }: { offers: ScoutItem[]; order: T
         </div>
       </div>
       {note && <p className="d1-item-note">{note}</p>}
+      {onSelect && (
+        <div className="d1-trinket-selection">
+          <label htmlFor="scout-trinket">Applied trinket</label>
+          <select
+            id="scout-trinket"
+            value={selectedTrinket ?? "none"}
+            disabled={disabled}
+            onChange={(event) => onSelect(event.currentTarget.value)}
+          >
+            <option value="none">No Trinket</option>
+            {(order.length ? order.slice(0, 4) : offers).map((offer) => (
+              <option key={offer.id} value={offer.id}>
+                {offer.name} +3
+              </option>
+            ))}
+          </select>
+          <p className="d1-caption">
+            Applied from the next floor after the first brewing opportunity. Changing this scouts
+            the seed again.
+          </p>
+        </div>
+      )}
       <ol className="d1-trinket-choices" aria-label="Initial trinket choices">
         {(order.length
           ? order
@@ -334,6 +373,7 @@ export function CatalystEntry({ offers, order }: { offers: ScoutItem[]; order: T
           >
             <TrinketSprite cell={offer.spriteIndex} maximum={48} />
             <TrinketName name={offer.name} />
+            {selectedTrinket === offer.id && <span className="d1-trinket-applied">Applied +3</span>}
           </li>
         ))}
       </ol>

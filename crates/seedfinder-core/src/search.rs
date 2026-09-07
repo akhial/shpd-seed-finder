@@ -29,6 +29,10 @@ pub const PRODUCTION_SEARCH_START_STRIDE: u64 = 3_355_211_884_971;
 /// rolled by the floors generated up to this point, which is what lets a
 /// quest filter prune a seed the moment its giver appears.
 pub trait FloorGate: Sync {
+    fn selected_trinket(&self, _seed: DungeonSeed) -> Option<crate::catalog::ItemId> {
+        None
+    }
+
     fn continue_after_floor(
         &self,
         completed_depth: u8,
@@ -878,6 +882,7 @@ mod tests {
                 upgrade: crate::query::UpgradeRequirement::Exact(2),
                 effect: EffectRequirement::Any,
                 require_uncursed: false,
+                select_trinket: false,
                 source: None,
                 identity_group: None,
                 max_depth: None,
@@ -963,6 +968,7 @@ mod tests {
                 upgrade: crate::query::UpgradeRequirement::Exact(2),
                 effect: EffectRequirement::Any,
                 require_uncursed: false,
+                select_trinket: false,
                 source: None,
                 identity_group: None,
                 max_depth: None,
@@ -1033,6 +1039,7 @@ mod tests {
                 upgrade: crate::query::UpgradeRequirement::Exact(2),
                 effect: EffectRequirement::Any,
                 require_uncursed: false,
+                select_trinket: false,
                 source: None,
                 identity_group: None,
                 max_depth: None,
@@ -1105,6 +1112,7 @@ mod tests {
                 upgrade: crate::query::UpgradeRequirement::Exact(2),
                 effect: EffectRequirement::Any,
                 require_uncursed: false,
+                select_trinket: false,
                 source: None,
                 identity_group: None,
                 max_depth: None,
@@ -1145,6 +1153,7 @@ mod tests {
                 upgrade: crate::query::UpgradeRequirement::Exact(2),
                 effect: EffectRequirement::Any,
                 require_uncursed: false,
+                select_trinket: false,
                 source: None,
                 identity_group: None,
                 max_depth: None,
@@ -1287,6 +1296,7 @@ mod tests {
                 upgrade: crate::query::UpgradeRequirement::Exact(4),
                 effect: EffectRequirement::Any,
                 require_uncursed: false,
+                select_trinket: false,
                 source: None,
                 identity_group: None,
                 max_depth: None,
@@ -1537,6 +1547,7 @@ mod tests {
                 upgrade: crate::query::UpgradeRequirement::Exact(2),
                 effect: EffectRequirement::Any,
                 require_uncursed: false,
+                select_trinket: false,
                 source: None,
                 identity_group: None,
                 max_depth: None,

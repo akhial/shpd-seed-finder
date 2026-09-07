@@ -150,7 +150,7 @@ pub fn caves_mob_rotation(depth: u32, random: &mut RandomStack) -> Vec<CavesMobK
         rotation.push(CavesMobKind::Ghoul);
     }
     for kind in &mut rotation {
-        if random.float() < 0.02_f32 {
+        if random.float() < 0.02_f32 * random.trinket.exotic_multiplier() {
             *kind = caves_rare_alt(*kind);
         }
     }

@@ -420,8 +420,10 @@ pub fn paint_sewer_floor(
     let generator = RefCell::new(run.generator.clone());
     let prizes = RefCell::new(PrizePool {
         items_to_spawn: initial_prizes,
-        rat_skull_level: -1,
-        mimic_tooth_level: -1,
+        rat_skull_level: random.trinket.level(crate::catalog::ItemId::RatSkull),
+        mimic_tooth_level: random.trinket.level(crate::catalog::ItemId::MimicTooth),
+        exotic_crystals_level: random.trinket.level(crate::catalog::ItemId::ExoticCrystals),
+        trap_mechanism_level: random.trinket.level(crate::catalog::ItemId::TrapMechanism),
         next_choice_group: 0,
     });
     let shared_generator = SharedGenerator(&generator);
@@ -431,7 +433,8 @@ pub fn paint_sewer_floor(
         generator: shared_generator,
         prizes: shared_prizes,
     };
-    let regular = SewerRoomDispatcher::new(content);
+    let regular =
+        SewerRoomDispatcher::new(content).set_revealed_trap_chance(random.trinket.reveal_chance());
     let forced_shop_rooms = (0..built.rooms.len())
         .map(|_| ForcedShopRoomState::default())
         .collect();
@@ -822,11 +825,11 @@ impl ConsumablePrizeContext for SharedPrizes<'_> {
 
 impl SecretPrizeContext for SharedPrizes<'_> {
     fn exotic_crystals_level(&self) -> i32 {
-        -1
+        self.0.borrow().exotic_crystals_level
     }
 
     fn trap_mechanism_level(&self) -> i32 {
-        -1
+        self.0.borrow().trap_mechanism_level
     }
 }
 
@@ -886,6 +889,16 @@ pub(crate) struct SharedSewerContent<'a> {
 }
 
 impl SewerRoomContent for SharedSewerContent<'_> {
+    fn random_default_item(&mut self, rng: &mut RandomStack) -> PaintItem {
+        crate::generator::random_using_defaults_overall(
+            rng,
+            &mut self.generator.0.borrow_mut(),
+            self.depth,
+        )
+        .expect("valid default deck")
+        .into()
+    }
+
     fn find_prize_item(&mut self, random: &mut RandomStack) -> Option<PaintItem> {
         self.prizes
             .take_prize_item(random)
@@ -1409,6 +1422,7 @@ mod tests {
                 upgrade: crate::query::UpgradeRequirement::Exact(2),
                 effect: EffectRequirement::Any,
                 require_uncursed: false,
+                select_trinket: false,
                 source: None,
                 identity_group: None,
                 max_depth: None,

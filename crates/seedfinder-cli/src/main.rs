@@ -295,6 +295,7 @@ fn benchmark_query() -> SearchQuery {
             upgrade: UpgradeRequirement::Exact(5),
             effect: EffectRequirement::Any,
             require_uncursed: false,
+            select_trinket: false,
             source: None,
             identity_group: None,
             max_depth: None,

@@ -39,7 +39,12 @@ NON_ORDINARY_MOBS = {
 
 # Upstream classes that are not catalog equipment and so never reach the
 # engine's item list (the vault drops a plain Dart stack).
-NON_CATALOG_ITEMS = {"dart"}
+NON_CATALOG_ITEMS = {
+    "dart", "rat_skull", "parchment_scrap", "petrified_seed", "exotic_crystals",
+    "mossy_clump", "dimensional_sundial", "thirteen_leaf_clover", "trap_mechanism",
+    "mimic_tooth", "wondrous_resin", "eye_of_newt", "salt_cube", "vial_of_blood",
+    "shard_of_oblivion", "chaotic_censer", "ferret_tuft", "cracked_spyglass",
+}
 
 SEARCHABLE_KINDS = {"weapon", "armor", "wand", "ring", "missile", "melee"}
 
@@ -171,7 +176,7 @@ def load_engine(path):
             current["mobs"][(match["kind"].lower(), int(match["cell"]))] += 1
             continue
         match = ITEM_LINE.match(line)
-        if match and current is not None:
+        if match and current is not None and match["id"] not in NON_CATALOG_ITEMS:
             current["items"][(
                 match["id"], int(match["upgrade"]), match["cursed"] == "true", match["effect"],
             )] += 1

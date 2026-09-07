@@ -207,6 +207,7 @@ impl SpecialLevelContext for LevelPaintContext<'_> {
 /// A request at one of the exact Java `Generator` call sites.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SpecialGeneratorRequest {
+    DefaultOverall,
     Weapon { floor_set: i32, use_defaults: bool },
     Armor { floor_set: i32 },
     Missile { floor_set: i32, use_defaults: bool },
@@ -238,6 +239,9 @@ impl SpecialGeneratorContext for GeneratorState {
         random: &mut RandomStack,
     ) -> Result<GeneratedItem, GeneratorError> {
         match request {
+            SpecialGeneratorRequest::DefaultOverall => {
+                generator::random_using_defaults_overall(random, self, depth)
+            }
             SpecialGeneratorRequest::Weapon {
                 floor_set,
                 use_defaults,
@@ -277,6 +281,8 @@ pub struct PrizePool {
     pub items_to_spawn: Vec<SpecialItem>,
     pub rat_skull_level: i32,
     pub mimic_tooth_level: i32,
+    pub exotic_crystals_level: i32,
+    pub trap_mechanism_level: i32,
     pub next_choice_group: u16,
 }
 
@@ -287,6 +293,8 @@ impl PrizePool {
             items_to_spawn: Vec::new(),
             rat_skull_level: -1,
             mimic_tooth_level: -1,
+            exotic_crystals_level: -1,
+            trap_mechanism_level: -1,
             next_choice_group,
         }
     }

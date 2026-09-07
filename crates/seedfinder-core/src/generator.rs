@@ -1187,24 +1187,18 @@ fn randomize_identity(
         GeneratorCategory::Trinket => Ok(GeneratedItem::Trinket(trinket_identity(index)?)),
         GeneratorCategory::Food => Ok(GeneratedItem::Food(food_identity(index)?)),
         GeneratorCategory::Potion => {
-            // No Exotic Crystals is equipped in the canonical profile. The
-            // deck-backed path still consumes this Float() check.
-            if check_exotic {
-                random.float();
-            }
+            let exotic = check_exotic && random.float() < random.trinket.exotic_chance();
             Ok(GeneratedItem::Potion {
                 kind: potion_identity(index)?,
-                exotic: false,
+                exotic,
             })
         }
         GeneratorCategory::Seed => Ok(GeneratedItem::Seed(seed_identity(index)?)),
         GeneratorCategory::Scroll => {
-            if check_exotic {
-                random.float();
-            }
+            let exotic = check_exotic && random.float() < random.trinket.exotic_chance();
             Ok(GeneratedItem::Scroll {
                 kind: scroll_identity(index)?,
-                exotic: false,
+                exotic,
             })
         }
         GeneratorCategory::Stone => Ok(GeneratedItem::Stone(stone_identity(index)?)),

@@ -239,6 +239,7 @@ mod tests {
             upgrade: UpgradeRequirement::AtLeast(2),
             effect: EffectRequirement::exactly(Effect::Weapon(WeaponEffect::Blazing)),
             require_uncursed: true,
+            select_trinket: false,
             source: Some(ItemSource::SacrificialFire),
             identity_group: Some(3),
             max_depth: Some(21),
@@ -309,6 +310,7 @@ mod tests {
         state.requirements.push(UiRequirement {
             effect: EffectRequirement::OneOf(EffectSet::enchantments(ItemKind::Weapon).unwrap()),
             require_uncursed: true,
+            select_trinket: false,
             ..UiRequirement::new(key)
         });
         // Two Rings of Might adding up to +4.

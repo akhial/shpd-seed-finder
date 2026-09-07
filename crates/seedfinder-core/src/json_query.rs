@@ -126,6 +126,8 @@ struct FileRequirement {
     #[serde(default)]
     uncursed: bool,
     #[serde(default)]
+    select_trinket: bool,
+    #[serde(default)]
     source: Option<FileItemSource>,
     #[serde(default)]
     identity_group: Option<u8>,
@@ -443,6 +445,7 @@ fn convert_requirement(
         upgrade,
         effect,
         require_uncursed: requirement.uncursed,
+        select_trinket: requirement.select_trinket,
         source: requirement.source.map(ItemSource::from),
         identity_group: requirement.identity_group,
         max_depth: requirement.max_depth,
@@ -611,6 +614,9 @@ fn encode_requirement(requirement: &Requirement) -> Value {
             }
         };
         output.insert("effect".to_owned(), effect);
+    }
+    if requirement.select_trinket {
+        output.insert("select_trinket".to_owned(), json!(true));
     }
     if requirement.require_uncursed {
         output.insert("uncursed".to_owned(), json!(true));
@@ -1020,6 +1026,7 @@ mod tests {
                     upgrade: UpgradeRequirement::Exact(2),
                     effect: EffectRequirement::exactly(Effect::Weapon(WeaponEffect::Blazing)),
                     require_uncursed: true,
+                    select_trinket: false,
                     source: Some(ItemSource::LockedChest),
                     identity_group: Some(2),
                     max_depth: Some(9),
@@ -1034,6 +1041,7 @@ mod tests {
                     upgrade: UpgradeRequirement::AtLeast(3),
                     effect: EffectRequirement::Any,
                     require_uncursed: false,
+                    select_trinket: false,
                     source: None,
                     identity_group: None,
                     max_depth: None,
@@ -1084,6 +1092,7 @@ mod tests {
                 upgrade: UpgradeRequirement::Any,
                 effect: EffectRequirement::Any,
                 require_uncursed: false,
+                select_trinket: false,
                 source: None,
                 identity_group: None,
                 max_depth: None,

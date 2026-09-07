@@ -375,7 +375,7 @@ impl ConsumablePrizeContext for PrizePool {
     }
 
     fn exotic_crystals_level(&self) -> i32 {
-        -1
+        self.exotic_crystals_level
     }
 }
 
@@ -984,7 +984,15 @@ where
             && inputs.random.float() < mimic_chance
         {
             let reward = mimic_reward(inputs)?;
-            inputs.mimic(cell, vec![item.into(), reward.into()]);
+            let mut items = vec![item.into(), reward.into()];
+            if inputs.random.trinket.is(crate::catalog::ItemId::MimicTooth) {
+                items.push(
+                    inputs
+                        .generate(SpecialGeneratorRequest::DefaultOverall)?
+                        .into(),
+                );
+            }
+            inputs.mimic(cell, items);
         } else {
             inputs.drop(
                 cell,

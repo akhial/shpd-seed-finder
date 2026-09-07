@@ -169,7 +169,7 @@ pub fn city_mob_rotation(depth: u32, random: &mut RandomStack) -> Vec<CityMobKin
         rotation.push(CityMobKind::Succubus);
     }
     for kind in &mut rotation {
-        if random.float() < 0.02_f32 {
+        if random.float() < 0.02_f32 * random.trinket.exotic_multiplier() {
             *kind = city_rare_alt(*kind);
         }
     }
@@ -180,7 +180,7 @@ pub fn city_mob_rotation(depth: u32, random: &mut RandomStack) -> Vec<CityMobKin
 fn random_elemental(random: &mut RandomStack) -> CityMobKind {
     // The chaos check is inside Elemental.random(), before the ordinary
     // subtype roll. A successful chaos check therefore skips the second draw.
-    if random.float() < 0.02_f32 {
+    if random.float() < 0.02_f32 * random.trinket.exotic_multiplier() {
         return CityMobKind::ChaosElemental;
     }
     let roll = random.float();

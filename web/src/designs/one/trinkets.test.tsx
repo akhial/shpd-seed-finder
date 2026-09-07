@@ -14,6 +14,44 @@ import { RequirementEditor, trinketEditorRequirement } from "./RequirementEditor
 import { requirementTitle } from "./summary";
 
 describe("offered trinket pilot", () => {
+  it("persists choosing a trinket through grouped queries and shows only four scout overrides", () => {
+    const query = fromQueryJson(
+      '{"requirements":[{"any_of":[{"item":"mimic_tooth","select_trinket":true},{"item":"rat_skull"}]}]}',
+    );
+    expect(query.requirements[0].selectTrinket).toBe(true);
+    expect(fromQueryJson(JSON.stringify(toQueryDocument(query)))).toEqual(query);
+    const order = itemsForKind("trinket").map((i) => ({
+      id: i.id,
+      name: i.name,
+      spriteIndex: i.sprite,
+    }));
+    const offers: ScoutItem[] = order.slice(0, 4).map((i) => ({
+      ...i,
+      category: "trinket",
+      depth: 2,
+      source: "heap",
+      upgrade: 0,
+      cursed: false,
+      secret: false,
+      effect: null,
+      accessibility: { type: "independent" },
+      matched: false,
+    }));
+    const html = renderToStaticMarkup(
+      <CatalystEntry
+        offers={offers}
+        order={order}
+        selectedTrinket={order[1].id}
+        onSelect={() => {}}
+      />,
+    );
+    expect(html.match(/<option /g)).toHaveLength(5);
+    expect(html).toContain('value="none"');
+    expect(html).toContain(`value="${order[1].id}" selected=""`);
+    expect(html).toContain("Applied +3");
+    expect(html).not.toContain(`<option value="${order[4].id}"`);
+  });
+
   it("preserves all 17 identities, draws four choices in deck order, and highlights the match", () => {
     const order = itemsForKind("trinket")
       .map((item) => ({
@@ -83,7 +121,7 @@ describe("offered trinket pilot", () => {
         onCancel={() => {}}
       />,
     );
-    expect(html).not.toContain("offered");
+    expect(html).toContain("Choose matching trinket at +3");
     expect(html).not.toContain("Any trinket");
     expect(html).not.toContain('value=""');
     expect(html).not.toContain("Details");

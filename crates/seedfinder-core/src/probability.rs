@@ -84,6 +84,16 @@ use crate::quests::WandmakerQuestType;
 /// the group.
 #[must_use]
 pub fn estimate_match_probability(query: &SearchQuery) -> f64 {
+    // The equipment supply tables were calibrated without trinkets.
+    if query.requirements.iter().any(|r| r.select_trinket)
+        && query
+            .requirements
+            .iter()
+            .any(|r| r.kind != ItemKind::Trinket)
+    {
+        return f64::NAN;
+    }
+
     if query
         .requirements
         .iter()
@@ -1630,6 +1640,7 @@ mod tests {
             upgrade: UpgradeRequirement::Any,
             effect: EffectRequirement::Any,
             require_uncursed: false,
+            select_trinket: false,
             source: None,
             identity_group: None,
             max_depth: None,
