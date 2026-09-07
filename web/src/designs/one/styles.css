@@ -2897,9 +2897,8 @@ input[type="range"]::-moz-range-thumb {
 }
 .d1-trinket-match {
   border-color: #59cb89;
-  box-shadow:
-    inset 0 0 18px #59cb891c,
-    0 0 8px #59cb8924;
+  background: #59cb891c;
+  color: #8ee9af;
 }
 .d1-trinket-tail {
   display: grid;
