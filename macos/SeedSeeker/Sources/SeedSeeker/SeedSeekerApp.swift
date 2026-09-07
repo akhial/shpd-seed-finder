@@ -1471,10 +1471,14 @@ private struct RequirementEditor: View {
                 .font(.headline).padding(.top, 14).padding(.bottom, 4)
             Form {
                 Section("Item") {
-                    Picker("Category", selection: Binding(get: { kind.family }, set: { kind = $0 })) {
-                        ForEach([ItemKind.weapon, .armor, .wand, .ring, .trinket], id: \.self) { Text($0.label).tag($0) }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Category")
+                        WideSegmentedPicker(
+                            options: [ItemKind.weapon, .armor, .wand, .ring, .trinket].map { ($0.label, $0) },
+                            selection: Binding(get: { kind.family }, set: { kind = $0 }),
+                            accessibilityLabel: "Category")
                     }
-                    .pickerStyle(.segmented)
+                    .frame(maxWidth: .infinity)
                     .onChange(of: kind) { previous, value in
                         if previous.family != value.family {
                             itemID = ""; tierMatch = .any; tier = 2
@@ -2263,19 +2267,19 @@ private struct TrinketScoutRow: View {
                     }
                 }
             }
-            HStack(spacing: 6) {
+            HStack(spacing: 10) {
                 ForEach(Array(order.prefix(4))) { item in
                     GeometryReader { geometry in
                         let edge = geometry.size.width
                         VStack(spacing: 4) {
                             Spacer(minLength: 0)
-                            ItemSpriteView(item: item, pointSize: max(1, min(48, Int(edge * 0.55))))
+                            ItemSpriteView(item: item, pointSize: max(1, min(44, Int(edge * 0.5))))
                             Text(item.name).font(.system(size: 11))
                                 .lineLimit(1).minimumScaleFactor(0.3)
                                 .frame(maxWidth: .infinity)
                             Spacer(minLength: 0)
                         }
-                        .padding(.horizontal, 4)
+                        .padding(8)
                         .frame(width: edge, height: edge)
                         .background(matchedIDs.contains(item.id) ? Color.shatteredMint.opacity(0.12) : Color.secondary.opacity(0.05),
                                     in: RoundedRectangle(cornerRadius: 6))
@@ -2287,6 +2291,7 @@ private struct TrinketScoutRow: View {
                     .aspectRatio(1, contentMode: .fit)
                 }
             }
+            .padding(.horizontal, 8)
             Text("Remaining deck order").font(.caption).foregroundStyle(.secondary)
             GeometryReader { geometry in
                 let size = max(1, min(24, Int((geometry.size.width - 24) / 13)))
