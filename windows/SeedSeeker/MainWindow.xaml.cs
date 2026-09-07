@@ -1038,7 +1038,7 @@ public sealed partial class MainWindow : Window
             tierBound.Visibility = generic && ranged ? Visibility.Visible : Visibility.Collapsed;
             uncursed.Visibility = source.Visibility = depthRow.Visibility = trinket ? Visibility.Collapsed : Visibility.Visible;
             depth.Visibility = !trinket && depthToggle.IsOn ? Visibility.Visible : Visibility.Collapsed;
-            Relabel(item, trinket ? "Trinket" : "Item");
+            Relabel(item, k.RequiresNamedItem() ? Labels.Kind(k).TrimEnd('s') : "Item");
             Relabel(tierBound, predicate == TierMatch.AtLeast ? "Minimum tier" : "Maximum tier");
             // A stack that counts its levels together has identical any-upgrade
             // members, so the upgrade predicate has nothing left to say.
@@ -1058,9 +1058,9 @@ public sealed partial class MainWindow : Window
         // concrete ring, whose copies are the same item over again.
         void SyncStack()
         {
-            var trinket = (ItemKind)Math.Max(0, kind.SelectedIndex) == ItemKind.Trinket;
-            count.Visibility = trinket || stack.InCluster ? Visibility.Collapsed : Visibility.Visible;
-            var many = !trinket && !stack.InCluster && Counted() > 1;
+            var namedOnly = ((ItemKind)Math.Max(0, kind.SelectedIndex)).RequiresNamedItem();
+            count.Visibility = namedOnly || stack.InCluster ? Visibility.Collapsed : Visibility.Visible;
+            var many = !namedOnly && !stack.InCluster && Counted() > 1;
             // A combined level is a property of a concrete stack of two or more
             // — and of rings only, whose effects scale with their level.
             var ring = ((ItemKind)Math.Max(0, kind.SelectedIndex)).Family() == ItemKind.Ring;
@@ -1086,7 +1086,8 @@ public sealed partial class MainWindow : Window
         void NormalizeUpgrade()
         {
             var k = (ItemKind)Math.Max(0, kind.SelectedIndex);
-            var chosen = item.SelectedIndex > 0 && item.SelectedIndex <= itemChoices.Count ? itemChoices[item.SelectedIndex - 1] : null;
+            var chosenIndex = item.SelectedIndex - (k.RequiresNamedItem() ? 0 : 1);
+            var chosen = chosenIndex >= 0 && chosenIndex < itemChoices.Count ? itemChoices[chosenIndex] : null;
             maximumUpgrade = Math.Max(2, k.MaximumSearchUpgrade(chosen, (TierMatch)Math.Max(0, tierMatch.SelectedIndex), selectedTier));
             var atLeast = upgradeMatch.SelectedIndex == (int)UpgradeMatch.AtLeast;
             upgrade.Maximum = atLeast ? maximumUpgrade - 1 : maximumUpgrade;
@@ -1119,7 +1120,7 @@ public sealed partial class MainWindow : Window
         }
         void Populate()
         {
-            var k = (ItemKind)Math.Max(0, kind.SelectedIndex); var oldId = r.Item?.Id; itemChoices.Clear(); itemChoices.AddRange(ItemCatalog.EditorItems(k, r.Item)); item.Items.Clear(); if (k != ItemKind.Trinket) item.Items.Add($"Any {Labels.Singular(k)}"); foreach (var value in itemChoices) item.Items.Add(value.Name); item.SelectedIndex = Math.Max(0, itemChoices.FindIndex(x => x.Id == oldId) + (k == ItemKind.Trinket ? 0 : 1));
+            var k = (ItemKind)Math.Max(0, kind.SelectedIndex); var oldId = r.Item?.Id; itemChoices.Clear(); itemChoices.AddRange(ItemCatalog.EditorItems(k, r.Item)); item.Items.Clear(); if (!k.RequiresNamedItem()) item.Items.Add($"Any {Labels.Singular(k)}"); foreach (var value in itemChoices) item.Items.Add(value.Name); item.SelectedIndex = Math.Max(0, itemChoices.FindIndex(x => x.Id == oldId) + (k.RequiresNamedItem() ? 0 : 1));
             PopulateEffects(r.Effect.Effects);
             NormalizeUpgrade(); SyncStack();
         }
@@ -1130,7 +1131,7 @@ public sealed partial class MainWindow : Window
         Populate(); NormalizeTier(); SyncStack();
         var dialog = new ContentDialog { XamlRoot = Content.XamlRoot, Title = title, PrimaryButtonText = accept, CloseButtonText = "Cancel", DefaultButton = ContentDialogButton.Primary, Content = VerticalScrollView(content, 510, 460) };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary) return null;
-        r.Kind = (ItemKind)kind.SelectedIndex; r.Item = r.Kind == ItemKind.Trinket ? itemChoices[Math.Max(0, item.SelectedIndex)] : item.SelectedIndex > 0 ? itemChoices[item.SelectedIndex - 1] : null; r.TierMatch = r.Item is null && r.Kind.Family() is ItemKind.Weapon or ItemKind.Armor ? (TierMatch)tierMatch.SelectedIndex : TierMatch.Any; r.Tier = r.TierMatch == TierMatch.Any ? 0 : selectedTier;
+        r.Kind = (ItemKind)kind.SelectedIndex; r.Item = r.Kind.RequiresNamedItem() ? itemChoices[Math.Max(0, item.SelectedIndex)] : item.SelectedIndex > 0 ? itemChoices[item.SelectedIndex - 1] : null; r.TierMatch = r.Item is null && r.Kind.Family() is ItemKind.Weapon or ItemKind.Armor ? (TierMatch)tierMatch.SelectedIndex : TierMatch.Any; r.Tier = r.TierMatch == TierMatch.Any ? 0 : selectedTier;
         r.UpgradeMatch = (UpgradeMatch)upgradeMatch.SelectedIndex; r.Upgrade = r.UpgradeMatch switch { UpgradeMatch.Any => 0, UpgradeMatch.Exactly => (int)upgrade.Value, UpgradeMatch.AtLeast when r.Kind == ItemKind.Ring => (int)upgrade.Value, UpgradeMatch.AtLeast => selectedMinimumUpgrade, _ => 0 };
         r.RequireUncursed = uncursed.IsChecked == true;
         // One checked effect is a single name, as before effect sets existed; an empty "Specific" means any.
@@ -1148,6 +1149,11 @@ public sealed partial class MainWindow : Window
         {
             r.Source = null; r.MaximumDepth = null; r.RequireUncursed = false;
             r.UpgradeMatch = UpgradeMatch.Any; r.Upgrade = 0; r.Effect = EffectFilter.Any();
+            r.IdentityGroup = null; r.LevelSum = null;
+            return new StackShape(1, null, null, stack.InCluster);
+        }
+        if (r.Kind == ItemKind.Artifact)
+        {
             r.IdentityGroup = null; r.LevelSum = null;
             return new StackShape(1, null, null, stack.InCluster);
         }
@@ -1785,7 +1791,7 @@ public sealed partial class MainWindow : Window
         {
             await Task.Delay(150); var batch = await Task.Run(() => active.Poll(128)); Collect(batch);
             var status = await Task.Run(active.Status); var seconds = timer.Elapsed.TotalSeconds; var rate = seconds > lastTime ? (status.Scanned - lastScanned) / (seconds - lastTime) : 0; lastScanned = status.Scanned; lastTime = seconds;
-            var probability = status.Probability > 0 ? $"{status.Probability:P4}" : "calculating"; var tts = status.Probability > 0 && rate > 0 ? FormatDuration(1 / status.Probability / rate) : "calculating";
+            var probability = status.ProbabilityDescription; var tts = status.ProbabilityUnavailable ? "unavailable" : status.Probability > 0 && rate > 0 ? FormatDuration(1 / status.Probability / rate) : "calculating";
             // A concluded run keeps its counter, except where nothing was
             // scanned: an impossible query is proven before the first seed and
             // "0 seeds searched" would read as a malfunction rather than as
