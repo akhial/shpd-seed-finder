@@ -302,10 +302,25 @@ pub fn generate_vault(
     depth: u8,
     challenges: Challenges,
 ) -> Result<GeneratedVault, VaultError> {
+    generate_vault_with_trinket(
+        dungeon_seed,
+        depth,
+        challenges,
+        &crate::trinkets::TrinketEffects::default(),
+    )
+}
+
+pub(crate) fn generate_vault_with_trinket(
+    dungeon_seed: i64,
+    depth: u8,
+    challenges: Challenges,
+    trinket: &crate::trinkets::TrinketEffects,
+) -> Result<GeneratedVault, VaultError> {
     if !(17..=19).contains(&depth) {
         return Err(VaultError::InvalidDepth(depth));
     }
     let mut random = RandomStack::with_base_seed(0);
+    random.trinket = trinket.clone();
     random.push(seed_for_depth(dungeon_seed, u32::from(depth), 1));
     let result = generate_vault_with_generator(u32::from(depth), challenges, &mut random);
     random.pop();

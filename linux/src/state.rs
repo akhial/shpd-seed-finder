@@ -86,6 +86,7 @@ impl UiRequirement {
             upgrade: UpgradeRequirement::Any,
             effect: EffectRequirement::Any,
             require_uncursed: false,
+            select_trinket: false,
             source: None,
             identity_group: None,
             max_depth: None,
@@ -104,6 +105,7 @@ impl UiRequirement {
             upgrade: self.upgrade,
             effect: self.effect,
             require_uncursed: self.require_uncursed,
+            select_trinket: false,
             source: self.source,
             identity_group: self.identity_group,
             max_depth: self.max_depth,
@@ -264,6 +266,7 @@ impl AppState {
                 upgrade: requirement.upgrade,
                 effect: requirement.effect,
                 require_uncursed: requirement.require_uncursed,
+                select_trinket: false,
                 source: requirement.source,
                 identity_group: requirement.identity_group,
                 max_depth: requirement.max_depth,
@@ -974,6 +977,7 @@ mod tests {
             tier: TierRequirement::AtLeast(4),
             upgrade: UpgradeRequirement::Exact(2),
             require_uncursed: true,
+            select_trinket: false,
             max_depth: Some(9),
             ..UiRequirement::new(key)
         });

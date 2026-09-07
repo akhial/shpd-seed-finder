@@ -278,6 +278,7 @@ struct RequirementPlan {
 /// `false` answer sound and merely forgoes some early exits.
 #[derive(Clone, Debug)]
 pub struct QueryPlan {
+    selected_slots: Vec<Vec<Requirement>>,
     /// One entry per query slot: a plain requirement alone, or every member
     /// of an alternative group, any one of which satisfies the slot.
     slots: Vec<Vec<RequirementPlan>>,
@@ -390,6 +391,7 @@ impl QueryPlan {
         });
 
         let mut plan = Self {
+            selected_slots: crate::trinkets::selection_slots(query),
             slots,
             generation_depth,
             blacksmith_deadline,
@@ -523,6 +525,10 @@ impl QueryPlan {
 }
 
 impl FloorGate for QueryPlan {
+    fn selected_trinket(&self, seed: crate::seed::DungeonSeed) -> Option<crate::catalog::ItemId> {
+        crate::trinkets::resolve_selection(seed, &self.selected_slots)
+    }
+
     fn continue_after_floor(
         &self,
         completed_depth: u8,
@@ -558,6 +564,7 @@ mod tests {
             upgrade,
             effect: EffectRequirement::Any,
             require_uncursed: false,
+            select_trinket: false,
             source: None,
             identity_group: None,
             max_depth: None,
@@ -926,6 +933,7 @@ mod tests {
         let cursed = Requirement {
             effect: EffectRequirement::exactly(Effect::Weapon(WeaponEffect::Sacrificial)),
             require_uncursed: false,
+            select_trinket: false,
             ..requirement(ItemKind::Weapon, UpgradeRequirement::Exact(3))
         };
         let plan = QueryPlan::analyze(&query(vec![cursed], 24));
@@ -937,6 +945,7 @@ mod tests {
         let good = Requirement {
             effect: EffectRequirement::exactly(Effect::Armor(ArmorEffect::Thorns)),
             require_uncursed: false,
+            select_trinket: false,
             ..requirement(ItemKind::Armor, UpgradeRequirement::Exact(3))
         };
         assert!(!QueryPlan::analyze(&query(vec![good], 24)).is_unsatisfiable());
@@ -944,6 +953,7 @@ mod tests {
         let cursed_plus_four = Requirement {
             effect: EffectRequirement::exactly(Effect::Weapon(WeaponEffect::Pressurized)),
             require_uncursed: false,
+            select_trinket: false,
             ..requirement(ItemKind::Weapon, UpgradeRequirement::Exact(4))
         };
         assert!(QueryPlan::analyze(&query(vec![cursed_plus_four], 24)).is_unsatisfiable());
@@ -951,6 +961,7 @@ mod tests {
         let crystal_plus_five = Requirement {
             effect: EffectRequirement::exactly(Effect::Weapon(WeaponEffect::Crystal)),
             require_uncursed: true,
+            select_trinket: false,
             ..requirement(ItemKind::Weapon, UpgradeRequirement::Exact(5))
         };
         assert!(!QueryPlan::analyze(&query(vec![crystal_plus_five], 24)).is_unsatisfiable());
@@ -966,6 +977,7 @@ mod tests {
                 .unwrap(),
             ),
             require_uncursed: false,
+            select_trinket: false,
             ..requirement(ItemKind::Weapon, UpgradeRequirement::Exact(3))
         };
         assert!(!QueryPlan::analyze(&query(vec![mixed], 24)).is_unsatisfiable());
@@ -973,6 +985,7 @@ mod tests {
         let any_enchantment = Requirement {
             effect: EffectRequirement::OneOf(EffectSet::enchantments(ItemKind::Weapon).unwrap()),
             require_uncursed: true,
+            select_trinket: false,
             ..requirement(ItemKind::Weapon, UpgradeRequirement::Exact(3))
         };
         assert!(!QueryPlan::analyze(&query(vec![any_enchantment], 24)).is_unsatisfiable());

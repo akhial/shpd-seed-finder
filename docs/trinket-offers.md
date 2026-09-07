@@ -41,9 +41,36 @@ they do not predict gameplay transmutations. `items` contains four records with
 `category: "trinket"`, the catalyst's placement metadata and the normal `matched`
 flag. The scout views group these beneath a single Magical catalyst entry.
 
-The engine reads a cloned category deck without consuming the world RNG or
-changing generation. The existing canonical generation profile still applies;
-this feature does not simulate choosing, upgrading, or equipping a trinket.
+The engine reads a cloned category deck without consuming the world RNG.
+Requirements default to searching offers without equipping a trinket. In the
+web requirement editor, **Choose matching trinket at +3** opts into selection
+(`select_trinket: true` in query JSON). Effects begin on the next generated
+floor after both the catalyst and the first alchemy pot have become available.
+An earlier visited pot can be revisited when the catalyst is found. The pot's
+own floor is generated before brewing and stays unchanged.
+
+For a chosen OR slot, all its alternatives count: exactly one distinct initial
+offer must match. Two or more matches mean **No Trinket**, even when only one
+alternative carries the selection flag. Ambiguity across multiple chosen slots
+also means No Trinket. The remaining 13 deck entries never affect selection.
+
+The engine applies the +3 generation effects of Mimic Tooth, Parchment Scrap,
+Rat Skull, Exotic Crystals, Mossy Clump, Trap Mechanism, and Cracked Spyglass.
+Other trinkets can be chosen but their gameplay effects do not alter the
+canonical generated world. Equipment probability estimates are unavailable
+with a selected trinket because the existing supply tables assume no trinket;
+pure offer probabilities remain available.
+
+The web scout offers **No Trinket** and all four initial choices. An override
+regenerates that seed with the same brewing timing and can be changed back to
+the original match. A new scout request starts from the query's selection.
+WASM scout requests accept `trinket: "none"` or an initial offer's stable ID;
+omitting it resolves the query automatically. Responses include
+`selectedTrinket` (a stable ID or null). Overrides do not edit the search query.
+
+Queries without selection keep their version-4 share codes. Selected queries
+use version 5; both versions decode in this release. The selection controls
+and scout overrides are integrated in the web UI only.
 
 Web, Windows, macOS, Linux, and Android share named trinket search and OR
 semantics. Each scout uses four square initial-choice cards, a flat green
@@ -74,3 +101,9 @@ Use `;` instead of `:` as the classpath separator on Windows. Lines prefixed
 `trinket_order` contain the 1-based draw position, Java class and sprite index.
 The committed Rust fixture pins all 17 positions, and the WASM test verifies
 the shared catalog against the same output contract.
+
+For full generation parity, `ParityOracle` accepts the JVM property
+`-Dseedfinder.trinket=MimicTooth` (or another upstream trinket class). It equips
+that trinket at +3 after the same brewing opportunity and explicitly marks all
+journal pages read, including the final Halls lore page. `dump_floors` accepts
+the stable ID after the challenges argument, e.g. `AAA-AAA-AAA 24 0 mimic_tooth`.

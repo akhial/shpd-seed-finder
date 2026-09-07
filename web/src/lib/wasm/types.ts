@@ -74,6 +74,7 @@ export interface LevelSum {
 }
 
 export interface RequirementState {
+  selectTrinket?: boolean;
   kind?: RequirementKind;
   item?: string;
   tier: TierFilter;
@@ -102,6 +103,7 @@ export type TierDocument = "any" | { exact: number } | { at_least: number } | { 
 export type UpgradeDocument = number | "any" | { exact: number } | { at_least: number };
 
 export interface RequirementDocument {
+  select_trinket?: boolean;
   kind?: RequirementKind;
   item?: string;
   tier?: TierDocument;
@@ -220,6 +222,8 @@ export interface ScoutItem {
 }
 
 export interface ScoutRequest {
+  /** Missing uses the query; "none" overrides to no trinket. */
+  trinket?: string;
   seed: string;
   challenges?: ChallengeName[];
   query?: QueryDocument;
@@ -257,6 +261,7 @@ export interface TrinketOffer {
 }
 
 export interface ScoutResult {
+  selectedTrinket?: string | null;
   /** Full private-deck order; only entries 0..3 are initial catalyst offers. */
   trinketOrder?: TrinketOffer[];
   seed: ParsedSeed;

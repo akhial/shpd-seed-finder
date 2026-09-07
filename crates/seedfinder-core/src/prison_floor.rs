@@ -441,8 +441,10 @@ pub fn paint_prison_floor(
     let generator = RefCell::new(run.generator.clone());
     let prizes = RefCell::new(PrizePool {
         items_to_spawn: initial_prizes,
-        rat_skull_level: -1,
-        mimic_tooth_level: -1,
+        rat_skull_level: random.trinket.level(crate::catalog::ItemId::RatSkull),
+        mimic_tooth_level: random.trinket.level(crate::catalog::ItemId::MimicTooth),
+        exotic_crystals_level: random.trinket.level(crate::catalog::ItemId::ExoticCrystals),
+        trap_mechanism_level: random.trinket.level(crate::catalog::ItemId::TrapMechanism),
         next_choice_group: 0,
     });
     let shared_generator = SharedGenerator(&generator);
@@ -452,7 +454,8 @@ pub fn paint_prison_floor(
         generator: shared_generator,
         prizes: shared_prizes,
     };
-    let regular = PrisonRoomDispatcher::new(content).set_revealed_trap_chance(0.0);
+    let regular =
+        PrisonRoomDispatcher::new(content).set_revealed_trap_chance(random.trinket.reveal_chance());
     let mut dispatch = PrisonCompositeDispatcher {
         regular,
         generator: shared_generator,

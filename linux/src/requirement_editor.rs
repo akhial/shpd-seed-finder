@@ -507,6 +507,7 @@ fn collect(editor: &Rc<Editor>) -> (UiRequirement, usize, Option<u8>, Option<u8>
         upgrade,
         effect: selected_effect(editor),
         require_uncursed: kind != ItemKind::Trinket && editor.uncursed.is_active(),
+        select_trinket: false,
         source,
         // The stack's own encoding carries these; the board rebuilds them
         // from the count and total this returns.

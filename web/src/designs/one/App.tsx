@@ -170,7 +170,7 @@ export default function App() {
   // True while the newest scout request is still in flight. A held J/K uses
   // this to pace itself to the scout worker instead of queueing on it.
   const scoutBusy = useRef(false);
-  const runScout = useCallback((seed: string) => {
+  const runScout = useCallback((seed: string, trinket?: string) => {
     const input = formatSeedCode(seed);
     setScoutInput(input);
     setActiveTab("scout");
@@ -193,6 +193,7 @@ export default function App() {
         const state = queryStore.state;
         const result = await scoutSeed({
           seed: parsed.code,
+          trinket,
           challenges: state.challenges.length > 0 ? state.challenges : undefined,
           query: state.requirements.length > 0 ? toQueryDocument(state) : undefined,
         });
@@ -441,6 +442,9 @@ export default function App() {
             loading={scout.loading}
             error={scout.error}
             result={scout.result}
+            onTrinketChange={(trinket) => {
+              if (scout.result) runScout(scout.result.seed.code, trinket);
+            }}
             nav={scoutNav}
             onNavigate={navigateResults}
           />

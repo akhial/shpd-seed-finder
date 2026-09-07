@@ -167,7 +167,7 @@ fn roll_weapon_v4(random: &mut RandomStack) -> EquipmentRoll {
     let child_seed = random.long();
     random.push(child_seed);
     let effect_roll = random.float();
-    let result = if effect_roll < 0.3 {
+    let result = if effect_roll < 0.3 * random.trinket.curse_multiplier() {
         EquipmentRoll {
             upgrade,
             effect: Some(Effect::Weapon(select_ignoring(
@@ -177,7 +177,7 @@ fn roll_weapon_v4(random: &mut RandomStack) -> EquipmentRoll {
             ))),
             cursed: true,
         }
-    } else if effect_roll >= 0.9 {
+    } else if effect_roll >= 1.0 - 0.1 * random.trinket.enchant_multiplier() {
         EquipmentRoll {
             upgrade,
             effect: Some(Effect::Weapon(random_weapon_enchantment_ignoring(

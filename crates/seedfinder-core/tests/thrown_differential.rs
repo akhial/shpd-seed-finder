@@ -24,6 +24,7 @@ fn requirement(category: Option<WeaponCategory>, upgrade: UpgradeRequirement) ->
         upgrade,
         effect: EffectRequirement::Any,
         require_uncursed: false,
+        select_trinket: false,
         source: None,
         identity_group: None,
         max_depth: None,

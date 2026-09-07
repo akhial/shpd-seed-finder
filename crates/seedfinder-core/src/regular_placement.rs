@@ -382,6 +382,42 @@ impl<'a, R: RoomPlacementRules> PaintedRegularPlacement<'a, R> {
 impl<R: RoomPlacementRules> RegularItemPlacement for PaintedRegularPlacement<'_, R> {
     type HeapHandle = PlacementHeapHandle;
 
+    fn ebony_mimic_cell(&mut self, random: &mut RandomStack) -> i32 {
+        let mut cells = Vec::new();
+        if random.int_bound(2) == 0 {
+            for heap in &self.heaps {
+                let point = self.level.map.cell_to_point(heap.cell);
+                let special = self
+                    .rooms
+                    .iter()
+                    .any(|r| r.inside(point) && matches!(r.kind, RoomKind::Special(_)));
+                if heap.kind == PlacementHeapKind::Heap
+                    && !special
+                    && !self.level.mob_cells[heap.cell]
+                {
+                    cells.push(heap.cell);
+                }
+            }
+            cells.sort_unstable();
+        }
+        if cells.is_empty() {
+            let exit = self.level.exit().expect("regular floor exit");
+            if random.int_bound(5) == 0 && !self.level.mob_cells[exit] {
+                cells.push(exit);
+            } else {
+                cells.extend(self.level.map.cells.iter().enumerate().filter_map(
+                    |(cell, &tile)| {
+                        (tile == terrain::DOOR && !self.level.mob_cells[cell]).then_some(cell)
+                    },
+                ));
+            }
+        }
+        let index =
+            usize::try_from(random.int_bound(i32::try_from(cells.len()).expect("map fits i32")))
+                .expect("nonnegative index");
+        i32::try_from(cells[index]).expect("map fits i32")
+    }
+
     fn random_drop_cell(&mut self, random: &mut RandomStack, kind: DropCellKind) -> i32 {
         self.random_cell(random, kind)
     }

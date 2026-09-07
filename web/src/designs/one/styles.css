@@ -2919,3 +2919,37 @@ input[type="range"]::-moz-range-thumb {
 .d1-trinket-tail-label {
   margin-top: 14px;
 }
+
+.d1-trinket-selection {
+  margin: 12px 0;
+}
+.d1-trinket-selection label {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.d1-trinket-selection select {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  background: var(--d1-panel, #202326);
+  border: 1px solid var(--d1-border, #555);
+  border-radius: 6px;
+  padding: 8px;
+}
+.d1-trinket-selection .d1-caption {
+  margin: 8px 0;
+}
+.d1-trinket-applied {
+  position: absolute;
+  top: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  background: var(--d1-panel, #171322);
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--d1-accent, #bd9df1);
+}

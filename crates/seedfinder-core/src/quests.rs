@@ -184,7 +184,7 @@ impl GhostQuest {
         // them, keeping the number of RNG calls independent of the outcome.
         let enchantment = random_weapon_enchantment(random);
         let glyph = random_armor_glyph(random);
-        let keep_modifier = random.float() <= 0.2;
+        let keep_modifier = random.float() <= 0.2 * random.trinket.enchant_multiplier();
 
         self.spawned = true;
         self.quest_type = Some(quest_type);
@@ -623,7 +623,7 @@ impl BlacksmithQuest {
 
         let enchantment = random_weapon_enchantment(random);
         let glyph = random_armor_glyph(random);
-        let keep_modifier = random.float() <= 0.3;
+        let keep_modifier = random.float() <= 0.3 * random.trinket.enchant_multiplier();
 
         self.rewards = Some(BlacksmithRewards {
             weapons,
