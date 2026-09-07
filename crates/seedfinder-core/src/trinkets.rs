@@ -170,6 +170,7 @@ mod tests {
 
     #[test]
     fn trinket_or_groups_and_shared_codecs_keep_offer_semantics() {
+        assert!(crate::json_query::decode(r#"{"requirements":[{"kind":"trinket"}]}"#).is_err());
         let query = crate::json_query::decode(r#"{"requirements":[{"any_of":[{"item":"rat_skull"},{"item":"mimic_tooth"}]}],"max_depth":3}"#).unwrap();
         let world = CanonicalMainWorldGenerator.generate(DungeonSeed::MIN, 3);
         assert_eq!(scout_matches(&world, &query).matched_requirements, 1);

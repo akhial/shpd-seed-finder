@@ -84,14 +84,17 @@ use crate::quests::WandmakerQuestType;
 /// the group.
 #[must_use]
 pub fn estimate_match_probability(query: &SearchQuery) -> f64 {
-    // Equipment supply tables do not model correlated catalyst offers.
     if query
         .requirements
         .iter()
         .any(|r| r.kind == ItemKind::Trinket)
     {
-        return f64::NAN;
+        return trinket_probability(query);
     }
+    equipment_probability(query)
+}
+
+fn equipment_probability(query: &SearchQuery) -> f64 {
     let mut linked: BTreeMap<u8, Vec<Requirement>> = BTreeMap::new();
     let mut independent: Vec<Requirement> = Vec::new();
     for requirement in effective_requirements(query) {
@@ -133,6 +136,161 @@ pub fn estimate_match_probability(query: &SearchQuery) -> f64 {
     } else {
         probability.min(1.0)
     }
+}
+
+/// Average over the 2,380 equally likely four-card subsets of the private
+/// trinket deck. Matching consumes identities, so overlapping alternatives and
+/// repeated requirements cannot reuse one offer. The catalyst's common floor
+/// is averaged once, rather than independently for each requirement.
+///
+/// Equipment remains a supply-table estimate, treated as independent of this
+/// private deck and the catalyst's placement/accessibility. For mixed-family
+/// alternatives, keep the best feasible residual equipment query; like the
+/// equipment estimator's alternatives this is conservative, not a union of
+/// all ways equipment could complete the query. Explicit catalyst source
+/// filters have no measured distribution and remain unsupported.
+fn trinket_probability(query: &SearchQuery) -> f64 {
+    use crate::catalog::ITEMS;
+    use crate::model::{Accessibility, WorldItem};
+
+    if query.requirements.iter().any(|requirement| {
+        requirement.kind == ItemKind::Trinket
+            && (requirement.source.is_some() || requirement.level_sum.is_some())
+    }) {
+        return f64::NAN;
+    }
+    let identities: Vec<_> = ITEMS
+        .iter()
+        .filter(|definition| {
+            definition.kind == ItemKind::Trinket && definition.id != ItemId::TrinketCatalyst
+        })
+        .map(|definition| definition.id)
+        .collect();
+    let slots = query.slots();
+    let equipment_slots: Vec<_> = slots
+        .iter()
+        .map(|members| {
+            members
+                .iter()
+                .any(|&index| query.requirements[index].kind != ItemKind::Trinket)
+        })
+        .collect();
+    let mut residuals = BTreeMap::new();
+    let mut total = 0.0;
+    let mut samples = 0u32;
+    for depth in 1..=3 {
+        let masks: Vec<u32> = slots
+            .iter()
+            .map(|members| {
+                identities
+                    .iter()
+                    .enumerate()
+                    .fold(0, |mask, (index, &identity)| {
+                        let candidate = WorldItem {
+                            item: identity,
+                            upgrade: 0,
+                            effect: None,
+                            cursed: false,
+                            depth,
+                            source: ItemSource::Heap,
+                            accessibility: Accessibility::Independent,
+                            secret: false,
+                        };
+                        let matches = members.iter().any(|&member| {
+                            let requirement = query.requirements[member];
+                            requirement.kind == ItemKind::Trinket
+                                && depth
+                                    <= query
+                                        .max_depth
+                                        .min(requirement.max_depth.unwrap_or(query.max_depth))
+                                && requirement.matches(&candidate)
+                        });
+                        mask | if matches { 1 << index } else { 0 }
+                    })
+            })
+            .collect();
+        for a in 0..identities.len() {
+            for b in a + 1..identities.len() {
+                for c in b + 1..identities.len() {
+                    for d in c + 1..identities.len() {
+                        let available = (1 << a) | (1 << b) | (1 << c) | (1 << d);
+                        total += complete_with_trinkets(
+                            query,
+                            &slots,
+                            &masks,
+                            &equipment_slots,
+                            available,
+                            &mut Vec::new(),
+                            &mut residuals,
+                        );
+                        samples += 1;
+                    }
+                }
+            }
+        }
+    }
+    total / f64::from(samples)
+}
+
+/// Try distinct trinkets in successive query slots, retaining equipment-only
+/// slots for the table estimator. Cache each residual query across all decks.
+#[allow(clippy::too_many_arguments)]
+fn complete_with_trinkets(
+    query: &SearchQuery,
+    slots: &[Vec<usize>],
+    masks: &[u32],
+    equipment_slots: &[bool],
+    available: u32,
+    residual: &mut Vec<usize>,
+    cache: &mut BTreeMap<Vec<usize>, f64>,
+) -> f64 {
+    let slot = slots.len() - masks.len();
+    let Some((&mask, tail)) = masks.split_first() else {
+        return *cache.entry(residual.clone()).or_insert_with(|| {
+            let requirements = residual
+                .iter()
+                .flat_map(|&slot| {
+                    slots[slot]
+                        .iter()
+                        .map(|&index| query.requirements[index])
+                        .filter(|requirement| requirement.kind != ItemKind::Trinket)
+                })
+                .collect();
+            equipment_probability(&SearchQuery {
+                requirements,
+                ..query.clone()
+            })
+        });
+    };
+    let mut best: f64 = 0.0;
+    let mut choices = mask & available;
+    while choices != 0 {
+        let choice = 1 << choices.trailing_zeros();
+        choices &= !choice;
+        best = best.max(complete_with_trinkets(
+            query,
+            slots,
+            tail,
+            equipment_slots,
+            available & !choice,
+            residual,
+            cache,
+        ));
+    }
+    if equipment_slots[slot] {
+        residual.push(slot);
+        best = best.max(complete_with_trinkets(
+            query,
+            slots,
+            tail,
+            equipment_slots,
+            available,
+            residual,
+            cache,
+        ));
+        residual.pop();
+    }
+    best
 }
 
 /// Requirements reduced to the flat, independent form the supply tables can
@@ -1489,6 +1647,123 @@ mod tests {
             exclude_blacksmith_rewards: false,
             wandmaker_quest: None,
         }
+    }
+
+    fn trinket(identity: ItemId) -> Requirement {
+        Requirement {
+            item: Some(identity),
+            ..requirement(ItemKind::Trinket)
+        }
+    }
+
+    fn assert_probability(requirements: Vec<Requirement>, expected: f64) {
+        let actual = estimate_match_probability(&query(requirements, 24));
+        assert!((actual - expected).abs() < 1e-10, "{actual} vs {expected}");
+    }
+
+    #[test]
+    fn trinket_subsets_have_exact_without_replacement_probabilities() {
+        let cards = [
+            ItemId::RatSkull,
+            ItemId::MimicTooth,
+            ItemId::SaltCube,
+            ItemId::EyeOfNewt,
+            ItemId::FerretTuft,
+        ];
+        assert_probability(vec![trinket(cards[0])], 4.0 / 17.0);
+        assert_probability(
+            cards[..2].iter().copied().map(trinket).collect(),
+            3.0 / 68.0,
+        );
+        assert_probability(
+            cards[..3].iter().copied().map(trinket).collect(),
+            1.0 / 170.0,
+        );
+        assert_probability(
+            cards[..4].iter().copied().map(trinket).collect(),
+            1.0 / 2380.0,
+        );
+        assert_probability(cards.iter().copied().map(trinket).collect(), 0.0);
+        assert_probability(vec![trinket(cards[0]); 2], 0.0);
+    }
+
+    #[test]
+    fn trinket_alternatives_union_identities_and_preserve_distinct_assignment() {
+        let alternative = |identity, group| Requirement {
+            alternative_group: Some(group),
+            ..trinket(identity)
+        };
+        let either = vec![
+            alternative(ItemId::RatSkull, 1),
+            alternative(ItemId::MimicTooth, 1),
+        ];
+        assert_probability(either.clone(), 29.0 / 68.0);
+        // Repeating an OR member must not count its probability twice.
+        assert_probability(vec![alternative(ItemId::RatSkull, 1); 2], 4.0 / 17.0);
+        // A AND (A OR B) requires both A and B, not merely A.
+        let mut overlap = either;
+        overlap.push(trinket(ItemId::RatSkull));
+        assert_probability(overlap, 3.0 / 68.0);
+        // Two identical OR slots still need two distinct offers.
+        assert_probability(
+            vec![
+                alternative(ItemId::RatSkull, 1),
+                alternative(ItemId::MimicTooth, 1),
+                alternative(ItemId::RatSkull, 2),
+                alternative(ItemId::MimicTooth, 2),
+            ],
+            3.0 / 68.0,
+        );
+    }
+
+    #[test]
+    fn trinkets_share_one_catalyst_floor() {
+        let early = Requirement {
+            max_depth: Some(1),
+            ..trinket(ItemId::RatSkull)
+        };
+        let later = Requirement {
+            max_depth: Some(2),
+            ..trinket(ItemId::MimicTooth)
+        };
+        assert_probability(vec![early, later], (3.0 / 68.0) / 3.0);
+        let shallow = query(vec![trinket(ItemId::RatSkull)], 2);
+        assert!((estimate_match_probability(&shallow) - (4.0 / 17.0) * (2.0 / 3.0)).abs() < 1e-10);
+    }
+
+    #[test]
+    fn mixed_equipment_and_trinkets_have_finite_conditional_estimates() {
+        let equipment = Requirement {
+            item: Some(ItemId::RingMight),
+            ..requirement(ItemKind::Ring)
+        };
+        let base = estimate_match_probability(&query(vec![equipment], 24));
+        assert_probability(
+            vec![equipment, trinket(ItemId::RatSkull)],
+            base * 4.0 / 17.0,
+        );
+        assert_probability(
+            vec![
+                Requirement {
+                    alternative_group: Some(1),
+                    ..equipment
+                },
+                Requirement {
+                    alternative_group: Some(1),
+                    ..trinket(ItemId::RatSkull)
+                },
+            ],
+            4.0 / 17.0 + (13.0 / 17.0) * base,
+        );
+    }
+
+    #[test]
+    fn trinket_queries_retain_world_conditions_once() {
+        let mut wanted = query(vec![trinket(ItemId::RatSkull)], 24);
+        wanted.wandmaker_quest = Some(crate::quests::WandmakerQuestType::Rotberry);
+        assert!((estimate_match_probability(&wanted) - (4.0 / 17.0) / 3.0).abs() < 1e-10);
+        wanted.max_depth = 6;
+        assert_eq!(estimate_match_probability(&wanted), 0.0);
     }
 
     /// A `+4` armor and a `+4` ring are each common enough — the Imp hands one

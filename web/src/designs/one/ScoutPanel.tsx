@@ -11,6 +11,7 @@ import { queryStore } from "../../lib/store";
 import { formatSeedCode } from "../../lib/wasm";
 import type { ScoutItem, ScoutResult, TrinketOffer } from "../../lib/wasm/types";
 import { Sprite } from "./parts";
+import { TrinketName, TrinketSprite } from "./TrinketArt";
 
 const groupLetter = (group: number) => "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[group % 26];
 
@@ -318,7 +319,6 @@ export function CatalystEntry({ offers, order }: { offers: ScoutItem[]; order: T
         </div>
       </div>
       {note && <p className="d1-item-note">{note}</p>}
-      <p className="d1-caption">Initial choices when this catalyst is brewed — choose one.</p>
       <ol className="d1-trinket-choices" aria-label="Initial trinket choices">
         {(order.length
           ? order
@@ -326,32 +326,24 @@ export function CatalystEntry({ offers, order }: { offers: ScoutItem[]; order: T
               .map((entry) => offers.find((offer) => offer.id === entry.id)!)
               .filter(Boolean)
           : offers
-        ).map((offer, index) => (
+        ).map((offer) => (
           <li
             key={offer.id}
             className={offer.matched ? "d1-trinket-choice d1-trinket-match" : "d1-trinket-choice"}
+            aria-label={offer.matched ? `${offer.name}, matches requirement` : offer.name}
           >
-            <span className="d1-trinket-number">{index + 1}</span>
-            <Sprite art={itemArt(offer.spriteIndex)} size={48} />
-            <span>{offer.name}</span>
-            {offer.matched && <b className="d1-badge d1-badge-match">✓ match</b>}
+            <TrinketSprite cell={offer.spriteIndex} maximum={48} />
+            <TrinketName name={offer.name} />
           </li>
         ))}
       </ol>
       {order.length > 4 && (
         <>
-          <p className="d1-caption d1-trinket-tail-label">
-            Remaining deck order · not initial offers
-          </p>
-          <ol start={5} className="d1-trinket-tail" aria-label="Remaining trinket deck order">
-            {order.slice(4).map((trinket, index) => (
-              <li
-                key={trinket.id}
-                title={`${index + 5}. ${trinket.name}`}
-                aria-label={`${index + 5}. ${trinket.name}`}
-              >
-                <Sprite art={itemArt(trinket.spriteIndex)} size={24} />
-                <span>{index + 5}</span>
+          <p className="d1-caption d1-trinket-tail-label">Remaining deck order</p>
+          <ol className="d1-trinket-tail" aria-label="Remaining trinket deck order">
+            {order.slice(4).map((trinket) => (
+              <li key={trinket.id} title={trinket.name} aria-label={trinket.name}>
+                <TrinketSprite cell={trinket.spriteIndex} maximum={24} />
               </li>
             ))}
           </ol>

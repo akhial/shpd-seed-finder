@@ -1,103 +1,103 @@
 [
   {
     "id": "rat_skull",
-    "name": "Rat skull",
+    "name": "Rat Skull",
     "type": "trinket",
     "sprite": 272
   },
   {
     "id": "parchment_scrap",
-    "name": "Parchment scrap",
+    "name": "Parchment Scrap",
     "type": "trinket",
     "sprite": 273
   },
   {
     "id": "petrified_seed",
-    "name": "Petrified seed",
+    "name": "Petrified Seed",
     "type": "trinket",
     "sprite": 274
   },
   {
     "id": "exotic_crystals",
-    "name": "Exotic crystals",
+    "name": "Exotic Crystals",
     "type": "trinket",
     "sprite": 275
   },
   {
     "id": "mossy_clump",
-    "name": "Mossy clump",
+    "name": "Mossy Clump",
     "type": "trinket",
     "sprite": 276
   },
   {
     "id": "dimensional_sundial",
-    "name": "Dimensional sundial",
+    "name": "Dimensional Sundial",
     "type": "trinket",
     "sprite": 277
   },
   {
     "id": "thirteen_leaf_clover",
-    "name": "Thirteen leaf clover",
+    "name": "Thirteen Leaf Clover",
     "type": "trinket",
     "sprite": 278
   },
   {
     "id": "trap_mechanism",
-    "name": "Trap mechanism",
+    "name": "Trap Mechanism",
     "type": "trinket",
     "sprite": 279
   },
   {
     "id": "mimic_tooth",
-    "name": "Mimic tooth",
+    "name": "Mimic Tooth",
     "type": "trinket",
     "sprite": 280
   },
   {
     "id": "wondrous_resin",
-    "name": "Wondrous resin",
+    "name": "Wondrous Resin",
     "type": "trinket",
     "sprite": 281
   },
   {
     "id": "eye_of_newt",
-    "name": "Eye of newt",
+    "name": "Eye Of Newt",
     "type": "trinket",
     "sprite": 282
   },
   {
     "id": "salt_cube",
-    "name": "Salt cube",
+    "name": "Salt Cube",
     "type": "trinket",
     "sprite": 283
   },
   {
     "id": "vial_of_blood",
-    "name": "Vial of blood",
+    "name": "Vial Of Blood",
     "type": "trinket",
     "sprite": 284
   },
   {
     "id": "shard_of_oblivion",
-    "name": "Shard of oblivion",
+    "name": "Shard Of Oblivion",
     "type": "trinket",
     "sprite": 285
   },
   {
     "id": "chaotic_censer",
-    "name": "Chaotic censer",
+    "name": "Chaotic Censer",
     "type": "trinket",
     "sprite": 286
   },
   {
     "id": "ferret_tuft",
-    "name": "Ferret tuft",
+    "name": "Ferret Tuft",
     "type": "trinket",
     "sprite": 287
   },
   {
     "id": "cracked_spyglass",
-    "name": "Cracked spyglass",
+    "name": "Cracked Spyglass",
     "type": "trinket",
     "sprite": 288
   }

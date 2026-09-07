@@ -1,10 +1,17 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 import { itemsForKind } from "../../lib/catalog";
-import { fromQueryJson, toQueryDocument, validateQuery } from "../../lib/query";
+import {
+  fromQueryJson,
+  toQueryDocument,
+  validateQuery,
+  validateRequirement,
+} from "../../lib/query";
 import type { ScoutItem } from "../../lib/wasm/types";
 import { CatalystEntry } from "./ScoutPanel";
 import { boardItems, canStack, joinAlternatives } from "./relations";
+import { RequirementEditor, trinketEditorRequirement } from "./RequirementEditor";
+import { requirementTitle } from "./summary";
 
 describe("offered trinket pilot", () => {
   it("preserves all 17 identities, draws four choices in deck order, and highlights the match", () => {
@@ -33,6 +40,10 @@ describe("offered trinket pilot", () => {
     const html = renderToStaticMarkup(<CatalystEntry offers={offers} order={order} />);
     expect(order).toHaveLength(17);
     expect(html).toContain("Magical catalyst");
+    expect(html).not.toContain("Initial choices when");
+    expect(html).not.toContain("not initial offers");
+    expect(html).not.toContain("d1-badge-match");
+    expect(html).not.toContain("d1-trinket-number");
     expect(html.match(/class="d1-trinket-choice(?: d1-trinket-match)?"/g)).toHaveLength(4);
     expect(html.match(/class="d1-trinket-choice d1-trinket-match"/g)).toHaveLength(1);
     for (let index = 1; index < 4; index++) {
@@ -46,6 +57,39 @@ describe("offered trinket pilot", () => {
     expect(html).toContain("width:48px");
     expect(tail).toContain("width:24px");
     expect(tail).toContain("image-rendering:pixelated");
+    expect(tail).not.toMatch(/>\d+<\//);
+    for (const trinket of itemsForKind("trinket")) {
+      expect(trinket.name).toBe(trinket.name.replace(/\b\w/g, (letter) => letter.toUpperCase()));
+    }
+  });
+
+  it("requires a named trinket and shows no details or wildcard controls", () => {
+    const legacy = fromQueryJson(
+      '{"requirements":[{"kind":"trinket","source":"locked_chest","max_depth":2}]}',
+    ).requirements[0];
+    expect(validateRequirement(legacy)).toContain("Select a trinket.");
+    expect(requirementTitle(legacy)).toBe("Trinket");
+    const draft = trinketEditorRequirement(legacy);
+    expect(draft.item).toBe("rat_skull");
+    expect(draft.source).toBeUndefined();
+    expect(draft.maxDepth).toBeUndefined();
+    expect(requirementTitle(draft)).toBe("Rat Skull");
+    const html = renderToStaticMarkup(
+      <RequirementEditor
+        requirement={legacy}
+        isNew={false}
+        stack={{ count: 1, inCluster: false }}
+        onSave={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+    expect(html).not.toContain("offered");
+    expect(html).not.toContain("Any trinket");
+    expect(html).not.toContain('value=""');
+    expect(html).not.toContain("Details");
+    expect(html).not.toContain("Source");
+    expect(html).not.toContain("Limit this item");
+    expect(html.match(/<option /g)).toHaveLength(17);
   });
 
   it("joins named trinkets into an OR group and persists them as offered predicates", () => {

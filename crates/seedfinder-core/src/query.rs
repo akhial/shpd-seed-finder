@@ -464,6 +464,9 @@ impl Requirement {
     /// another family, an upgrade outside the UI's family-specific range, or
     /// an inconsistent group label.
     pub fn validate(self) -> Result<(), QueryError> {
+        if self.kind == ItemKind::Trinket && self.item.is_none() {
+            return Err(QueryError::TrinketRequiresIdentity);
+        }
         if self
             .item
             .is_some_and(|item_id| item(item_id).kind != self.kind)
@@ -1414,6 +1417,7 @@ pub enum QueryError {
     InvalidUpgrade,
     InvalidTier,
     ItemKindMismatch,
+    TrinketRequiresIdentity,
     InvalidWeaponCategory,
     EffectKindMismatch,
     UncursedWithCurse,
@@ -1472,6 +1476,7 @@ impl fmt::Display for QueryError {
             Self::InvalidTier => {
                 "tier filters require a wildcard weapon or armor and a non-redundant tier"
             }
+            Self::TrinketRequiresIdentity => "select a trinket",
             Self::ItemKindMismatch => "selected item is in a different category",
             Self::InvalidWeaponCategory => {
                 "melee/thrown filters require a weapon requirement and a matching item"

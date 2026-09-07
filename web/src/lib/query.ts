@@ -476,6 +476,8 @@ export interface ValidationResult {
 
 export function validateRequirement(requirement: RequirementState): string[] {
   const errors: string[] = [];
+  if (requirementFamily(requirement) === "trinket" && !requirement.item)
+    errors.push("Select a trinket.");
   const item = requirement.item ? getItem(requirement.item) : undefined;
   const kind = requirement.kind ?? item?.type;
   const family = kind ? kindFamily(kind) : undefined;

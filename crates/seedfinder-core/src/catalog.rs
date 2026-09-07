@@ -832,11 +832,11 @@ pub const ITEMS: &[ItemDefinition] = &[
         234
     ),
     item!(RingWealth, "ring_wealth", "Ring of wealth", Ring, None, 235),
-    item!(RatSkull, "rat_skull", "Rat skull", Trinket, None, 272),
+    item!(RatSkull, "rat_skull", "Rat Skull", Trinket, None, 272),
     item!(
         ParchmentScrap,
         "parchment_scrap",
-        "Parchment scrap",
+        "Parchment Scrap",
         Trinket,
         None,
         273
@@ -844,7 +844,7 @@ pub const ITEMS: &[ItemDefinition] = &[
     item!(
         PetrifiedSeed,
         "petrified_seed",
-        "Petrified seed",
+        "Petrified Seed",
         Trinket,
         None,
         274
@@ -852,16 +852,16 @@ pub const ITEMS: &[ItemDefinition] = &[
     item!(
         ExoticCrystals,
         "exotic_crystals",
-        "Exotic crystals",
+        "Exotic Crystals",
         Trinket,
         None,
         275
     ),
-    item!(MossyClump, "mossy_clump", "Mossy clump", Trinket, None, 276),
+    item!(MossyClump, "mossy_clump", "Mossy Clump", Trinket, None, 276),
     item!(
         DimensionalSundial,
         "dimensional_sundial",
-        "Dimensional sundial",
+        "Dimensional Sundial",
         Trinket,
         None,
         277
@@ -869,7 +869,7 @@ pub const ITEMS: &[ItemDefinition] = &[
     item!(
         ThirteenLeafClover,
         "thirteen_leaf_clover",
-        "Thirteen leaf clover",
+        "Thirteen Leaf Clover",
         Trinket,
         None,
         278
@@ -877,26 +877,26 @@ pub const ITEMS: &[ItemDefinition] = &[
     item!(
         TrapMechanism,
         "trap_mechanism",
-        "Trap mechanism",
+        "Trap Mechanism",
         Trinket,
         None,
         279
     ),
-    item!(MimicTooth, "mimic_tooth", "Mimic tooth", Trinket, None, 280),
+    item!(MimicTooth, "mimic_tooth", "Mimic Tooth", Trinket, None, 280),
     item!(
         WondrousResin,
         "wondrous_resin",
-        "Wondrous resin",
+        "Wondrous Resin",
         Trinket,
         None,
         281
     ),
-    item!(EyeOfNewt, "eye_of_newt", "Eye of newt", Trinket, None, 282),
-    item!(SaltCube, "salt_cube", "Salt cube", Trinket, None, 283),
+    item!(EyeOfNewt, "eye_of_newt", "Eye Of Newt", Trinket, None, 282),
+    item!(SaltCube, "salt_cube", "Salt Cube", Trinket, None, 283),
     item!(
         VialOfBlood,
         "vial_of_blood",
-        "Vial of blood",
+        "Vial Of Blood",
         Trinket,
         None,
         284
@@ -904,7 +904,7 @@ pub const ITEMS: &[ItemDefinition] = &[
     item!(
         ShardOfOblivion,
         "shard_of_oblivion",
-        "Shard of oblivion",
+        "Shard Of Oblivion",
         Trinket,
         None,
         285
@@ -912,16 +912,16 @@ pub const ITEMS: &[ItemDefinition] = &[
     item!(
         ChaoticCenser,
         "chaotic_censer",
-        "Chaotic censer",
+        "Chaotic Censer",
         Trinket,
         None,
         286
     ),
-    item!(FerretTuft, "ferret_tuft", "Ferret tuft", Trinket, None, 287),
+    item!(FerretTuft, "ferret_tuft", "Ferret Tuft", Trinket, None, 287),
     item!(
         CrackedSpyglass,
         "cracked_spyglass",
-        "Cracked spyglass",
+        "Cracked Spyglass",
         Trinket,
         None,
         288

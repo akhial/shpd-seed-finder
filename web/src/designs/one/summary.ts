@@ -16,7 +16,7 @@ export const categoryLabel: Record<ItemCategory, string> = {
   armor: "Armor",
   wand: "Wand",
   ring: "Ring",
-  trinket: "Trinket offered",
+  trinket: "Trinket",
 };
 
 export const categoryPlural: Record<ItemCategory, string> = {
@@ -24,7 +24,7 @@ export const categoryPlural: Record<ItemCategory, string> = {
   armor: "Armor",
   wand: "Wands",
   ring: "Rings",
-  trinket: "Trinkets offered",
+  trinket: "Trinkets",
 };
 
 export const categoryTint: Record<ItemCategory, string> = {
@@ -63,11 +63,8 @@ export function requirementArt(requirement: RequirementState): ItemArt {
 }
 
 export function requirementTitle(requirement: RequirementState): string {
-  if (requirement.item)
-    return (
-      displayItemName(requirement.item) +
-      (requirementKind(requirement) === "trinket" ? " offered" : "")
-    );
+  if (requirement.item) return displayItemName(requirement.item);
+  if (requirementKind(requirement) === "trinket") return "Trinket";
   const kind = requirement.kind ? kindLabel[requirement.kind].toLowerCase() : "item";
   const tier = requirement.tier;
   if (tier.mode === "exact") return `Any tier-${tier.value} ${kind}`;

@@ -368,6 +368,34 @@ fn modifier_queries() -> Vec<(String, SearchQuery)> {
             24,
         ),
     )];
+    for (name, identities, group) in [
+        ("one named trinket", vec![ItemId::MimicTooth], None),
+        (
+            "either named trinket",
+            vec![ItemId::MimicTooth, ItemId::RatSkull],
+            Some(1),
+        ),
+        (
+            "both named trinkets",
+            vec![ItemId::MimicTooth, ItemId::RatSkull],
+            None,
+        ),
+    ] {
+        queries.push((
+            name.to_owned(),
+            query(
+                identities
+                    .into_iter()
+                    .map(|identity| Requirement {
+                        item: Some(identity),
+                        alternative_group: group,
+                        ..base(ItemKind::Trinket)
+                    })
+                    .collect(),
+                24,
+            ),
+        ));
+    }
     // The Ghost always offers an armor, so this is a pure upgrade roll.
     queries.push((
         "the Ghost's armor at +2".to_owned(),

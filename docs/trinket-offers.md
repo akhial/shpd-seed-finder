@@ -1,7 +1,9 @@
 # Offered trinkets: web pilot
 
-`kind: "trinket"` and the 17 trinket item IDs search the **first four
-catalyst offers**. For example:
+The 17 named trinket item IDs search the **first four catalyst offers**.
+A trinket requirement must name an item; `kind: "trinket"` alone is rejected.
+The web requirement editor labels this category "Trinket" and has no source or
+floor Details controls for it. For example:
 
 ```json
 {
@@ -16,8 +18,20 @@ Offers inherit the generated catalyst's floor, source, accessibility and
 secret status. A floor limit before its placement cannot match. Multiple
 different offers may satisfy an AND query: this means they are offered
 together, not that the player can keep multiple trinkets. Upgrade and effect
-predicates do not describe offers. The equipment probability estimator returns
-an unavailable estimate for queries involving trinkets.
+predicates do not describe offers.
+
+Probability estimates enumerate all 2,380 equally likely four-trinket subsets
+and match distinct identities to the query's AND/OR slots. A named trinket has
+probability 4/17; two named trinkets joined by OR have probability 29/68, and
+joined by AND have probability 3/68. Duplicate requirements cannot reuse one
+offer. Explicit wire floor limits share the catalyst's single, uniformly drawn
+floor from 1–3. Equipment requirements use the existing supply estimate,
+approximating independence from the private trinket deck and catalyst
+placement/accessibility. Mixed trinket/equipment OR groups conservatively use
+the best feasible residual equipment query for each subset, rather than adding
+overlapping ways to complete it. Explicit wire catalyst-source filters and
+trinket combined-level groups remain unavailable because the estimator does
+not model them.
 
 The WASM scout JSON adds `trinketOrder`, an array of exactly 17 entries with
 `id`, `name`, and `spriteIndex`. It follows private-deck draw order, independently
