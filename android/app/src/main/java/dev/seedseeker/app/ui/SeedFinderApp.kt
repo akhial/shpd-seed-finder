@@ -3,11 +3,7 @@ package dev.seedseeker.app.ui
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Paint
-import android.graphics.Rect
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -133,7 +129,6 @@ fun SeedFinderApp(
     val atlas = remember(context) {
         runCatching {
             context.assets.open(ATLAS_PATH).use(BitmapFactory::decodeStream)
-                ?.centerSpriteCells()
                 ?.asImageBitmap()
         }.getOrNull()
     }
@@ -941,58 +936,6 @@ fun SeedFinderApp(
             )
         }
     }
-}
-
-/**
- * The upstream atlas packs each item against the top-left of its 16 px cell. Recenter the
- * non-transparent pixels while retaining every sprite's original size and pixel-art scaling.
- */
-private fun Bitmap.centerSpriteCells(cellSize: Int = 16): Bitmap {
-    require(width % cellSize == 0 && height % cellSize == 0)
-
-    val sourcePixels = IntArray(width * height)
-    getPixels(sourcePixels, 0, width, 0, 0, width, height)
-
-    val centered = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
-        it.density = density
-    }
-    val canvas = Canvas(centered)
-    val paint = Paint().apply { isFilterBitmap = false }
-
-    for (cellY in 0 until height step cellSize) {
-        for (cellX in 0 until width step cellSize) {
-            var minX = cellSize
-            var minY = cellSize
-            var maxX = -1
-            var maxY = -1
-
-            for (y in 0 until cellSize) {
-                for (x in 0 until cellSize) {
-                    if (sourcePixels[(cellY + y) * width + cellX + x] ushr 24 != 0) {
-                        minX = minOf(minX, x)
-                        minY = minOf(minY, y)
-                        maxX = maxOf(maxX, x)
-                        maxY = maxOf(maxY, y)
-                    }
-                }
-            }
-
-            if (maxX < 0) continue
-
-            val offsetX = (cellSize - 1 - minX - maxX) / 2
-            val offsetY = (cellSize - 1 - minY - maxY) / 2
-            val source = Rect(cellX, cellY, cellX + cellSize, cellY + cellSize)
-            val destination = Rect(
-                cellX + offsetX,
-                cellY + offsetY,
-                cellX + cellSize + offsetX,
-                cellY + cellSize + offsetY,
-            )
-            canvas.drawBitmap(this, source, destination, paint)
-        }
-    }
-
-    return centered
 }
 
 @Composable

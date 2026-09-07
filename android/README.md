@@ -35,7 +35,7 @@ Shattered Pixel Dungeon is copyright © 2014–2026 Evan Debenham. Pixel Dungeon
 The requirement picker has a named Trinket category, including either/or groups.
 Trinkets save directly from the item picker without equipment details. Scout shows
 four square choices beneath the catalyst on its actual floor, highlights matching
-choices with a flat green fill and border, and keeps the remaining thirteen icons
+choices with a flat green fill, and keeps the remaining thirteen icons
 in one row. Sprite drawing uses nearest-neighbor filtering.
 
 The native scout decoder reads SSC4 (the SSC3 layout followed by a 17-entry

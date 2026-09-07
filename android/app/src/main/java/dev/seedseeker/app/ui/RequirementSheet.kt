@@ -4,6 +4,7 @@ package dev.seedseeker.app.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -287,14 +288,17 @@ fun RequirementSheet(
                     }
 
                     Row(
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 20.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         if (kind != ItemKind.TRINKET) FilterChip(
                             selected = selectedItem == null,
                             onClick = { selectedItem = null },
-                            label = { Text("Any ${kind.label.lowercase(Locale.ROOT)}") },
+                            label = { Text("Any ${kind.label.lowercase(Locale.ROOT)}", maxLines = 1, softWrap = false) },
                         )
                         if (kind.family == ItemKind.WEAPON) {
                             listOf(
@@ -317,7 +321,7 @@ fun RequirementSheet(
                                             )
                                         }
                                     },
-                                    label = { Text(label) },
+                                    label = { Text(label, maxLines = 1, softWrap = false) },
                                 )
                             }
                         }
@@ -1050,6 +1054,7 @@ private fun ItemTile(item: CatalogItem, selected: Boolean, onClick: () -> Unit) 
         Column(
             modifier = Modifier.padding(horizontal = 7.dp, vertical = 9.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = if (item.kind == ItemKind.TRINKET) Arrangement.Center else Arrangement.Top,
         ) {
             ItemSprite(item, modifier = Modifier.size(42.dp))
             Spacer(Modifier.height(5.dp))
