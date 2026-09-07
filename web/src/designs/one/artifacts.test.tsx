@@ -40,6 +40,15 @@ describe("artifact search and scout", () => {
     expect(html).not.toContain("Total item count");
     expect(html).toContain("Limit this item");
     expect(html).toContain('aria-valuetext="19"');
+    const repeats = fromQueryJson(
+      '{"requirements":[{"item":"ethereal_chains"},{"item":"ethereal_chains","max_depth":14}]}',
+    ).requirements;
+    expect(boardItems(repeats)).toHaveLength(2);
+    const alternatives = joinAlternatives(repeats, 0, 1);
+    expect(boardItems(alternatives)).toHaveLength(1);
+    expect(
+      alternatives.every((r) => r.item === "ethereal_chains" && r.identityGroup === undefined),
+    ).toBe(true);
   });
 
   it("searches artifact OR groups and preserves individual floor limits", () => {

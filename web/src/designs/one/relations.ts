@@ -47,6 +47,8 @@ export const stackCount = (item: BoardItem): number => 1 + item.extras.length;
  * A floor limit is a placement bound, not an item property, so a repeat
  * that carries only one still folds into its stack. */
 const isPlainItemCopy = (copy: RequirementState, item: string): boolean =>
+  requirementFamily(copy) !== "trinket" &&
+  requirementFamily(copy) !== "artifact" &&
   copy.item === item &&
   copy.tier.mode === "any" &&
   copy.upgrade.mode === "any" &&
