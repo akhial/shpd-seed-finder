@@ -13,7 +13,7 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.9.0</string>
+    <string>0.9.1</string>
     <!-- seedseeker:// query links. Only the built app bundle registers the
          scheme; `swift run` executes outside a bundle and cannot. -->
     <key>CFBundleURLTypes</key>
@@ -33,7 +33,7 @@
          CFBundleVersion, so every release must bump it along with the
          marketing version. -->
     <key>CFBundleVersion</key>
-    <string>14</string>
+    <string>15</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>NSHighResolutionCapable</key>
