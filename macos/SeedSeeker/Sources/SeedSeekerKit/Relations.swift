@@ -55,7 +55,8 @@ public struct BoardItem: Hashable, Identifiable, Sendable {
 /// A floor limit is a placement bound, not an item property, so a repeat that
 /// carries only one still folds into its stack.
 private func isPlainItemCopy(_ copy: ItemRequirement, of item: CatalogItem) -> Bool {
-    copy.item?.id == item.id
+    item.kind != .trinket && item.kind != .artifact
+        && copy.item?.id == item.id
         && copy.tierMatch == .any
         && copy.upgradeMatch == .any
         && copy.effect == .any
@@ -374,7 +375,7 @@ extension Array where Element == ItemRequirement {
     public func canStack(_ item: BoardItem) -> Bool {
         guard let anchor = item.members.first, indices.contains(anchor) else { return false }
         let family = self[anchor].kind.family
-        guard family != .trinket else { return false }
+        guard family != .trinket && family != .artifact else { return false }
         return item.members.allSatisfy { indices.contains($0) && self[$0].kind.family == family }
     }
 
