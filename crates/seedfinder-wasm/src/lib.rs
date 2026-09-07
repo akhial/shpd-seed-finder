@@ -643,6 +643,7 @@ const fn item_kind_name(kind: ItemKind) -> &'static str {
         ItemKind::Wand => "wand",
         ItemKind::Ring => "ring",
         ItemKind::Trinket => "trinket",
+        ItemKind::Artifact => "artifact",
     }
 }
 
@@ -973,6 +974,27 @@ mod tests {
                 "{}",
                 entry.id
             );
+        }
+    }
+
+    #[test]
+    fn artifact_web_catalog_agrees_with_engine_wire_metadata() {
+        let entries: Value =
+            serde_json::from_str(include_str!("../../../web/src/lib/artifact-catalog.json"))
+                .unwrap();
+        let entries = entries.as_array().unwrap();
+        assert_eq!(entries.len(), 11);
+        for entry in entries {
+            let definition =
+                shpd_seedfinder_core::catalog::item_by_stable_id(entry["id"].as_str().unwrap())
+                    .unwrap();
+            assert_eq!(
+                definition.kind,
+                shpd_seedfinder_core::catalog::ItemKind::Artifact
+            );
+            assert_eq!(entry["type"], super::item_kind_name(definition.kind));
+            assert_eq!(entry["name"], definition.name);
+            assert_eq!(entry["sprite"], definition.sprite_index);
         }
     }
 

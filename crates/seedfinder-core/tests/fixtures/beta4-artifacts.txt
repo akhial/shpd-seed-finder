@@ -1,0 +1,8 @@
+AAA-AAA-AAA|14,chest,unstable_spellbook,0,1;19,imp_reward,sandals_of_nature,5,0;21,crystal_chest,alchemists_toolkit,0,1;22,chest,skeleton_key,0,1
+AAA-AAA-AAB|11,chest,dried_rose,0,1;11,shop,master_thieves_armband,0,0;12,locked_chest,horn_of_plenty,0,0;16,crystal_chest,sandals_of_nature,0,0;18,imp_reward,chalice_of_blood,5,0;20,shop,talisman_of_foresight,0,0;21,chest,timekeepers_hourglass,0,1;4,crystal_chest,unstable_spellbook,0,1
+AAA-AAA-AAC|11,shop,sandals_of_nature,0,0;13,locked_chest,skeleton_key,0,1;17,imp_reward,alchemists_toolkit,5,0;18,chest,dried_rose,0,0;18,heap,ethereal_chains,0,0;22,skeleton,timekeepers_hourglass,0,0
+AAA-AAA-AAD|17,imp_reward,alchemists_toolkit,5,0;18,chest,master_thieves_armband,0,0;19,crystal_chest,talisman_of_foresight,0,0;4,heap,dried_rose,0,0
+AAA-AAA-AAE|11,shop,dried_rose,0,0;13,mimic,chalice_of_blood,0,0;19,imp_reward,master_thieves_armband,5,0;9,skeleton,ethereal_chains,0,1
+AAA-AAA-AAF|12,crystal_chest,ethereal_chains,0,1;17,imp_reward,horn_of_plenty,5,0;19,heap,alchemists_toolkit,0,0;2,crystal_chest,talisman_of_foresight,0,0;22,crystal_chest,chalice_of_blood,0,1;24,skeleton,timekeepers_hourglass,0,0
+AAA-ABL-ZNB|11,crystal_chest,timekeepers_hourglass,0,1;12,locked_chest,sandals_of_nature,0,0;12,skeleton,talisman_of_foresight,0,0;19,imp_reward,master_thieves_armband,5,0;21,chest,unstable_spellbook,0,1;22,skeleton,ethereal_chains,0,0;23,crystal_chest,alchemists_toolkit,0,1;6,shop,dried_rose,0,0
+SEE-EEE-EED|16,shop,horn_of_plenty,0,0;16,tomb,unstable_spellbook,0,0;17,imp_reward,master_thieves_armband,5,0;21,crystal_chest,dried_rose,0,0;8,skeleton,talisman_of_foresight,0,0;9,crystal_chest,skeleton_key,0,0

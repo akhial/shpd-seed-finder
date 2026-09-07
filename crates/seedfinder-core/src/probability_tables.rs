@@ -271,7 +271,7 @@ pub const fn kind_index(kind: ItemKind) -> usize {
         ItemKind::Armor => 1,
         ItemKind::Wand => 2,
         ItemKind::Ring => 3,
-        ItemKind::Trinket => panic!("trinkets have no equipment supply table"),
+        ItemKind::Trinket | ItemKind::Artifact => panic!("no equipment supply table for this kind"),
     }
 }
 

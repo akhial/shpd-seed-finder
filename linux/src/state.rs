@@ -483,6 +483,7 @@ pub const fn kind_choice_label(choice: KindChoice) -> &'static str {
         (ItemKind::Wand, _) => "Wand",
         (ItemKind::Ring, _) => "Ring",
         (ItemKind::Trinket, _) => "Trinket",
+        (ItemKind::Artifact, _) => "Artifact",
     }
 }
 
@@ -495,6 +496,7 @@ pub const fn kind_choice_singular(choice: KindChoice) -> &'static str {
         (ItemKind::Wand, _) => "wand",
         (ItemKind::Ring, _) => "ring",
         (ItemKind::Trinket, _) => "trinket",
+        (ItemKind::Artifact, _) => "artifact",
     }
 }
 
@@ -509,6 +511,7 @@ pub const fn chip_family(choice: KindChoice) -> &'static str {
         (ItemKind::Wand, _) => "wand",
         (ItemKind::Ring, _) => "ring",
         (ItemKind::Trinket, _) => "trinket",
+        (ItemKind::Artifact, _) => "artifact",
     }
 }
 
@@ -522,6 +525,7 @@ pub const fn kind_icon(kind: ItemKind, weapon_category: Option<WeaponCategory>) 
         (ItemKind::Wand, _) => "kind-wand-symbolic",
         (ItemKind::Ring, _) => "kind-ring-symbolic",
         (ItemKind::Trinket, _) => "starred-symbolic",
+        (ItemKind::Artifact, _) => "starred-symbolic",
     }
 }
 

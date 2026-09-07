@@ -1,4 +1,5 @@
 import catalogJson from "../generated/catalog.json";
+import artifactCatalog from "./artifact-catalog.json";
 import type {
   ChallengeName,
   ItemCategory,
@@ -31,9 +32,9 @@ interface CatalogDocument {
 }
 
 const catalog = catalogJson as CatalogDocument;
-export const items: CatalogItem[] = catalog.entries;
+export const items: CatalogItem[] = [...catalog.entries, ...(artifactCatalog as CatalogItem[])];
 export const itemsByCategory = Object.fromEntries(
-  (["weapon", "armor", "wand", "ring", "trinket"] as ItemCategory[]).map((category) => [
+  (["weapon", "armor", "wand", "ring", "trinket", "artifact"] as ItemCategory[]).map((category) => [
     category,
     items.filter((item) => item.type === category),
   ]),
@@ -151,6 +152,7 @@ export const wildcardSprites: Record<ItemCategory, number> = {
   wand: 209,
   ring: 224,
   trinket: 70,
+  artifact: 6,
 };
 /** Wildcard sprite for a requirement kind; thrown weapons show a shuriken. */
 export const wildcardSpriteForKind = (kind: RequirementKind): number =>

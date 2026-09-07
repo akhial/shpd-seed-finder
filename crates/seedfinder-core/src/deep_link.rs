@@ -412,6 +412,7 @@ const fn kind_code(kind: ItemKind, weapon_category: Option<WeaponCategory>) -> u
         (ItemKind::Wand, _) => 4,
         (ItemKind::Ring, _) => 5,
         (ItemKind::Trinket, _) => 6,
+        (ItemKind::Artifact, _) => 7,
     }
 }
 
@@ -424,6 +425,7 @@ fn kind_from(code: u32) -> Result<(ItemKind, Option<WeaponCategory>), String> {
         4 => Ok((ItemKind::Wand, None)),
         5 => Ok((ItemKind::Ring, None)),
         6 => Ok((ItemKind::Trinket, None)),
+        7 => Ok((ItemKind::Artifact, None)),
         _ => Err(format!("unknown category code {code}")),
     }
 }
@@ -464,7 +466,7 @@ fn effect_from(kind: ItemKind, code: u32) -> Result<Effect, String> {
             .get(code as usize)
             .copied()
             .map(Effect::Armor),
-        ItemKind::Wand | ItemKind::Ring | ItemKind::Trinket => None,
+        ItemKind::Wand | ItemKind::Ring | ItemKind::Trinket | ItemKind::Artifact => None,
     };
     effect.ok_or_else(|| format!("effect code {code} is not valid for this kind"))
 }
@@ -701,6 +703,17 @@ const ALL_ITEM_IDS: &[ItemId] = &[
     ItemId::FerretTuft,
     ItemId::CrackedSpyglass,
     ItemId::TrinketCatalyst,
+    ItemId::AlchemistsToolkit,
+    ItemId::ChaliceOfBlood,
+    ItemId::DriedRose,
+    ItemId::EtherealChains,
+    ItemId::HornOfPlenty,
+    ItemId::MasterThievesArmband,
+    ItemId::SandalsOfNature,
+    ItemId::SkeletonKey,
+    ItemId::TalismanOfForesight,
+    ItemId::TimekeepersHourglass,
+    ItemId::UnstableSpellbook,
 ];
 
 #[cfg(test)]
@@ -944,26 +957,11 @@ mod tests {
         assert!(decode(&format!("{code}AAAA")).is_err());
     }
 
-    /// Seven of the eight category codes are spoken for, so a corrupted or
-    /// truncated code can land on 7. Every rejection has to name what it
-    /// rejected — a blank reason reaches the user as a bare "requirement 1: ".
     #[test]
     fn unknown_category_codes_are_named_in_the_error() {
-        for code in 7..=7 {
-            let mut bits = super::BitWriter::default();
-            bits.push(4, 4); // version
-            bits.push(0, 2); // flags
-            bits.push(0, 1); // max depth absent
-            bits.push(0, 1); // challenges absent
-            bits.push(0, 1); // Wandmaker filter absent
-            bits.push(1, 6); // one requirement
-            bits.push(code, 3);
-            let error = decode(&super::base64url_encode(&bits.finish())).unwrap_err();
-            assert!(
-                error.contains(&format!("category code {code}")),
-                "unhelpful message: {error:?}"
-            );
-        }
+        // All eight three-bit codes are assigned now. Reject future values
+        // explicitly if a later codec expands the category field.
+        assert!(super::kind_from(8).unwrap_err().contains("category code 8"));
     }
 
     #[test]
@@ -1102,6 +1100,17 @@ mod tests {
             "ferret_tuft",
             "cracked_spyglass",
             "trinket_catalyst",
+            "alchemists_toolkit",
+            "chalice_of_blood",
+            "dried_rose",
+            "ethereal_chains",
+            "horn_of_plenty",
+            "master_thieves_armband",
+            "sandals_of_nature",
+            "skeleton_key",
+            "talisman_of_foresight",
+            "timekeepers_hourglass",
+            "unstable_spellbook",
         ];
         assert_eq!(
             ALL_ITEM_IDS

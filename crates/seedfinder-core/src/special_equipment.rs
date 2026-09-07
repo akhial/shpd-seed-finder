@@ -2330,7 +2330,23 @@ mod tests {
             assert_eq!(result.door_type, door_type, "{kind:?} door");
             assert_eq!(result.next, next, "{kind:?} RNG checkpoint");
 
-            let expected_items = expected_items(kind);
+            let mut expected_items = expected_items(kind);
+            if kind == SpecialRoomKind::CrystalVault {
+                expected_items.insert(
+                    0,
+                    world_item(
+                        ItemId::UnstableSpellbook,
+                        0,
+                        None,
+                        true,
+                        ItemSource::CrystalChest,
+                        Accessibility::Choice {
+                            group: 41,
+                            option: 0,
+                        },
+                    ),
+                );
+            }
             assert_eq!(
                 result.report.searchable_items, expected_items,
                 "{kind:?} searchable items"

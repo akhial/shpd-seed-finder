@@ -152,8 +152,18 @@ pub fn production_scout_world(
     challenges: Challenges,
 ) -> Result<GeneratedWorld, ScoutCallError> {
     let generator = canonical_generator(challenges);
-    catch_unwind(AssertUnwindSafe(|| generator.generate(seed, 24)))
-        .map_err(|_| ScoutCallError::Panicked)
+    catch_unwind(AssertUnwindSafe(|| {
+        let mut world = generator.generate(seed, 24);
+        // Native catalogs cannot decode artifact IDs yet. Keep this adapter's
+        // scout packet and match indices aligned until native UI support lands.
+        // Core generation/wire and WASM retain the full artifact item stream.
+        world.items.retain(|entry| {
+            shpd_seedfinder_core::catalog::item(entry.item).kind
+                != shpd_seedfinder_core::catalog::ItemKind::Artifact
+        });
+        world
+    }))
+    .map_err(|_| ScoutCallError::Panicked)
 }
 
 /// Failure modes of [`production_scout_matches`].
@@ -1291,6 +1301,11 @@ mod tests {
 
         assert_eq!(world, decode_scout_world(&packet).unwrap());
         assert_eq!(&packet[..4], b"SSC4");
+        // Web-only rollout: current native catalogs reject artifact IDs.
+        assert!(world.items.iter().all(|entry| {
+            shpd_seedfinder_core::catalog::item(entry.item).kind
+                != shpd_seedfinder_core::catalog::ItemKind::Artifact
+        }));
         assert_eq!(
             world
                 .items

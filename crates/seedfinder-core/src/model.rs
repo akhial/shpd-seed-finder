@@ -105,6 +105,7 @@ impl Accessibility {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WorldItem {
     pub item: ItemId,
+    /// Equipment upgrade, or the artifact transfer amount (+5 in the Imp vault).
     pub upgrade: u8,
     pub effect: Option<Effect>,
     pub cursed: bool,

@@ -751,12 +751,22 @@ pub enum ImpRewardOption {
 }
 
 impl ImpRewardOption {
-    /// Catalog identity and roll of the option, or `None` for the artifact
-    /// (outside the searchable catalog) and the zero-weight plain Dart.
+    /// Catalog identity and roll, with artifacts expressed as the transferred
+    /// upgrade amount (independent of subclass-specific rounding). Zero-weight classes remain outside the catalog.
     #[must_use]
     pub const fn searchable(self) -> Option<(ItemId, EquipmentRoll)> {
         match self {
-            Self::Artifact(_) => None,
+            Self::Artifact(artifact) => match artifact.kind.item_id() {
+                Some(item) => Some((
+                    item,
+                    EquipmentRoll {
+                        upgrade: 5,
+                        effect: None,
+                        cursed: artifact.cursed,
+                    },
+                )),
+                None => None,
+            },
             Self::Ring(ring) => Some((ring.kind.item_id(), ring.roll)),
             Self::Equipment(equipment) => Some((equipment.item, equipment.roll)),
             Self::Missile(missile) => match missile.kind.item_id() {
@@ -1282,17 +1292,18 @@ mod tests {
             reward_options: options,
             ..ImpQuest::default()
         };
-        assert_eq!(quest.append_world_items(4, &mut output), 5);
+        assert_eq!(quest.append_world_items(4, &mut output), 6);
+        assert_eq!(output[0].upgrade, 5);
         assert_eq!(output[0].source, ItemSource::ImpReward);
         assert_eq!(
             output[0].accessibility,
             Accessibility::Choice {
                 group: 4,
-                option: 1
+                option: 0
             }
         );
         assert_eq!(
-            output[4].accessibility,
+            output[5].accessibility,
             Accessibility::Choice {
                 group: 4,
                 option: 5

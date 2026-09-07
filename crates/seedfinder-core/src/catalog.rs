@@ -2,7 +2,7 @@
 
 use crate::run::{RingGems, RingKind};
 
-/// Highest upgrade the generator puts on any item, whatever its kind or tier.
+/// Default upgrade ceiling for equipment without a family/tier exception.
 ///
 /// v4.0.0's Imp vault sets the ceiling: its final-room options are levelled to
 /// `+2..=+4`, above anything the rest of the dungeon rolls.
@@ -54,6 +54,7 @@ pub enum ItemKind {
     Ring,
     /// Initial catalyst offers, never a selected or equipped trinket.
     Trinket,
+    Artifact,
 }
 
 impl ItemKind {
@@ -72,6 +73,7 @@ impl ItemKind {
     pub const fn maximum_search_upgrade_for_tier(self, tier: u8) -> u8 {
         match self {
             Self::Trinket => 0,
+            Self::Artifact => 5,
             Self::Weapon if tier == EXTRA_UPGRADE_TIER => EXTRA_UPGRADE_MAXIMUM,
             _ => MAX_GENERATED_UPGRADE,
         }
@@ -196,6 +198,17 @@ pub enum ItemId {
     FerretTuft,
     CrackedSpyglass,
     TrinketCatalyst,
+    AlchemistsToolkit,
+    ChaliceOfBlood,
+    DriedRose,
+    EtherealChains,
+    HornOfPlenty,
+    MasterThievesArmband,
+    SandalsOfNature,
+    SkeletonKey,
+    TalismanOfForesight,
+    TimekeepersHourglass,
+    UnstableSpellbook,
 }
 
 impl ItemId {
@@ -342,7 +355,18 @@ impl ItemId {
             | Self::ChaoticCenser
             | Self::FerretTuft
             | Self::CrackedSpyglass
-            | Self::TrinketCatalyst => None,
+            | Self::TrinketCatalyst
+            | Self::AlchemistsToolkit
+            | Self::ChaliceOfBlood
+            | Self::DriedRose
+            | Self::EtherealChains
+            | Self::HornOfPlenty
+            | Self::MasterThievesArmband
+            | Self::SandalsOfNature
+            | Self::SkeletonKey
+            | Self::TalismanOfForesight
+            | Self::TimekeepersHourglass
+            | Self::UnstableSpellbook => None,
         }
     }
 }
@@ -934,6 +958,87 @@ pub const ITEMS: &[ItemDefinition] = &[
         None,
         70
     ),
+    item!(
+        AlchemistsToolkit,
+        "alchemists_toolkit",
+        "Alchemist's Toolkit",
+        Artifact,
+        None,
+        245
+    ),
+    item!(
+        ChaliceOfBlood,
+        "chalice_of_blood",
+        "Chalice of Blood",
+        Artifact,
+        None,
+        253
+    ),
+    item!(DriedRose, "dried_rose", "Dried Rose", Artifact, None, 260),
+    item!(
+        EtherealChains,
+        "ethereal_chains",
+        "Ethereal Chains",
+        Artifact,
+        None,
+        248
+    ),
+    item!(
+        HornOfPlenty,
+        "horn_of_plenty",
+        "Horn of Plenty",
+        Artifact,
+        None,
+        249
+    ),
+    item!(
+        MasterThievesArmband,
+        "master_thieves_armband",
+        "Master Thieves' Armband",
+        Artifact,
+        None,
+        241
+    ),
+    item!(
+        SandalsOfNature,
+        "sandals_of_nature",
+        "Sandals of Nature",
+        Artifact,
+        None,
+        256
+    ),
+    item!(
+        SkeletonKey,
+        "skeleton_key",
+        "Skeleton Key",
+        Artifact,
+        None,
+        264
+    ),
+    item!(
+        TalismanOfForesight,
+        "talisman_of_foresight",
+        "Talisman of Foresight",
+        Artifact,
+        None,
+        243
+    ),
+    item!(
+        TimekeepersHourglass,
+        "timekeepers_hourglass",
+        "Timekeeper's Hourglass",
+        Artifact,
+        None,
+        244
+    ),
+    item!(
+        UnstableSpellbook,
+        "unstable_spellbook",
+        "Unstable Spellbook",
+        Artifact,
+        None,
+        246
+    ),
 ];
 
 /// Weapon enchantments and curses in the game journal's order: enchantments
@@ -1100,7 +1205,7 @@ impl Effect {
                 .copied()
                 .find(|effect| effect.wire_name().eq_ignore_ascii_case(name))
                 .map(Self::Armor),
-            ItemKind::Wand | ItemKind::Ring | ItemKind::Trinket => None,
+            ItemKind::Wand | ItemKind::Ring | ItemKind::Trinket | ItemKind::Artifact => None,
         }
     }
 
@@ -1276,7 +1381,7 @@ mod tests {
                 definition.stable_id
             );
         }
-        assert_eq!(ITEMS.len(), 106);
+        assert_eq!(ITEMS.len(), 117);
         assert_eq!(
             ITEMS
                 .iter()

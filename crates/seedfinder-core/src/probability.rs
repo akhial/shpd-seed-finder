@@ -84,6 +84,15 @@ use crate::quests::WandmakerQuestType;
 /// the group.
 #[must_use]
 pub fn estimate_match_probability(query: &SearchQuery) -> f64 {
+    // Artifact identities are dealt without replacement across deterministic
+    // placements. Equipment supply tables cannot estimate this distribution.
+    if query
+        .requirements
+        .iter()
+        .any(|r| r.kind == ItemKind::Artifact)
+    {
+        return f64::NAN;
+    }
     if query
         .requirements
         .iter()
@@ -1381,7 +1390,7 @@ impl Predicate {
                 }
             }
             (ItemKind::Wand | ItemKind::Ring, None) => 1.0,
-            (ItemKind::Trinket, _) => 0.0,
+            (ItemKind::Trinket | ItemKind::Artifact, _) => 0.0,
         }
     }
 
@@ -1485,7 +1494,7 @@ fn melee_tier_items(tier: u8) -> &'static [Option<ItemId>] {
 /// exact — and much cheaper than resolving all forty-odd weapon identities.
 fn identities(kind: ItemKind) -> Vec<(ItemId, i32)> {
     match kind {
-        ItemKind::Trinket => Vec::new(),
+        ItemKind::Trinket | ItemKind::Artifact => Vec::new(),
         ItemKind::Weapon => (1..=HIGHEST_TIER)
             .filter_map(|tier| {
                 let items = melee_tier_items(tier);

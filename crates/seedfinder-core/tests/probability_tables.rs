@@ -141,9 +141,11 @@ fn measure() -> Vec<Row> {
                     let mut groups: std::collections::BTreeSet<(usize, Line, String, u16)> =
                         std::collections::BTreeSet::new();
                     for candidate in &world.items {
-                        if item(candidate.item).kind
-                            == shpd_seedfinder_core::catalog::ItemKind::Trinket
-                        {
+                        if matches!(
+                            item(candidate.item).kind,
+                            shpd_seedfinder_core::catalog::ItemKind::Trinket
+                                | shpd_seedfinder_core::catalog::ItemKind::Artifact
+                        ) {
                             continue;
                         }
                         let key = (

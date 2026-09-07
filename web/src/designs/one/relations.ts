@@ -400,6 +400,7 @@ export const canStack = (requirements: readonly RequirementState[], item: BoardI
   const family = requirementFamily(requirements[item.members[0]]);
   return (
     family !== "trinket" &&
+    family !== "artifact" &&
     item.members.every((index) => requirementFamily(requirements[index]) === family)
   );
 };

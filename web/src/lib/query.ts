@@ -65,11 +65,13 @@ export const ringStackCapacity = (count: number): number =>
 export const maxUpgradeFor = (family: string | undefined): number =>
   family === "trinket"
     ? 0
-    : family === "weapon"
-      ? MAX_UPGRADE_WEAPON
-      : family === "ring"
-        ? MAX_UPGRADE_RING
-        : MAX_UPGRADE_DEFAULT;
+    : family === "artifact"
+      ? 5
+      : family === "weapon"
+        ? MAX_UPGRADE_WEAPON
+        : family === "ring"
+          ? MAX_UPGRADE_RING
+          : MAX_UPGRADE_DEFAULT;
 
 /** The highest upgrade the generator puts on any item, whatever its tier. */
 export const MAX_UPGRADE_ANY_TIER = 4;
@@ -99,6 +101,7 @@ const reachesExtraUpgradeTier = (requirement: Pick<RequirementState, "item" | "t
 export const maxUpgradeOf = (
   requirement: Pick<RequirementState, "kind" | "item" | "tier">,
 ): number => {
+  if (requirementFamily(requirement) === "artifact") return 5;
   const ceiling = maxUpgradeFor(requirementFamily(requirement));
   return ceiling > MAX_UPGRADE_ANY_TIER && !reachesExtraUpgradeTier(requirement)
     ? MAX_UPGRADE_ANY_TIER
@@ -478,6 +481,8 @@ export function validateRequirement(requirement: RequirementState): string[] {
   const errors: string[] = [];
   if (requirementFamily(requirement) === "trinket" && !requirement.item)
     errors.push("Select a trinket.");
+  if (requirementFamily(requirement) === "artifact" && !requirement.item)
+    errors.push("Select an artifact.");
   const item = requirement.item ? getItem(requirement.item) : undefined;
   const kind = requirement.kind ?? item?.type;
   const family = kind ? kindFamily(kind) : undefined;

@@ -2919,3 +2919,11 @@ input[type="range"]::-moz-range-thumb {
 .d1-trinket-tail-label {
   margin-top: 14px;
 }
+
+/* Six item families stay legible on a phone-sized requirement editor. */
+@media (max-width: 480px) {
+  .d1-modal .d1-seg[aria-label="Category"] {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

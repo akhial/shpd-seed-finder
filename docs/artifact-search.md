@@ -1,0 +1,52 @@
+# Artifact search and scout
+
+The engine searches the 11 artifacts in the deterministic spawn deck. A
+requirement must name an artifact: `kind: "artifact"` alone is rejected, just
+like a wildcard trinket. Cloak of Shadows and Holy Tome have zero spawn weight
+and are not offered in the artifact picker.
+
+```json
+{
+  "requirements": [
+    { "item": "ethereal_chains", "max_depth": 9 },
+    { "item": "sandals_of_nature", "source": "imp_reward", "upgrade": 5 }
+  ],
+  "max_depth": 19
+}
+```
+
+Artifacts support named AND/OR queries, individual floor limits, source and
+uncursed filters. The generator's existing unique artifact deck is unchanged.
+Only artifacts generated at deterministic locations participate: heaps,
+containers, skeletons, shops, pre-generated mimic contents and the Imp reward.
+Runtime drops, transmutations, purchases affecting later RNG, and other player
+actions that could change the deck are not simulated.
+
+Ordinary artifacts are +0. The Imp quest's Dwarven vault artifact receives
+`transferUpgrade(5)` and is reported as **+5**, the transferred upgrade amount.
+Individual artifact subclasses can round their internal and in-game displayed
+levels differently; Sandals, for example, have internal level 2 and display +7.
+The search consistently uses the requested +5 transfer label. That reward
+is uncursed and shares the vault's single-pick accessibility group with all
+other Imp rewards and vault treasures. Matching cannot acquire it together
+with another option from that group.
+
+Artifact records carry the normal source, floor, curse, secret and accessibility
+metadata. Core `SSC3`/`SSC4` wire records use stable artifact IDs with the existing
+upgrade field. Query JSON and result files use `artifact`; share links append
+category code 7 and artifact item codes, preserving previous codes. WASM scout
+JSON reports `category: "artifact"` and the normal `matched` flag.
+
+The UI rollout is web-only. The web catalog extension supplies the new picker
+entries, while the native session adapter temporarily omits artifacts from both
+scout packets and the corresponding match-index stream, preserving existing
+native decoders. The core generator and codecs expose the full artifact stream.
+
+Artifact probability estimates are unavailable because the equipment supply
+tables do not model their unique deck. This does not prevent searches.
+
+Tests pin all 11 artifact identities across eight worlds against the official
+BETA-4 JAR and cover
+floor limits, gated/scalar search, vault exclusivity, codecs, and the web scout.
+The parity oracle emits `search_upgrade` alongside `true_level` so transferred
+artifact levels can be compared without losing the underlying Java level.
