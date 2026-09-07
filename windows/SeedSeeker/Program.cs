@@ -41,7 +41,7 @@ public static class Program
         {
             // A locked-down registry only costs link activation, not the app.
         }
-        Application.Start(_ =>
+        Application.Start(_args =>
         {
             SynchronizationContext.SetSynchronizationContext(
                 new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread()));
