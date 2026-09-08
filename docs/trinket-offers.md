@@ -57,11 +57,12 @@ also means No Trinket. The remaining 13 deck entries never affect selection.
 The engine applies the +3 generation effects of Mimic Tooth, Parchment Scrap,
 Rat Skull, Exotic Crystals, Mossy Clump, Trap Mechanism, and Cracked Spyglass.
 Other trinkets can be chosen but their gameplay effects do not alter the
-canonical generated world. Equipment probability estimates are unavailable
-with a selected trinket because the existing supply tables assume no trinket;
-pure offer probabilities remain available.
+canonical generated world. Equipment probability estimates remain available
+using the existing measured supply tables. Like challenge effects, selected-trinket effects are not
+calibrated into those estimates; pure offer probabilities remain exact.
 
-The web scout offers **No Trinket** and all four initial choices. An override
+Click any of the four initial-choice cards in the web scout to apply it, or
+click **No Trinket** to clear the selection. An override
 regenerates that seed with the same brewing timing and can be changed back to
 the original match. A new scout request starts from the query's selection.
 WASM scout requests accept `trinket: "none"` or an initial offer's stable ID;

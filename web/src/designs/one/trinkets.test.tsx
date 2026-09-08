@@ -45,11 +45,18 @@ describe("offered trinket pilot", () => {
         onSelect={() => {}}
       />,
     );
-    expect(html.match(/<option /g)).toHaveLength(5);
-    expect(html).toContain('value="none"');
-    expect(html).toContain(`value="${order[1].id}" selected=""`);
+    expect(html).not.toContain("<select");
+    expect(html.match(/<button /g)).toHaveLength(5);
+    expect(html).toContain('aria-pressed="false">No Trinket</button>');
+    expect(html).toContain(`aria-label="Apply ${order[1].name} at +3" aria-pressed="true"`);
     expect(html).toContain("Applied +3");
-    expect(html).not.toContain(`<option value="${order[4].id}"`);
+    expect(html).not.toContain(`aria-label="Apply ${order[4].name}`);
+    const cleared = renderToStaticMarkup(
+      <CatalystEntry offers={offers} order={order} onSelect={() => {}} disabled />,
+    );
+    expect(cleared).toContain('aria-pressed="true" disabled="">No Trinket</button>');
+    expect(cleared.match(/disabled=""/g)).toHaveLength(5);
+    expect(cleared).not.toContain("Applied +3");
   });
 
   it("preserves all 17 identities, draws four choices in deck order, and highlights the match", () => {

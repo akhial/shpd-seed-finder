@@ -84,16 +84,9 @@ use crate::quests::WandmakerQuestType;
 /// the group.
 #[must_use]
 pub fn estimate_match_probability(query: &SearchQuery) -> f64 {
-    // The equipment supply tables were calibrated without trinkets.
-    if query.requirements.iter().any(|r| r.select_trinket)
-        && query
-            .requirements
-            .iter()
-            .any(|r| r.kind != ItemKind::Trinket)
-    {
-        return f64::NAN;
-    }
-
+    // Selection changes simulation, not the offer predicate. Keep the existing
+    // supply-based estimate available; as with challenges, generation effects
+    // are not calibrated into these tables.
     if query
         .requirements
         .iter()
@@ -1670,6 +1663,24 @@ mod tests {
     fn assert_probability(requirements: Vec<Requirement>, expected: f64) {
         let actual = estimate_match_probability(&query(requirements, 24));
         assert!((actual - expected).abs() < 1e-10, "{actual} vs {expected}");
+    }
+
+    #[test]
+    fn selected_trinkets_keep_mixed_query_estimates_available() {
+        for document in [
+            r#"{"requirements":[{"item":"mimic_tooth","select_trinket":true},{"kind":"weapon","upgrade":2}]}"#,
+            r#"{"requirements":[{"any_of":[{"item":"mimic_tooth","select_trinket":true},{"item":"rat_skull"}]},{"kind":"ring"}]}"#,
+            r#"{"requirements":[{"item":"parchment_scrap","select_trinket":true}]}"#,
+        ] {
+            let selected = crate::json_query::decode(document).unwrap();
+            let estimate = estimate_match_probability(&selected);
+            assert!(estimate.is_finite() && estimate > 0.0 && estimate <= 1.0);
+            let mut unselected = selected;
+            for requirement in &mut unselected.requirements {
+                requirement.select_trinket = false;
+            }
+            assert!((estimate - estimate_match_probability(&unselected)).abs() < 1e-12);
+        }
     }
 
     #[test]
