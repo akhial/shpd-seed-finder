@@ -74,7 +74,7 @@ catalyst placements rather than conditioning equipment supply on an explicit
 catalyst floor filter.
 
 Click any of the four initial-choice cards in the web scout to apply it, or
-click **No Trinket** to clear the selection. An override
+click the applied card again to clear the selection. An override
 regenerates that seed with the same brewing timing and can be changed back to
 the original match. A new scout request starts from the query's selection.
 WASM scout requests accept `trinket: "none"` or an initial offer's stable ID;
