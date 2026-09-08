@@ -61,7 +61,7 @@ describe("results file", () => {
     const decoded = decodeResultsFile(text);
     expect(decoded.appVersion).toBeDefined();
     // A file written today carries the game version this engine targets.
-    expect(decoded.shpdVersion).toBe("4.0.0-BETA-4");
+    expect(decoded.shpdVersion).toBe("4.0.0-RC-1");
     expect(decoded.query).toEqual(loadedQuery);
     expect(decoded.seeds).toEqual(["AAA-AAA-BUH", "ABC-DEF-GHI"]);
     expect(decoded.dropped).toBe(0);

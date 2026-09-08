@@ -1,0 +1,150 @@
+{
+  "schema": "shpd-rc1-cell-equivalence/v1",
+  "result": "PASS",
+  "game_version": "4.0.0-RC-1",
+  "game_build": 907,
+  "jar_sha256": "43f881f0d6484faffea913f5563fd2c3277ed83159eda6e83efc55e586fbfdbf",
+  "runtime": {
+    "java_version": "25.0.4.1",
+    "java_vendor": "Eclipse Adoptium",
+    "java_vm": "OpenJDK 64-Bit Server VM"
+  },
+  "platform": "Windows x86-64",
+  "rust_toolchain": "stable-x86_64-pc-windows-gnu",
+  "base_commit": "9f5b63fe1681e561283df78e9f47e7654cf6a0af",
+  "working_tree_changes": true,
+  "seed_range": {
+    "start": 0,
+    "end_exclusive": 100000
+  },
+  "profile": {
+    "hero": "Warrior",
+    "challenges": 0,
+    "equipped_trinkets": [],
+    "journal": "RC1 debug defaults (Halls attrition page unread)",
+    "vault": true
+  },
+  "compared": [
+    "searchable equipment and initial catalyst offer multisets (floor/source/id/upgrade/curse/effect)",
+    "physical equipment multisets (floor/branch/cell/id/upgrade/curse/effect)",
+    "every integer terrain cell and dimensions on 20 regular floors plus the Imp vault"
+  ],
+  "not_compared": [
+    "boss terrain",
+    "consumables",
+    "quantities",
+    "mob identities",
+    "custom visual tiles",
+    "secret flags",
+    "accessibility groups",
+    "runtime gameplay histories"
+  ],
+  "totals": {
+    "tested": 100000,
+    "deviations": 0,
+    "errors": 0,
+    "entries": 9357260,
+    "floors": 2100000,
+    "terrain_cells": 4035195654,
+    "item_locations": 7017389
+  },
+  "original_comparator_sha256": "5790f162b331515bca650443f2886a2c5579e63aa58c1a18440078f3c1dadebf",
+  "final_comparator_sha256": "d6b2db38647e23353e92f40da8fe7f5defdaaf81c04f88eb65646d19e0f73ea6",
+  "original_elapsed_seconds": 1109.787101507187,
+  "checks": {
+    "core_tests_passed": 442,
+    "additional_rc1_regression_passed": 1,
+    "core_tests_ignored": 1,
+    "oracle_fixture_groups_passed": 8,
+    "comparator_controls_passed": 9,
+    "core_all_targets_clippy": "PASS",
+    "workspace_format": "PASS"
+  },
+  "evidence_directory": "tooling/oracle-4.0/.work/rc1-100000",
+  "shards": [
+    {
+      "end_exclusive": 16666,
+      "deviations": 0,
+      "entries": 1559410,
+      "errors": 0,
+      "floors": 349986,
+      "item_locations": 1169571,
+      "requested": 16666,
+      "start": 0,
+      "summary": true,
+      "terrain_cells": 672398337,
+      "tested": 16666,
+      "oracle_archive_sha256": "4837fdd7176cd67846e6610934a5a95ce1a9437c70d17ce8ad81ab81919f20e7"
+    },
+    {
+      "end_exclusive": 33333,
+      "deviations": 0,
+      "entries": 1558911,
+      "errors": 0,
+      "floors": 350007,
+      "item_locations": 1168960,
+      "requested": 16667,
+      "start": 16666,
+      "summary": true,
+      "terrain_cells": 672651757,
+      "tested": 16667,
+      "oracle_archive_sha256": "903b93090f36856f616b5322a28c66c1401a50bb6c00bfb64be3a2def01f69db"
+    },
+    {
+      "end_exclusive": 50000,
+      "deviations": 0,
+      "entries": 1560100,
+      "errors": 0,
+      "floors": 350007,
+      "item_locations": 1170001,
+      "requested": 16667,
+      "start": 33333,
+      "summary": true,
+      "terrain_cells": 672361083,
+      "tested": 16667,
+      "oracle_archive_sha256": "2d85c507dec61523cca072e2978e75b86069b67378969bd552b35d2b0ddab3de"
+    },
+    {
+      "end_exclusive": 66666,
+      "deviations": 0,
+      "entries": 1559270,
+      "errors": 0,
+      "floors": 349986,
+      "item_locations": 1169385,
+      "requested": 16666,
+      "start": 50000,
+      "summary": true,
+      "terrain_cells": 672838561,
+      "tested": 16666,
+      "oracle_archive_sha256": "9c81b7021d5da4e7b0d5e2fad95f76acfaa80bcc4366208a0c5aeef96e3e136f"
+    },
+    {
+      "end_exclusive": 83333,
+      "deviations": 0,
+      "entries": 1559678,
+      "errors": 0,
+      "floors": 350007,
+      "item_locations": 1169651,
+      "requested": 16667,
+      "start": 66666,
+      "summary": true,
+      "terrain_cells": 672523319,
+      "tested": 16667,
+      "oracle_archive_sha256": "2e0f9cc8c3c3784c16c618a64094a77f891f19a2c6068cbaf7f2a2f89bf2b4f5"
+    },
+    {
+      "end_exclusive": 100000,
+      "deviations": 0,
+      "entries": 1559891,
+      "errors": 0,
+      "floors": 350007,
+      "item_locations": 1169821,
+      "requested": 16667,
+      "start": 83333,
+      "summary": true,
+      "terrain_cells": 672422597,
+      "tested": 16667,
+      "oracle_archive_sha256": "85d19073158495f0a22ddc02d1e18686b4e1e5a7916a731302f4b822c3be6e1c"
+    }
+  ]
+}

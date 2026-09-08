@@ -1,4 +1,4 @@
-"""Run disjoint BETA-4 equipment streams against a frozen PR comparator.
+"""Run disjoint RC1 equipment and cell streams against a frozen comparator.
 Retains gzip-compressed oracle records, deviations, progress, and exact coverage.
 """
 import argparse
@@ -27,9 +27,9 @@ if not 0 < WORKERS <= COUNT:
 WORK = args.output.resolve()
 WORK.mkdir(parents=True, exist_ok=False)
 JAVA = args.java
-JAR = ROOT / "tooling/oracle-4.0/.work/ShatteredPD-v4.0.0-BETA-4-Java.jar"
+JAR = ROOT / "tooling/oracle-4.0/.work/ShatteredPD-v4.0.0-RC-1-Java.jar"
 jar_hash = hashlib.sha256(JAR.read_bytes()).hexdigest()
-assert jar_hash == "76f6983e7b619267666621de9f1ecbbc3645d4925c2c446736987c3011b9dfd1", "wrong oracle JAR"
+assert jar_hash == "43f881f0d6484faffea913f5563fd2c3277ed83159eda6e83efc55e586fbfdbf", "wrong oracle JAR"
 CP = os.pathsep.join(str(p) for p in [
     ROOT / "tooling/oracle-4.0/.work/batch-classes",
     ROOT / "tooling/java-finder/.work/classes", JAR,
@@ -40,11 +40,12 @@ manifest = {
     "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
     "dirty": bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True).strip()),
     "jar_sha256": jar_hash, "exe_sha256": hashlib.sha256(EXE.read_bytes()).hexdigest(),
+    "java_runtime": subprocess.check_output([JAVA, "-version"], stderr=subprocess.STDOUT, text=True).strip(),
     "start": 0, "count": COUNT, "workers": WORKERS, "floors": 24,
     "vault": True, "challenges": 0, "hero": "Warrior",
-    "comparison_fields": ["floor", "source", "item", "upgrade", "cursed", "effect"],
+    "comparison_fields": ["floor", "source", "item", "upgrade", "cursed", "effect", "branch", "cell", "width", "height", "terrain_cells"],
     "comparison": "exact sorted multisets, duplicate entries retained",
-    "scope": "catalog equipment only; quantity, cell, secret flag and accessibility groups are not compared",
+    "scope": "catalog equipment and initial catalyst offers; physical equipment cells; full terrain arrays on 20 regular floors and the vault; boss terrain, consumables, quantities, mob identities, custom visual tiles, secret flags and accessibility groups are not compared",
 }
 (WORK / "manifest.json").write_text(json.dumps(manifest, indent=2))
 
@@ -86,3 +87,4 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as pool:
     results=[j.result() for j in jobs]
 (WORK/"completed.json").write_text(json.dumps({"elapsed":time.time()-began,"shards":results},indent=2))
 print(json.dumps(results),flush=True)
+sys.exit(0 if all(r["java_exit"] == 0 and r["rust_exit"] == 0 for r in results) else 1)

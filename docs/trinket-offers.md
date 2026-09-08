@@ -66,7 +66,7 @@ preserving existing links.
 
 ```sh
 tooling/oracle-4.0/build.sh
-java -cp "tooling/oracle-4.0/.work/classes:tooling/oracle-4.0/.work/ShatteredPD-v4.0.0-BETA-4-Java.jar" \
+java -cp "tooling/oracle-4.0/.work/classes:tooling/oracle-4.0/.work/ShatteredPD-v4.0.0-RC-1-Java.jar" \
   com.shatteredpixel.shatteredpixeldungeon.TrinketOracle AAA-AAA-AAA
 ```
 

@@ -69,3 +69,4 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
     result = [job.result() for job in jobs]
 (work / f"{label}-completed.json").write_text(json.dumps(result, indent=2))
 print(json.dumps(result))
+sys.exit(0 if all(shard["exit"] == 0 for shard in result) else 1)
