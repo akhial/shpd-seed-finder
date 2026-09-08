@@ -35,7 +35,7 @@ other Imp rewards and vault treasures. Matching cannot acquire it together
 with another option from that group.
 
 Artifact records carry the normal source, floor, curse, secret and accessibility
-metadata. Core `SSC3`/`SSC4` wire records use stable artifact IDs with the existing
+metadata. Core `SSC3`/`SSC4`/`SSC5` wire records use stable artifact IDs with the existing
 upgrade field. Query JSON and result files use `artifact`; share links append
 category code 7 and artifact item codes, preserving previous codes. WASM scout
 JSON reports `category: "artifact"` and the normal `matched` flag.

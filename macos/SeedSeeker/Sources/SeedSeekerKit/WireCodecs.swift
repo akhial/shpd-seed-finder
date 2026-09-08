@@ -120,7 +120,7 @@ public enum ScoutCodec {
     public static func decode(_ packet: Data) throws -> ScoutWorld {
         var input = Reader(data: packet)
         let magic = try input.bytes(4)
-        guard magic == Data("SSC3".utf8) || magic == Data("SSC4".utf8) else { throw WireCodecError.badMagic }
+        guard ["SSC3", "SSC4", "SSC5"].contains(where: { magic == Data($0.utf8) }) else { throw WireCodecError.badMagic }
         let seed = try input.ascii(Int(input.u8()))
         guard SeedCode.isCanonical(seed) else { throw WireCodecError.invalidValue("Malformed seed from native scout") }
         // Twelve gem ordinals, one per ring class in the order the catalog
@@ -179,7 +179,7 @@ public enum ScoutCodec {
                              secret: flags & 2 != 0)
         }
         var trinketOrder: [CatalogItem] = []
-        if magic == Data("SSC4".utf8) {
+        if magic != Data("SSC3".utf8) {
             guard try input.u8() == 17 else { throw WireCodecError.invalidValue("Trinket deck must contain 17 entries") }
             for _ in 0..<17 {
                 let id = try input.utf8(input.u16())
@@ -190,7 +190,25 @@ public enum ScoutCodec {
                 trinketOrder.append(item)
             }
         }
+        var feelings: [Int: FloorFeeling] = [:]
+        if magic == Data("SSC5".utf8) {
+            let count = Int(try input.u8())
+            guard count <= 20 else { throw WireCodecError.invalidValue("Floor feeling count must be 0..20") }
+            var previousDepth = 0
+            for _ in 0..<count {
+                let depth = Int(try input.u8())
+                guard (1...24).contains(depth), depth % 5 != 0, depth > previousDepth else {
+                    throw WireCodecError.invalidValue("Floor feeling depths must be strictly ascending regular floors 1..24")
+                }
+                guard let feeling = FloorFeeling(rawValue: Int(try input.u8())) else {
+                    throw WireCodecError.invalidValue("Unknown floor feeling")
+                }
+                feelings[depth] = feeling
+                previousDepth = depth
+            }
+        }
         guard input.remaining == 0 else { throw WireCodecError.trailingBytes }
-        return ScoutWorld(seed: seed, quests: quests, items: items, ringGems: ringGems, trinketOrder: trinketOrder)
+        return ScoutWorld(seed: seed, quests: quests, items: items, ringGems: ringGems,
+                          trinketOrder: trinketOrder, feelings: feelings)
     }
 }

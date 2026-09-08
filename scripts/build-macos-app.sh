@@ -40,6 +40,10 @@ for asset in catalog-v4.0.0.json items.png item_icons.png LICENSE.txt ATTRIBUTIO
     install -m 644 "$ASSETS/$asset" "$APP/Contents/Resources/$asset"
 done
 
+# Dungeon feeling icons use the same approved atlas as the web scout.
+install -m 644 "$ROOT/web/src/assets/dungeon-icons.png" "$APP/Contents/Resources/dungeon-icons.png"
+install -m 644 "$ROOT/web/src/assets/ATTRIBUTION.md" "$APP/Contents/Resources/DUNGEON-ICONS-ATTRIBUTION.md"
+
 # Embed Sparkle. SwiftPM links the framework from the resolved binary
 # artifact but does not assemble bundles, so it is copied in by hand; the
 # executable reaches it through the @executable_path/../Frameworks rpath

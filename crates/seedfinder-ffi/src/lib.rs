@@ -350,7 +350,7 @@ pub extern "C" fn seedfinder_scout(
 /// The scout request identifies the world exactly like `seedfinder_scout`, and
 /// the returned UTF-8 JSON `{"matched": [<item indices>],
 /// "matchedRequirements": <n>, "totalRequirements": <n>}` indexes the item
-/// list of the `SSC4` packet `seedfinder_scout` returns for that same request:
+/// list of the `SSC5` packet `seedfinder_scout` returns for that same request:
 /// scouting is deterministic, so both calls describe the same world.
 #[unsafe(no_mangle)]
 pub extern "C" fn seedfinder_scout_matches(
@@ -624,7 +624,7 @@ mod tests {
         );
         assert!(!pointer.is_null());
         let packet = unsafe { take_packet(pointer, len) };
-        assert_eq!(&packet[..4], b"SSC4");
+        assert_eq!(&packet[..4], b"SSC5");
         seedfinder_buffer_free(ptr::null_mut(), 0);
     }
 

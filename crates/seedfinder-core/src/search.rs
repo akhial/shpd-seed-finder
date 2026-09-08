@@ -859,6 +859,7 @@ mod tests {
                 Vec::new()
             };
             GeneratedWorld {
+                feelings: Vec::new(),
                 quests: crate::quests::QuestSummary::default(),
                 seed,
                 items,
@@ -933,6 +934,7 @@ mod tests {
                     .iter()
                     .copied()
                     .map(|seed| GeneratedWorld {
+                        feelings: Vec::new(),
                         quests: crate::quests::QuestSummary::default(),
                         seed,
                         items: (seed.value() % 17 == 0)
@@ -1016,6 +1018,7 @@ mod tests {
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .push(seed.value());
                 GeneratedWorld {
+                    feelings: Vec::new(),
                     quests: crate::quests::QuestSummary::default(),
                     seed,
                     items: Vec::new(),
@@ -1178,6 +1181,7 @@ mod tests {
                 Vec::new()
             };
             GeneratedWorld {
+                feelings: Vec::new(),
                 seed,
                 items,
                 quests: crate::quests::QuestSummary::default(),
@@ -1204,6 +1208,7 @@ mod tests {
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .push(seed.value());
                 GeneratedWorld {
+                    feelings: Vec::new(),
                     seed,
                     items: Vec::new(),
                     quests: crate::quests::QuestSummary::default(),
@@ -1471,6 +1476,7 @@ mod tests {
             fn generate(&self, seed: crate::seed::DungeonSeed, _max_depth: u8) -> GeneratedWorld {
                 assert_ne!(seed.value(), 6, "fixture panic at seed six");
                 GeneratedWorld {
+                    feelings: Vec::new(),
                     seed,
                     items: vec![WorldItem {
                         item: ItemId::WandFrost,
@@ -1520,6 +1526,7 @@ mod tests {
             fn generate(&self, seed: crate::seed::DungeonSeed, _max_depth: u8) -> GeneratedWorld {
                 assert_ne!(seed.value(), 6, "fixture panic at seed six");
                 GeneratedWorld {
+                    feelings: Vec::new(),
                     quests: crate::quests::QuestSummary::default(),
                     seed,
                     items: Vec::new(),

@@ -119,7 +119,7 @@ fn aaa_artifacts_match_beta4_oracle_and_round_trip_native_wire() {
             (ItemId::SkeletonKey, 22, ItemSource::Chest, 0, true),
         ]
     );
-    let packet = shpd_seedfinder_core::wire::encode_scout_world_with_trinkets(&world).unwrap();
+    let packet = shpd_seedfinder_core::wire::encode_scout_world(&world).unwrap();
     assert_eq!(
         shpd_seedfinder_core::wire::decode_scout_world(&packet).unwrap(),
         world

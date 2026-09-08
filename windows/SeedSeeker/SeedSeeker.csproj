@@ -51,6 +51,8 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260317003" />
     <!-- The exe icon covers Explorer; AppWindow.SetIcon needs the .ico on
          disk next to the binary for the title bar and taskbar. -->
+    <Content Include="..\..\web\src\assets\dungeon-icons.png" Link="Assets\dungeon-icons.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\web\src\assets\ATTRIBUTION.md" Link="Assets\DUNGEON-ICONS-ATTRIBUTION.md" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\SeedSeeker.ico" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\android\app\src\main\assets\third_party\shattered-pixel-dungeon\catalog-v4.0.0.json" Link="Assets\catalog-v4.0.0.json" CopyToOutputDirectory="PreserveNewest" />
     <!-- Upstream GPL-3.0-or-later item artwork, shared with the Android app rather

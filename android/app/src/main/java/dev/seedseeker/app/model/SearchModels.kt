@@ -568,7 +568,14 @@ data class ScoutWorld(
      */
     val ringGems: RingGems,
     val trinketOrder: List<CatalogItem> = emptyList(),
+    val floorFeelings: Map<Int, FloorFeeling> = emptyMap(),
 )
+
+/** Ordinals match the native SSC5 feeling IDs and dungeon icon frames. */
+enum class FloorFeeling(val label: String) {
+    NONE("Normal"), CHASM("Chasms"), WATER("Water"), GRASS("Grass"),
+    DARK("Dark"), LARGE("Large"), TRAPS("Traps"), SECRETS("Secrets"),
+}
 
 /**
  * The gems one run hands the twelve ring classes: `ordinals[cls]` is the gem

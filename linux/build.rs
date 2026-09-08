@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-// The canonical, checksum-verified copies of the Shattered Pixel Dungeon item
+// The canonical copies of the Shattered Pixel Dungeon item and floor feeling
 // atlases and their licence live under the Android assets tree. Passing that
 // directory to glib-compile-resources as a second source directory lets the
 // GResource XML reference them by name — aliased to their in-bundle path — so

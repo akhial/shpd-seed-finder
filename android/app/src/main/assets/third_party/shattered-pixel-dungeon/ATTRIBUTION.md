@@ -20,3 +20,13 @@ same 256x512 layout but redraws the tipped darts and adds the vault crystals.
 - License: GNU General Public License v3.0 or later (see `LICENSE.txt`)
 
 The assets are used by Seed Seeker, an independent, unofficial project. Seed Seeker is not affiliated with or endorsed by Shattered Pixel Dungeon or its authors. The surrounding UI of every Seed Seeker front-end — web, Android, macOS, Windows and Linux — is original and does not reuse game UI components.
+
+# Dungeon feeling sprites
+
+`dungeon-icons.png` is the unmodified `core/src/main/assets/interfaces/icons.png`
+from Shattered Pixel Dungeon v3.3.8 by Evan Debenham, distributed under GPL-3.0.
+Source: https://github.com/00-Evan/shattered-pixel-dungeon/blob/v3.3.8/core/src/main/assets/interfaces/icons.png
+License: the repository root `COPYING`.
+
+The floor feelings use the `Icons.getLarge(Level.Feeling)` frames: x=16..112,
+y=64, each 15×16 pixels. Normal floors have no additional icon.

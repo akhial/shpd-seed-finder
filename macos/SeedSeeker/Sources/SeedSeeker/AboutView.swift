@@ -19,15 +19,15 @@ struct AboutView: View {
                 .font(.headline).padding(.top, 14).padding(.bottom, 4)
             Form {
                 Section("Artwork attribution") {
-                    Text("The item sprites and ring type glyphs are unchanged copies of "
-                         + "Shattered Pixel Dungeon's item atlases.")
+                    Text("The item sprites, ring type glyphs, and floor feeling icons are unchanged copies of "
+                         + "Shattered Pixel Dungeon's artwork. Floor feeling icons are from v3.3.8.")
                         .foregroundStyle(.secondary)
                     attribution("Upstream", "Shattered Pixel Dungeon v\(EngineInfo.shared.shpdVersion)")
                     attribution("Release JAR SHA-256", EngineInfo.shared.shpdCommit)
                     attribution("Pixel Dungeon", "© 2012–2015 Oleg Dolya")
                     attribution("Shattered Pixel Dungeon", "© 2014–2026 Evan Debenham")
                     attribution("Project", "github.com/00-Evan/shattered-pixel-dungeon")
-                    attribution("Bundled notices", "ATTRIBUTION.md and LICENSE.txt in Resources")
+                    attribution("Bundled notices", "ATTRIBUTION.md, DUNGEON-ICONS-ATTRIBUTION.md and LICENSE.txt in Resources")
                 }
                 Section("GNU GPL v3 or later") {
                     Text("This program is free software. You may redistribute and modify it under "

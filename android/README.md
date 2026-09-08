@@ -38,6 +38,13 @@ four square choices beneath the catalyst on its actual floor, highlights matchin
 choices with a flat green fill, and keeps the remaining thirteen icons
 in one row. Sprite drawing uses nearest-neighbor filtering.
 
-The native scout decoder reads SSC4 (the SSC3 layout followed by a 17-entry
+The native scout decoder reads SSC5 (the SSC3 layout followed by a 17-entry
 trinket deck: one-byte count and UTF-8 IDs with unsigned 16-bit lengths), while
-retaining SSC3 compatibility. The deck ordering is independent of item sorting.
+retaining SSC3 and SSC4 compatibility. After the deck, SSC5 carries a one-byte
+feeling count (0..20), followed by depth/feeling byte pairs in strictly ascending
+regular-floor order (1..24, excluding boss floors). Feeling IDs are none=0,
+chasm=1, water=2, grass=3, dark=4, large=5, traps=6, secrets=7.
+The deck ordering is independent of item sorting. Scout floor headings show the
+feeling sprite without visible text; normal floors have no icon. The unmodified
+`dungeon-icons.png` atlas and its upstream attribution are packaged beside the
+item artwork.

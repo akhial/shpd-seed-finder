@@ -9,8 +9,7 @@ use shpd_seedfinder_core::engine_info::document as engine_info_document;
 use shpd_seedfinder_core::feasibility::QueryPlan;
 use shpd_seedfinder_core::json_query;
 use shpd_seedfinder_core::main_world::{
-    CanonicalMainWorldGenerator, ConfiguredMainWorldGenerator,
-    generate_main_world_observing_feelings,
+    CanonicalMainWorldGenerator, ConfiguredMainWorldGenerator, generate_main_world_with_challenges,
 };
 use shpd_seedfinder_core::model::{Accessibility, ItemSource, WorldItem};
 use shpd_seedfinder_core::probability::estimate_match_probability;
@@ -561,15 +560,16 @@ fn scout_impl(request_json: &str) -> Result<String, String> {
         .query
         .map(|value| json_query::decode(&value.to_string()))
         .transpose()?;
-    let mut feelings = Vec::new();
-    let world =
-        generate_main_world_observing_feelings(seed, 24, challenges, &mut |depth, feeling| {
-            feelings.push(ScoutFeelingOutput {
-                depth,
-                feeling: feeling_name(feeling),
-            });
-        })
+    let world = generate_main_world_with_challenges(seed, 24, challenges)
         .map_err(|error| format!("world generation failed: {error}"))?;
+    let feelings = world
+        .feelings
+        .iter()
+        .map(|entry| ScoutFeelingOutput {
+            depth: entry.depth,
+            feeling: feeling_name(entry.feeling),
+        })
+        .collect();
     let marks = query.as_ref().map(|query| scout_matches(&world, query));
     let matched_requirements = marks.as_ref().map_or(0, |marks| marks.matched_requirements);
     let total_requirements = marks.as_ref().map_or(0, |marks| marks.total_requirements);

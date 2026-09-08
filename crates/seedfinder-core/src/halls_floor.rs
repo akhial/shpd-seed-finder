@@ -21,7 +21,7 @@ use crate::halls_rooms::{HallsPainter, HallsRoomDispatcher};
 use crate::level::Level;
 use crate::level_flags::LevelFlags;
 use crate::level_prelude::LimitedDrops;
-use crate::model::{GeneratedWorld, WorldItem};
+use crate::model::{FloorFeeling, GeneratedWorld, WorldItem};
 use crate::painter::{PaintError, RoomPaintDispatch, draw_regular_trap_count};
 use crate::prison_floor::{PrisonFloorError, generate_prison_floor};
 use crate::quest_rooms::{
@@ -300,6 +300,7 @@ fn generate_halls_world_with_roots(
     let mut shop_run = ShopRunState::default();
     let mut random = RandomStack::with_base_seed(0);
     let mut items = Vec::new();
+    let mut feelings = Vec::new();
     let mut next_choice_group = 0_u16;
 
     for (index, &root) in roots[..4].iter().enumerate() {
@@ -314,6 +315,10 @@ fn generate_halls_world_with_roots(
         )?;
         random.pop();
         next_choice_group = remap_floor_choice_groups(&mut floor.world_items, next_choice_group);
+        feelings.push(FloorFeeling {
+            depth: u8::try_from(depth).expect("main-path depths fit u8"),
+            feeling: floor.painted.level.feeling,
+        });
         items.extend(floor.world_items);
     }
 
@@ -330,6 +335,10 @@ fn generate_halls_world_with_roots(
         )?;
         random.pop();
         next_choice_group = remap_floor_choice_groups(&mut floor.world_items, next_choice_group);
+        feelings.push(FloorFeeling {
+            depth: u8::try_from(depth).expect("main-path depths fit u8"),
+            feeling: floor.painted.level.feeling,
+        });
         items.extend(floor.world_items);
     }
 
@@ -346,6 +355,10 @@ fn generate_halls_world_with_roots(
         )?;
         random.pop();
         next_choice_group = remap_floor_choice_groups(&mut floor.world_items, next_choice_group);
+        feelings.push(FloorFeeling {
+            depth: u8::try_from(depth).expect("main-path depths fit u8"),
+            feeling: floor.painted.level.feeling,
+        });
         items.extend(floor.world_items);
     }
 
@@ -362,6 +375,10 @@ fn generate_halls_world_with_roots(
         )?;
         random.pop();
         next_choice_group = remap_floor_choice_groups(&mut floor.world_items, next_choice_group);
+        feelings.push(FloorFeeling {
+            depth: u8::try_from(depth).expect("main-path depths fit u8"),
+            feeling: floor.painted.level.feeling,
+        });
         items.extend(floor.world_items);
     }
 
@@ -384,11 +401,16 @@ fn generate_halls_world_with_roots(
         )?;
         random.pop();
         next_choice_group = remap_floor_choice_groups(&mut floor.world_items, next_choice_group);
+        feelings.push(FloorFeeling {
+            depth: u8::try_from(depth).expect("main-path depths fit u8"),
+            feeling: floor.painted.level.feeling,
+        });
         items.extend(floor.world_items);
     }
     Ok(GeneratedWorld {
         seed,
         items,
+        feelings,
         quests: quests.summary(),
         ring_gems: run.appearances.ring_gems,
     })
