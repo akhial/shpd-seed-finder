@@ -2322,8 +2322,8 @@ private struct ScoutItemRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(item.item.name).fontWeight(matches ? .semibold : .regular)
-                    if item.upgrade > 0 {
-                        Text("+\(item.upgrade)").font(.caption.bold())
+                    if item.displayedUpgrade > 0 {
+                        Text("+\(item.displayedUpgrade)").font(.caption.bold())
                             .foregroundStyle(Color.shatteredGreen)
                     }
                     if item.cursed {

@@ -3,6 +3,17 @@ import XCTest
 @testable import SeedSeekerKit
 
 final class ArtifactTests: XCTestCase {
+    func testScoutArtifactsShowRoundedGameLevels() {
+        for item in ItemCatalog.artifacts {
+            let expected = item.id == "sandals_of_nature" ? 7 :
+                (["ethereal_chains", "timekeepers_hourglass"].contains(item.id) ? 6 : 5)
+            let scout = ScoutItem(item: item, depth: 19, upgrade: 5, source: .impReward)
+            XCTAssertEqual(scout.displayedUpgrade, expected)
+            XCTAssertEqual(scout.upgrade, 5)
+            XCTAssertEqual(ScoutItem(item: item, depth: 1, upgrade: 0, source: .heap).displayedUpgrade, 0)
+        }
+    }
+
     func testNamedArtifactsUseTheirOwnUpgradeCeilingAndCannotStack() throws {
         XCTAssertEqual(ItemKind.artifact.rawValue, 7)
         XCTAssertEqual(ItemCatalog.artifacts.count, 11)

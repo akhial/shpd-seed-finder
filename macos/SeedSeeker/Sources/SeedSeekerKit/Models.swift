@@ -780,6 +780,17 @@ public struct ScoutQuest: Hashable, Identifiable, Sendable {
 }
 
 public struct ScoutItem: Identifiable, Sendable {
+    /// Mirrors transferUpgrade followed by visiblyUpgraded, with positive half-up rounding.
+    public var displayedUpgrade: Int {
+        let cap: Int
+        switch item.id {
+        case "sandals_of_nature": cap = 3
+        case "ethereal_chains", "timekeepers_hourglass": cap = 5
+        default: return upgrade
+        }
+        let internalLevel = (upgrade * cap + 5) / 10
+        return (internalLevel * 10 + cap / 2) / cap
+    }
     public let item: CatalogItem
     public let depth: Int
     public let upgrade: Int
