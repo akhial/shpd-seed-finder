@@ -24,10 +24,12 @@ Runtime drops, transmutations, purchases affecting later RNG, and other player
 actions that could change the deck are not simulated.
 
 Ordinary artifacts are +0. The Imp quest's Dwarven vault artifact receives
-`transferUpgrade(5)` and is reported as **+5**, the transferred upgrade amount.
-Individual artifact subclasses can round their internal and in-game displayed
-levels differently; Sandals, for example, have internal level 2 and display +7.
-The search consistently uses the requested +5 transfer label. That reward
+`transferUpgrade(5)`. Scout badges match the game's rounded displayed level:
+**+7** for Sandals of Nature (internal level 2), **+6** for Ethereal Chains and
+Timekeeper's Hourglass (internal level 3), and **+5** for the other artifacts.
+Both the transfer and display conversions round to the nearest integer, with
+halves rounding up. Raw wire/search upgrades retain the transfer amount for
+compatibility with existing queries and probability tables. That reward
 is uncursed and shares the vault's single-pick accessibility group with all
 other Imp rewards and vault treasures. Matching cannot acquire it together
 with another option from that group.

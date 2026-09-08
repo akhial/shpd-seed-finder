@@ -62,6 +62,16 @@ export const itemsForKind = (kind: RequirementKind): CatalogItem[] => {
   return weaponClass ? selectable.filter((item) => item.class === weaponClass) : selectable;
 };
 export const getItem = (id: string): CatalogItem | undefined => lookup.get(id);
+/** Matches the game's transferUpgrade then visiblyUpgraded rounding. */
+export const displayedUpgrade = (id: string, upgrade: number): number => {
+  const cap =
+    id === "sandals_of_nature"
+      ? 3
+      : id === "ethereal_chains" || id === "timekeepers_hourglass"
+        ? 5
+        : 10;
+  return Math.round((Math.round((upgrade * cap) / 10) * 10) / cap);
+};
 export const displayItemName = (id: string): string => getItem(id)?.name ?? id.replaceAll("_", " ");
 
 // The effect tables are generated from the game itself; a catalog without

@@ -10,6 +10,36 @@ use shpd_seedfinder_core::search::WorldGenerator;
 use shpd_seedfinder_core::seed::DungeonSeed;
 
 #[test]
+fn scout_artifact_levels_match_the_games_double_rounding() {
+    use shpd_seedfinder_core::model::{Accessibility, WorldItem};
+    for kind in ARTIFACT_ITEMS {
+        let Some(item_id) = kind.item_id() else {
+            continue;
+        };
+        let mut entry = WorldItem {
+            item: item_id,
+            upgrade: 5,
+            effect: None,
+            cursed: false,
+            depth: 19,
+            source: ItemSource::ImpReward,
+            accessibility: Accessibility::Independent,
+            secret: false,
+        };
+        // Official BETA-4 level caps: Sandals 3; Chains/Hourglass 5; other spawnables 10.
+        let expected = match entry.item {
+            ItemId::SandalsOfNature => 7,
+            ItemId::EtherealChains | ItemId::TimekeepersHourglass => 6,
+            _ => 5,
+        };
+        assert_eq!(entry.displayed_upgrade(), expected, "{kind:?}");
+        assert_eq!(entry.upgrade, 5);
+        entry.upgrade = 0;
+        assert_eq!(entry.displayed_upgrade(), 0);
+    }
+}
+
+#[test]
 fn all_spawn_artifacts_match_eight_official_beta4_worlds() {
     // ParityOracle 1-24; pinned official JAR SHA-256:
     // 76f6983e7b619267666621de9f1ecbbc3645d4925c2c446736987c3011b9dfd1

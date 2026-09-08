@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeAll, describe, expect, it } from "vite-plus/test";
-import { itemsForKind } from "../../lib/catalog";
+import { displayedUpgrade, itemsForKind } from "../../lib/catalog";
 import { fromQueryJson, maxUpgradeOf, toQueryDocument, validateRequirement } from "../../lib/query";
 import init, { analyze_query, filter_seeds, scout } from "../../lib/wasm/pkg/seedfinder.js";
 import type { ScoutResult } from "../../lib/wasm/types";
@@ -18,6 +18,19 @@ beforeAll(async () => {
 });
 
 describe("artifact search and scout", () => {
+  it("shows the game's rounded levels for every generated artifact", () => {
+    for (const item of itemsForKind("artifact")) {
+      const expected =
+        item.id === "sandals_of_nature"
+          ? 7
+          : ["ethereal_chains", "timekeepers_hourglass"].includes(item.id)
+            ? 6
+            : 5;
+      expect(displayedUpgrade(item.id, 5)).toBe(expected);
+      expect(displayedUpgrade(item.id, 0)).toBe(0);
+    }
+    expect(displayedUpgrade("ring_of_wealth", 3)).toBe(3);
+  });
   it("requires a named artifact and exposes floor limits", () => {
     const wildcard = fromQueryJson('{"requirements":[{"kind":"artifact"}]}').requirements[0];
     expect(validateRequirement(wildcard)).toContain("Select an artifact.");
@@ -78,7 +91,7 @@ describe("artifact search and scout", () => {
     ).toHaveLength(0);
   });
 
-  it("renders deterministic artifact records with +5 and vault choice metadata", () => {
+  it("renders deterministic artifact records with rounded +7 and vault choice metadata", () => {
     const query = { requirements: [{ item: "sandals_of_nature", upgrade: 5, max_depth: 19 }] };
     const result = JSON.parse(scout(JSON.stringify({ seed: "AAA-AAA-AAA", query }))) as ScoutResult;
     expect(result.matchedRequirements).toBe(1);
@@ -108,7 +121,7 @@ describe("artifact search and scout", () => {
       />,
     );
     expect(html).toContain("Sandals of Nature");
-    expect(html).toContain(">+5</b>");
+    expect(html).toContain(">+7</b>");
     expect(html).toContain("One reward of choice group");
     const analysis = JSON.parse(analyze_query(JSON.stringify(query)));
     expect(analysis).toMatchObject({ valid: true, impossible: false });
