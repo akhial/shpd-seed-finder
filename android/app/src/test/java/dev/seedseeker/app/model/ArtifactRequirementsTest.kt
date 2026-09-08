@@ -9,6 +9,22 @@ import org.junit.Test
 class ArtifactRequirementsTest {
     init { PackagedCatalog.install() }
 
+    @Test fun scoutArtifactsShowRoundedGameLevels() {
+        for (item in ItemCatalog.artifacts) {
+            val expected = when (item.id) {
+                "sandals_of_nature" -> 7
+                "ethereal_chains", "timekeepers_hourglass" -> 6
+                else -> 5
+            }
+            val scout = ScoutItem(item, 19, 5, null, false,
+                source = ScoutItemSource.IMP_REWARD, accessibility = ScoutAccessibility.Independent)
+            assertEquals(expected, scout.displayedUpgrade)
+            assertEquals(5, scout.upgrade)
+            assertEquals(0, scout.copy(upgrade = 0).displayedUpgrade)
+        }
+    }
+
+
     private fun PresetQuery.normalized() = copy(requirements = requirements.map { it.copy(key = 0) })
 
     private fun artifact(key: Long = 1) = ItemRequirement(

@@ -676,7 +676,18 @@ data class ScoutItem(
     val secret: Boolean = false,
     val source: ScoutItemSource,
     val accessibility: ScoutAccessibility,
-)
+) {
+    /** Matches transferUpgrade followed by visiblyUpgraded, with positive half-up rounding. */
+    val displayedUpgrade: Int get() {
+        val cap = when (item.id) {
+            "sandals_of_nature" -> 3
+            "ethereal_chains", "timekeepers_hourglass" -> 5
+            else -> return upgrade
+        }
+        val internal = (upgrade * cap + 5) / 10
+        return (internal * 10 + cap / 2) / cap
+    }
+}
 
 enum class ScoutItemSource(val label: String) {
     HEAP("Heap"),
