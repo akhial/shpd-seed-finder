@@ -146,8 +146,17 @@ class JniNativeSeedFinderTest {
             finder.scoutMatches("AAA-AAA-AAB", 6, request),
         )
         assertTrue(
-            bindings.scoutMatchRequest.contentEquals(ScoutRequestCodec.encode("AAA-AAA-AAB", 6)),
+            bindings.scoutMatchRequest.contentEquals(ScoutRequestCodec.encode("AAA-AAA-AAB", 6, trinket = "none")),
         )
+        assertTrue(bindings.scoutMatchQuery.contentEquals(QueryDocument.encode(request)))
+        val selectedQuery = SearchRequest(listOf(ItemRequirement(
+            1, ItemCatalog.trinkets.first(), 0,
+            upgradeMatch = dev.seedseeker.app.model.UpgradeMatch.ANY, selectTrinket = true,
+        )))
+        finder.scoutSelectedMatches("AAA-AAA-AAB", 6, request, selectedQuery, "none")
+        assertTrue(bindings.scoutMatchRequest.contentEquals(
+            ScoutRequestCodec.encode("AAA-AAA-AAB", 6, selectedQuery, "none"),
+        ))
         assertTrue(bindings.scoutMatchQuery.contentEquals(QueryDocument.encode(request)))
     }
 

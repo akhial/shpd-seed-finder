@@ -155,6 +155,7 @@ fun RequirementSheet(
     var source by remember(identity) { mutableStateOf(editing?.source) }
     var sourceMenuExpanded by remember(identity) { mutableStateOf(false) }
     var maximumDepth by remember(identity) { mutableStateOf(editing?.maximumDepth) }
+    var selectTrinket by remember(identity) { mutableStateOf(editing?.selectTrinket ?: false) }
     var requireUncursed by remember(identity) { mutableStateOf(editing?.requireUncursed ?: false) }
     // The stack this chip anchors: how many items of its kind to find, and the
     // combined level they must reach together (null when it just wants copies).
@@ -209,6 +210,7 @@ fun RequirementSheet(
             identityGroup = if (kind == ItemKind.TRINKET) null else editing?.identityGroup,
             maximumDepth = if (kind == ItemKind.TRINKET) null else maximumDepth,
             requireUncursed = kind != ItemKind.TRINKET && requireUncursed,
+            selectTrinket = kind == ItemKind.TRINKET && selectTrinket,
             alternativeGroup = editing?.alternativeGroup,
             levelSum = if (kind == ItemKind.TRINKET) null else editing?.levelSum,
         )
@@ -353,6 +355,24 @@ fun RequirementSheet(
                         }
                     }
 
+                    if (kind == ItemKind.TRINKET) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 20.dp).toggleable(
+                                value = selectTrinket,
+                                role = Role.Checkbox,
+                                onValueChange = { selectTrinket = it },
+                            ),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(checked = selectTrinket, onCheckedChange = null)
+                            Text("Choose matching trinket at +3")
+                        }
+                        Text(
+                            "Applies after the first brewing opportunity. If several alternatives are offered, no trinket is chosen.",
+                            modifier = Modifier.padding(horizontal = 20.dp),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                     if (kind == ItemKind.TRINKET && editing != null && onRemove != null) {
                         TextButton(onClick = onRemove, modifier = Modifier.padding(horizontal = 20.dp)) {
                             Text(if (inAlternativeGroup) "Remove alternative" else "Remove requirement", color = MaterialTheme.colorScheme.error)

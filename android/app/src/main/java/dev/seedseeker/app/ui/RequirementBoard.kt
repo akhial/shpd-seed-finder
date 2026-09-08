@@ -496,6 +496,10 @@ private fun RequirementChip(
                 ChipTag(text = tag.text, tone = tag.tone)
             }
             EffectBadge(requirement)
+            if (requirement.selectTrinket) {
+                Spacer(Modifier.width(5.dp))
+                ChipTag(text = "choose +3", tone = TagTone.SOFT)
+            }
             if (requirement.requireUncursed) {
                 Spacer(Modifier.width(5.dp))
                 ChipTag(text = "✓", tone = TagTone.SOFT)

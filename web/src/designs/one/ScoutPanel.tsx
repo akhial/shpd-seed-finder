@@ -336,7 +336,6 @@ export function CatalystEntry({
         </div>
       </div>
       {note && <p className="d1-item-note">{note}</p>}
-      {onSelect && <p className="d1-trinket-selection">Applied trinket</p>}
       <ol className="d1-trinket-choices" aria-label="Initial trinket choices">
         {(order.length
           ? order

@@ -66,6 +66,7 @@ pub struct UiRequirement {
     pub upgrade: UpgradeRequirement,
     pub effect: EffectRequirement,
     pub require_uncursed: bool,
+    pub select_trinket: bool,
     pub source: Option<ItemSource>,
     pub identity_group: Option<u8>,
     pub max_depth: Option<u8>,
@@ -105,7 +106,7 @@ impl UiRequirement {
             upgrade: self.upgrade,
             effect: self.effect,
             require_uncursed: self.require_uncursed,
-            select_trinket: false,
+            select_trinket: self.select_trinket,
             source: self.source,
             identity_group: self.identity_group,
             max_depth: self.max_depth,
@@ -170,7 +171,11 @@ impl UiRequirement {
     #[must_use]
     pub fn subtitle(&self) -> String {
         if self.kind == ItemKind::Trinket {
-            return String::new();
+            return if self.select_trinket {
+                "choose at +3".to_owned()
+            } else {
+                String::new()
+            };
         }
         let mut text = match self.upgrade {
             UpgradeRequirement::Any => "any upgrade".to_owned(),
@@ -266,7 +271,7 @@ impl AppState {
                 upgrade: requirement.upgrade,
                 effect: requirement.effect,
                 require_uncursed: requirement.require_uncursed,
-                select_trinket: false,
+                select_trinket: requirement.select_trinket,
                 source: requirement.source,
                 identity_group: requirement.identity_group,
                 max_depth: requirement.max_depth,
@@ -719,6 +724,24 @@ mod tests {
             query.requirements[1].alternative_group
         );
         assert!(super::ALL_KIND_CHOICES.contains(&(ItemKind::Trinket, None)));
+    }
+
+    #[test]
+    fn selected_trinket_survives_query_document_round_trips() {
+        let mut state = AppState::default();
+        state.requirements.push(UiRequirement {
+            kind: ItemKind::Trinket,
+            item: Some(ItemId::MimicTooth),
+            select_trinket: true,
+            ..UiRequirement::new(1)
+        });
+        let query = state.to_query().unwrap();
+        assert!(query.requirements[0].select_trinket);
+        assert_eq!(state.requirements[0].subtitle(), "choose at +3");
+        assert_eq!(AppState::from_query(&query).to_query().unwrap(), query);
+        let document = shpd_seedfinder_core::json_query::encode(&query);
+        let decoded = shpd_seedfinder_core::json_query::decode(&document.to_string()).unwrap();
+        assert_eq!(AppState::from_query(&decoded).to_query().unwrap(), query);
     }
 
     #[test]

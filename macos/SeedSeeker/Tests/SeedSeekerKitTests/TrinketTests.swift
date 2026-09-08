@@ -63,4 +63,53 @@ final class TrinketTests: XCTestCase {
         XCTAssertThrowsError(try ItemRequirement(key: 3, item: first.item, upgrade: 1,
                                                kind: .trinket, upgradeMatch: .exactly))
     }
+    func testSelectedTrinketPersistsAndLegacyQueriesDefaultOff() throws {
+        let requirement = try ItemRequirement(key: 1, item: XCTUnwrap(ItemCatalog.findById("mimic_tooth")),
+            upgrade: 0, kind: .trinket, upgradeMatch: .any, selectTrinket: true)
+        let saved = SavedQuery(requirements: [requirement])
+        XCTAssertTrue(QueryPersistence.decode(try XCTUnwrap(QueryPersistence.encode(saved))).requirements[0].selectTrinket)
+        let document = ResultsExport.encodeQuery(saved)
+        XCTAssertTrue(try ResultsExport.decodeQuery(document).requirements[0].selectTrinket)
+        let encoded = try JSONEncoder().encode(requirement)
+        var legacy = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        legacy.removeValue(forKey: "selectTrinket")
+        XCTAssertFalse(try JSONDecoder().decode(ItemRequirement.self,
+            from: JSONSerialization.data(withJSONObject: legacy)).selectTrinket)
+        XCTAssertThrowsError(try ItemRequirement(key: 2, item: nil, upgrade: 0,
+            kind: .ring, upgradeMatch: .any, selectTrinket: true))
+    }
+
+    func testSelectedScoutResponseValidatesInitialOffers() throws {
+        let order = ItemCatalog.trinkets.map(\.id)
+        func selectedPacket(_ id: String) -> Data {
+            var result = packet(order)
+            result.replaceSubrange(0..<4, with: "SSC5".utf8)
+            result.append(contentsOf: [UInt8(id.utf8.count >> 8), UInt8(id.utf8.count & 255)])
+            result.append(contentsOf: id.utf8)
+            return result
+        }
+        XCTAssertEqual(try ScoutCodec.decode(selectedPacket(order[0])).selectedTrinket, order[0])
+        XCTAssertNil(try ScoutCodec.decode(selectedPacket("")).selectedTrinket)
+        XCTAssertThrowsError(try ScoutCodec.decode(selectedPacket(order[4])))
+        XCTAssertThrowsError(try ScoutCodec.decode(selectedPacket("unknown")))
+    }
+
+    func testSelectedScoutAndMarksUseTheSameRequest() async throws {
+        let requirement = try ItemRequirement(key: 1, item: XCTUnwrap(ItemCatalog.findById("mimic_tooth")),
+            upgrade: 0, kind: .trinket, upgradeMatch: .any, selectTrinket: true)
+        let query = try SearchRequest(requirements: [requirement])
+        let engine = ProductionSeedFinderEngine()
+        let selected = try await engine.scoutSeed("AAA-AAA-AAA", challenges: 0, query: query, trinket: nil)
+        XCTAssertEqual(selected.selectedTrinket, "mimic_tooth")
+        for override in ["mimic_tooth", "none", "parchment_scrap"] {
+            let world = try await engine.scoutSeed("AAA-AAA-AAA", challenges: 0, query: query, trinket: override)
+            XCTAssertEqual(world.selectedTrinket, override == "none" ? nil : override)
+            let request = try ScoutCodec.encodeRequest(seed: world.seed, challenges: 0, query: query, trinket: override)
+            XCTAssertEqual(String(data: request.prefix(4), encoding: .utf8), "SSQ3")
+            let marks = try ScoutMatches.mark(request, query: QueryDocument.encode(query))
+            XCTAssertEqual(marks.matchedRequirements, 1)
+            XCTAssertEqual(world.items[try XCTUnwrap(marks.matched.first)].item.id, "mimic_tooth")
+        }
+    }
+
 }
