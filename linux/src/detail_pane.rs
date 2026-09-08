@@ -461,9 +461,9 @@ fn item_row(world_item: &WorldItem, gems: RingGems, matched: bool) -> adw::Actio
         glow::item(world_item.cursed, world_item.effect),
     ));
 
-    if world_item.upgrade > 0 {
+    if world_item.displayed_upgrade() > 0 {
         let upgrade = gtk::Label::builder()
-            .label(format!("+{}", world_item.upgrade))
+            .label(format!("+{}", world_item.displayed_upgrade()))
             .css_classes(["caption-heading", "success"])
             .valign(gtk::Align::Center)
             .build();
