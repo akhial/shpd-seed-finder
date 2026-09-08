@@ -2261,6 +2261,15 @@ input[type="range"]::-moz-range-thumb {
   font-variant-numeric: tabular-nums;
 }
 
+.d1-floor-feeling {
+  display: inline-block;
+  flex: 0 0 15px;
+  width: 15px;
+  height: 16px;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+}
+
 .d1-floor-region {
   font-size: 12px;
   color: var(--region, var(--d1-text-3));

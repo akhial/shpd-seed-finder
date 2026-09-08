@@ -18,7 +18,7 @@ use crate::city_floor::{
 use crate::halls_floor::{
     CanonicalHallsWorldGenerator, HallsFloorError, generate_halls_floor, generate_halls_world,
 };
-use crate::level_prelude::LimitedDrops;
+use crate::level_prelude::{Feeling, LimitedDrops};
 use crate::model::GeneratedWorld;
 use crate::prison_floor::{
     CanonicalPrisonWorldGenerator, PrisonFloorError, generate_prison_floor, generate_prison_world,
@@ -82,8 +82,14 @@ impl WorldGenerator for ConfiguredMainWorldGenerator {
             .iter()
             .copied()
             .map(|seed| {
-                generate_main_world_gated_with_challenges(seed, max_depth, self.challenges, gate)
-                    .expect("validated gated batch satisfies canonical invariants")
+                generate_main_world_gated_with_challenges(
+                    seed,
+                    max_depth,
+                    self.challenges,
+                    gate,
+                    &mut |_, _| {},
+                )
+                .expect("validated gated batch satisfies canonical invariants")
             })
             .collect()
     }
@@ -154,6 +160,7 @@ impl WorldGenerator for CanonicalMainWorldGenerator {
                         &roots,
                         Challenges::NONE,
                         gate,
+                        &mut |_, _| {},
                     )
                     .expect("validated gated batch satisfies canonical invariants"),
                 );
@@ -217,6 +224,23 @@ pub fn generate_main_world_with_challenges(
     maximum_depth: u8,
     challenges: Challenges,
 ) -> Result<GeneratedWorld, MainWorldError> {
+    generate_main_world_observing_feelings(seed, maximum_depth, challenges, &mut |_, _| {})
+}
+
+/// Generates a world while reporting each regular floor's final feeling.
+/// The observer does not draw randomness or change the generated world.
+///
+/// # Errors
+/// Returns the same depth and generation errors as ordinary world generation.
+///
+/// # Panics
+/// Panics only if the open gate unexpectedly abandons generation.
+pub fn generate_main_world_observing_feelings(
+    seed: DungeonSeed,
+    maximum_depth: u8,
+    challenges: Challenges,
+    observer: &mut dyn FnMut(u8, Feeling),
+) -> Result<GeneratedWorld, MainWorldError> {
     struct OpenGate;
     impl FloorGate for OpenGate {
         fn continue_after_floor(
@@ -228,7 +252,7 @@ pub fn generate_main_world_with_challenges(
             true
         }
     }
-    generate_main_world_gated_with_challenges(seed, maximum_depth, challenges, &OpenGate)
+    generate_main_world_gated_with_challenges(seed, maximum_depth, challenges, &OpenGate, observer)
         .map(|world| world.expect("open gate never abandons a world"))
 }
 
@@ -298,7 +322,7 @@ pub fn generate_main_world_gated(
     let roots = regular_depths(target)
         .map(|depth| seed_for_depth(dungeon_seed, depth, 0))
         .collect::<Vec<_>>();
-    generate_gated_world_with_roots(seed, target, &roots, Challenges::NONE, gate)
+    generate_gated_world_with_roots(seed, target, &roots, Challenges::NONE, gate, &mut |_, _| {})
 }
 
 fn generate_main_world_gated_with_challenges(
@@ -306,6 +330,7 @@ fn generate_main_world_gated_with_challenges(
     maximum_depth: u8,
     challenges: Challenges,
     gate: &dyn FloorGate,
+    observer: &mut dyn FnMut(u8, Feeling),
 ) -> Result<Option<GeneratedWorld>, MainWorldError> {
     if !(1..=24).contains(&maximum_depth) {
         return Err(MainWorldError::InvalidMaximumDepth(maximum_depth));
@@ -315,7 +340,7 @@ fn generate_main_world_gated_with_challenges(
     let roots = regular_depths(target)
         .map(|depth| seed_for_depth(dungeon_seed, depth, 0))
         .collect::<Vec<_>>();
-    generate_gated_world_with_roots(seed, target, &roots, challenges, gate)
+    generate_gated_world_with_roots(seed, target, &roots, challenges, gate, observer)
 }
 
 /// Sequential gated composite over the canonical per-region floor generators.
@@ -326,6 +351,7 @@ fn generate_gated_world_with_roots(
     roots: &[i64],
     challenges: Challenges,
     gate: &dyn FloorGate,
+    observer: &mut dyn FnMut(u8, Feeling),
 ) -> Result<Option<GeneratedWorld>, MainWorldError> {
     let dungeon_seed = i64::try_from(seed.value()).expect("base-26 seed range fits Java long");
     let mut run = RunState::with_challenges(dungeon_seed, challenges);
@@ -339,20 +365,22 @@ fn generate_gated_world_with_roots(
 
     for (&root, depth) in roots.iter().zip(regular_depths(target)) {
         random.push(root);
+        let completed = u8::try_from(depth).expect("main-path depths fit u8");
         let mut floor_items = match depth {
             1..=4 => {
-                generate_sewer_floor(
+                let floor = generate_sewer_floor(
                     &mut run,
                     &mut limited_drops,
                     &mut quests,
                     depth,
                     &mut random,
                 )
-                .map_err(MainWorldError::Sewer)?
-                .world_items
+                .map_err(MainWorldError::Sewer)?;
+                observer(completed, floor.painted.level.feeling);
+                floor.world_items
             }
             6..=9 => {
-                generate_prison_floor(
+                let floor = generate_prison_floor(
                     &mut run,
                     &mut limited_drops,
                     &mut quests,
@@ -360,11 +388,12 @@ fn generate_gated_world_with_roots(
                     depth,
                     &mut random,
                 )
-                .map_err(MainWorldError::Prison)?
-                .world_items
+                .map_err(MainWorldError::Prison)?;
+                observer(completed, floor.painted.level.feeling);
+                floor.world_items
             }
             11..=14 => {
-                generate_caves_floor(
+                let floor = generate_caves_floor(
                     &mut run,
                     &mut limited_drops,
                     &mut quests,
@@ -372,11 +401,12 @@ fn generate_gated_world_with_roots(
                     depth,
                     &mut random,
                 )
-                .map_err(MainWorldError::Caves)?
-                .world_items
+                .map_err(MainWorldError::Caves)?;
+                observer(completed, floor.painted.level.feeling);
+                floor.world_items
             }
             16..=19 => {
-                generate_city_floor(
+                let floor = generate_city_floor(
                     &mut run,
                     &mut limited_drops,
                     &mut quests,
@@ -384,8 +414,9 @@ fn generate_gated_world_with_roots(
                     depth,
                     &mut random,
                 )
-                .map_err(MainWorldError::City)?
-                .world_items
+                .map_err(MainWorldError::City)?;
+                observer(completed, floor.painted.level.feeling);
+                floor.world_items
             }
             20 => {
                 generate_city_boss_shop(&mut run, &mut shop_run, &mut random)
@@ -393,7 +424,7 @@ fn generate_gated_world_with_roots(
                     .world_items
             }
             _ => {
-                generate_halls_floor(
+                let floor = generate_halls_floor(
                     &mut run,
                     &mut limited_drops,
                     &mut quests,
@@ -401,14 +432,14 @@ fn generate_gated_world_with_roots(
                     depth,
                     &mut random,
                 )
-                .map_err(MainWorldError::Halls)?
-                .world_items
+                .map_err(MainWorldError::Halls)?;
+                observer(completed, floor.painted.level.feeling);
+                floor.world_items
             }
         };
         random.pop();
         next_choice_group = remap_floor_choice_groups(&mut floor_items, next_choice_group);
         items.extend(floor_items);
-        let completed = u8::try_from(depth).expect("main-path depths fit u8");
         if completed < target && !gate.continue_after_floor(completed, &items, &quests.summary()) {
             return Ok(None);
         }

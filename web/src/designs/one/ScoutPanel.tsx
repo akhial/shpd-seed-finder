@@ -11,6 +11,7 @@ import { queryStore } from "../../lib/store";
 import { formatSeedCode } from "../../lib/wasm";
 import type { ScoutItem, ScoutResult, TrinketOffer } from "../../lib/wasm/types";
 import { Sprite } from "./parts";
+import { FeelingSprite } from "./FeelingSprite";
 import { TrinketName, TrinketSprite } from "./TrinketArt";
 
 const groupLetter = (group: number) => "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[group % 26];
@@ -57,6 +58,9 @@ export function ScoutPanel({
   }, [result]);
 
   // `?? []` guards against cached worker responses from before quests existed.
+  const feelingByDepth = new Map(
+    (result?.feelings ?? []).map(({ depth, feeling }) => [depth, feeling]),
+  );
   const questByDepth = new Map((result?.quests ?? []).map((quest) => [quest.depth, quest]));
 
   const copySeed = () => {
@@ -217,6 +221,7 @@ export function ScoutPanel({
                   <header className="d1-floor-head">
                     <span className="d1-floor-bar" aria-hidden="true" />
                     <span className="d1-floor-label">Floor {depth}</span>
+                    <FeelingSprite feeling={feelingByDepth.get(depth)} />
                     <span className="d1-floor-region">{region.name}</span>
                     {quest && (
                       <span className="d1-floor-quest" title={`${questLabel(quest.quest)} quest`}>
