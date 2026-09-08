@@ -29,7 +29,7 @@ which gem — and therefore which colour — a ring shows is fixed by the seed
 alone, before any floor is generated and before any challenge is read. The
 engine reproduces that shuffle and hands it to frontends beside the item
 manifest: `GeneratedWorld::ring_gems` in process, the twelve-byte table in the
-`SSC3` scout packet, and the scout document's `ringGems` (wasm). A ring's
+`SSC5` scout packet, and the scout document's `ringGems` (wasm). A ring's
 `items.png` cell is
 `RING_SPRITE_BASE` plus its class's gem, while the catalog's own per-ring cell
 is the class's identity — what a seedless surface such as the query editor

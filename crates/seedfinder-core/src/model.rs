@@ -172,11 +172,20 @@ impl WorldItem {
     }
 }
 
+/// Final feeling for a generated regular floor.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FloorFeeling {
+    pub depth: u8,
+    pub feeling: crate::level_prelude::Feeling,
+}
+
 /// Searchable output for one seed.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GeneratedWorld {
     pub seed: DungeonSeed,
     pub items: Vec<WorldItem>,
+    /// Final feelings in depth order, excluding boss floors.
+    pub feelings: Vec<FloorFeeling>,
     /// Quest variants rolled while generating the requested prefix.
     pub quests: QuestSummary,
     /// The gem this run gave each ring class, and so the `items.png` cell every

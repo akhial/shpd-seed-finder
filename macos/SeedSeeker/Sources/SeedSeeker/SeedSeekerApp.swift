@@ -2041,7 +2041,7 @@ private struct SeedDetailView: View {
 
     private func manifest(_ world: ScoutWorld) -> some View {
         let byDepth = Dictionary(grouping: world.items, by: \.depth)
-        let depths = byDepth.keys.sorted()
+        let depths = Set(byDepth.keys).union(world.feelings.keys).sorted()
         let marks = engineMatches(in: world)
         let matches = marks?.matched ?? []
         // Slots, not rows: an "any of these" group counts once.
@@ -2089,6 +2089,9 @@ private struct SeedDetailView: View {
                     } header: {
                         HStack {
                             Text("Floor \(depth)")
+                            if let feeling = world.feelings[depth] {
+                                FloorFeelingSpriteView(feeling: feeling)
+                            }
                             Text(Self.region(depth)).foregroundStyle(.tertiary)
                             if let quest = world.quests.first(where: { $0.depth == depth }) {
                                 Text("· \(quest.variant.label)").foregroundStyle(.tertiary)

@@ -107,6 +107,7 @@ fn random_world(rng: &mut Rng) -> GeneratedWorld {
         })
         .collect();
     GeneratedWorld {
+        feelings: Vec::new(),
         seed: DungeonSeed::MIN,
         items,
         quests: QuestSummary::default(),

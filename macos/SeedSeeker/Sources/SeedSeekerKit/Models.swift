@@ -686,6 +686,24 @@ public struct SeedResult: Hashable, Identifiable, Sendable {
     public init(seed: String, matchedRequirements: Int) { self.seed = seed; self.matchedRequirements = matchedRequirements }
 }
 
+/// Raw values are the SSC5 feeling IDs and the dungeon icon frame columns.
+public enum FloorFeeling: Int, CaseIterable, Sendable {
+    case none = 0, chasm, water, grass, dark, large, traps, secrets
+
+    public var label: String {
+        switch self {
+        case .none: "Normal floor"
+        case .chasm: "Chasms floor"
+        case .water: "Water floor"
+        case .grass: "Grass floor"
+        case .dark: "Dark floor"
+        case .large: "Large floor"
+        case .traps: "Traps floor"
+        case .secrets: "Secrets floor"
+        }
+    }
+}
+
 public struct ScoutWorld: Sendable {
     public let seed: String
     public let quests: [ScoutQuest]
@@ -696,10 +714,13 @@ public struct ScoutWorld: Sendable {
     /// fixture, a stub engine) falls back to the catalog's own table.
     public let ringGems: RingGems
     public let trinketOrder: [CatalogItem]
+    public let feelings: [Int: FloorFeeling]
     public init(seed: String, quests: [ScoutQuest] = [], items: [ScoutItem],
-                ringGems: RingGems = .catalogDefault, trinketOrder: [CatalogItem] = []) {
+                ringGems: RingGems = .catalogDefault, trinketOrder: [CatalogItem] = [],
+                feelings: [Int: FloorFeeling] = [:]) {
         self.seed = seed; self.quests = quests; self.items = items; self.ringGems = ringGems
         self.trinketOrder = trinketOrder
+        self.feelings = feelings
     }
 }
 

@@ -26,7 +26,6 @@ use shpd_seedfinder_core::search::{
 use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
 use shpd_seedfinder_core::wire::{
     WireError, decode_query, decode_scout_request, encode_results, encode_scout_world,
-    encode_scout_world_with_trinkets,
 };
 
 pub const STATE_RUNNING: i64 = 0;
@@ -96,7 +95,7 @@ pub enum ScoutCallError {
 
 /// Validates an `SSQ2` scout request (`magic[4]`, little-endian challenge
 /// `u16`, remaining UTF-8 seed code) or a legacy raw-seed request, generates a
-/// depth-24 world with the supplied generator, and encodes `SSC3`.
+/// depth-24 world with the supplied generator, and encodes `SSC5`.
 ///
 /// # Errors
 ///
@@ -135,7 +134,7 @@ pub fn production_scout_packet(request: &[u8]) -> Result<Vec<u8>, ScoutCallError
         .map_err(ScoutPacketError::Request)
         .map_err(ScoutCallError::Packet)?;
     let world = production_scout_world(seed, challenges)?;
-    encode_scout_world_with_trinkets(&world)
+    encode_scout_world(&world)
         .map_err(ScoutPacketError::Response)
         .map_err(ScoutCallError::Packet)
 }
@@ -168,7 +167,7 @@ pub enum ScoutMatchError {
 /// reports which of its items satisfy the query in `query_packet`.
 ///
 /// The world is generated exactly like [`production_scout_packet`]'s, so the
-/// reported item indices address the item list of the `SSC3` packet that
+/// reported item indices address the item list of the `SSC5` packet that
 /// request produces.
 ///
 /// # Errors
@@ -714,6 +713,7 @@ mod tests {
     }
     fn matching_world(seed: DungeonSeed) -> GeneratedWorld {
         GeneratedWorld {
+            feelings: Vec::new(),
             quests: shpd_seedfinder_core::quests::QuestSummary::default(),
             seed,
             items: vec![WorldItem {
@@ -1290,7 +1290,7 @@ mod tests {
         let packet = production_scout_packet(b"SSQ2\x00\x00AAA-AAA-AAF").unwrap();
 
         assert_eq!(world, decode_scout_world(&packet).unwrap());
-        assert_eq!(&packet[..4], b"SSC4");
+        assert_eq!(&packet[..4], b"SSC5");
         assert!(world.items.iter().any(|entry| {
             shpd_seedfinder_core::catalog::item(entry.item).kind
                 == shpd_seedfinder_core::catalog::ItemKind::Artifact

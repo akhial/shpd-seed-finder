@@ -2,6 +2,7 @@
 package dev.seedseeker.app.engine
 
 import dev.seedseeker.app.model.ItemKind
+import dev.seedseeker.app.model.FloorFeeling
 import dev.seedseeker.app.model.RingGems
 import dev.seedseeker.app.model.ScoutAccessibility
 import dev.seedseeker.app.model.ScoutItemSource
@@ -53,9 +54,55 @@ class ScoutResultCodecTest {
         }
         val world = ScoutResultCodec.decode(oldPacket + tail)
         assertEquals(deck, world.trinketOrder)
+        assertTrue(world.floorFeelings.isEmpty())
         assertEquals(deck.take(4), world.items.map { it.item })
         assertTrue(world.items.all { it.depth == 3 && it.source == ScoutItemSource.LOCKED_CHEST })
         assertThrows(IllegalStateException::class.java) { ScoutResultCodec.decode(oldPacket + byteArrayOf(0)) }
+    }
+
+    @Test
+    fun ssc5PreservesFeelingsAndTheEntireTrinketDeck() {
+        val depths = (1..24).filter { it % 5 != 0 }
+        val entries = depths.mapIndexed { index, depth -> depth to index % 8 }
+        val world = ScoutResultCodec.decode(feelingPacket(entries))
+        assertEquals(entries.associate { (depth, code) -> depth to FloorFeeling.entries[code] }, world.floorFeelings)
+        assertEquals(dev.seedseeker.app.catalog.ItemCatalog.trinkets, world.trinketOrder)
+        assertTrue(ScoutResultCodec.decode(feelingPacket(emptyList())).floorFeelings.isEmpty())
+        assertTrue(ScoutResultCodec.decode(scoutPacket()).floorFeelings.isEmpty())
+    }
+
+    @Test
+    fun ssc5RejectsInvalidFeelingsAndIncompleteOrTrailingData() {
+        listOf(
+            listOf(0 to 1), listOf(25 to 1), listOf(5 to 1), listOf(10 to 1),
+            listOf(15 to 1), listOf(20 to 1), listOf(1 to 8),
+            listOf(1 to 1, 1 to 2), listOf(2 to 1, 1 to 2),
+        ).forEach { entries ->
+            assertThrows(IllegalStateException::class.java) { ScoutResultCodec.decode(feelingPacket(entries)) }
+        }
+        assertThrows(IllegalStateException::class.java) {
+            ScoutResultCodec.decode(feelingPacket(emptyList(), count = 21))
+        }
+        val valid = feelingPacket(listOf(1 to 1))
+        // Missing count, depth, and feeling respectively are all incomplete SSC5 packets.
+        (1..3).forEach { removed ->
+            assertThrows(EOFException::class.java) { ScoutResultCodec.decode(valid.dropLast(removed).toByteArray()) }
+        }
+        assertThrows(IllegalStateException::class.java) { ScoutResultCodec.decode(valid + byteArrayOf(0)) }
+    }
+
+    private fun feelingPacket(entries: List<Pair<Int, Int>>, count: Int = entries.size): ByteArray {
+        val prefix = scoutPacket().also { it[3] = '5'.code.toByte() }
+        return prefix + ByteArrayOutputStream().use { bytes ->
+            DataOutputStream(bytes).use { output ->
+                val deck = dev.seedseeker.app.catalog.ItemCatalog.trinkets
+                output.writeByte(deck.size)
+                deck.forEach { writeShortString(output, it.id) }
+                output.writeByte(count)
+                entries.forEach { (depth, feeling) -> output.writeByte(depth); output.writeByte(feeling) }
+            }
+            bytes.toByteArray()
+        }
     }
 
     @Test

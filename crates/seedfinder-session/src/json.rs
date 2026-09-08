@@ -16,7 +16,7 @@ use crate::{ScoutMatchError, StartDecision, decide_start_packets, production_sco
 /// Marks which items of the world named by an `SSQ2` (or legacy raw seed)
 /// scout request satisfy the query, as `{"matched": [<item indices>],
 /// "matchedRequirements": <n>, "totalRequirements": <n>}`. The indices
-/// address the item list of the `SSC4` packet the same request scouts to.
+/// address the item list of the `SSC5` packet the same request scouts to.
 /// The keys are camelCase like every other bridge-built document (the
 /// browser's own scout output and `engine_info`); only the persisted formats
 /// — query documents and results files — are `snake_case`.
@@ -153,7 +153,7 @@ mod tests {
     #[test]
     fn scout_match_envelope_indexes_the_scout_packet() {
         // Scouting is deterministic, so the marks index exactly the item list
-        // the SSC4 packet of the same request carries.
+        // the SSC5 packet of the same request carries.
         let seed = DungeonSeed::MIN;
         let world = production_scout_world(seed, Challenges::NONE).unwrap();
         let known = &world.items[0];

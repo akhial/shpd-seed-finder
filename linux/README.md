@@ -34,7 +34,8 @@ push/pop navigation as the window narrows, down to a fully single-pane phone-siz
 - **Seed** scouts one seed — typed in, or selected from the results — and lists every
   searchable item through depth 24, grouped by floor with region names, upgrade and
   enchantment tags, cursed state, source, and choice constraints. Items that jointly
-  satisfy the current requirements are highlighted. The magical catalyst appears on its
+  satisfy the current requirements are highlighted. Special floor feelings appear as
+  game sprites beside the floor heading; normal floors have no icon. The magical catalyst appears on its
   generated floor with its source, four square trinket choices, and a single smaller row
   preserving the remaining deck order. Matched choices use a flat green fill and border.
 

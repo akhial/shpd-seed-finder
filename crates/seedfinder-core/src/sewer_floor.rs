@@ -25,7 +25,7 @@ use crate::geometry::{Point, Rect, painter as draw};
 use crate::level::{DirectPaintItem, HeapKind, Level, PaintItem, PaintMob};
 use crate::level_flags::LevelFlags;
 use crate::level_prelude::LimitedDrops;
-use crate::model::{Accessibility, GeneratedWorld, ItemSource, WorldItem};
+use crate::model::{Accessibility, FloorFeeling, GeneratedWorld, ItemSource, WorldItem};
 use crate::painter::{PaintError, RoomPaintDispatch, SewerPainter, draw_regular_trap_count};
 use crate::quest_rooms::{QuestGeneratorContext, QuestGeneratorRequest, QuestPrizeContext};
 use crate::quests::QuestState;
@@ -214,6 +214,7 @@ fn generate_sewer_world_with_roots(
     let mut quests = QuestState::new();
     let mut random = RandomStack::with_base_seed(0);
     let mut items = Vec::new();
+    let mut feelings = Vec::new();
     let mut next_choice_group = 0_u16;
 
     for (index, &root) in roots.iter().enumerate() {
@@ -228,11 +229,16 @@ fn generate_sewer_world_with_roots(
         )?;
         random.pop();
         next_choice_group = remap_floor_choice_groups(&mut floor.world_items, next_choice_group);
+        feelings.push(FloorFeeling {
+            depth: u8::try_from(depth).expect("main-path depths fit u8"),
+            feeling: floor.painted.level.feeling,
+        });
         items.extend(floor.world_items);
     }
     Ok(GeneratedWorld {
         seed,
         items,
+        feelings,
         quests: quests.summary(),
         ring_gems: run.appearances.ring_gems,
     })

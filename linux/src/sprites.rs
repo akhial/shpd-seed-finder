@@ -29,6 +29,7 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::{cairo, gdk, gio, glib};
 use shpd_seedfinder_core::catalog::ItemDefinition;
+use shpd_seedfinder_core::level_prelude::Feeling;
 use shpd_seedfinder_core::run::RingGems;
 
 use crate::config::RESOURCE_BASE_PATH;
@@ -348,10 +349,53 @@ fn scaled_extent(extent: i32, size: i32) -> i32 {
 
 thread_local! {
     static ATLAS: Option<Rc<Atlas>> = Atlas::load();
+    static FEELINGS: Option<Rc<Pixels>> = Pixels::decode(&format!(
+        "{RESOURCE_BASE_PATH}/third_party/shattered-pixel-dungeon/dungeon-icons.png"
+    )).map(Rc::new);
 }
 
 fn atlas() -> Option<Rc<Atlas>> {
     ATLAS.with(|atlas| atlas.as_ref().map(Rc::clone))
+}
+
+/// The game's floor feeling frame, with an accessible name and no visible text.
+/// Normal floors have no icon.
+pub fn feeling_image(feeling: Feeling) -> Option<gtk::Widget> {
+    let (index, name) = match feeling {
+        Feeling::None => return None,
+        Feeling::Chasm => (1, "Chasms"),
+        Feeling::Water => (2, "Water"),
+        Feeling::Grass => (3, "Grass"),
+        Feeling::Dark => (4, "Dark"),
+        Feeling::Large => (5, "Large"),
+        Feeling::Traps => (6, "Traps"),
+        Feeling::Secrets => (7, "Secrets"),
+    };
+    let pixels = FEELINGS.with(|pixels| pixels.as_ref().map(Rc::clone))?;
+    let area = gtk::DrawingArea::builder()
+        .content_width(15)
+        .content_height(16)
+        .valign(gtk::Align::Center)
+        .accessible_role(gtk::AccessibleRole::Img)
+        .build();
+    area.update_property(&[gtk::accessible::Property::Label(name)]);
+    area.set_draw_func(move |area, context, width, height| {
+        let factor = area.scale_factor().max(1);
+        let source = Rect {
+            x: 16 * index,
+            y: 64,
+            width: 15,
+            height: 16,
+        };
+        if let Some(surface) = scale_nearest(&pixels, source, 15 * factor, 16 * factor) {
+            let scale = 1.0 / f64::from(factor);
+            context.scale(scale, scale);
+            let x = f64::from((width - 15) * factor) / 2.0;
+            let y = f64::from((height - 16) * factor) / 2.0;
+            let _ = blit(context, &surface, x, y);
+        }
+    });
+    Some(area.upcast())
 }
 
 /// Whether GTK wants animations; mirrors the web's `prefers-reduced-motion`

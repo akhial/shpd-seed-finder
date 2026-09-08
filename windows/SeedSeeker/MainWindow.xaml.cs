@@ -1870,7 +1870,7 @@ public sealed partial class MainWindow : Window
             var groups = world.Items.Select((item, index) => (Item: item, Index: index))
                 .GroupBy(x => x.Item.Depth).OrderBy(g => g.Key).Select(g =>
             {
-                var group = new ScoutGroup { Floor = $"Floor {g.Key}", Region = Region(g.Key), Quest = QuestLabel(world.Quests, g.Key) };
+                var group = new ScoutGroup { Floor = $"Floor {g.Key}", Region = Region(g.Key), Quest = QuestLabel(world.Quests, g.Key), Feeling = world.FloorFeelings?.FirstOrDefault(f => f.Depth == g.Key)?.Feeling ?? FloorFeeling.None };
                 var trinkets = g.Where(entry => entry.Item.Item.Kind == ItemKind.Trinket).ToList();
                 foreach (var entry in g)
                 {
@@ -1930,6 +1930,7 @@ public sealed partial class MainWindow : Window
 public sealed class ScoutGroup : List<ScoutRow>
 {
     public string Floor { get; init; } = "";
+    public FloorFeeling Feeling { get; init; }
     public string Region { get; init; } = "";
     /// <summary>The floor's quest variant label, or "" when it hosts no quest.</summary>
     public string Quest { get; init; } = "";

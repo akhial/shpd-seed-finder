@@ -101,6 +101,7 @@ struct ScoutOutput {
     trinket_order: Vec<TrinketOutput>,
     seed: SeedOutput,
     quests: Vec<ScoutQuestOutput>,
+    feelings: Vec<ScoutFeelingOutput>,
     items: Vec<ScoutItemOutput>,
     /// The gem each ring class is drawn with in this run, in catalog ring
     /// order. A ring item's atlas cell is `RING_SPRITE_BASE` plus its class's
@@ -109,6 +110,26 @@ struct ScoutOutput {
     ring_gems: [u8; 12],
     matched_requirements: usize,
     total_requirements: usize,
+}
+
+#[derive(Serialize)]
+struct ScoutFeelingOutput {
+    depth: u8,
+    feeling: &'static str,
+}
+
+fn feeling_name(feeling: shpd_seedfinder_core::level_prelude::Feeling) -> &'static str {
+    use shpd_seedfinder_core::level_prelude::Feeling;
+    match feeling {
+        Feeling::None => "none",
+        Feeling::Chasm => "chasm",
+        Feeling::Water => "water",
+        Feeling::Grass => "grass",
+        Feeling::Dark => "dark",
+        Feeling::Large => "large",
+        Feeling::Traps => "traps",
+        Feeling::Secrets => "secrets",
+    }
 }
 
 #[derive(Serialize)]
@@ -541,6 +562,14 @@ fn scout_impl(request_json: &str) -> Result<String, String> {
         .transpose()?;
     let world = generate_main_world_with_challenges(seed, 24, challenges)
         .map_err(|error| format!("world generation failed: {error}"))?;
+    let feelings = world
+        .feelings
+        .iter()
+        .map(|entry| ScoutFeelingOutput {
+            depth: entry.depth,
+            feeling: feeling_name(entry.feeling),
+        })
+        .collect();
     let marks = query.as_ref().map(|query| scout_matches(&world, query));
     let matched_requirements = marks.as_ref().map_or(0, |marks| marks.matched_requirements);
     let total_requirements = marks.as_ref().map_or(0, |marks| marks.total_requirements);
@@ -565,6 +594,7 @@ fn scout_impl(request_json: &str) -> Result<String, String> {
             })
             .collect(),
         quests: scout_quest_outputs(world.quests),
+        feelings,
         items,
         ring_gems: world.ring_gems.ordinals(),
         matched_requirements,
@@ -903,6 +933,46 @@ mod tests {
         for output_item in output["items"].as_array().unwrap() {
             let definition = item_by_stable_id(output_item["id"].as_str().unwrap()).unwrap();
             assert_eq!(output_item["spriteIndex"], definition.sprite_index);
+        }
+    }
+
+    #[test]
+    fn scout_feelings_match_game_fixtures_and_skip_boss_floors() {
+        let output: Value =
+            serde_json::from_str(&scout_impl(r#"{"seed":"AAA-AAA-AAA"}"#).unwrap()).unwrap();
+        let feelings = output["feelings"].as_array().unwrap();
+        assert_eq!(feelings.len(), 20);
+        assert_eq!(
+            feelings[0],
+            serde_json::json!({"depth": 1, "feeling": "none"})
+        );
+        assert!(
+            feelings
+                .iter()
+                .all(|entry| entry["depth"].as_u64().unwrap() % 5 != 0)
+        );
+        for fixture in [
+            include_str!("../../../tooling/oracle-4.0/tests/prison-floors.expected.json"),
+            include_str!("../../../tooling/oracle-4.0/tests/caves-floors.expected.json"),
+            include_str!("../../../tooling/oracle-4.0/tests/city-floors.expected.json"),
+            include_str!("../../../tooling/oracle-4.0/tests/halls-floors.expected.json"),
+        ] {
+            let fixture: Value = serde_json::from_str(fixture).unwrap();
+            for level in fixture["seeds"]["AAA-AAA-AAA"]["levels"]
+                .as_array()
+                .unwrap()
+            {
+                let actual = feelings
+                    .iter()
+                    .find(|entry| entry["depth"] == level["depth"])
+                    .unwrap();
+                assert_eq!(
+                    actual["feeling"],
+                    level["feeling"].as_str().unwrap().to_lowercase(),
+                    "floor {}",
+                    level["depth"]
+                );
+            }
         }
     }
 

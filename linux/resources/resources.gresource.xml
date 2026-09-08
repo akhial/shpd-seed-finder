@@ -19,7 +19,7 @@
     <file>style/style.css</file>
 
     <!--
-      Shattered Pixel Dungeon v4.0.0-BETA-3 item artwork, GPL-3.0-or-later. These are
+      Shattered Pixel Dungeon item and floor feeling artwork, GPL-3.0-or-later. These are
       resolved from the shared third-party assets directory that build.rs adds
       as a second source directory, so the binaries are not duplicated here.
       The licence and attribution ship alongside them, as the GPL requires of
@@ -27,6 +27,7 @@
     -->
     <file alias="third_party/shattered-pixel-dungeon/items.png">items.png</file>
     <file alias="third_party/shattered-pixel-dungeon/item_icons.png">item_icons.png</file>
+    <file alias="third_party/shattered-pixel-dungeon/dungeon-icons.png">dungeon-icons.png</file>
     <file alias="third_party/shattered-pixel-dungeon/LICENSE.txt" compressed="true">LICENSE.txt</file>
     <file alias="third_party/shattered-pixel-dungeon/ATTRIBUTION.md" compressed="true">ATTRIBUTION.md</file>
   </gresource>

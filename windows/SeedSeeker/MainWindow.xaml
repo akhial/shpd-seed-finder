@@ -313,6 +313,7 @@
                     <DataTemplate>
                       <StackPanel Orientation="Horizontal" Spacing="8">
                         <TextBlock Text="{Binding Floor}" Style="{StaticResource BodyStrongTextBlockStyle}"/>
+                        <local:FloorFeelingView Feeling="{Binding Feeling}" VerticalAlignment="Center"/>
                         <TextBlock Text="{Binding Region}" Style="{StaticResource Caption}" VerticalAlignment="Bottom" Margin="0,0,0,1"/>
                         <!-- The floor's quest variant, or empty (rendering nothing) on quest-less floors. -->
                         <TextBlock Text="{Binding Quest}" Style="{StaticResource Caption}" VerticalAlignment="Bottom" Margin="0,0,0,1"/>
