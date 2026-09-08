@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the Java baseline seed finder against the official Shattered Pixel
-# Dungeon v4.0.0-BETA-4 desktop JAR.  No game source is compiled: the finder
+# Dungeon v4.0.0-RC-1 desktop JAR.  No game source is compiled: the finder
 # and the parity oracle's headless TextureFilm stand-in are compiled into
 # .work/classes and placed ahead of the JAR on the classpath by run.sh.
 set -euo pipefail
@@ -8,9 +8,9 @@ set -euo pipefail
 FINDER_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ORACLE_DIR="$FINDER_DIR/../oracle-4.0"
 WORK="$FINDER_DIR/.work"
-JAR_NAME=ShatteredPD-v4.0.0-BETA-4-Java.jar
+JAR_NAME=ShatteredPD-v4.0.0-RC-1-Java.jar
 JAR_URL="https://github.com/00-Evan/shattered-pixel-dungeon/releases/download/4.0.0-beta/$JAR_NAME"
-JAR_SHA256=76f6983e7b619267666621de9f1ecbbc3645d4925c2c446736987c3011b9dfd1
+JAR_SHA256=43f881f0d6484faffea913f5563fd2c3277ed83159eda6e83efc55e586fbfdbf
 JAR="$WORK/$JAR_NAME"
 CLASSES="$WORK/classes"
 # The stand-in is shared with the oracle rather than copied: the two have to
