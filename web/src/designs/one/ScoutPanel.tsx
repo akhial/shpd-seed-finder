@@ -338,23 +338,21 @@ export function CatalystEntry({
       {note && <p className="d1-item-note">{note}</p>}
       {onSelect && (
         <div className="d1-trinket-selection">
-          <label htmlFor="scout-trinket">Applied trinket</label>
-          <select
-            id="scout-trinket"
-            value={selectedTrinket ?? "none"}
-            disabled={disabled}
-            onChange={(event) => onSelect(event.currentTarget.value)}
-          >
-            <option value="none">No Trinket</option>
-            {(order.length ? order.slice(0, 4) : offers).map((offer) => (
-              <option key={offer.id} value={offer.id}>
-                {offer.name} +3
-              </option>
-            ))}
-          </select>
+          <div className="d1-trinket-selection-head">
+            <span>Applied trinket</span>
+            <button
+              type="button"
+              className="d1-trinket-none"
+              aria-pressed={!selectedTrinket}
+              disabled={disabled}
+              onClick={() => onSelect("none")}
+            >
+              No Trinket
+            </button>
+          </div>
           <p className="d1-caption">
-            Applied from the next floor after the first brewing opportunity. Changing this scouts
-            the seed again.
+            Click a trinket to apply it at +3 from the next floor after the first brewing
+            opportunity.
           </p>
         </div>
       )}
@@ -365,17 +363,39 @@ export function CatalystEntry({
               .map((entry) => offers.find((offer) => offer.id === entry.id)!)
               .filter(Boolean)
           : offers
-        ).map((offer) => (
-          <li
-            key={offer.id}
-            className={offer.matched ? "d1-trinket-choice d1-trinket-match" : "d1-trinket-choice"}
-            aria-label={offer.matched ? `${offer.name}, matches requirement` : offer.name}
-          >
-            <TrinketSprite cell={offer.spriteIndex} maximum={48} />
-            <TrinketName name={offer.name} />
-            {selectedTrinket === offer.id && <span className="d1-trinket-applied">Applied +3</span>}
-          </li>
-        ))}
+        ).map((offer) => {
+          const contents = (
+            <>
+              <TrinketSprite cell={offer.spriteIndex} maximum={48} />
+              <TrinketName name={offer.name} />
+              {selectedTrinket === offer.id && (
+                <span className="d1-trinket-applied">Applied +3</span>
+              )}
+            </>
+          );
+          return (
+            <li
+              key={offer.id}
+              className={`d1-trinket-choice${offer.matched ? " d1-trinket-match" : ""}${onSelect && selectedTrinket === offer.id ? " d1-trinket-selected" : ""}`}
+              aria-label={offer.matched ? `${offer.name}, matches requirement` : offer.name}
+            >
+              {onSelect ? (
+                <button
+                  type="button"
+                  className="d1-trinket-pick"
+                  aria-label={`Apply ${offer.name} at +3`}
+                  aria-pressed={selectedTrinket === offer.id}
+                  disabled={disabled}
+                  onClick={() => onSelect(offer.id)}
+                >
+                  {contents}
+                </button>
+              ) : (
+                contents
+              )}
+            </li>
+          );
+        })}
       </ol>
       {order.length > 4 && (
         <>
