@@ -1067,7 +1067,7 @@ private fun ItemTile(item: CatalogItem, selected: Boolean, onClick: () -> Unit) 
         Column(
             modifier = Modifier.padding(horizontal = 7.dp, vertical = 9.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = if (item.kind == ItemKind.TRINKET) Arrangement.Center else Arrangement.Top,
+            verticalArrangement = Arrangement.Center,
         ) {
             ItemSprite(item, modifier = Modifier.size(42.dp))
             Spacer(Modifier.height(5.dp))
