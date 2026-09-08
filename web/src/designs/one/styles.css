@@ -2854,8 +2854,7 @@ input[type="range"]::-moz-range-thumb {
 /* Catalyst offers: four primary choices, then the preserved diagnostic deck. */
 .d1-catalyst {
   list-style: none;
-  padding: 16px 14px;
-  background: #bba0ee08;
+  padding: 6px 14px 16px;
   border-bottom: 1px solid var(--d1-border);
 }
 .d1-catalyst-head {
