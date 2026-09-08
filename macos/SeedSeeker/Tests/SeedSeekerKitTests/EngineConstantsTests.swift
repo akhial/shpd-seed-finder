@@ -34,7 +34,7 @@ final class EngineConstantsTests: XCTestCase {
         let byKind = limits["maxUpgradeByKind"] as! [String: Int]
         let names: [ItemKind: String] = [.weapon: "weapon", .armor: "armor", .wand: "wand",
                                          .ring: "ring", .meleeWeapon: "weapon",
-                                         .thrownWeapon: "weapon", .trinket: "trinket"]
+                                         .thrownWeapon: "weapon", .trinket: "trinket", .artifact: "artifact"]
         for kind in ItemKind.allCases {
             XCTAssertEqual(kind.maximumSearchUpgrade, byKind[names[kind]!], "\(kind)")
         }

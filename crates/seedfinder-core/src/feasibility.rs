@@ -114,6 +114,22 @@ const fn source_profile(
     use EffectPolicy::{Any, GoodOnly, Never};
     use ItemKind::{Armor, Ring, Wand, Weapon};
     use ItemSource as S;
+    if matches!(kind, ItemKind::Artifact) {
+        return match source {
+            S::ImpReward => Some((5, 5, Never)),
+            S::Shop
+            | S::Heap
+            | S::Chest
+            | S::LockedChest
+            | S::CrystalChest
+            | S::Tomb
+            | S::Skeleton
+            | S::Mimic
+            | S::GoldenMimic
+            | S::CrystalMimic => Some((0, 0, Never)),
+            _ => None,
+        };
+    }
     if matches!(kind, ItemKind::Trinket) {
         return match source {
             S::Heap

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useStore } from "@tanstack/react-store";
-import { sourceLabel } from "../../lib/catalog";
+import { displayedUpgrade, sourceLabel } from "../../lib/catalog";
 import { itemGlow } from "../../lib/glow";
 import { CheckIcon, CopyIcon, FlagIcon, ForkIcon } from "../../lib/icons";
 import { questLabel, questVariantLabel } from "../../lib/quests";
@@ -250,7 +250,9 @@ export function ScoutPanel({
                               <div className="d1-item-name">
                                 <span>{item.name}</span>
                                 {item.upgrade > 0 && (
-                                  <b className="d1-badge d1-badge-up">+{item.upgrade}</b>
+                                  <b className="d1-badge d1-badge-up">
+                                    +{displayedUpgrade(item.id, item.upgrade)}
+                                  </b>
                                 )}
                                 {item.cursed && <b className="d1-badge d1-badge-curse">cursed</b>}
                                 {item.secret && (

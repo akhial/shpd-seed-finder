@@ -15,6 +15,18 @@ class PresetStorageTest {
     init { PackagedCatalog.install() }
 
     @Test
+    fun artifactPresetsKeepUpgradeAndFloorLimit() {
+        val storage = PresetStorage(MemoryPreferences())
+        val query = PresetQuery(requirements = listOf(ItemRequirement(
+            key = 1, item = ItemCatalog.artifacts.first(), upgrade = 5,
+            maximumDepth = 19, source = ScoutItemSource.IMP_REWARD,
+        )))
+        val preset = QueryPreset("artifact", "Vault artifact", query)
+        storage.save(listOf(preset))
+        assertEquals(preset, storage.load().single())
+    }
+
+    @Test
     fun presetsSavedByOlderReleasesStillLoad() {
         val preferences = MemoryPreferences()
         // "fastMode" is a retired flag kept in this saved preset deliberately:

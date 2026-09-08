@@ -47,7 +47,7 @@ data class BoardItem(
  * folds into its stack.
  */
 private fun isPlainItemCopy(copy: ItemRequirement, item: CatalogItem): Boolean =
-    item.kind != ItemKind.TRINKET &&
+    item.kind.supportsStacks &&
         copy.item?.id == item.id &&
         copy.tierMatch == TierMatch.ANY &&
         copy.upgradeMatch == UpgradeMatch.ANY &&
@@ -371,7 +371,7 @@ fun List<ItemRequirement>.removeMember(index: Int): List<ItemRequirement> =
  */
 fun List<ItemRequirement>.canStack(item: BoardItem): Boolean {
     val family = this[item.anchor].kind.family
-    return item.members.all { this[it].kind.family == family }
+    return family.supportsStacks && item.members.all { this[it].kind.family == family }
 }
 
 /** Sets how many items the board item anchored at [item] asks for. */

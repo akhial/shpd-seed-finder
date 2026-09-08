@@ -195,7 +195,7 @@ fun RequirementSheet(
         ItemRequirement(
             key = editing?.key ?: 0L,
             item = selectedItem,
-            upgrade = if (kind == ItemKind.TRINKET) 0 else upgrade,
+            upgrade = if (kind.requiresNamedItem) 0 else upgrade,
             effect = when (effectMode) {
                 EffectMode.ANY -> EffectFilter.Any
                 EffectMode.ANY_ENCHANTMENT -> EffectFilter.AnyEnchantment
@@ -204,13 +204,13 @@ fun RequirementSheet(
             kind = kind,
             tier = if (tierMatch == TierMatch.ANY) 0 else tier,
             tierMatch = tierMatch,
-            upgradeMatch = if (kind == ItemKind.TRINKET) UpgradeMatch.ANY else upgradeMatch,
+            upgradeMatch = if (kind.requiresNamedItem) UpgradeMatch.ANY else upgradeMatch,
             source = if (kind == ItemKind.TRINKET) null else source,
-            identityGroup = if (kind == ItemKind.TRINKET) null else editing?.identityGroup,
+            identityGroup = if (!kind.supportsStacks) null else editing?.identityGroup,
             maximumDepth = if (kind == ItemKind.TRINKET) null else maximumDepth,
             requireUncursed = kind != ItemKind.TRINKET && requireUncursed,
             alternativeGroup = editing?.alternativeGroup,
-            levelSum = if (kind == ItemKind.TRINKET) null else editing?.levelSum,
+            levelSum = if (!kind.supportsStacks) null else editing?.levelSum,
         )
     }
 
@@ -255,10 +255,11 @@ fun RequirementSheet(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
                             .padding(horizontal = 20.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.spacedBy(3.dp),
                     ) {
-                        listOf(ItemKind.WEAPON, ItemKind.ARMOR, ItemKind.WAND, ItemKind.RING, ItemKind.TRINKET)
+                        listOf(ItemKind.WEAPON, ItemKind.ARMOR, ItemKind.WAND, ItemKind.RING, ItemKind.TRINKET, ItemKind.ARTIFACT)
                             .forEach { entry ->
                                 ToggleButton(
                                     checked = kind.family == entry,
@@ -267,6 +268,17 @@ fun RequirementSheet(
                                             val first = searchableItems(entry).first()
                                             kind = entry
                                             selectedItem = first
+                                            if (!entry.supportsStacks) {
+                                                stackCount = 1
+                                                stackTotal = null
+                                                copyDepth = null
+                                            }
+                                            if (entry.requiresNamedItem) {
+                                                upgradeMatch = UpgradeMatch.ANY
+                                                upgrade = 0
+                                                source = null
+                                                requireUncursed = false
+                                            }
                                             tierMatch = TierMatch.ANY
                                             tier = 2
                                             resetEffects()
@@ -276,11 +288,10 @@ fun RequirementSheet(
                                             )
                                         }
                                     },
-                                    modifier = Modifier.weight(1f),
                                     colors = ToggleButtonDefaults.toggleButtonColors(
                                         containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                                     ),
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
                                 ) {
                                     Text(entry.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
@@ -295,7 +306,7 @@ fun RequirementSheet(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        if (kind != ItemKind.TRINKET) FilterChip(
+                        if (!kind.requiresNamedItem) FilterChip(
                             selected = selectedItem == null,
                             onClick = { selectedItem = null },
                             label = { Text("Any ${kind.label.lowercase(Locale.ROOT)}", maxLines = 1, softWrap = false) },
@@ -483,67 +494,43 @@ fun RequirementSheet(
                             Spacer(Modifier.height(18.dp))
                         }
 
-                        Text("Upgrade", style = MaterialTheme.typography.titleSmall)
-                        Spacer(Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(3.dp),
-                        ) {
-                            UpgradeMatch.entries.forEach { match ->
-                                ToggleButton(
-                                    checked = upgradeMatch == match,
-                                    onCheckedChange = { checked ->
-                                        if (checked) {
-                                            upgradeMatch = match
-                                            clampUpgrade(match, upgradeCeiling)
-                                            upgradeMenuExpanded = false
-                                        }
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    colors = ToggleButtonDefaults.toggleButtonColors(
-                                        containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                    ),
-                                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
-                                ) {
-                                    Text(match.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (kind != ItemKind.ARTIFACT) {
+                            Text("Upgrade", style = MaterialTheme.typography.titleSmall)
+                            Spacer(Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            ) {
+                                UpgradeMatch.entries.forEach { match ->
+                                    ToggleButton(
+                                        checked = upgradeMatch == match,
+                                        onCheckedChange = { checked ->
+                                            if (checked) {
+                                                upgradeMatch = match
+                                                clampUpgrade(match, upgradeCeiling)
+                                                upgradeMenuExpanded = false
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        colors = ToggleButtonDefaults.toggleButtonColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                        ),
+                                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 10.dp),
+                                    ) {
+                                        Text(match.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
                                 }
                             }
-                        }
-                        if (upgradeMatch == UpgradeMatch.EXACT) {
-                            Spacer(Modifier.height(8.dp))
-                            Column {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                ) {
-                                    Text("Level", style = MaterialTheme.typography.labelLarge)
-                                    Text(
-                                        "+$upgrade",
-                                        style = MaterialTheme.typography.labelLarge,
-                                        color = MaterialTheme.colorScheme.primary,
-                                    )
-                                }
-                                Slider(
-                                    value = upgrade.toFloat(),
-                                    onValueChange = { upgrade = it.roundToInt() },
-                                    valueRange = 1f..upgradeCeiling.toFloat(),
-                                    steps = upgradeCeiling - 2,
-                                )
-                            }
-                        } else if (upgradeMatch == UpgradeMatch.AT_LEAST) {
-                            Spacer(Modifier.height(8.dp))
-                            // A slider needs three stops to beat a dropdown, and
-                            // since v4.0.0 raised the ceilings every family has
-                            // them (+1..+4 for weapons, +1..+3 for the rest).
-                            if (upgradeCeiling - 1 >= 3) {
+                            if (upgradeMatch == UpgradeMatch.EXACT) {
+                                Spacer(Modifier.height(8.dp))
                                 Column {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                     ) {
-                                        Text("At least", style = MaterialTheme.typography.labelLarge)
+                                        Text("Level", style = MaterialTheme.typography.labelLarge)
                                         Text(
-                                            "+$upgrade or higher",
+                                            "+$upgrade",
                                             style = MaterialTheme.typography.labelLarge,
                                             color = MaterialTheme.colorScheme.primary,
                                         )
@@ -551,40 +538,66 @@ fun RequirementSheet(
                                     Slider(
                                         value = upgrade.toFloat(),
                                         onValueChange = { upgrade = it.roundToInt() },
-                                        valueRange = 1f..(upgradeCeiling - 1).toFloat(),
-                                        steps = upgradeCeiling - 3,
+                                        valueRange = 1f..upgradeCeiling.toFloat(),
+                                        steps = upgradeCeiling - 2,
                                     )
                                 }
-                            } else {
-                                ExposedDropdownMenuBox(
-                                    expanded = upgradeMenuExpanded,
-                                    onExpandedChange = { upgradeMenuExpanded = it },
-                                ) {
-                                    OutlinedTextField(
-                                        value = "+$upgrade or higher",
-                                        onValueChange = { },
-                                        readOnly = true,
-                                        singleLine = true,
-                                        label = { Text("Minimum upgrade") },
-                                        trailingIcon = {
-                                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = upgradeMenuExpanded)
-                                        },
-                                        modifier = Modifier
-                                            .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true)
-                                            .fillMaxWidth(),
-                                    )
-                                    ExposedDropdownMenu(
-                                        expanded = upgradeMenuExpanded,
-                                        onDismissRequest = { upgradeMenuExpanded = false },
-                                    ) {
-                                        (1..<upgradeCeiling).forEach { option ->
-                                            DropdownMenuItem(
-                                                text = { Text("+$option or higher") },
-                                                onClick = {
-                                                    upgrade = option
-                                                    upgradeMenuExpanded = false
-                                                },
+                            } else if (upgradeMatch == UpgradeMatch.AT_LEAST) {
+                                Spacer(Modifier.height(8.dp))
+                                // A slider needs three stops to beat a dropdown, and
+                                // since v4.0.0 raised the ceilings every family has
+                                // them (+1..+4 for weapons, +1..+3 for the rest).
+                                if (upgradeCeiling - 1 >= 3) {
+                                    Column {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                        ) {
+                                            Text("At least", style = MaterialTheme.typography.labelLarge)
+                                            Text(
+                                                "+$upgrade or higher",
+                                                style = MaterialTheme.typography.labelLarge,
+                                                color = MaterialTheme.colorScheme.primary,
                                             )
+                                        }
+                                        Slider(
+                                            value = upgrade.toFloat(),
+                                            onValueChange = { upgrade = it.roundToInt() },
+                                            valueRange = 1f..(upgradeCeiling - 1).toFloat(),
+                                            steps = upgradeCeiling - 3,
+                                        )
+                                    }
+                                } else {
+                                    ExposedDropdownMenuBox(
+                                        expanded = upgradeMenuExpanded,
+                                        onExpandedChange = { upgradeMenuExpanded = it },
+                                    ) {
+                                        OutlinedTextField(
+                                            value = "+$upgrade or higher",
+                                            onValueChange = { },
+                                            readOnly = true,
+                                            singleLine = true,
+                                            label = { Text("Minimum upgrade") },
+                                            trailingIcon = {
+                                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = upgradeMenuExpanded)
+                                            },
+                                            modifier = Modifier
+                                                .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled = true)
+                                                .fillMaxWidth(),
+                                        )
+                                        ExposedDropdownMenu(
+                                            expanded = upgradeMenuExpanded,
+                                            onDismissRequest = { upgradeMenuExpanded = false },
+                                        ) {
+                                            (1..<upgradeCeiling).forEach { option ->
+                                                DropdownMenuItem(
+                                                    text = { Text("+$option or higher") },
+                                                    onClick = {
+                                                        upgrade = option
+                                                        upgradeMenuExpanded = false
+                                                    },
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -742,7 +755,7 @@ fun RequirementSheet(
                             },
                         )
 
-                        if (!inAlternativeGroup) {
+                        if (!inAlternativeGroup && kind.supportsStacks) {
                             Spacer(Modifier.height(18.dp))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -919,7 +932,7 @@ fun RequirementSheet(
                                         } else {
                                             copyDepth
                                         }
-                                        onSave(it, stackCount, total, copies)
+                                        onSave(it, if (kind.supportsStacks) stackCount else 1, total, copies)
                                     }
                                 },
                                 enabled = draft.isSuccess,
@@ -1054,7 +1067,7 @@ private fun ItemTile(item: CatalogItem, selected: Boolean, onClick: () -> Unit) 
         Column(
             modifier = Modifier.padding(horizontal = 7.dp, vertical = 9.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = if (item.kind == ItemKind.TRINKET) Arrangement.Center else Arrangement.Top,
+            verticalArrangement = Arrangement.Center,
         ) {
             ItemSprite(item, modifier = Modifier.size(42.dp))
             Spacer(Modifier.height(5.dp))

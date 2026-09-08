@@ -1003,7 +1003,12 @@ mod tests {
 
     fn assert_items(floor: &GeneratedCavesFloor, expected: &[ExpectedItem]) {
         assert_eq!(
-            floor.world_items.len(),
+            floor
+                .world_items
+                .iter()
+                .filter(|entry| crate::catalog::item(entry.item).kind
+                    != crate::catalog::ItemKind::Artifact)
+                .count(),
             expected.len(),
             "depth {} item count",
             floor.painted.level.depth

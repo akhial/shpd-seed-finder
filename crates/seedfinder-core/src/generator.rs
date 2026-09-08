@@ -173,6 +173,27 @@ pub enum ArtifactKind {
     UnstableSpellbook,
 }
 
+impl ArtifactKind {
+    /// Stable identity for artifacts in the deterministic spawn deck.
+    #[must_use]
+    pub const fn item_id(self) -> Option<ItemId> {
+        match self {
+            Self::AlchemistsToolkit => Some(ItemId::AlchemistsToolkit),
+            Self::ChaliceOfBlood => Some(ItemId::ChaliceOfBlood),
+            Self::DriedRose => Some(ItemId::DriedRose),
+            Self::EtherealChains => Some(ItemId::EtherealChains),
+            Self::HornOfPlenty => Some(ItemId::HornOfPlenty),
+            Self::MasterThievesArmband => Some(ItemId::MasterThievesArmband),
+            Self::SandalsOfNature => Some(ItemId::SandalsOfNature),
+            Self::SkeletonKey => Some(ItemId::SkeletonKey),
+            Self::TalismanOfForesight => Some(ItemId::TalismanOfForesight),
+            Self::TimekeepersHourglass => Some(ItemId::TimekeepersHourglass),
+            Self::UnstableSpellbook => Some(ItemId::UnstableSpellbook),
+            Self::CloakOfShadows | Self::HolyTome => None,
+        }
+    }
+}
+
 /// Food classes in `FOOD.classes` order.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(u8)]
@@ -352,7 +373,7 @@ impl GeneratedItem {
         }
     }
 
-    /// Searchable weapon/armor/wand/ring representation, if this generated item is
+    /// Searchable equipment/artifact representation, if this generated item is
     /// part of the equipment query catalog. Tipped darts are fixed level-zero,
     /// clean weapons; their stack quantity does not affect search matching.
     #[must_use]
@@ -378,8 +399,18 @@ impl GeneratedItem {
                 item: ring.kind.item_id(),
                 roll: ring.roll,
             }),
-            Self::Artifact(_)
-            | Self::Food(_)
+            Self::Artifact(artifact) => match artifact.kind.item_id() {
+                Some(item) => Some(GeneratedEquipment {
+                    item,
+                    roll: EquipmentRoll {
+                        upgrade: 0,
+                        effect: None,
+                        cursed: artifact.cursed,
+                    },
+                }),
+                None => None,
+            },
+            Self::Food(_)
             | Self::Potion { .. }
             | Self::Seed(_)
             | Self::Scroll { .. }

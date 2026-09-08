@@ -23,3 +23,7 @@ Scouted items and requirements render the real Shattered Pixel Dungeon sprites, 
 ## Trinkets
 
 The Trinket category selects a named trinket and supports the board’s existing OR groups. Its editor omits equipment details. Scout displays the Magical Catalyst at its source and floor, with four square choice cards and the remaining deck in one row. Matches use the Fluent success fill and border. SpriteView renders both sizes with nearest-neighbor scaling, and long card names shrink on one line. The SSC4 decoder reads all 17 ordered identities and retains SSC3 compatibility for older engines.
+
+## Artifacts
+
+The Artifact category requires a named artifact and supports floor limits, source and curse filters, and OR groups. Artifacts are single items rather than stacks. Scout uses the shared catalog and engine upgrades, including +5 Imp vault rewards, and keeps artifact matches aligned with the full manifest. Artifact queries show the measured match probability and estimated search time.

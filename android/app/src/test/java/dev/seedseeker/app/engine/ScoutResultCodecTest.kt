@@ -22,6 +22,22 @@ import org.junit.Test
 class ScoutResultCodecTest {
     init { dev.seedseeker.app.catalog.PackagedCatalog.install() }
     @Test
+    fun artifactsKeepTheirNativeIndicesAndVaultUpgrade() {
+        val artifact = dev.seedseeker.app.catalog.ItemCatalog.artifacts.first()
+        val world = ScoutResultCodec.decode(scoutPacket(
+            item(id = "dagger", depth = 1, upgrade = 0),
+            item(id = artifact.id, depth = 19, upgrade = 5, source = 16),
+            item(id = "wand_frost", depth = 19, upgrade = 2),
+            item(id = artifact.id, depth = 20, upgrade = 0),
+        ))
+        assertEquals(listOf("dagger", artifact.id, "wand_frost", artifact.id), world.items.map { it.item.id })
+        assertEquals(ItemKind.ARTIFACT, world.items[1].item.kind)
+        assertEquals(5, world.items[1].upgrade)
+        assertEquals(ScoutItemSource.IMP_REWARD, world.items[1].source)
+        assertEquals(0, world.items[3].upgrade)
+    }
+
+    @Test
     fun ssc4PreservesDeckOrderAndCatalystPlacement() {
         val deck = dev.seedseeker.app.catalog.ItemCatalog.trinkets.reversed()
         val oldPacket = scoutPacket(*deck.take(4).map {

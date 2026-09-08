@@ -1446,7 +1446,12 @@ mod tests {
         ];
         for (floor, expected) in floors.iter().zip(expected) {
             assert_eq!(
-                floor.world_items.len(),
+                floor
+                    .world_items
+                    .iter()
+                    .filter(|entry| crate::catalog::item(entry.item).kind
+                        != crate::catalog::ItemKind::Artifact)
+                    .count(),
                 expected.len(),
                 "depth {} actual {:?}",
                 floor.painted.level.depth,

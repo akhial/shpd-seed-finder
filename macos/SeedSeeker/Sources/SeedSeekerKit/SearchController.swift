@@ -75,6 +75,9 @@ public final class SearchController {
     public private(set) var scannedSeeds: Int64 = 0
     public private(set) var totalSeeds: Int64 = 0
     public private(set) var matchProbability: Double?
+    public var probabilityLabel: String {
+        return NumberFormat.probabilityPercent(matchProbability)
+    }
     public private(set) var seedsPerSecond: Double = 0
     public private(set) var elapsed: TimeInterval = 0
     public private(set) var errorCode: Int64 = 0

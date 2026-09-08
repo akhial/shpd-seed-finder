@@ -1,4 +1,4 @@
-export type ItemCategory = "weapon" | "armor" | "wand" | "ring" | "trinket";
+export type ItemCategory = "weapon" | "armor" | "wand" | "ring" | "trinket" | "artifact";
 
 /** Melee/thrown classification carried by weapon catalog entries. */
 export type WeaponClass = "melee" | "thrown";

@@ -39,7 +39,7 @@ public sealed class EngineConstantsTests
             Assert.Equal(Limit("maxUpgradeDefault"), kind.MaximumSearchUpgrade());
         // Every family's ceiling is the engine's own, keyed by the document's name for it.
         foreach (var (name, kind) in new[] {
-            ("weapon", ItemKind.Weapon), ("armor", ItemKind.Armor), ("wand", ItemKind.Wand), ("ring", ItemKind.Ring) })
+            ("weapon", ItemKind.Weapon), ("armor", ItemKind.Armor), ("wand", ItemKind.Wand), ("ring", ItemKind.Ring), ("artifact", ItemKind.Artifact) })
             Assert.Equal((int)((JsonObject)Limits["maxUpgradeByKind"]!)[name]!, kind.MaximumSearchUpgrade());
         Assert.Equal(SearchLimits.MaxUpgradeAnyTier, Limit("maxUpgradeAnyTier"));
         Assert.Equal(SearchLimits.ExtraUpgradeTier, Limit("extraUpgradeTier"));

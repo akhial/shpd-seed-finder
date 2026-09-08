@@ -78,6 +78,7 @@ mod tests {
             (
                 "AAA-AAA-AAB",
                 &[
+                    (4, ItemId::TalismanOfForesight),
                     (13, ItemId::Trident),
                     (14, ItemId::HolyDart),
                     (18, ItemId::Glaive),

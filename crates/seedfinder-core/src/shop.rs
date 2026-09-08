@@ -15,9 +15,8 @@ use std::fmt;
 use crate::catalog::ItemId;
 use crate::equipment::EquipmentRoll;
 use crate::generator::{
-    BombKind, GeneratedArtifact, GeneratedEquipment, GeneratedItem, GeneratedItemFamily,
-    GeneratedMissile, GeneratorError, MissileKind, random_category, random_tipped_dart,
-    random_using_defaults,
+    BombKind, GeneratedEquipment, GeneratedItem, GeneratedItemFamily, GeneratedMissile,
+    GeneratorError, MissileKind, random_category, random_tipped_dart, random_using_defaults,
 };
 use crate::model::{Accessibility, ItemSource, WorldItem};
 use crate::rng::RandomStack;
@@ -568,13 +567,10 @@ fn generate_rare(
         None => Ok(ShopStockItem::Direct(DirectShopItem::Stylus)),
         Some(GeneratedItem::Equipment(equipment)) => Ok(searchable(equipment.item, depth_u8)),
         Some(GeneratedItem::Ring(ring)) => Ok(searchable(ring.kind.item_id(), depth_u8)),
-        Some(GeneratedItem::Artifact(artifact)) => Ok(ShopStockItem::Generated(
-            GeneratedItem::Artifact(GeneratedArtifact {
-                kind: artifact.kind,
-                cursed: false,
-                spellbook_scrolls: artifact.spellbook_scrolls,
-            }),
-        )),
+        Some(GeneratedItem::Artifact(artifact)) => match artifact.kind.item_id() {
+            Some(item) => Ok(searchable(item, depth_u8)),
+            None => Err(ShopError::UnexpectedRare(GeneratedItemFamily::Artifact)),
+        },
         Some(other) => Err(ShopError::UnexpectedRare(other.family())),
     }
 }
@@ -814,9 +810,12 @@ mod tests {
                         assert_eq!(world.effect, None);
                         assert!(!world.cursed);
                     }
-                    ShopStockItem::Generated(GeneratedItem::Artifact(artifact)) => {
+                    ShopStockItem::Searchable(world)
+                        if catalog_item(world.item).kind == ItemKind::Artifact =>
+                    {
                         saw_artifact = true;
-                        assert!(!artifact.cursed);
+                        assert_eq!(world.upgrade, 0);
+                        assert!(!world.cursed);
                     }
                     _ => {}
                 }

@@ -33,6 +33,12 @@ class SearchEstimateTextTest {
     }
 
     @Test
+    fun unavailableArtifactProbabilityHasNoMisleadingEstimate() {
+        val status = SearchStatus(SearchState.RUNNING, 50_000, 5_429_503_678_976, matchProbability = Double.NaN)
+        assertEquals("p unavailable · est —", searchEstimateText(status, 4_600.0))
+    }
+
+    @Test
     fun formatsElapsedTime() {
         assertEquals("30s", formatElapsedTime(30))
         assertEquals("2m 5s", formatElapsedTime(125))

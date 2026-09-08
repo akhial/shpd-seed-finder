@@ -1161,7 +1161,7 @@ mod tests {
     use super::*;
     use crate::catalog::ItemId;
     use crate::equipment::EquipmentRoll;
-    use crate::generator::{ArtifactKind, BombKind, GeneratedArtifact, GeneratedRing, StoneKind};
+    use crate::generator::{BombKind, GeneratedRing, StoneKind};
     use crate::level::Feeling;
     use crate::room::{ConnectionRoomKind, Door, RoomConnection};
     use crate::run::{PotionKind, RingKind, RunState, ScrollKind};
@@ -1573,6 +1573,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![
                 (ItemId::CleansingDart, ItemSource::Shop),
+                (ItemId::UnstableSpellbook, ItemSource::Shop),
                 (ItemId::Spear, ItemSource::Shop),
                 (ItemId::LeatherArmor, ItemSource::Shop),
                 (ItemId::Shuriken, ItemSource::Shop),
@@ -1674,6 +1675,7 @@ mod tests {
                 ItemId::Shuriken => "shuriken",
                 ItemId::Spear => "spear",
                 ItemId::CleansingDart => "cleansing-dart",
+                ItemId::UnstableSpellbook => "unstable-spellbook",
                 _ => "other-searchable",
             },
             ShopStockItem::Generated(GeneratedItem::Potion {
@@ -1694,10 +1696,6 @@ mod tests {
                 exotic: false,
             })
             | ShopStockItem::Direct(DirectShopItem::ScrollOfRemoveCurse) => "remove-curse",
-            ShopStockItem::Generated(GeneratedItem::Artifact(GeneratedArtifact {
-                kind: ArtifactKind::UnstableSpellbook,
-                ..
-            })) => "unstable-spellbook",
             ShopStockItem::Generated(GeneratedItem::Bomb(BombKind::DoubleBomb)) => "double-bomb",
             ShopStockItem::Direct(DirectShopItem::Alchemize { quantity: 3 }) => "alchemize-3",
             ShopStockItem::Direct(DirectShopItem::ScrollOfIdentify) => "identify",

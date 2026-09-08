@@ -141,9 +141,10 @@ fn measure() -> Vec<Row> {
                     let mut groups: std::collections::BTreeSet<(usize, Line, String, u16)> =
                         std::collections::BTreeSet::new();
                     for candidate in &world.items {
-                        if item(candidate.item).kind
-                            == shpd_seedfinder_core::catalog::ItemKind::Trinket
-                        {
+                        if matches!(
+                            item(candidate.item).kind,
+                            shpd_seedfinder_core::catalog::ItemKind::Trinket
+                        ) {
                             continue;
                         }
                         let key = (
@@ -199,7 +200,8 @@ fn only_a_locked_row_reaches_the_level_tied_to_one_tier() {
     let mut reached = 0;
     for supply in SUPPLY {
         let extra = f64::from(supply.upgrades[usize::from(EXTRA_UPGRADE_MAXIMUM)]);
-        if extra <= 0.0 {
+        // Artifacts have no tier: their +5 transfer uses the ordinary upgrade marginal.
+        if extra <= 0.0 || supply.kind == ItemKind::Artifact {
             continue;
         }
         reached += 1;

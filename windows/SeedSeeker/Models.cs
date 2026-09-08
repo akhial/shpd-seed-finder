@@ -11,7 +11,7 @@ namespace SeedSeeker;
 // MeleeWeapon and ThrownWeapon narrow a weapon requirement to one weapon
 // class; the enum value indexes the document kind-name table in
 // ResultsExport, so they must stay appended after the original four families.
-public enum ItemKind { Weapon, Armor, Wand, Ring, MeleeWeapon, ThrownWeapon, Trinket }
+public enum ItemKind { Weapon, Armor, Wand, Ring, MeleeWeapon, ThrownWeapon, Trinket, Artifact }
 
 /// <summary>Melee/thrown classification of weapon catalog entries.</summary>
 public enum WeaponClass { Melee, Thrown }
@@ -30,6 +30,9 @@ public static class ItemKindExtensions
         _ => null,
     };
 
+    /// <summary>Families that require a concrete item instead of a wildcard.</summary>
+    public static bool RequiresNamedItem(this ItemKind kind) => kind is ItemKind.Trinket or ItemKind.Artifact;
+
     /// <summary>Whether a catalog item can satisfy a requirement of this kind.</summary>
     public static bool Accepts(this ItemKind kind, CatalogItem item) =>
         item.Kind == kind.Family() && (kind.WeaponClass() is not { } weaponClass || item.Class == weaponClass);
@@ -40,6 +43,7 @@ public static class ItemKindExtensions
         ItemKind.Weapon => SearchLimits.MaxUpgradeWeapon,
         ItemKind.Ring => SearchLimits.MaxUpgradeRing,
         ItemKind.Trinket => 0,
+        ItemKind.Artifact => SearchLimits.MaxUpgradeArtifact,
         _ => SearchLimits.MaxUpgradeDefault,
     };
 
@@ -51,7 +55,7 @@ public static class ItemKindExtensions
     public static int MaximumSearchUpgrade(this ItemKind kind, CatalogItem? item, TierMatch tierMatch, int tier)
     {
         var ceiling = kind.MaximumSearchUpgrade();
-        if (ceiling <= SearchLimits.MaxUpgradeAnyTier) return ceiling;
+        if (kind.Family() != ItemKind.Weapon || ceiling <= SearchLimits.MaxUpgradeAnyTier) return ceiling;
         var reachesExtraTier = item is not null
             ? item.Tier == SearchLimits.ExtraUpgradeTier
             : tierMatch switch
@@ -95,6 +99,8 @@ public static class SearchLimits
     public const int MaxUpgradeDefault = 4;
     /// <summary>Highest upgrade a ring requirement may name.</summary>
     public const int MaxUpgradeRing = 4;
+    /// <summary>Artifact upgrade transferred by the Imp vault.</summary>
+    public const int MaxUpgradeArtifact = 5;
     /// <summary>
     /// Highest upgrade every ring but one can carry in a single world: ring
     /// drops roll +0..+2, and the only source beyond that — the Imp vault's
@@ -185,7 +191,7 @@ public static partial class KindStyle
 
 public static class Labels
 {
-    public static string Kind(ItemKind value) => value switch { ItemKind.Weapon => "Weapons", ItemKind.Armor => "Armor", ItemKind.Wand => "Wands", ItemKind.MeleeWeapon => "Melee weapons", ItemKind.ThrownWeapon => "Thrown weapons", ItemKind.Trinket => "Trinket", _ => "Rings" };
+    public static string Kind(ItemKind value) => value switch { ItemKind.Weapon => "Weapons", ItemKind.Armor => "Armor", ItemKind.Wand => "Wands", ItemKind.MeleeWeapon => "Melee weapons", ItemKind.ThrownWeapon => "Thrown weapons", ItemKind.Trinket => "Trinket", ItemKind.Artifact => "Artifacts", _ => "Rings" };
     public static string Singular(ItemKind value) => Kind(value).TrimEnd('s').ToLowerInvariant();
     public static string Source(ScoutItemSource value) => value switch
     {
@@ -300,7 +306,7 @@ public sealed partial class ItemRequirement
     [JsonIgnore] public int SpriteIndex => Item?.SpriteIndex ?? -1;
     /// <summary>The ring glyph drawn over the sprite, or -1 when there is none.</summary>
     [JsonIgnore] public int TypeIconIndex => Item?.TypeIconIndex ?? -1;
-    [JsonIgnore] public string Title => Item?.Name ?? (Kind == ItemKind.Trinket ? "Trinket" : (TierMatch switch { TierMatch.Exactly => $"Any Tier {Tier} {Labels.Singular(Kind)}", TierMatch.AtLeast => $"Any Tier {Tier}+ {Labels.Singular(Kind)}", TierMatch.AtMost => $"Any Tier {Tier} or lower {Labels.Singular(Kind)}", _ => $"Any {Labels.Singular(Kind)}" }));
+    [JsonIgnore] public string Title => Item?.Name ?? (Kind.RequiresNamedItem() ? Labels.Kind(Kind) : (TierMatch switch { TierMatch.Exactly => $"Any Tier {Tier} {Labels.Singular(Kind)}", TierMatch.AtLeast => $"Any Tier {Tier}+ {Labels.Singular(Kind)}", TierMatch.AtMost => $"Any Tier {Tier} or lower {Labels.Singular(Kind)}", _ => $"Any {Labels.Singular(Kind)}" }));
     [JsonIgnore] public string Description
     {
         get
@@ -317,7 +323,7 @@ public sealed partial class ItemRequirement
     /// <summary>The short name a chip shows: the item, or its wildcard family.</summary>
     [JsonIgnore] public string ShortTitle => Item?.Name ?? (Kind switch
     {
-        ItemKind.MeleeWeapon => "Any melee", ItemKind.ThrownWeapon => "Any thrown", ItemKind.Trinket => "Trinket", _ => $"Any {Labels.Singular(Kind)}",
+        ItemKind.MeleeWeapon => "Any melee", ItemKind.ThrownWeapon => "Any thrown", ItemKind.Trinket => "Trinket", ItemKind.Artifact => "Artifact", _ => $"Any {Labels.Singular(Kind)}",
     });
     /// <summary>The tiny qualifiers beside a chip's name: tier (wildcards only), upgrade, floor.</summary>
     [JsonIgnore] public IReadOnlyList<ChipTag> Tags
@@ -490,7 +496,7 @@ public static class QueryRelationships
     /// property, so a repeat that carries only one still folds into its stack.
     /// </summary>
     private static bool IsPlainItemCopy(ItemRequirement copy, CatalogItem item) =>
-        copy.Item?.Id == item.Id && copy.TierMatch == TierMatch.Any && copy.UpgradeMatch == UpgradeMatch.Any
+        !copy.Kind.RequiresNamedItem() && copy.Item?.Id == item.Id && copy.TierMatch == TierMatch.Any && copy.UpgradeMatch == UpgradeMatch.Any
         && copy.Effect.IsAny && !copy.RequireUncursed && copy.Source is null
         && copy.IdentityGroup is null && copy.AlternativeGroup is null && copy.LevelSum is null;
 
@@ -758,7 +764,7 @@ public static class QueryRelationships
     {
         var next = requirements.ToList();
         var family = next[item.Anchor].Kind.Family();
-        return item.Members.All(index => next[index].Kind.Family() == family);
+        return !family.RequiresNamedItem() && item.Members.All(index => next[index].Kind.Family() == family);
     }
 
     /// <summary>Pulls the chip at <paramref name="index"/> out of its cluster; it leaves its stack behind.</summary>
@@ -969,6 +975,10 @@ public static class QueryRelationships
         foreach (var requirement in requirements)
         {
             var family = requirement.Kind.Family();
+            if (family.RequiresNamedItem() && requirement.Item is null)
+                return $"Choose a named {Labels.Singular(family)}.";
+            if (family.RequiresNamedItem() && requirement.IdentityGroup is not null)
+                return $"{requirement.Title} cannot form a same-item stack.";
             if (!requirement.Effect.IsAny && family is not (ItemKind.Weapon or ItemKind.Armor))
                 return $"{requirement.Title} cannot require an effect: {Labels.Kind(requirement.Kind).ToLowerInvariant()} carry none.";
             if (requirement.RequireUncursed && requirement.Effect.IsCursesOnly(requirement.Kind))
@@ -1249,7 +1259,25 @@ public static class BuiltInPresets
 public sealed record SeedResult(string Seed, int Number);
 public sealed record ScoutItem(CatalogItem Item, int Depth, int Upgrade, string? Effect, bool Cursed,
     ScoutItemSource Source, byte AccessibilityTag, int AccessibilityGroup, ulong AccessibilityValue,
-    bool Secret = false);
+    bool Secret = false)
+{
+    // Mirrors transferUpgrade followed by visiblyUpgraded (positive half-up rounding).
+    public int DisplayedUpgrade
+    {
+        get
+        {
+            var cap = Item.Id switch
+            {
+                "sandals_of_nature" => 3,
+                "ethereal_chains" or "timekeepers_hourglass" => 5,
+                _ => 0,
+            };
+            if (cap == 0) return Upgrade;
+            var internalLevel = (Upgrade * cap + 5) / 10;
+            return (internalLevel * 10 + cap / 2) / cap;
+        }
+    }
+}
 /// <summary>
 /// The gems one run gives the twelve ring classes, indexed by class — which is
 /// also the class's <see cref="CatalogItem.TypeIconIndex"/>, so a ring looks up
@@ -1320,7 +1348,11 @@ public sealed record RingGems
 /// ring is drawn in.</param>
 public sealed record ScoutWorld(string Seed, IReadOnlyList<ScoutQuest> Quests, IReadOnlyList<ScoutItem> Items,
     RingGems Gems, IReadOnlyList<CatalogItem>? TrinketOrder = null);
-public sealed record SearchStatus(SearchState State, long Scanned, long Total, long ErrorCode, double Probability);
+public sealed record SearchStatus(SearchState State, long Scanned, long Total, long ErrorCode, double Probability)
+{
+    public bool ProbabilityUnavailable => !double.IsFinite(Probability);
+    public string ProbabilityDescription => ProbabilityUnavailable ? "unavailable" : Probability > 0 ? $"{Probability:P4}" : "calculating";
+}
 
 /// <summary>
 /// The engine's marks for one scouted world: which items satisfy the query,

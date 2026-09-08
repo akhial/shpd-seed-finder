@@ -398,7 +398,8 @@ internal fun resultsHeaderText(
 
 internal fun searchEstimateText(status: SearchStatus?, seedsPerSecond: Double): String {
     val probability = status?.matchProbability ?: 0.0
-    if (probability <= 0.0 || seedsPerSecond <= 0.0) {
+    if (!probability.isFinite()) return "p unavailable · est —"
+    if (probability <= 0.0 || !seedsPerSecond.isFinite() || seedsPerSecond <= 0.0) {
         return "p estimating… · est —"
     }
     return "p ${formatProbabilityPercent(probability)} · " +

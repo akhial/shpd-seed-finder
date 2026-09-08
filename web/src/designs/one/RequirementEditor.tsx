@@ -41,6 +41,7 @@ const CATEGORY_OPTIONS: { value: ItemCategory; label: string }[] = [
   { value: "wand", label: "Wand" },
   { value: "ring", label: "Ring" },
   { value: "trinket", label: "Trinket" },
+  { value: "artifact", label: "Artifact" },
 ];
 
 const WEAPON_TYPE_OPTIONS: { value: RequirementKind; label: string }[] = [
@@ -57,6 +58,7 @@ const WILDCARD_LABELS: Record<RequirementKind, string> = {
   wand: "Any wand",
   ring: "Any ring",
   trinket: "Trinket",
+  artifact: "Artifact",
 };
 
 const TIER_OPTIONS = [
@@ -85,8 +87,16 @@ const range = (first: number, last: number): number[] =>
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
-/** The trinket editor exposes only identity, so never retain invisible placement filters. */
-export function trinketEditorRequirement(requirement: RequirementState): RequirementState {
+/** Named families always select an identity; trinkets also discard hidden placement filters. */
+export function namedItemEditorRequirement(requirement: RequirementState): RequirementState {
+  if (requirementFamily(requirement) === "artifact") {
+    return {
+      ...requirement,
+      kind: "artifact",
+      item: requirement.item ?? itemsForKind("artifact")[0].id,
+      upgrade: { mode: "any", value: 0 },
+    };
+  }
   if (requirementFamily(requirement) !== "trinket") return requirement;
   return {
     ...requirement,
@@ -121,7 +131,7 @@ export function RequirementEditor({
   onCancel: () => void;
 }) {
   const [draft, setDraft] = useState<RequirementState>(() => {
-    const initial = trinketEditorRequirement(requirement);
+    const initial = namedItemEditorRequirement(requirement);
     return { ...initial, tier: { ...initial.tier }, upgrade: { ...initial.upgrade } };
   });
   const [count, setCount] = useState(stack.count);
@@ -202,19 +212,22 @@ export function RequirementEditor({
       ...current,
       kind: nextKind,
       upgrade:
-        nextKind === "trinket"
+        nextKind === "trinket" || nextKind === "artifact"
           ? { mode: "any", value: 0 }
           : family === "trinket"
             ? { mode: "any", value: 1 }
             : current.upgrade,
       uncursed: nextKind === "trinket" ? false : current.uncursed,
-      item: nextKind === "trinket" ? itemsForKind("trinket")[0].id : undefined,
+      item:
+        nextKind === "trinket" || nextKind === "artifact"
+          ? itemsForKind(nextKind)[0].id
+          : undefined,
       source: nextKind === "trinket" ? undefined : current.source,
       maxDepth: nextKind === "trinket" ? undefined : current.maxDepth,
       tier: { mode: "any", value: 3 },
       effect: undefined,
     }));
-    if (nextKind === "trinket") {
+    if (nextKind === "trinket" || nextKind === "artifact") {
       setCount(1);
       setTotal(undefined);
       setCopyDepth(undefined);
@@ -302,7 +315,9 @@ export function RequirementEditor({
                   }));
                 }}
               >
-                {family !== "trinket" && <option value="">{WILDCARD_LABELS[kind]}</option>}
+                {family !== "trinket" && family !== "artifact" && (
+                  <option value="">{WILDCARD_LABELS[kind]}</option>
+                )}
                 {family === "weapon"
                   ? range(EXACT_TIER_MIN, EXACT_TIER_MAX).map((tier) => (
                       <optgroup key={tier} label={`Tier ${tier}`}>
@@ -373,7 +388,7 @@ export function RequirementEditor({
             )}
           </section>
 
-          {effectiveTotal === undefined && family !== "trinket" && (
+          {effectiveTotal === undefined && family !== "trinket" && family !== "artifact" && (
             <section className="d1-modal-section">
               <h3>Upgrade level</h3>
               <Segmented
@@ -418,7 +433,7 @@ export function RequirementEditor({
             </section>
           )}
 
-          {!stack.inCluster && family !== "trinket" && (
+          {!stack.inCluster && family !== "trinket" && family !== "artifact" && (
             <section className="d1-modal-section">
               <div className="d1-modal-section-head">
                 <h3>Total item count</h3>

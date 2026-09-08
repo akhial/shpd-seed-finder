@@ -31,6 +31,26 @@ pub fn probability_percent(probability: Option<f64>) -> String {
     format!("{mantissa:.1}\u{d7}10{}%", superscript(exponent))
 }
 
+/// A search whose probability is unavailable still reports its measured speed.
+pub fn search_statistics(probability: f64, seeds_per_second: f64) -> String {
+    if !probability.is_finite() {
+        return format!(
+            "Match probability unavailable · {} seeds/s",
+            seed_rate(seeds_per_second)
+        );
+    }
+    let probability = (probability > 0.0).then_some(probability);
+    let time_to_seed = probability
+        .filter(|_| seeds_per_second > 0.0)
+        .map(|probability| 1.0 / probability / seeds_per_second);
+    format!(
+        "Match probability {} · {} seeds/s · ~{} to a match",
+        probability_percent(probability),
+        seed_rate(seeds_per_second),
+        estimate_duration(time_to_seed),
+    )
+}
+
 fn superscript(exponent: f64) -> String {
     #[allow(clippy::cast_possible_truncation)]
     let exponent = exponent as i32;
@@ -129,6 +149,17 @@ mod tests {
             "1.2\u{d7}10\u{207b}\u{b3}%"
         );
         assert_eq!(probability_percent(Some(0.099_5)), "1.0\u{d7}10\u{b9}%");
+    }
+
+    #[test]
+    fn unavailable_probability_reports_speed_without_an_eta() {
+        let text = super::search_statistics(f64::NAN, 950.0);
+        assert!(text.contains("Match probability unavailable"));
+        assert!(text.contains("950 seeds/s"));
+        assert!(!text.contains("to a match"));
+        assert!(!text.contains("NaN"));
+        assert!(super::search_statistics(0.01, 100.0).contains("1.0 second to a match"));
+        assert!(super::search_statistics(0.0, 0.0).contains("estimating"));
     }
 
     #[test]

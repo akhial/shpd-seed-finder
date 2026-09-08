@@ -620,13 +620,13 @@ private fun ScoutItemCard(
             }
             Spacer(Modifier.width(10.dp))
             Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (scoutItem.upgrade != 0) {
+                if (scoutItem.displayedUpgrade != 0) {
                     Surface(
                         shape = MaterialTheme.shapes.extraSmall,
                         color = SpdUpgrade.copy(alpha = 0.12f),
                     ) {
                         Text(
-                            "+${scoutItem.upgrade}",
+                            "+${scoutItem.displayedUpgrade}",
                             modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
                             style = MaterialTheme.typography.labelMedium,
                             fontFamily = FontFamily.Monospace,

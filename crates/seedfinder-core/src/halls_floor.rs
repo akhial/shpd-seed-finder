@@ -1056,7 +1056,16 @@ mod tests {
             "depth {depth}"
         );
 
-        let mut actual_items = floor.world_items.clone();
+        // These historical fixtures cover equipment. Artifact parity is
+        // pinned separately in tests/artifacts.rs.
+        let mut actual_items: Vec<_> = floor
+            .world_items
+            .iter()
+            .filter(|entry| {
+                crate::catalog::item(entry.item).kind != crate::catalog::ItemKind::Artifact
+            })
+            .cloned()
+            .collect();
         assert_eq!(actual_items.len(), expected_items.len(), "depth {depth}");
         for expected_item in expected_items {
             let index = actual_items

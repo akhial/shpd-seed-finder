@@ -222,6 +222,7 @@ pub fn board_items(requirements: &[UiRequirement]) -> Vec<BoardItem> {
         }
         // A plain repeat of an earlier chip's item folds into that chip.
         if let Some(item_id) = requirement.item
+            && !matches!(requirement.kind, ItemKind::Trinket | ItemKind::Artifact)
             && is_plain_item_copy(requirement, item_id)
             && let Some(&position) = chip_by_item.get(&item_id)
             && items[position].total.is_none()
@@ -581,6 +582,9 @@ pub fn remove_member(requirements: &[UiRequirement], index: usize) -> Vec<UiRequ
 #[must_use]
 pub fn can_stack(requirements: &[UiRequirement], item: &BoardItem) -> bool {
     let anchor = requirements[item.anchor()].kind;
+    if matches!(anchor, ItemKind::Trinket | ItemKind::Artifact) {
+        return false;
+    }
     item.members
         .iter()
         .all(|&index| requirements[index].kind == anchor)
@@ -813,6 +817,27 @@ mod tests {
     use super::*;
     use shpd_seedfinder_core::catalog::WeaponCategory;
     use shpd_seedfinder_core::query::SearchQuery;
+
+    #[test]
+    fn artifact_repeats_stay_separate_and_cannot_be_stacked() {
+        let requirements = vec![
+            row(1, |r| {
+                r.kind = ItemKind::Artifact;
+                r.item = Some(ItemId::HornOfPlenty);
+            }),
+            row(2, |r| {
+                r.kind = ItemKind::Artifact;
+                r.item = Some(ItemId::HornOfPlenty);
+            }),
+        ];
+        assert_eq!(board_items(&requirements).len(), 2);
+        let item = item_at(&requirements, 0);
+        assert!(!can_stack(&requirements, &item));
+        assert_eq!(
+            set_stack_count(&requirements, &item, 2, &mut 3),
+            requirements
+        );
+    }
 
     /// A weapon requirement with the given patch applied, keyed in order.
     fn row(key: u64, patch: impl FnOnce(&mut UiRequirement)) -> UiRequirement {

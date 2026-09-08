@@ -537,6 +537,9 @@ public final class ParityOracle {
 		record.put("kind", itemKind(item));
 		record.put("searchable", isSearchable(item));
 		record.put("true_level", item.trueLevel());
+		// Artifact search reports the vault transfer amount, independent of
+        // each subclass's internal/display-level rounding (e.g. Sandals).
+        record.put("search_upgrade", item instanceof Artifact && "imp_quest".equals(source) ? 5 : item.trueLevel());
 		record.put("cursed", item.cursed);
 		record.put("quantity", item.quantity());
 
@@ -570,7 +573,7 @@ public final class ParityOracle {
 
 	private static boolean isSearchable(Item item) {
 		return item instanceof Weapon || item instanceof Armor || item instanceof Wand
-				|| item instanceof Ring;
+				|| item instanceof Ring || item instanceof Artifact;
 	}
 
 	private static String itemKind(Item item) {

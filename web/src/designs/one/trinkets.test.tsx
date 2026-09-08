@@ -10,7 +10,7 @@ import {
 import type { ScoutItem } from "../../lib/wasm/types";
 import { CatalystEntry } from "./ScoutPanel";
 import { boardItems, canStack, joinAlternatives } from "./relations";
-import { RequirementEditor, trinketEditorRequirement } from "./RequirementEditor";
+import { RequirementEditor, namedItemEditorRequirement } from "./RequirementEditor";
 import { requirementTitle } from "./summary";
 
 describe("offered trinket pilot", () => {
@@ -69,7 +69,7 @@ describe("offered trinket pilot", () => {
     ).requirements[0];
     expect(validateRequirement(legacy)).toContain("Select a trinket.");
     expect(requirementTitle(legacy)).toBe("Trinket");
-    const draft = trinketEditorRequirement(legacy);
+    const draft = namedItemEditorRequirement(legacy);
     expect(draft.item).toBe("rat_skull");
     expect(draft.source).toBeUndefined();
     expect(draft.maxDepth).toBeUndefined();

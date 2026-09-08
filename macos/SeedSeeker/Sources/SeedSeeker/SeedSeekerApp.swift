@@ -1283,6 +1283,7 @@ private func chipName(_ requirement: ItemRequirement) -> String {
     case .wand: "Any wand"
     case .ring: "Any ring"
     case .trinket: "Trinket"
+    case .artifact: "Artifact"
     }
 }
 
@@ -1474,7 +1475,7 @@ private struct RequirementEditor: View {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Category")
                         WideSegmentedPicker(
-                            options: [ItemKind.weapon, .armor, .wand, .ring, .trinket].map { ($0.label, $0) },
+                            options: [ItemKind.weapon, .armor, .wand, .ring, .trinket, .artifact].map { ($0.label, $0) },
                             selection: Binding(get: { kind.family }, set: { kind = $0 }),
                             accessibilityLabel: "Category")
                     }
@@ -1483,8 +1484,8 @@ private struct RequirementEditor: View {
                         if previous.family != value.family {
                             itemID = ""; tierMatch = .any; tier = 2
                             effectMode = .any; selectedEffects = []
-                            if value == .trinket {
-                                itemID = ItemCatalog.trinkets.first?.id ?? ""
+                            if value == .trinket || value == .artifact {
+                                itemID = ItemCatalog.forKind(value).first?.id ?? ""
                                 match = .any; upgrade = 0; sourceRaw = 0; maximumDepth = 0
                                 requireUncursed = false; count = 1; total = nil; copyDepth = nil
                             }
@@ -1502,7 +1503,7 @@ private struct RequirementEditor: View {
                         .pickerStyle(.segmented)
                     }
                     Picker("Item", selection: $itemID) {
-                        if kind != .trinket { Text("Any \(kind.singularLabel)").tag("") }
+                        if kind != .trinket && kind != .artifact { Text("Any \(kind.singularLabel)").tag("") }
                         if kind.family == .weapon {
                             // Tier-1 weapons are starting gear and never spawn in the
                             // dungeon; tipped darts are guaranteed shop stock anyone can
@@ -1565,7 +1566,7 @@ private struct RequirementEditor: View {
                 }
                 // A combined level speaks for the whole stack, so its members
                 // take any upgrade and the per-item choice has nothing to say.
-                if kind != .trinket && effectiveTotal == nil {
+                if kind != .trinket && kind != .artifact && effectiveTotal == nil {
                     Section("Upgrade level") {
                         Picker("Predicate", selection: $match) {
                             ForEach(UpgradeMatch.allCases, id: \.self) { Text($0.label).tag($0) }
@@ -1600,7 +1601,7 @@ private struct RequirementEditor: View {
                         }
                     }
                 }
-                if kind != .trinket && !stack.inCluster {
+                if kind != .trinket && kind != .artifact && !stack.inCluster {
                     Section("Total item count") {
                         Stepper(value: $count, in: 1...SearchLimits.stackMax) {
                             LabeledContent("How many") {
@@ -1777,18 +1778,18 @@ private struct RequirementEditor: View {
             // The relationships are the board's to write: `applyEdit` turns the
             // count and total below into the stack's own encoding, so the row
             // saved here carries no group of its own.
-            let value = try ItemRequirement(key: original.key, item: item, upgrade: kind == .trinket ? 0 : upgrade,
+            let value = try ItemRequirement(key: original.key, item: item, upgrade: kind == .trinket || kind == .artifact ? 0 : upgrade,
                 effect: effect, kind: kind,
-                tier: tierMatch == .any ? 0 : tier, tierMatch: tierMatch, upgradeMatch: kind == .trinket ? .any : match,
+                tier: tierMatch == .any ? 0 : tier, tierMatch: tierMatch, upgradeMatch: kind == .trinket || kind == .artifact ? .any : match,
                 source: kind == .trinket || sourceRaw == 0 ? nil : ScoutItemSource(rawValue: sourceRaw - 1),
                 maximumDepth: kind == .trinket || maximumDepth == 0 ? nil : maximumDepth,
                 requireUncursed: kind != .trinket && requireUncursed,
                 alternativeGroup: original.alternativeGroup)
             onFinish(EditorResult(
                 requirement: value,
-                count: kind == .trinket || stack.inCluster ? 1 : count,
+                count: kind == .trinket || kind == .artifact || stack.inCluster ? 1 : count,
                 total: effectiveTotal,
-                copyDepth: kind == .trinket || stack.inCluster || count < 2 || effectiveTotal != nil ? nil : copyDepth))
+                copyDepth: kind == .trinket || kind == .artifact || stack.inCluster || count < 2 || effectiveTotal != nil ? nil : copyDepth))
         } catch {
             validationMessage = (error as? LocalizedError)?.errorDescription ?? "The requirement is invalid"
         }
@@ -1881,7 +1882,7 @@ private struct ResultsView: View {
         else if controller.state == nil { Text("Add requirements, then press Start Search.").foregroundStyle(.secondary) }
         else if controller.isRunning {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Seed match probability: \(NumberFormat.probabilityPercent(controller.matchProbability)) " +
+                Text("Seed match probability: \(controller.probabilityLabel) " +
                      "TTS @ \(NumberFormat.seedRate(controller.seedsPerSecond)) seeds/s: " +
                      NumberFormat.estimateDuration(controller.timeToSeed))
                     .font(.caption).foregroundStyle(.secondary)
@@ -2321,8 +2322,8 @@ private struct ScoutItemRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(item.item.name).fontWeight(matches ? .semibold : .regular)
-                    if item.upgrade > 0 {
-                        Text("+\(item.upgrade)").font(.caption.bold())
+                    if item.displayedUpgrade > 0 {
+                        Text("+\(item.displayedUpgrade)").font(.caption.bold())
                             .foregroundStyle(Color.shatteredGreen)
                     }
                     if item.cursed {

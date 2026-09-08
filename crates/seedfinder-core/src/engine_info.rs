@@ -58,10 +58,11 @@ pub fn document() -> Value {
                 "wand": ItemKind::Wand.maximum_search_upgrade(),
                 "ring": ItemKind::Ring.maximum_search_upgrade(),
                 "trinket": ItemKind::Trinket.maximum_search_upgrade(),
+                "artifact": ItemKind::Artifact.maximum_search_upgrade(),
             },
             // The per-kind ceilings above are what a weapon reaches at its
             // best tier. Only tier `extraUpgradeTier` gets there: every other
-            // tier, and every other family, stops at `maxUpgradeAnyTier`, so
+            // weapon tier stops at `maxUpgradeAnyTier`, so
             // an editor offering the top level has to know the tier the
             // requirement is asking for.
             "maxUpgradeAnyTier": MAX_GENERATED_UPGRADE,
@@ -129,7 +130,7 @@ mod tests {
         assert_eq!(info["limits"]["maxUpgradeWeapon"], 5);
         assert_eq!(
             info["limits"]["maxUpgradeByKind"],
-            serde_json::json!({"weapon": 5, "armor": 4, "wand": 4, "ring": 4, "trinket": 0})
+            serde_json::json!({"weapon": 5, "armor": 4, "wand": 4, "ring": 4, "trinket": 0, "artifact": 5})
         );
         assert_eq!(info["limits"]["maxUpgradeAnyTier"], 4);
         assert_eq!(info["limits"]["extraUpgradeTier"], 4);

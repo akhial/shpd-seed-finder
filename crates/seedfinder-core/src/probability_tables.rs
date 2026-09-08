@@ -1,4 +1,4 @@
-//! Measured equipment supply backing [`crate::probability`].
+//! Measured equipment and artifact supply backing [`crate::probability`].
 //!
 //! How much equipment a floor produces, and how it splits over upgrades,
 //! curses, enchantments, and tiers, is an emergent property of room decks,
@@ -30,15 +30,16 @@ pub const DEEPEST_FLOOR: u8 = 24;
 
 const _: () = assert!(DEPTHS == DEEPEST_FLOOR as usize);
 
-/// Equipment families tracked by the estimator.
-pub const KINDS: usize = 4;
+/// Equipment and artifact families tracked by the estimator.
+pub const KINDS: usize = 5;
 
-/// Every equipment family, in table order.
+/// Every measured family, in table order.
 pub const KINDS_ORDER: [ItemKind; KINDS] = [
     ItemKind::Weapon,
     ItemKind::Armor,
     ItemKind::Wand,
     ItemKind::Ring,
+    ItemKind::Artifact,
 ];
 
 /// Generator lines within one equipment family.
@@ -271,7 +272,8 @@ pub const fn kind_index(kind: ItemKind) -> usize {
         ItemKind::Armor => 1,
         ItemKind::Wand => 2,
         ItemKind::Ring => 3,
-        ItemKind::Trinket => panic!("trinkets have no equipment supply table"),
+        ItemKind::Artifact => 4,
+        ItemKind::Trinket => panic!("no equipment supply table for this kind"),
     }
 }
 
@@ -303,8 +305,11 @@ pub const fn bundle_size(source: ItemSource, kind: ItemKind) -> u8 {
         | (ItemSource::WandmakerReward, ItemKind::Wand)
         | (ItemSource::GhostReward, ItemKind::Weapon | ItemKind::Armor)
         | (ItemSource::BlacksmithReward | ItemSource::Shop, ItemKind::Armor)
-        | (ItemSource::Shop, ItemKind::Wand | ItemKind::Ring)
-        | (ItemSource::ImpReward, ItemKind::Armor | ItemKind::Wand | ItemKind::Ring) => 1,
+        | (ItemSource::Shop, ItemKind::Wand | ItemKind::Ring | ItemKind::Artifact)
+        | (
+            ItemSource::ImpReward,
+            ItemKind::Armor | ItemKind::Wand | ItemKind::Ring | ItemKind::Artifact,
+        ) => 1,
         _ => 0,
     }
 }

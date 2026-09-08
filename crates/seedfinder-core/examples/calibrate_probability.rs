@@ -304,11 +304,12 @@ fn render(tally: &Tally) -> String {
     let mut output = String::new();
     let _ = writeln!(
         output,
-        "//! Equipment supply measured from the canonical v4.0.0-BETA-3 generator.\n\
+        "//! Equipment and artifact supply measured from the canonical v4.0.0-BETA-4 generator.\n\
          //!\n\
          //! Generated over {} sampled worlds by\n\
          //! `cargo run --release --example calibrate_probability`. Rerun that\n\
          //! example and replace this file rather than editing it by hand.\n\n\
+         #![allow(clippy::approx_constant)]\n\n\
          use crate::catalog::ItemKind;\n\
          use crate::model::ItemSource;\n\n\
          use super::{{DEPTHS, IDENTITY_REPEAT_LIMIT, KINDS, LINES, Line, Supply, TIPPED_DARTS}};",

@@ -297,7 +297,7 @@ private final class NativeSearchSession: SeedFinderSearchSession, @unchecked Sen
             guard code == 0 else { throw ffiError(code) }
             guard let state = SearchState(rawValue: Int(values[0])) else { throw SeedFinderEngineError.invalidResponse }
             let probability = Double(bitPattern: UInt64(bitPattern: values[4]))
-            guard probability.isFinite, (0...1).contains(probability) else { throw SeedFinderEngineError.invalidResponse }
+            guard probability.isNaN || (probability.isFinite && (0...1).contains(probability)) else { throw SeedFinderEngineError.invalidResponse }
             return SearchStatus(state: state, scannedSeeds: max(0, values[1]), totalSeeds: max(0, values[2]), errorCode: values[3], matchProbability: probability)
         }.value
     }

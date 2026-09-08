@@ -51,6 +51,7 @@ pub const ALL_KIND_CHOICES: &[KindChoice] = &[
     (ItemKind::Wand, None),
     (ItemKind::Ring, None),
     (ItemKind::Trinket, None),
+    (ItemKind::Artifact, None),
 ];
 
 /// One item requirement as edited in the interface. All predicate fields
@@ -134,8 +135,8 @@ impl UiRequirement {
         if let Some(item_id) = self.item {
             return item(item_id).name.to_owned();
         }
-        if self.kind == ItemKind::Trinket {
-            return "Trinket".to_owned();
+        if matches!(self.kind, ItemKind::Trinket | ItemKind::Artifact) {
+            return kind_choice_label(self.kind_choice()).to_owned();
         }
         let singular = kind_choice_singular(self.kind_choice());
         match self.tier {
@@ -158,7 +159,9 @@ impl UiRequirement {
     pub fn chip_name(&self) -> String {
         match self.item {
             Some(item_id) => item(item_id).name.to_owned(),
-            None if self.kind == ItemKind::Trinket => "Trinket".to_owned(),
+            None if matches!(self.kind, ItemKind::Trinket | ItemKind::Artifact) => {
+                kind_choice_label(self.kind_choice()).to_owned()
+            }
             None => format!("Any {}", chip_family(self.kind_choice())),
         }
     }
@@ -483,6 +486,7 @@ pub const fn kind_choice_label(choice: KindChoice) -> &'static str {
         (ItemKind::Wand, _) => "Wand",
         (ItemKind::Ring, _) => "Ring",
         (ItemKind::Trinket, _) => "Trinket",
+        (ItemKind::Artifact, _) => "Artifact",
     }
 }
 
@@ -495,6 +499,7 @@ pub const fn kind_choice_singular(choice: KindChoice) -> &'static str {
         (ItemKind::Wand, _) => "wand",
         (ItemKind::Ring, _) => "ring",
         (ItemKind::Trinket, _) => "trinket",
+        (ItemKind::Artifact, _) => "artifact",
     }
 }
 
@@ -509,6 +514,7 @@ pub const fn chip_family(choice: KindChoice) -> &'static str {
         (ItemKind::Wand, _) => "wand",
         (ItemKind::Ring, _) => "ring",
         (ItemKind::Trinket, _) => "trinket",
+        (ItemKind::Artifact, _) => "artifact",
     }
 }
 
@@ -521,7 +527,7 @@ pub const fn kind_icon(kind: ItemKind, weapon_category: Option<WeaponCategory>) 
         (ItemKind::Armor, _) => "kind-armor-symbolic",
         (ItemKind::Wand, _) => "kind-wand-symbolic",
         (ItemKind::Ring, _) => "kind-ring-symbolic",
-        (ItemKind::Trinket, _) => "starred-symbolic",
+        (ItemKind::Trinket | ItemKind::Artifact, _) => "starred-symbolic",
     }
 }
 
@@ -691,6 +697,86 @@ mod tests {
         AppState, QuestRow, UiRequirement, blacksmith_quest_label, floor_limit_skip_target,
         ghost_quest_label, imp_target_label, quest_rows, source_label, wandmaker_quest_label,
     };
+
+    #[test]
+    fn artifact_scout_matches_the_vault_row_with_its_upgrade() {
+        use shpd_seedfinder_core::{
+            challenges::Challenges, model::ItemSource, query::scout_matches, seed::DungeonSeed,
+        };
+        let world = shpd_seedfinder_session::production_scout_world(
+            DungeonSeed::from_code("AAA-AAA-AAA").unwrap(),
+            Challenges::NONE,
+        )
+        .unwrap();
+        let state = AppState {
+            requirements: vec![UiRequirement {
+                kind: ItemKind::Artifact,
+                item: Some(ItemId::SandalsOfNature),
+                upgrade: UpgradeRequirement::Exact(5),
+                source: Some(ItemSource::ImpReward),
+                max_depth: Some(19),
+                ..UiRequirement::new(1)
+            }],
+            ..AppState::default()
+        };
+        let query = state.to_query().unwrap();
+        let marks = scout_matches(&world, &query);
+        assert_eq!(marks.matched_requirements, 1);
+        assert_eq!(marks.matched.len(), world.items.len());
+        let selected: Vec<_> = world
+            .items
+            .iter()
+            .zip(&marks.matched)
+            .filter_map(|(item, &matched)| matched.then_some(item))
+            .collect();
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].item, ItemId::SandalsOfNature);
+        assert_eq!(selected[0].depth, 19);
+        assert_eq!(selected[0].upgrade, 5);
+        assert_eq!(source_label(selected[0].source), "Imp reward");
+    }
+
+    #[test]
+    fn artifacts_keep_limits_and_or_groups_through_share_links() {
+        use shpd_seedfinder_core::{deep_link, model::ItemSource};
+
+        let mut state = AppState {
+            requirements: [ItemId::SandalsOfNature, ItemId::HornOfPlenty]
+                .into_iter()
+                .enumerate()
+                .map(|(index, id)| UiRequirement {
+                    kind: ItemKind::Artifact,
+                    item: Some(id),
+                    upgrade: UpgradeRequirement::Exact(5),
+                    source: Some(ItemSource::ImpReward),
+                    max_depth: Some(19),
+                    require_uncursed: true,
+                    alternative_group: Some(1),
+                    ..UiRequirement::new(index as u64 + 1)
+                })
+                .collect(),
+            ..AppState::default()
+        };
+        assert!(super::ALL_KIND_CHOICES.contains(&(ItemKind::Artifact, None)));
+        assert_eq!(state.requirements[0].title(), "Sandals of Nature");
+        assert!(state.requirements[0].subtitle().contains("exactly +5"));
+        assert!(state.requirements[0].subtitle().contains("floors 1"));
+        let query = state.to_query().unwrap();
+        let decoded = deep_link::decode_text(&deep_link::encode_link(&query).unwrap()).unwrap();
+        assert_eq!(AppState::from_query(&decoded).to_query().unwrap(), query);
+        assert_eq!(query.slot_count(), 1);
+        assert!(!state.can_stack(1));
+        state.set_stack_count(1, 2);
+        assert_eq!(state.requirements.len(), 2);
+        state.detach(1);
+        assert!(!state.can_stack(1));
+        state.set_stack_count(1, 2);
+        assert_eq!(state.requirements.len(), 2);
+        state.requirements[0].item = None;
+        assert_eq!(state.requirements[0].title(), "Artifact");
+        assert_eq!(state.requirements[0].chip_name(), "Artifact");
+        assert!(state.to_query().is_err());
+    }
 
     #[test]
     fn trinkets_round_trip_in_or_groups_without_equipment_details() {
