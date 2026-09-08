@@ -358,3 +358,5 @@ pub const fn spread_index(kind: ItemKind, line: Line) -> usize {
 pub fn supply_for(kind: ItemKind) -> impl Iterator<Item = &'static Supply> {
     SUPPLY.iter().filter(move |supply| supply.kind == kind)
 }
+
+pub(crate) mod trinkets;

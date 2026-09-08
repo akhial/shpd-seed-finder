@@ -57,9 +57,21 @@ also means No Trinket. The remaining 13 deck entries never affect selection.
 The engine applies the +3 generation effects of Mimic Tooth, Parchment Scrap,
 Rat Skull, Exotic Crystals, Mossy Clump, Trap Mechanism, and Cracked Spyglass.
 Other trinkets can be chosen but their gameplay effects do not alter the
-canonical generated world. Equipment probability estimates remain available
-using the existing measured supply tables. Like challenge effects, selected-trinket effects are not
-calibrated into those estimates; pure offer probabilities remain exact.
+canonical generated world. Equipment probability estimates use a separate
+measured profile for each of these seven trinkets (32,768 worlds each).
+Per-floor supply, upgrades, curses, enchantments and tier shares include the
+actual first brewing opportunity; the unchanged first two floors retain the
+canonical tables. Duplicate scarcity and item-count variation also use the
+selected profile. Trinkets without generation effects reuse No Trinket.
+
+The estimator enumerates the 2,380 initial four-offer subsets. Each subset uses
+the uniquely selected trinket's equipment profile, or No Trinket for ambiguous
+matches, before averaging its chance of satisfying the entire query. This
+preserves exact offer probabilities, including OR groups; equipment results
+remain statistical estimates with the existing matching approximations and
+challenge-effects limitation. Calibration averages brewing timing across
+catalyst placements rather than conditioning equipment supply on an explicit
+catalyst floor filter.
 
 Click any of the four initial-choice cards in the web scout to apply it, or
 click **No Trinket** to clear the selection. An override
