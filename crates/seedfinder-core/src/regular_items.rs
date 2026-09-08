@@ -128,6 +128,7 @@ pub enum RegularHeapKind {
 pub enum RegularMimicKind {
     Mimic,
     GoldenMimic,
+    EbonyMimic,
 }
 
 /// Spatial operations needed by [`create_regular_items`].
@@ -138,6 +139,9 @@ pub enum RegularMimicKind {
 pub trait RegularItemPlacement {
     type HeapHandle;
 
+    fn ebony_mimic_cell(&mut self, random: &mut RandomStack) -> i32 {
+        self.random_drop_cell(random, DropCellKind::StandardRoom)
+    }
     fn random_drop_cell(&mut self, random: &mut RandomStack, kind: DropCellKind) -> i32;
     fn clear_grass_if_needed(&mut self, cell: i32);
     fn has_mob(&mut self, cell: i32) -> bool;
@@ -272,6 +276,7 @@ pub fn create_regular_items<P: RegularItemPlacement>(
 
     let isolated_streams = consume_isolated_streams(
         random,
+        generator,
         challenges,
         feeling,
         depth,
@@ -305,9 +310,22 @@ fn place_generated_item<P: RegularItemPlacement>(
     let heap_kind = match random.int_bound(20) {
         0 => RegularHeapKind::Skeleton,
         1..=4 => {
-            // Mimic Tooth multiplier is one: the comparison threshold is zero,
-            // but Java still evaluates this Float before short-circuiting.
-            let _unused_mimic_roll = random.float();
+            if random.float() < (random.trinket.mimic_multiplier() - 1.0) / 4.0
+                && depth > 1
+                && !placement.has_mob(cell)
+            {
+                spawn_regular_mimic(
+                    random,
+                    generator,
+                    depth,
+                    cell,
+                    item,
+                    placement,
+                    records,
+                    world_items,
+                )?;
+                return Ok(());
+            }
             RegularHeapKind::Chest
         }
         5 => {
@@ -331,7 +349,7 @@ fn place_generated_item<P: RegularItemPlacement>(
 
     if is_locked_chest_candidate(random, item) {
         let spawn_golden = if depth > 1 {
-            random.float() < 0.1 && !placement.has_mob(cell)
+            random.float() < 0.1 * random.trinket.mimic_multiplier() && !placement.has_mob(cell)
         } else {
             false
         };
@@ -475,7 +493,12 @@ fn spawn_regular_mimic<P: RegularItemPlacement>(
     world_items: &mut Vec<WorldItem>,
 ) -> Result<(), RegularItemsError> {
     let reward = RegularItem::Generated(generate_mimic_prize(random, generator, i32::from(depth))?);
-    let items = vec![original, reward];
+    let mut items = vec![original, reward];
+    if random.trinket.is(crate::catalog::ItemId::MimicTooth) {
+        items.push(RegularItem::Generated(
+            crate::generator::random_using_defaults_overall(random, generator, i32::from(depth))?,
+        ));
+    }
     placement.spawn_mimic(cell, RegularMimicKind::Mimic, &items);
     record_mimic(
         cell,
@@ -501,10 +524,16 @@ fn spawn_golden_mimic<P: RegularItemPlacement>(
 ) -> Result<(), RegularItemsError> {
     let reward = RegularItem::Generated(generate_mimic_prize(random, generator, i32::from(depth))?);
     // GoldenMimic iterates original first, then its newly generated prize.
-    let items = vec![
-        golden_mimic_item(random, original),
-        golden_mimic_item(random, reward),
-    ];
+    let mut items = vec![original, reward];
+    if random.trinket.is(crate::catalog::ItemId::MimicTooth) {
+        items.push(RegularItem::Generated(
+            crate::generator::random_using_defaults_overall(random, generator, i32::from(depth))?,
+        ));
+    }
+    let items = items
+        .into_iter()
+        .map(|item| golden_mimic_item(random, item))
+        .collect::<Vec<_>>();
     placement.spawn_mimic(cell, RegularMimicKind::GoldenMimic, &items);
     record_mimic(
         cell,
@@ -584,6 +613,44 @@ fn golden_roll(
     roll
 }
 
+fn ebony_mimic_item(random: &mut RandomStack, item: RegularItem) -> RegularItem {
+    fn upgrade(random: &mut RandomStack, mut roll: EquipmentRoll, reroll: bool) -> EquipmentRoll {
+        roll.cursed = false;
+        if roll.effect.is_some_and(Effect::is_curse) {
+            roll.effect = None;
+        }
+        if roll.upgrade == 0 {
+            roll.upgrade = 1;
+            if reroll {
+                random.int_bound(3);
+            }
+        }
+        roll
+    }
+    let RegularItem::Generated(item) = item else {
+        return item;
+    };
+    RegularItem::Generated(match item {
+        GeneratedItem::Equipment(mut e) => {
+            e.roll = upgrade(random, e.roll, catalog_item(e.item).kind == ItemKind::Wand);
+            GeneratedItem::Equipment(e)
+        }
+        GeneratedItem::Missile(mut e) => {
+            e.roll = upgrade(random, e.roll, false);
+            GeneratedItem::Missile(e)
+        }
+        GeneratedItem::Ring(mut e) => {
+            e.roll = upgrade(random, e.roll, true);
+            GeneratedItem::Ring(e)
+        }
+        GeneratedItem::Artifact(mut a) => {
+            a.cursed = false;
+            GeneratedItem::Artifact(a)
+        }
+        other => other,
+    })
+}
+
 fn record_heap(
     cell: i32,
     kind: RegularHeapKind,
@@ -615,7 +682,7 @@ fn record_mimic(
     world_items: &mut Vec<WorldItem>,
 ) {
     let source = match kind {
-        RegularMimicKind::Mimic => ItemSource::Mimic,
+        RegularMimicKind::Mimic | RegularMimicKind::EbonyMimic => ItemSource::Mimic,
         RegularMimicKind::GoldenMimic => ItemSource::GoldenMimic,
     };
     for item in &items {
@@ -656,8 +723,11 @@ fn append_world_item(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_lines)]
 fn consume_isolated_streams<P: RegularItemPlacement>(
     random: &mut RandomStack,
+    generator: &mut GeneratorState,
     challenges: Challenges,
     feeling: Feeling,
     depth: u8,
@@ -696,12 +766,92 @@ fn consume_isolated_streams<P: RegularItemPlacement>(
                 }
             }
             IsolatedItemStreamKind::EbonyMimic => {
-                // `Float() < 0` is false, but the left side is unconditional.
-                let _unused_ebony_roll = random.float();
+                if random.float()
+                    < if random.trinket.is(crate::catalog::ItemId::MimicTooth) {
+                        0.5
+                    } else {
+                        0.0
+                    }
+                {
+                    let cell = placement.ebony_mimic_cell(random);
+                    let floor_set = i32::from(depth) / 5;
+                    let prize = match random.int_bound(5) {
+                        0 => random_gold(random, i32::from(depth)),
+                        1 => GeneratedItem::Missile(
+                            random_missile(random, generator, floor_set, true)
+                                .expect("valid missile deck"),
+                        ),
+                        2 => GeneratedItem::Equipment(
+                            random_armor(random, floor_set).expect("valid armor deck"),
+                        ),
+                        3 => GeneratedItem::Equipment(
+                            random_weapon(random, generator, floor_set, true)
+                                .expect("valid weapon deck"),
+                        ),
+                        _ => crate::generator::random_using_defaults(
+                            random,
+                            generator,
+                            GeneratorCategory::Ring,
+                            i32::from(depth),
+                        )
+                        .expect("valid ring deck"),
+                    };
+                    let mut items = vec![RegularItem::Generated(prize)];
+                    // The base stealthy mimic bonus, then EbonyMimic's own bonus.
+                    for _ in 0..2 {
+                        items.push(RegularItem::Generated(
+                            crate::generator::random_using_defaults_overall(
+                                random,
+                                generator,
+                                i32::from(depth),
+                            )
+                            .expect("valid default deck"),
+                        ));
+                    }
+                    let items = items
+                        .into_iter()
+                        .map(|item| ebony_mimic_item(random, item))
+                        .collect::<Vec<_>>();
+                    placement.spawn_mimic(cell, RegularMimicKind::EbonyMimic, &items);
+                    record_mimic(
+                        cell,
+                        RegularMimicKind::EbonyMimic,
+                        items,
+                        depth,
+                        records,
+                        world_items,
+                    );
+                }
             }
             IsolatedItemStreamKind::CrackedSpyglass => {
-                // `(int)(Float() + 0)` is always zero, but consumes the Float.
-                let _unused_extra_loot_roll = random.float();
+                let chance = if random.trinket.is(crate::catalog::ItemId::CrackedSpyglass) {
+                    1.5
+                } else {
+                    0.0
+                };
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                let count = (random.float() + chance) as u8;
+                for _ in 0..count {
+                    let cell = placement.random_drop_cell(random, DropCellKind::StandardRoom);
+                    placement.clear_grass_if_needed(cell);
+                    let item = RegularItem::Generated(
+                        crate::generator::random_using_defaults_overall(
+                            random,
+                            generator,
+                            i32::from(depth),
+                        )
+                        .expect("valid default deck"),
+                    );
+                    placement.drop_item(cell, item);
+                    record_heap(
+                        cell,
+                        RegularHeapKind::Heap,
+                        item,
+                        depth,
+                        records,
+                        world_items,
+                    );
+                }
             }
             IsolatedItemStreamKind::DarknessTorches
             | IsolatedItemStreamKind::Bones

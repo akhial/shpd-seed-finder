@@ -304,6 +304,7 @@ function requirementToDocument(requirement: RequirementState): RequirementDocume
     if (effect !== undefined) output.effect = effect;
   }
   if (requirement.uncursed) output.uncursed = true;
+  if (requirement.selectTrinket) output.select_trinket = true;
   if (requirement.source) output.source = requirement.source;
   if (requirement.identityGroup) output.identity_group = requirement.identityGroup;
   if (requirement.maxDepth !== undefined) output.max_depth = requirement.maxDepth;
@@ -417,6 +418,10 @@ function requirementFromDocument(
     identityGroup: value.identity_group,
     maxDepth: value.max_depth === undefined ? undefined : normalizeFloorLimit(value.max_depth),
   };
+  if (raw.select_trinket !== undefined && typeof raw.select_trinket !== "boolean") {
+    throw new Error("select_trinket must be a boolean");
+  }
+  if (value.select_trinket) requirement.selectTrinket = true;
   if (alternativeGroup !== undefined) requirement.alternativeGroup = alternativeGroup;
   // The unreleased upgrade_sum key is refused rather than reinterpreted.
   if (raw.upgrade_sum !== undefined)
@@ -476,6 +481,8 @@ export interface ValidationResult {
 
 export function validateRequirement(requirement: RequirementState): string[] {
   const errors: string[] = [];
+  if (requirement.selectTrinket && requirementFamily(requirement) !== "trinket")
+    errors.push("Only a trinket can be selected.");
   if (requirementFamily(requirement) === "trinket" && !requirement.item)
     errors.push("Select a trinket.");
   const item = requirement.item ? getItem(requirement.item) : undefined;

@@ -72,7 +72,8 @@ oracle solved both with source patches; here they are solved without touching
 any game class:
 
 1. **Debug journal defaults** (`DeviceCompat.isDebug()`). In debug mode every
-   journal page counts as read, which keeps the *unseeded* early-Guidebook
+   journal page except the final Halls lore page counts as read. The oracle
+   explicitly marks that last page read too. This keeps the *unseeded* early-Guidebook
    heap off the first floors (without it, `AAA-AAA-AAA` floor 1 gains an
    eleventh heap and floor 2 changes). The JAR implements `isDebug()` as
    `Game.version.contains("INDEV")`, so the oracle simply sets

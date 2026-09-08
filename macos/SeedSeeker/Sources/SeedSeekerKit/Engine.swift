@@ -187,7 +187,7 @@ public struct ScoutMatches: Sendable {
 
     /// Marks the world `seed` generates under `challenges` against `query`.
     public static func mark(seed: String, challenges: Int, query: SearchRequest) throws -> ScoutMatches {
-        try mark(ScoutCodec.encodeRequest(seed: seed, challenges: challenges),
+        try mark(ScoutCodec.encodeRequest(seed: seed, challenges: challenges, query: query),
                  query: QueryDocument.encode(query))
     }
 }
@@ -242,7 +242,11 @@ public struct ProductionSeedFinderEngine: SeedFinderEngine {
     }
 
     public func scoutSeed(_ seed: String, challenges: Int = 0) async throws -> ScoutWorld {
-        let request = try ScoutCodec.encodeRequest(seed: seed, challenges: challenges)
+        try await scoutSeed(seed, challenges: challenges, query: nil, trinket: nil)
+    }
+
+    public func scoutSeed(_ seed: String, challenges: Int, query: SearchRequest?, trinket: String?) async throws -> ScoutWorld {
+        let request = try ScoutCodec.encodeRequest(seed: seed, challenges: challenges, query: query, trinket: trinket)
         let packet: Data = try await Task.detached {
             var pointer: UnsafeMutablePointer<UInt8>?
             var length = 0

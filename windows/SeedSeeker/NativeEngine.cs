@@ -216,17 +216,20 @@ public sealed class NativeEngine
         };
     }
 
-    /// <summary>The SSQ2 request naming one scouted world; scouting it is deterministic.</summary>
-    private static byte[] EncodeScoutRequest(string seed, int challenges)
+    /// <summary>The SSQ3 request naming one scouted world; scouting it is deterministic.</summary>
+    internal static byte[] EncodeScoutRequest(string seed, int challenges, QuerySettings? query = null, string? trinket = null)
     {
         if (!SeedCode.IsCanonical(seed)) throw new ArgumentException("Seed must use XXX-XXX-XXX format");
-        var w = new Writer(); w.Bytes("SSQ2"u8.ToArray()); w.U16Le(challenges); w.Bytes(Encoding.ASCII.GetBytes(seed));
+        var w = new Writer(); w.Bytes("SSQ3"u8.ToArray()); w.U16Le(challenges);
+        var seedBytes = Encoding.UTF8.GetBytes(seed); w.U16Le(seedBytes.Length); w.Bytes(seedBytes);
+        var overrideBytes = Encoding.UTF8.GetBytes(trinket ?? ""); w.U16Le(overrideBytes.Length); w.Bytes(overrideBytes);
+        if (query is { Requirements.Count: > 0 }) w.Bytes(EncodeQuery(query));
         return w.Finish();
     }
 
-    public ScoutWorld Scout(string seed, int challenges)
+    public ScoutWorld Scout(string seed, int challenges, QuerySettings? query = null, string? trinket = null)
     {
-        var request = EncodeScoutRequest(seed, challenges);
+        var request = EncodeScoutRequest(seed, challenges, query, trinket);
         var code = Native.seedfinder_scout(request, (nuint)request.Length, out var ptr, out var len);
         if (code != 0) throw new InvalidOperationException($"Native scout failed ({code}).");
         return DecodeScout(CopyAndFree(ptr, len));
@@ -235,7 +238,7 @@ public sealed class NativeEngine
     public static ScoutWorld DecodeScout(byte[] bytes)
     {
         var r = new Reader(bytes); var version = r.Text(4);
-        if (version is not ("SSC3" or "SSC4")) throw new InvalidDataException("Unexpected scout packet");
+        if (version is not ("SSC3" or "SSC4" or "SSC5")) throw new InvalidDataException("Unexpected scout packet");
         var returnedSeed = r.Text(r.U8()); var gems = new RingGems(r.Bytes(RingGems.Count));
         var quests = r.Quests(); var items = new List<ScoutItem>(); var count = r.U16();
         for (var i = 0; i < count; i++)
@@ -247,7 +250,7 @@ public sealed class NativeEngine
             items.Add(new(item, depth, upgrade, effect.Length == 0 ? null : effect, (flags & 1) != 0, source, tag, group, value, Secret: (flags & 2) != 0));
         }
         var order = new List<CatalogItem>();
-        if (version == "SSC4")
+        if (version is "SSC4" or "SSC5")
         {
             var orderCount = r.U8();
             if (orderCount != 17) throw new InvalidDataException("Unexpected trinket deck size");
@@ -259,8 +262,12 @@ public sealed class NativeEngine
                 order.Add(entry);
             }
         }
+        var selectedTrinket = version == "SSC5" ? r.Text() : "";
+        if (selectedTrinket.Length == 0) selectedTrinket = null;
+        if (selectedTrinket is not null && !order.Take(4).Any(item => item.Id == selectedTrinket))
+            throw new InvalidDataException("Selected trinket is not initially offered");
         if (r.Remaining != 0) throw new InvalidDataException("Trailing native data");
-        return new(returnedSeed, quests, items, gems, order);
+        return new(returnedSeed, quests, items, gems, order, selectedTrinket);
     }
 
     /// <summary>
@@ -269,12 +276,12 @@ public sealed class NativeEngine
     /// indices into the item list <see cref="Scout"/> returns for the same
     /// request. The engine owns the selection — the very matcher the search
     /// runs, so a marked manifest can never disagree with the result list —
-    /// and it is asked over the same SSQ2 request bytes, which name the world
+    /// and it is asked over the same SSQ3 request bytes, which name the world
     /// exactly.
     /// </summary>
-    public static ScoutMatches ScoutMatches(string seed, int challenges, QuerySettings query)
+    public static ScoutMatches ScoutMatches(string seed, int challenges, QuerySettings query, string? trinket = null)
     {
-        var request = EncodeScoutRequest(seed, challenges); var packet = EncodeQuery(query);
+        var request = EncodeScoutRequest(seed, challenges, query, trinket); var packet = EncodeQuery(query);
         var code = Native.seedfinder_scout_matches(request, (nuint)request.Length, packet, (nuint)packet.Length, out var ptr, out var len);
         // A query the engine cannot decode — one with no requirements, which
         // the scout pane shows a manifest for anyway — marks nothing. Counts

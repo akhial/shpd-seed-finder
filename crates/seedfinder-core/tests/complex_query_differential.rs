@@ -146,6 +146,7 @@ fn random_requirement(rng: &mut Rng) -> Requirement {
         upgrade,
         effect,
         require_uncursed: rng.chance(20),
+        select_trinket: false,
         source: None,
         identity_group: None,
         max_depth: rng
@@ -227,6 +228,7 @@ fn random_query(rng: &mut Rng) -> Option<SearchQuery> {
                     upgrade: UpgradeRequirement::Any,
                     effect: EffectRequirement::Any,
                     require_uncursed: false,
+                    select_trinket: false,
                     source: None,
                     identity_group: Some(1),
                     max_depth: None,

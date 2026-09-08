@@ -63,6 +63,7 @@ struct Editor {
     effect_checks: RefCell<Vec<EffectCheck>>,
     details_group: adw::PreferencesGroup,
     uncursed: adw::SwitchRow,
+    select_trinket: adw::SwitchRow,
     source_row: adw::ComboRow,
     floor_switch: adw::SwitchRow,
     floor_value: adw::SpinRow,
@@ -232,6 +233,10 @@ fn build(context: AppState, requirement: &UiRequirement, stack: StackShape) -> E
         effect_checks: RefCell::new(Vec::new()),
         details_group: adw::PreferencesGroup::builder().title("Details").build(),
         uncursed: adw::SwitchRow::builder().title("Require uncursed").build(),
+        select_trinket: adw::SwitchRow::builder()
+            .title("Choose matching trinket at +3")
+            .subtitle("Starts after the first brewing opportunity. Multiple offered matches use no trinket.")
+            .build(),
         source_row: combo_row(
             "Source",
             &std::iter::once("Any")
@@ -266,6 +271,7 @@ fn groups(editor: &Rc<Editor>) -> Vec<adw::PreferencesGroup> {
     let item_group = adw::PreferencesGroup::builder().title("Item").build();
     item_group.add(&editor.category);
     item_group.add(&editor.item_row);
+    item_group.add(&editor.select_trinket);
     item_group.add(&editor.tier_row);
     item_group.add(&editor.exact_tier);
     item_group.add(&editor.bounded_tier);
@@ -417,6 +423,7 @@ fn restore(editor: &Rc<Editor>, requirement: &UiRequirement, stack: StackShape) 
         .category
         .set_selected(u32::try_from(kind_index).unwrap_or(0));
     editor.uncursed.set_active(requirement.require_uncursed);
+    editor.select_trinket.set_active(requirement.select_trinket);
     populate_items(editor, requirement.item);
     populate_effects(editor, requirement.effect);
     normalize_upgrades(editor);
@@ -507,6 +514,9 @@ fn collect(editor: &Rc<Editor>) -> (UiRequirement, usize, Option<u8>, Option<u8>
         upgrade,
         effect: selected_effect(editor),
         require_uncursed: kind != ItemKind::Trinket && editor.uncursed.is_active(),
+        select_trinket: kind == ItemKind::Trinket
+            && item.is_some()
+            && editor.select_trinket.is_active(),
         source,
         // The stack's own encoding carries these; the board rebuilds them
         // from the count and total this returns.
@@ -915,6 +925,10 @@ fn set_minimum_upgrade(editor: &Rc<Editor>, upgrade: u8) {
 
 fn refresh_visibility(editor: &Rc<Editor>) {
     let kind = selected_kind(editor);
+    editor.select_trinket.set_visible(kind == ItemKind::Trinket);
+    if kind != ItemKind::Trinket {
+        editor.select_trinket.set_active(false);
+    }
     let wildcard_equipment = selected_item(editor).is_none() && enchantable(kind);
     let tier_mode = editor.tier_row.selected();
     editor.tier_row.set_visible(wildcard_equipment);

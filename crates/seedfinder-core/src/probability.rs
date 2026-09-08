@@ -1,4 +1,4 @@
-//! Query probability estimates derived from the measured v3.3.8 item supply.
+//! Query probability estimates derived from measured equipment supply.
 //!
 //! The estimate answers "what fraction of seeds satisfies this query", not "how
 //! likely is one item to match", so it has to know how much equipment a run
@@ -39,6 +39,10 @@
 //! therefore lifted out of the per-family matching and spent once across the
 //! whole query, on whichever requirement it reaches that helps most.
 //!
+//! Selected trinkets choose a measured +3 profile per unique initial-offer
+//! match. Those profiles include brewing timing and per-floor modifier shares;
+//! ambiguous offers retain the canonical supply. See [`crate::probability_tables`].
+//!
 //! Known simplifications: challenges shift item placement but are ignored, and
 //! a query carrying more requirements than one matching resolves keeps only its
 //! scarcest ones, which read high. Against them, a pool is spent on its single
@@ -63,11 +67,11 @@ use crate::generator::{
     WEAPON_TIER_3_ITEMS, WEAPON_TIER_4_ITEMS, WEAPON_TIER_5_ITEMS,
 };
 use crate::model::ItemSource;
+use crate::probability_tables::trinkets::Profile;
 use crate::probability_tables::{
     DEEPEST_FLOOR, DEPTHS, FLOOR_SETS, HIGHEST_TABLED_UPGRADE, HIGHEST_TIER, IDENTITY_REPEAT_LIMIT,
-    IDENTITY_REPEATS, LINES_ORDER, Line, PRIZE_GROUPS, PrizeGroup, SLOT_SPREAD, Supply, TIERS,
-    TIPPED_DARTS, TIPPED_SHARES, kind_index, line_of, missile_tier, missile_tier_items,
-    prize_group, source_index, spread_index, supply_for, tipped_index,
+    LINES_ORDER, Line, PRIZE_GROUPS, PrizeGroup, Supply, TIERS, TIPPED_DARTS, kind_index, line_of,
+    missile_tier, missile_tier_items, prize_group, source_index, spread_index, tipped_index,
 };
 use crate::query::{EffectRequirement, Requirement, SearchQuery, UpgradeRequirement};
 use crate::quests::WandmakerQuestType;
@@ -91,20 +95,21 @@ pub fn estimate_match_probability(query: &SearchQuery) -> f64 {
     {
         return trinket_probability(query);
     }
-    equipment_probability(query)
+    equipment_probability(query, Profile::None)
 }
 
-fn equipment_probability(query: &SearchQuery) -> f64 {
+fn equipment_probability(query: &SearchQuery, profile: Profile) -> f64 {
     let mut linked: BTreeMap<u8, Vec<Requirement>> = BTreeMap::new();
     let mut independent: Vec<Requirement> = Vec::new();
-    for requirement in effective_requirements(query) {
+    for requirement in effective_requirements(query, profile) {
         match requirement.identity_group {
             Some(group) => linked.entry(group).or_default().push(requirement),
             None => independent.push(requirement),
         }
     }
 
-    let mut probability = blacksmith_probability(query) * wandmaker_quest_probability(query);
+    let mut probability =
+        blacksmith_probability(query, profile) * wandmaker_quest_probability(query);
     let mut groups: Vec<Vec<Requirement>> = Vec::new();
     for members in linked.into_values() {
         // A linked group that names its item constrains nothing extra: every
@@ -128,9 +133,9 @@ fn equipment_probability(query: &SearchQuery) -> f64 {
         // met. Later groups are then resolved on their own: nesting the sums
         // over the identities each could take would cost their product.
         let others = std::mem::take(&mut independent);
-        probability *= linked_probability(query, &members, &others);
+        probability *= linked_probability(query, &members, &others, profile);
     }
-    probability *= competing_probability(query, &independent);
+    probability *= competing_probability(query, &independent, profile);
     if probability <= 0.0 {
         0.0
     } else {
@@ -167,6 +172,21 @@ fn trinket_probability(query: &SearchQuery) -> f64 {
         .map(|definition| definition.id)
         .collect();
     let slots = query.slots();
+    let selection_slots = crate::trinkets::selection_slots(query);
+    let selected_mask = identities
+        .iter()
+        .enumerate()
+        .fold(0u32, |mask, (index, id)| {
+            mask | if selection_slots
+                .iter()
+                .flatten()
+                .any(|r| r.item == Some(*id))
+            {
+                1 << index
+            } else {
+                0
+            }
+        });
     let equipment_slots: Vec<_> = slots
         .iter()
         .map(|members| {
@@ -214,6 +234,7 @@ fn trinket_probability(query: &SearchQuery) -> f64 {
                 for c in b + 1..identities.len() {
                     for d in c + 1..identities.len() {
                         let available = (1 << a) | (1 << b) | (1 << c) | (1 << d);
+                        let profile = Profile::for_matches(available & selected_mask, &identities);
                         total += complete_with_trinkets(
                             query,
                             &slots,
@@ -222,6 +243,7 @@ fn trinket_probability(query: &SearchQuery) -> f64 {
                             available,
                             &mut Vec::new(),
                             &mut residuals,
+                            profile,
                         );
                         samples += 1;
                     }
@@ -242,11 +264,12 @@ fn complete_with_trinkets(
     equipment_slots: &[bool],
     available: u32,
     residual: &mut Vec<usize>,
-    cache: &mut BTreeMap<Vec<usize>, f64>,
+    cache: &mut BTreeMap<(Profile, Vec<usize>), f64>,
+    profile: Profile,
 ) -> f64 {
     let slot = slots.len() - masks.len();
     let Some((&mask, tail)) = masks.split_first() else {
-        return *cache.entry(residual.clone()).or_insert_with(|| {
+        return *cache.entry((profile, residual.clone())).or_insert_with(|| {
             let requirements = residual
                 .iter()
                 .flat_map(|&slot| {
@@ -256,10 +279,13 @@ fn complete_with_trinkets(
                         .filter(|requirement| requirement.kind != ItemKind::Trinket)
                 })
                 .collect();
-            equipment_probability(&SearchQuery {
-                requirements,
-                ..query.clone()
-            })
+            equipment_probability(
+                &SearchQuery {
+                    requirements,
+                    ..query.clone()
+                },
+                profile,
+            )
         });
     };
     let mut best: f64 = 0.0;
@@ -275,6 +301,7 @@ fn complete_with_trinkets(
             available & !choice,
             residual,
             cache,
+            profile,
         ));
     }
     if equipment_slots[slot] {
@@ -287,6 +314,7 @@ fn complete_with_trinkets(
             available,
             residual,
             cache,
+            profile,
         ));
         residual.pop();
     }
@@ -299,7 +327,7 @@ fn complete_with_trinkets(
 /// the fewest members whose level capacity reaches the total, each tightened
 /// to carry an equal share. Members the subset does not need are optional in
 /// the matcher and are dropped here.
-fn effective_requirements(query: &SearchQuery) -> Vec<Requirement> {
+fn effective_requirements(query: &SearchQuery, profile: Profile) -> Vec<Requirement> {
     // For each group: how many members a satisfying subset needs at least,
     // given the members' level capacities, and the upgrade each of those
     // members then has to carry.
@@ -358,7 +386,11 @@ fn effective_requirements(query: &SearchQuery) -> Vec<Requirement> {
             None => flattened.push(requirement),
             Some(group) => {
                 let slots = |candidate: &Requirement| {
-                    expected_slots(&Predicate::of(*candidate, None).within(query, candidate))
+                    expected_slots(
+                        &Predicate::of(*candidate, None)
+                            .within(query, candidate)
+                            .with_profile(profile),
+                    )
                 };
                 let replace = alternatives
                     .get(&group)
@@ -374,11 +406,12 @@ fn effective_requirements(query: &SearchQuery) -> Vec<Requirement> {
 }
 
 /// Probability that an accessible Blacksmith exists within the search depth.
-fn blacksmith_probability(query: &SearchQuery) -> f64 {
+fn blacksmith_probability(query: &SearchQuery, profile: Profile) -> f64 {
     if !query.require_blacksmith {
         return 1.0;
     }
-    supply_for(ItemKind::Armor)
+    profile
+        .supply_for(ItemKind::Armor)
         .filter(|supply| supply.source == ItemSource::BlacksmithReward)
         .map(|supply| {
             supply.depth_slots[..usize::from(query.max_depth).min(DEPTHS)]
@@ -418,14 +451,19 @@ fn wandmaker_quest_probability(query: &SearchQuery) -> f64 {
 /// Every member has to resolve to the same item, so the group is evaluated once
 /// per candidate identity and the results combined. Same-identity duplicates are
 /// rarer than independent draws suggest because the generator deals items from
-/// decrementing decks, which [`IDENTITY_REPEATS`] corrects for.
-fn linked_probability(query: &SearchQuery, members: &[Requirement], others: &[Requirement]) -> f64 {
+/// decrementing decks, which [`crate::probability_tables::IDENTITY_REPEATS`] corrects for.
+fn linked_probability(
+    query: &SearchQuery,
+    members: &[Requirement],
+    others: &[Requirement],
+    profile: Profile,
+) -> f64 {
     let Some(kind) = members.first().map(|member| member.kind) else {
         return 1.0;
     };
     let mut none = 1.0;
     for (identity, alike) in identities(kind) {
-        let shared = together_probability(query, members, Some(identity), others);
+        let shared = together_probability(query, members, Some(identity), others, profile);
         none *= (1.0 - shared.clamp(0.0, 1.0)).powi(alike);
     }
     1.0 - none
@@ -438,7 +476,7 @@ fn linked_probability(query: &SearchQuery, members: &[Requirement], others: &[Re
 /// makes the same wand less likely next time. Requirements that all name one
 /// item — or that are linked to share one — feel that suppression.
 ///
-/// [`IDENTITY_REPEATS`] is measured against independent draws, so a family
+/// [`crate::probability_tables::IDENTITY_REPEATS`] is measured against independent draws, so a family
 /// asking for copies of one item is resolved on that footing too: the run of
 /// chances a line's slots normally arrive on already carries some of the same
 /// scarcity, and counting it twice would make duplicates look far rarer than
@@ -467,7 +505,7 @@ fn repeat_correction(ordered: &[Predicate], holding: f64, copies: usize) -> f64 
     thinned_by(
         holding,
         copies,
-        f64::from(IDENTITY_REPEATS[line][copies - 1][depth]),
+        f64::from(ordered[0].profile.repeat(line, copies - 1, depth)),
     )
 }
 
@@ -565,8 +603,12 @@ fn line_for(kind: ItemKind, item: ItemId) -> Line {
 /// separate supply, but a quest lays its prizes out across all of them and
 /// lets exactly one leave, so a ring and an armor both wanting the Imp's haul
 /// are competitors.
-fn competing_probability(query: &SearchQuery, requirements: &[Requirement]) -> f64 {
-    together_probability(query, requirements, None, &[])
+fn competing_probability(
+    query: &SearchQuery,
+    requirements: &[Requirement],
+    profile: Profile,
+) -> f64 {
+    together_probability(query, requirements, None, &[], profile)
 }
 
 /// Probability that every requirement is satisfied by a distinct item.
@@ -578,10 +620,11 @@ fn together_probability(
     requirements: &[Requirement],
     identity: Option<ItemId>,
     others: &[Requirement],
+    profile: Profile,
 ) -> f64 {
-    let group = filters(query, requirements, identity, &[]);
+    let group = filters(query, requirements, identity, &[], profile);
     let Some((_, copies)) = repeated_identity(&group) else {
-        return matching_chance(&filters(query, requirements, identity, others));
+        return matching_chance(&filters(query, requirements, identity, others, profile));
     };
     // Copies of one identity are scored against independent draws, since that is
     // the footing [`repeat_correction`] was measured on. The scarcity is read off
@@ -595,7 +638,7 @@ fn together_probability(
     if others.is_empty() {
         return (alone * scarcer).clamp(0.0, 1.0);
     }
-    let together = matching_chance(&filters(query, requirements, identity, others));
+    let together = matching_chance(&filters(query, requirements, identity, others, profile));
     (together * scarcer).clamp(0.0, 1.0)
 }
 
@@ -608,15 +651,20 @@ fn filters(
     requirements: &[Requirement],
     identity: Option<ItemId>,
     others: &[Requirement],
+    profile: Profile,
 ) -> Vec<Predicate> {
     let mut ordered: Vec<Predicate> = requirements
         .iter()
-        .map(|requirement| Predicate::of(*requirement, identity).within(query, requirement))
-        .chain(
-            others
-                .iter()
-                .map(|requirement| Predicate::of(*requirement, None).within(query, requirement)),
-        )
+        .map(|requirement| {
+            Predicate::of(*requirement, identity)
+                .within(query, requirement)
+                .with_profile(profile)
+        })
+        .chain(others.iter().map(|requirement| {
+            Predicate::of(*requirement, None)
+                .within(query, requirement)
+                .with_profile(profile)
+        }))
         .collect();
     ordered.sort_by(|left, right| {
         expected_slots(left)
@@ -783,7 +831,11 @@ fn open_chance(ordered: &[Predicate]) -> f64 {
     {
         let mut placed = 0.0;
         let mut covered = vec![0.0; coverages];
-        for supply in supply_for(kind).filter(|supply| supply.line == line) {
+        for supply in ordered[0]
+            .profile
+            .supply_for(kind)
+            .filter(|supply| supply.line == line)
+        {
             if prize_group(supply.source).is_some() {
                 continue;
             }
@@ -795,7 +847,7 @@ fn open_chance(ordered: &[Predicate]) -> f64 {
                 if supply.bundle == 0 {
                     placed += available;
                 }
-                let covered_by = coverage_shares(&shared, supply, depth);
+                let covered_by = coverage_shares(&shared, &supply, depth);
                 if covered_by.iter().skip(1).all(|share| *share <= 0.0) {
                     continue;
                 }
@@ -816,6 +868,7 @@ fn open_chance(ordered: &[Predicate]) -> f64 {
         }
         if covered.iter().skip(1).any(|mass| *mass > 0.0) {
             streams.push(Stream::of(
+                ordered[0].profile,
                 spread_index(kind, line),
                 until,
                 placed,
@@ -860,7 +913,7 @@ fn prize_reach(group: PrizeGroup, ordered: &[Predicate], deepest: usize) -> Opti
         let mut missing = vec![1.0; ordered.len()];
         for supply in kinds
             .iter()
-            .flat_map(|kind| supply_for(*kind))
+            .flat_map(|kind| ordered[0].profile.supply_for(*kind))
             .filter(|supply| prize_group(supply.source) == Some(group))
         {
             let available = f64::from(supply.depth_slots[depth - 1]);
@@ -869,7 +922,7 @@ fn prize_reach(group: PrizeGroup, ordered: &[Predicate], deepest: usize) -> Opti
             }
             appeared = appeared.max(available);
             for (requirement, predicate) in ordered.iter().enumerate() {
-                missing[requirement] *= 1.0 - predicate.slot_probability(supply, depth);
+                missing[requirement] *= 1.0 - predicate.slot_probability(&supply, depth);
             }
         }
         if appeared <= 0.0 {
@@ -921,8 +974,15 @@ struct Stream {
 }
 
 impl Stream {
-    fn of(line: usize, reach: usize, placed: f64, covered: Vec<f64>, steady: bool) -> Self {
-        let steadiness = f64::from(SLOT_SPREAD[line][reach - 1]).clamp(0.0, 1.0);
+    fn of(
+        profile: Profile,
+        line: usize,
+        reach: usize,
+        placed: f64,
+        covered: Vec<f64>,
+        steady: bool,
+    ) -> Self {
+        let steadiness = f64::from(profile.spread(line, reach - 1)).clamp(0.0, 1.0);
         let chance = 1.0 - steadiness;
         let trials = placed / chance;
         let runs = steady && chance > 0.0 && trials <= MAX_CHANCES && placed > 0.0;
@@ -1153,12 +1213,14 @@ fn prune(states: BTreeMap<u128, f64>) -> BTreeMap<u128, f64> {
 
 /// Expected number of slots one requirement can draw on.
 fn expected_slots(predicate: &Predicate) -> f64 {
-    supply_for(predicate.kind)
+    predicate
+        .profile
+        .supply_for(predicate.kind)
         .map(|supply| {
             (1..=usize::from(predicate.max_depth).min(DEPTHS))
                 .map(|depth| {
                     f64::from(supply.depth_slots[depth - 1])
-                        * predicate.slot_probability(supply, depth)
+                        * predicate.slot_probability(&supply, depth)
                 })
                 .sum::<f64>()
         })
@@ -1171,6 +1233,7 @@ fn expected_slots(predicate: &Predicate) -> f64 {
 /// the matching needs to know which of them one item could serve at once.
 #[derive(Clone, Copy, Debug)]
 struct Predicate {
+    profile: Profile,
     kind: ItemKind,
     weapon_category: Option<WeaponCategory>,
     item: Option<ItemId>,
@@ -1184,6 +1247,10 @@ struct Predicate {
 }
 
 impl Predicate {
+    fn with_profile(mut self, profile: Profile) -> Self {
+        self.profile = profile;
+        self
+    }
     fn of(requirement: Requirement, identity: Option<ItemId>) -> Self {
         let mut tiers = 0;
         for tier in 1..=HIGHEST_TIER {
@@ -1203,6 +1270,7 @@ impl Predicate {
             }
         }
         Self {
+            profile: Profile::None,
             kind: requirement.kind,
             weapon_category: requirement.weapon_category,
             item: identity.or(requirement.item),
@@ -1258,6 +1326,7 @@ impl Predicate {
             return None;
         }
         Some(Self {
+            profile: self.profile,
             kind: self.kind,
             weapon_category,
             item,
@@ -1279,7 +1348,10 @@ impl Predicate {
     /// that is several chances or one depends on how the source rolls them: the
     /// Blacksmith upgrades its whole weapon rack together, so a `+3` there is a
     /// single chance however many weapons it lays out.
-    fn slot_probability(self, supply: &Supply, depth: usize) -> f64 {
+    fn slot_probability(mut self, supply: &Supply, depth: usize) -> f64 {
+        if depth <= 2 {
+            self.profile = Profile::None;
+        }
         if self.kind != supply.kind
             || usize::from(self.max_depth) < depth
             || self.source.is_some_and(|wanted| wanted != supply.source)
@@ -1350,7 +1422,7 @@ impl Predicate {
                 // A tipped dart's identity is the plant seed it was tipped with,
                 // which the generator does not hand out evenly.
                 if let Some(dart) = tipped_index(wanted) {
-                    return self.tier_probability(tiers) * f64::from(TIPPED_SHARES[dart]);
+                    return self.tier_probability(tiers) * f64::from(self.profile.tipped(dart));
                 }
                 let Some((tier, siblings)) = weapon_family(wanted) else {
                     return 0.0;
@@ -1630,6 +1702,7 @@ mod tests {
             upgrade: UpgradeRequirement::Any,
             effect: EffectRequirement::Any,
             require_uncursed: false,
+            select_trinket: false,
             source: None,
             identity_group: None,
             max_depth: None,
@@ -1659,6 +1732,77 @@ mod tests {
     fn assert_probability(requirements: Vec<Requirement>, expected: f64) {
         let actual = estimate_match_probability(&query(requirements, 24));
         assert!((actual - expected).abs() < 1e-10, "{actual} vs {expected}");
+    }
+
+    #[test]
+    fn selected_trinkets_keep_mixed_query_estimates_available() {
+        for document in [
+            r#"{"requirements":[{"item":"mimic_tooth","select_trinket":true},{"kind":"weapon","upgrade":2}]}"#,
+            r#"{"requirements":[{"any_of":[{"item":"mimic_tooth","select_trinket":true},{"item":"rat_skull"}]},{"kind":"ring"}]}"#,
+            r#"{"requirements":[{"item":"parchment_scrap","select_trinket":true}]}"#,
+        ] {
+            let selected = crate::json_query::decode(document).unwrap();
+            let estimate = estimate_match_probability(&selected);
+            assert!(estimate.is_finite() && estimate > 0.0 && estimate <= 1.0);
+        }
+    }
+
+    #[test]
+    fn selected_profiles_change_loot_estimates_and_keep_prebrew_queries() {
+        let estimate = |id: &str, selected: bool, equipment: &str, depth: u8| {
+            estimate_match_probability(&crate::json_query::decode(&format!(
+                r#"{{"requirements":[{{"item":"{id}","select_trinket":{selected}}},{equipment}],"max_depth":{depth}}}"#
+            )).unwrap())
+        };
+        let mimic = r#"{"kind":"weapon","source":"mimic","upgrade":1}"#;
+        assert!(
+            estimate("mimic_tooth", true, mimic, 24) > estimate("mimic_tooth", false, mimic, 24)
+        );
+        let enchanted = r#"{"kind":"weapon","effect":"any_enchantment","source":"ghost_reward"}"#;
+        assert!(
+            estimate("parchment_scrap", true, enchanted, 9)
+                > estimate("parchment_scrap", false, enchanted, 9)
+        );
+        let ring = r#"{"kind":"ring","source":"heap"}"#;
+        assert!(
+            estimate("cracked_spyglass", true, ring, 24)
+                > estimate("cracked_spyglass", false, ring, 24)
+        );
+        for (id, depth) in [
+            ("mimic_tooth", 1),
+            ("parchment_scrap", 1),
+            ("mimic_tooth", 2),
+            ("parchment_scrap", 2),
+            ("salt_cube", 24),
+        ] {
+            let equipment = r#"{"kind":"weapon"}"#;
+            assert!(
+                (estimate(id, true, equipment, depth) - estimate(id, false, equipment, depth))
+                    .abs()
+                    < 1e-12
+            );
+        }
+    }
+
+    #[test]
+    fn selected_or_estimate_weights_unique_and_ambiguous_offers() {
+        use crate::probability_tables::trinkets::Profile;
+        let equipment = crate::json_query::decode(
+            r#"{"requirements":[{"kind":"weapon","source":"mimic","upgrade":1}],"max_depth":24}"#,
+        )
+        .unwrap();
+        let plain = super::equipment_probability(&equipment, Profile::None);
+        let applied = super::equipment_probability(&equipment, Profile::MimicTooth);
+        let either = crate::json_query::decode(r#"{"requirements":[{"any_of":[{"item":"mimic_tooth","select_trinket":true},{"item":"salt_cube"}]},{"kind":"weapon","source":"mimic","upgrade":1}],"max_depth":24}"#).unwrap();
+        // 455 subsets contain only Mimic Tooth, 455 only Salt Cube (no
+        // generation effect), and 105 contain both (ambiguous => No Trinket).
+        let expected = (455.0 * applied + 560.0 * plain) / 2380.0;
+        assert!((estimate_match_probability(&either) - expected).abs() < 1e-10);
+        let mut two_effects = either;
+        two_effects.requirements[1].item = Some(ItemId::ParchmentScrap);
+        let parchment = super::equipment_probability(&equipment, Profile::ParchmentScrap);
+        let expected = (455.0 * applied + 455.0 * parchment + 105.0 * plain) / 2380.0;
+        assert!((estimate_match_probability(&two_effects) - expected).abs() < 1e-10);
     }
 
     #[test]

@@ -135,6 +135,14 @@ public final class ParityOracle {
 		Dungeon.initSeed();
 		GamesInProgress.selectedClass = HeroClass.WARRIOR;
 		Dungeon.init();
+		// INDEV leaves the final Halls lore page missing. Match the engine's
+		// canonical all-pages-read profile explicitly, including that page.
+		for (com.shatteredpixel.shatteredpixeldungeon.journal.Document document
+				: com.shatteredpixel.shatteredpixeldungeon.journal.Document.values()) {
+			@SuppressWarnings("unchecked")
+			Map<String, Integer> states = (Map<String, Integer>) getField(document, "pagesStates");
+			states.replaceAll((page, state) -> 2);
+		}
 
 		output.emit(runInitRecord(options));
 
@@ -143,6 +151,9 @@ public final class ParityOracle {
 		// The Imp is guaranteed to have spawned by depth 19; --vault keeps generating
 		// (unselected) floors until its floor has been observed.
 		int stopDepth = options.vault ? Math.max(lastDepth, LAST_IMP_DEPTH) : lastDepth;
+		String selectedTrinket = System.getProperty("seedfinder.trinket");
+		boolean brewedTrinket = false;
+		boolean alchemyAvailable = false;
 		for (int depth = 1; depth <= stopDepth; depth++) {
 			PersistentSnapshot beforeBoss = options.bossSkipCheckpoints && isBossDepth(depth)
 					? persistentSnapshot() : null;
@@ -160,6 +171,17 @@ public final class ParityOracle {
 			if (options.runCheckpoints) output.emit(generatorCheckpoint(level, selected));
 			if (beforeBoss != null) {
 				output.emit(bossTransition(level, beforeBoss, persistentSnapshot()));
+			}
+			for (int tile : level.map) {
+				if (tile == com.shatteredpixel.shatteredpixeldungeon.levels.Terrain.ALCHEMY) alchemyAvailable = true;
+			}
+			if (selectedTrinket != null && !brewedTrinket && alchemyAvailable
+					&& Dungeon.LimitedDrops.TRINKET_CATA.count > 0) {
+				Item trinket = (Item) Class.forName("com.shatteredpixel.shatteredpixeldungeon.items.trinkets." + selectedTrinket)
+					.getDeclaredConstructor().newInstance();
+				trinket.level(3);
+				Dungeon.hero.belongings.backpack.items.add(trinket);
+				brewedTrinket = true;
 			}
 			Dungeon.depth++;
 			if (options.vault && depth >= lastDepth && quests.impDepth > 0) break;
@@ -262,6 +284,7 @@ public final class ParityOracle {
 		record.put("length", level.length());
 		record.put("map_hash", arrayHash(level.map));
 		record.put("map", integers(level.map));
+
 		record.put("entrance", level.entrance());
 		record.put("exit", level.exit());
 		record.put("rooms", roomRecords(level));

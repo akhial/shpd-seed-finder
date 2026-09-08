@@ -909,7 +909,7 @@ impl RegularPainter {
             remove_first(&mut valid_cells, cell);
             remove_first(&mut valid_non_hallways, cell);
 
-            reveal_increment += self.revealed_trap_chance;
+            reveal_increment += self.revealed_trap_chance.max(rng.trinket.reveal_chance());
             let requested_visible = index >= self.trap_count || reveal_increment >= 1.0;
             let visible = if requested_visible {
                 reveal_increment -= 1.0;

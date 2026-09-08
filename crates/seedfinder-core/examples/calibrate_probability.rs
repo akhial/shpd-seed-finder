@@ -14,6 +14,17 @@
 //!     > crates/seedfinder-core/src/probability_tables/measured.rs
 //! ```
 //!
+//! Add a stable trinket ID as the second argument to measure a +3 profile:
+//!
+//! ```text
+//! cargo run --release --example calibrate_probability -- 32768 mimic_tooth \
+//!     > crates/seedfinder-core/src/probability_tables/trinkets/mimic_tooth.rs
+//! ```
+//!
+//! This uses the actual first brewing opportunity and records modifier shares
+//! separately by floor. Trinket identities do not consume the world RNG; the
+//! estimator separately enumerates the initial offers when weighting profiles.
+//!
 //! `tests/probability_tables.rs` re-measures a smaller sample and fails when
 //! the checked-in table drifts away from the generator.
 
@@ -23,7 +34,9 @@ use std::sync::Mutex;
 
 use shpd_seedfinder_core::catalog::{ItemId, ItemKind, item};
 use shpd_seedfinder_core::challenges::Challenges;
-use shpd_seedfinder_core::main_world::CanonicalMainWorldGenerator;
+use shpd_seedfinder_core::main_world::{
+    CanonicalMainWorldGenerator, generate_main_world_with_trinket,
+};
 use shpd_seedfinder_core::model::{GeneratedWorld, ItemSource};
 use shpd_seedfinder_core::probability_tables::{
     DEEPEST_FLOOR, DEPTHS, FLOOR_SETS, IDENTITY_REPEAT_LIMIT, KINDS, KINDS_ORDER, LINES,
@@ -38,6 +51,7 @@ const DEFAULT_WORLDS: u64 = 200_000;
 #[derive(Clone)]
 struct Tally {
     worlds: u64,
+    by_depth: bool,
     /// [kind][source][depth]: items generated
     counts: Vec<u64>,
     /// [kind][source][depth]: mutually exclusive reward groups, counted once
@@ -71,9 +85,10 @@ struct Tally {
 }
 
 impl Tally {
-    fn new() -> Self {
+    fn new(by_depth: bool) -> Self {
         Self {
             worlds: 0,
+            by_depth,
             counts: vec![0; KINDS * FAMILIES * MAX_SOURCES * DEPTHS],
             slots: vec![0; KINDS * FAMILIES * MAX_SOURCES * DEPTHS],
             prefix: vec![0; KINDS * FAMILIES * DEPTHS],
@@ -134,7 +149,7 @@ fn co_obtainable(masks: &[u64]) -> u64 {
         .max(1)
 }
 
-const MAX_SOURCES: usize = sources().len();
+const MAX_SOURCES: usize = sources().len() * DEPTHS;
 
 /// Melee weapons, thrown weapons, and tipped darts are tallied into separate
 /// bands of every table.
@@ -146,29 +161,57 @@ fn main() {
         .nth(1)
         .and_then(|value| value.parse().ok())
         .unwrap_or(DEFAULT_WORLDS);
-    let tally = measure(worlds);
-    print!("{}", render(&tally));
+    let selected = std::env::args().nth(2).map(|id| {
+        shpd_seedfinder_core::catalog::item_by_stable_id(&id)
+            .filter(|item| item.kind == ItemKind::Trinket)
+            .expect("second argument must name a trinket")
+            .id
+    });
+    let tally = measure(worlds, selected);
+    if let Some(id) = selected {
+        println!(
+            "//! +3 `{}` after the first brewing opportunity; per-floor supplies.",
+            item(id).stable_id
+        );
+    }
+    let output = render(&tally);
+    if selected.is_some() {
+        print!(
+            "{}",
+            compact_profile(&output).replace("use super::{", "use super::super::{")
+        );
+    } else {
+        print!("{output}");
+    }
 }
 
-fn measure(worlds: u64) -> Tally {
+fn measure(worlds: u64, selected: Option<ItemId>) -> Tally {
     let generator = CanonicalMainWorldGenerator::with_challenges(Challenges::NONE);
     let workers =
         std::thread::available_parallelism().map_or(8, std::num::NonZeroUsize::get) as u64;
-    let merged = Mutex::new(Tally::new());
+    let merged = Mutex::new(Tally::new(selected.is_some()));
     let stride = (TOTAL_SEEDS / worlds.max(1)).max(1);
     std::thread::scope(|scope| {
         for worker in 0..workers {
             let generator = &generator;
             let merged = &merged;
             scope.spawn(move || {
-                let mut local = Tally::new();
+                let mut local = Tally::new(selected.is_some());
                 let mut index = worker;
                 while index < worlds {
                     let value = index.wrapping_mul(stride) % TOTAL_SEEDS;
-                    let world = generator.generate(
-                        DungeonSeed::new(value).expect("stride stays inside the seed space"),
-                        DEEPEST_FLOOR,
-                    );
+                    let seed = DungeonSeed::new(value).expect("stride stays inside the seed space");
+                    let world = if selected.is_some() {
+                        generate_main_world_with_trinket(
+                            seed,
+                            DEEPEST_FLOOR,
+                            Challenges::NONE,
+                            selected,
+                        )
+                        .expect("canonical selected generation")
+                    } else {
+                        generator.generate(seed, DEEPEST_FLOOR)
+                    };
                     local.record(&world);
                     index += workers;
                 }
@@ -192,8 +235,9 @@ impl Tally {
                 continue;
             }
             let kind = kind_index(definition.kind) + KINDS * line_index(line_of(candidate.item));
-            let source = source_index(candidate.source);
             let depth = usize::from(candidate.depth) - 1;
+            let source =
+                source_index(candidate.source) * DEPTHS + if self.by_depth { depth } else { 0 };
             let row = kind * MAX_SOURCES + source;
             self.counts[row * DEPTHS + depth] += 1;
             self.totals[row] += 1;
@@ -304,7 +348,7 @@ fn render(tally: &Tally) -> String {
     let mut output = String::new();
     let _ = writeln!(
         output,
-        "//! Equipment supply measured from the canonical v4.0.0-BETA-3 generator.\n\
+        "//! Equipment supply measured from the canonical v4.0.0-BETA-4 generator.\n\
          //!\n\
          //! Generated over {} sampled worlds by\n\
          //! `cargo run --release --example calibrate_probability`. Rerun that\n\
@@ -321,7 +365,34 @@ fn render(tally: &Tally) -> String {
     output
 }
 
+/// Keep generated per-floor tables reviewable: one supply row per line.
+fn compact_profile(output: &str) -> String {
+    let mut compact = String::new();
+    let mut in_row = false;
+    for line in output.lines() {
+        if line.starts_with("pub static SUPPLY:") {
+            compact.push_str("#[rustfmt::skip]\n");
+        }
+        if line == "    Supply {" {
+            compact.push_str("    Supply {");
+            in_row = true;
+        } else if in_row {
+            compact.push(' ');
+            compact.push_str(line.trim());
+            if line == "    }," {
+                compact.push('\n');
+                in_row = false;
+            }
+        } else {
+            compact.push_str(line);
+            compact.push('\n');
+        }
+    }
+    compact
+}
+
 #[allow(clippy::cast_precision_loss)]
+#[allow(clippy::too_many_lines)]
 fn render_supply(tally: &Tally, output: &mut String) {
     let worlds = tally.worlds as f64;
     let _ = writeln!(
@@ -332,9 +403,11 @@ fn render_supply(tally: &Tally, output: &mut String) {
         .into_iter()
         .flat_map(|kind| LINES_ORDER.map(|line| (line, kind)))
     {
-        for &source in sources() {
+        for (source, band) in sources().iter().flat_map(|&source| {
+            (0..if tally.by_depth { DEPTHS } else { 1 }).map(move |band| (source, band))
+        }) {
             let kind_slot = kind_index(kind) + line_index(line) * KINDS;
-            let source_slot = source_index(source);
+            let source_slot = source_index(source) * DEPTHS + band;
             let total = tally.totals[kind_slot * MAX_SOURCES + source_slot];
             if total == 0 {
                 continue;

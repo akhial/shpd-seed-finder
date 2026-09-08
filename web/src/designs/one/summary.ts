@@ -75,6 +75,7 @@ export function requirementTitle(requirement: RequirementState): string {
 
 export function requirementDetails(requirement: RequirementState): string[] {
   const parts: string[] = [];
+  if (requirement.selectTrinket) parts.push("choose at +3");
   if (requirement.upgrade.mode === "exact") parts.push(`exactly +${requirement.upgrade.value}`);
   if (requirement.upgrade.mode === "at_least")
     parts.push(`+${requirement.upgrade.value} or higher`);

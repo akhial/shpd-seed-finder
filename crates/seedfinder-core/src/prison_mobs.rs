@@ -146,7 +146,7 @@ pub fn prison_mob_rotation(depth: u32, random: &mut RandomStack) -> Vec<PrisonMo
         rotation.push(PrisonMobKind::Bat);
     }
     for kind in &mut rotation {
-        if random.float() < 0.02_f32 {
+        if random.float() < 0.02_f32 * random.trinket.exotic_multiplier() {
             *kind = prison_rare_alt(*kind);
         }
     }

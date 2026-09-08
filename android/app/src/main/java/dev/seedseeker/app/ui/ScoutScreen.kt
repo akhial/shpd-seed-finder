@@ -106,6 +106,7 @@ fun ScoutScreen(
     onScoutSeed: (String) -> Unit,
     onSeedChange: (String) -> Unit,
     onScout: () -> Unit,
+    onSelectTrinket: (String) -> Unit,
     onSettings: () -> Unit,
     onAbout: () -> Unit,
     bottomBar: @Composable () -> Unit,
@@ -250,7 +251,7 @@ fun ScoutScreen(
                             val trinkets = floorItems.filter { it.value.item.kind == ItemKind.TRINKET }
                             if (trinkets.isNotEmpty()) {
                                 item(key = "catalyst-$depth") {
-                                    TrinketCatalystCard(trinkets, world.trinketOrder, matches)
+                                    TrinketCatalystCard(trinkets, world.trinketOrder, matches, world.selectedTrinket, !isScouting, onSelectTrinket)
                                 }
                             }
                             floorItems.filter { it.value.item.kind != ItemKind.TRINKET }.forEach { indexedItem ->
@@ -666,11 +667,15 @@ private fun ScoutItemCard(
 
 
 /** The catalyst keeps its placement; its deck retains the engine's order. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TrinketCatalystCard(
     choices: List<IndexedValue<ScoutItem>>,
     deck: List<CatalogItem>,
     matches: ScoutMatches?,
+    selectedTrinket: String?,
+    enabled: Boolean,
+    onSelect: (String) -> Unit,
 ) {
     val catalyst = CatalogItem("trinket_catalyst", "Magical catalyst", ItemKind.TRINKET, 70)
     val placement = choices.first().value
@@ -698,8 +703,13 @@ private fun TrinketCatalystCard(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ordered.forEach { trinket ->
+                    val applied = selectedTrinket == trinket.id
                     val matched = choices.any { it.value.item.id == trinket.id && matches?.items?.contains(it.index) == true }
                     Surface(
+                        selected = applied,
+                        onClick = { onSelect(if (applied) "none" else trinket.id) },
+                        enabled = enabled,
+                        border = if (applied) androidx.compose.foundation.BorderStroke(2.dp, SpdGreen) else null,
                         modifier = Modifier.weight(1f).aspectRatio(1f).semantics {
                             contentDescription = trinket.name + if (matched) ", matches requirement" else ""
                         },
@@ -710,7 +720,8 @@ private fun TrinketCatalystCard(
                             val iconSize = minOf(48.dp, maxWidth * 0.58f)
                             Column(Modifier.fillMaxSize().padding(2.dp), horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.SpaceEvenly) {
-                                ItemSprite(trinket, modifier = Modifier.size(iconSize))
+                                if (applied) Text("Applied +3", style = MaterialTheme.typography.labelSmall, color = SpdGreen)
+                                ItemSprite(trinket, modifier = Modifier.size(if (applied) iconSize * 0.8f else iconSize))
                                 FittedTrinketName(trinket.name)
                             }
                         }

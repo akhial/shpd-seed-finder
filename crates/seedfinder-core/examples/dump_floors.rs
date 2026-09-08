@@ -77,6 +77,12 @@ fn dump(seed: DungeonSeed, max_depth: u8, challenges: Challenges) -> Result<Stri
     let mut quests = QuestState::new();
     let mut shop_run = ShopRunState::default();
     let mut random = RandomStack::with_base_seed(0);
+    let selected = std::env::args()
+        .nth(4)
+        .and_then(|id| shpd_seedfinder_core::catalog::item_by_stable_id(&id))
+        .map(|item| item.id);
+    let mut brewed = false;
+    let mut alchemy_available = false;
     let mut output = String::new();
     writeln!(
         output,
@@ -101,6 +107,12 @@ fn dump(seed: DungeonSeed, max_depth: u8, challenges: Challenges) -> Result<Stri
                 &mut random,
             )
             .map(|floor| {
+                alchemy_available |= floor
+                    .painted
+                    .level
+                    .map
+                    .cells
+                    .contains(&shpd_seedfinder_core::geometry::terrain::ALCHEMY);
                 let mobs = floor
                     .mobs
                     .mobs
@@ -187,6 +199,10 @@ fn dump(seed: DungeonSeed, max_depth: u8, challenges: Challenges) -> Result<Stri
             .map_err(|error| format!("depth {depth}: {error:?}"))?,
         };
         random.pop();
+        if !brewed && alchemy_available && limited_drops.trinket_catalyst_dropped {
+            random.equip_trinket(selected, dungeon_seed);
+            brewed = true;
+        }
         floor.write(depth, &mut output);
     }
     writeln!(output, "quests {:?}", quests.summary()).unwrap();

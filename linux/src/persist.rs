@@ -239,6 +239,7 @@ mod tests {
             upgrade: UpgradeRequirement::AtLeast(2),
             effect: EffectRequirement::exactly(Effect::Weapon(WeaponEffect::Blazing)),
             require_uncursed: true,
+            select_trinket: false,
             source: Some(ItemSource::SacrificialFire),
             identity_group: Some(3),
             max_depth: Some(21),
@@ -309,6 +310,7 @@ mod tests {
         state.requirements.push(UiRequirement {
             effect: EffectRequirement::OneOf(EffectSet::enchantments(ItemKind::Weapon).unwrap()),
             require_uncursed: true,
+            select_trinket: false,
             ..UiRequirement::new(key)
         });
         // Two Rings of Might adding up to +4.
@@ -417,6 +419,20 @@ mod tests {
         let restored =
             decode_state(r#"{"requirements":[{"kind":"wand","tier":{"exact":3}}]}"#).unwrap();
         assert!(restored.requirements.is_empty());
+    }
+
+    #[test]
+    fn selected_trinkets_survive_persistence() {
+        let state =
+            decode_state(r#"{"requirements":[{"item":"mimic_tooth","select_trinket":true}]}"#)
+                .unwrap();
+        assert!(state.requirements[0].select_trinket);
+        assert_eq!(
+            save_document(&state)["requirements"][0]["select_trinket"],
+            true
+        );
+        let restored = decode_state(&save_document(&state).to_string()).unwrap();
+        assert_eq!(restored.unvalidated_query(), state.unvalidated_query());
     }
 
     #[test]

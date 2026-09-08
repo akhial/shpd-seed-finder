@@ -191,3 +191,14 @@ button.stack-badge:hover {
   border-color: @success_color;
   background-color: alpha(@success_color, 0.16);
 }
+
+.trinket-toggle { padding: 0; }
+.trinket-toggle:checked { outline: 2px solid @success_color; }
+.trinket-applied-badge {
+  color: @success_color;
+  background-color: @card_bg_color;
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: bold;
+}

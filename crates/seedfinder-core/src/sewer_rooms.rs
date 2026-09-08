@@ -41,6 +41,9 @@ pub trait SewerRoomContent {
     fn random_item(&mut self, rng: &mut RandomStack) -> PaintItem;
     fn random_category(&mut self, category: GeneratorCategory, rng: &mut RandomStack) -> PaintItem;
     fn random_mimic_reward(&mut self, rng: &mut RandomStack) -> PaintItem;
+    fn random_default_item(&mut self, rng: &mut RandomStack) -> PaintItem {
+        self.random_item(rng)
+    }
 }
 
 /// Exact canonical content provider backed by the live run Generator and the
@@ -52,6 +55,12 @@ pub struct GeneratorRoomContent<'a> {
 }
 
 impl SewerRoomContent for GeneratorRoomContent<'_> {
+    fn random_default_item(&mut self, rng: &mut RandomStack) -> PaintItem {
+        generator::random_using_defaults_overall(rng, self.generator, self.depth)
+            .expect("valid default deck")
+            .into()
+    }
+
     fn find_prize_item(&mut self, rng: &mut RandomStack) -> Option<PaintItem> {
         if self.items_to_spawn.is_empty() {
             return None;
@@ -1314,7 +1323,7 @@ impl<C: SewerRoomContent> SewerRoomDispatcher<C> {
         fill_room_margin(level, &rooms[room], 3, terrain::WATER);
         let fish_count = div_i32(rooms[room].width().min(rooms[room].height()) - 4, 3);
         for _ in 0..fish_count {
-            let phantom = rng.float() < 1.0_f32 / 50.0_f32;
+            let phantom = rng.float() < (1.0_f32 / 50.0_f32) * rng.trinket.exotic_multiplier();
             let cell = loop {
                 let point = random_room_point(&rooms[room], 3, rng);
                 let cell = level.point_to_cell(point);
@@ -1663,12 +1672,13 @@ impl<C: SewerRoomContent> SewerRoomDispatcher<C> {
         let center = rooms[room].center(rng);
         let cell = level.point_to_cell(center);
         level.map.cells[cell] = terrain::PEDESTAL;
-        if rng.float() < 1.0_f32 / 3.0_f32 {
+        if rng.float() < (1.0_f32 / 3.0_f32) * rng.trinket.mimic_multiplier() {
             let reward = self.content.random_mimic_reward(rng);
-            level.add_mob(PaintMob::Mimic {
-                cell,
-                items: vec![item, reward],
-            });
+            let mut items = vec![item, reward];
+            if rng.trinket.is(crate::catalog::ItemId::MimicTooth) {
+                items.push(self.content.random_default_item(rng));
+            }
+            level.add_mob(PaintMob::Mimic { cell, items });
         } else {
             level.drop_item(item, cell, HeapKind::Chest);
         }

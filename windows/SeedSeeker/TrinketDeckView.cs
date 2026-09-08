@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
 
 namespace SeedSeeker;
@@ -8,7 +9,7 @@ namespace SeedSeeker;
 /// <summary>The catalyst deck in its seeded order, using Fluent cards and pixel art.</summary>
 public sealed class TrinketDeckView : StackPanel
 {
-    public TrinketDeckView(IReadOnlyList<CatalogItem> order, IReadOnlySet<string> matches)
+    public TrinketDeckView(IReadOnlyList<CatalogItem> order, IReadOnlySet<string> matches, string? selectedTrinket, Action<string> onSelect)
     {
         Spacing = 10;
         Margin = new Thickness(0, 12, 0, 6);
@@ -17,29 +18,38 @@ public sealed class TrinketDeckView : StackPanel
         foreach (var (item, index) in order.Take(4).Select((item, index) => (item, index)))
         {
             var matched = matches.Contains(item.Id);
-            var card = new Border
+            var applied = selectedTrinket == item.Id;
+            var card = new ToggleButton
             {
-                CornerRadius = new CornerRadius(6), BorderThickness = new Thickness(1),
-                Background = Resource(matched ? "SystemFillColorSuccessBackgroundBrush" : "CardBackgroundFillColorDefaultBrush"),
-                BorderBrush = Resource(matched ? "SystemFillColorSuccessBrush" : "CardStrokeColorDefaultBrush"),
+                CornerRadius = new CornerRadius(6), BorderThickness = new Thickness(applied ? 2 : 1),
+                IsChecked = applied, Padding = new Thickness(0), HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                VerticalContentAlignment = VerticalAlignment.Stretch,
+                Background = Resource(applied ? "SystemFillColorSuccessBackgroundBrush" : "CardBackgroundFillColorDefaultBrush"),
+                BorderBrush = Resource(applied || matched ? "SystemFillColorSuccessBrush" : "CardStrokeColorDefaultBrush"),
             };
-            AutomationProperties.SetName(card, item.Name + (matched ? ", matches requirement" : ""));
+            AutomationProperties.SetName(card, item.Name + (applied ? ", applied at +3" : "") + (matched ? ", matches requirement" : ""));
+            card.Click += (_, _) => { card.IsChecked = applied; onSelect(applied ? "none" : item.Id); };
             ToolTipService.SetToolTip(card, item.Name);
             var body = new Grid { Padding = new Thickness(5) };
+            body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(16) });
             body.RowDefinitions.Add(new RowDefinition());
             body.RowDefinitions.Add(new RowDefinition { Height = new GridLength(20) });
             var sprite = new SpriteView { SpriteIndex = item.SpriteIndex, SpriteSize = 48,
                 HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
-            body.Children.Add(sprite);
+            Grid.SetRow(sprite, 1); body.Children.Add(sprite);
             var name = new Viewbox { Stretch = Stretch.Uniform, StretchDirection = StretchDirection.DownOnly,
                 HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(0, 2, 0, 2),
                 Child = new TextBlock { Text = item.Name, FontSize = 12, TextWrapping = TextWrapping.NoWrap } };
-            Grid.SetRow(name, 1); body.Children.Add(name); card.Child = body;
+            Grid.SetRow(name, 2); body.Children.Add(name);
+            if (applied) body.Children.Add(new TextBlock { Text = "Applied +3", FontSize = 11,
+                HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Top,
+                Foreground = Resource("SystemFillColorSuccessBrush") });
+            card.Content = body;
             card.SizeChanged += (_, _) =>
             {
                 if (card.ActualWidth <= 0) return;
                 card.Height = card.ActualWidth;
-                sprite.SpriteSize = Math.Max(1, Math.Floor(Math.Min(48, Math.Min(card.ActualWidth - 12, card.ActualWidth - 34))));
+                sprite.SpriteSize = Math.Max(1, Math.Floor(Math.Min(48, Math.Min(card.ActualWidth - 12, card.ActualWidth - 50))));
             };
             Grid.SetColumn(card, index); choices.Children.Add(card);
         }

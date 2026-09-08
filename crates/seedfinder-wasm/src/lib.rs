@@ -9,7 +9,7 @@ use shpd_seedfinder_core::engine_info::document as engine_info_document;
 use shpd_seedfinder_core::feasibility::QueryPlan;
 use shpd_seedfinder_core::json_query;
 use shpd_seedfinder_core::main_world::{
-    CanonicalMainWorldGenerator, ConfiguredMainWorldGenerator, generate_main_world_with_challenges,
+    CanonicalMainWorldGenerator, ConfiguredMainWorldGenerator, generate_main_world_with_trinket,
 };
 use shpd_seedfinder_core::model::{Accessibility, ItemSource, WorldItem};
 use shpd_seedfinder_core::probability::estimate_match_probability;
@@ -58,6 +58,9 @@ enum AnalysisOutput {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ScoutRequest {
+    /// Missing uses the query; "none" explicitly disables the selected trinket.
+    #[serde(default)]
+    trinket: Option<String>,
     seed: String,
     #[serde(default)]
     challenges: Vec<FileChallenge>,
@@ -98,6 +101,7 @@ impl From<FileChallenge> for Challenges {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ScoutOutput {
+    selected_trinket: Option<&'static str>,
     trinket_order: Vec<TrinketOutput>,
     seed: SeedOutput,
     quests: Vec<ScoutQuestOutput>,
@@ -539,7 +543,27 @@ fn scout_impl(request_json: &str) -> Result<String, String> {
         .query
         .map(|value| json_query::decode(&value.to_string()))
         .transpose()?;
-    let world = generate_main_world_with_challenges(seed, 24, challenges)
+    let selected = match request.trinket.as_deref() {
+        None => query.as_ref().and_then(|q| {
+            shpd_seedfinder_core::trinkets::resolve_selection(
+                seed,
+                &shpd_seedfinder_core::trinkets::selection_slots(q),
+            )
+        }),
+        Some("none") => None,
+        Some(id) => {
+            let selected = shpd_seedfinder_core::catalog::item_by_stable_id(id)
+                .ok_or_else(|| format!("unknown trinket: {id}"))?
+                .id;
+            if !shpd_seedfinder_core::trinkets::trinket_order(seed)[..4].contains(&selected) {
+                return Err(
+                    "selected trinket must be one of the four initial catalyst offers".to_owned(),
+                );
+            }
+            Some(selected)
+        }
+    };
+    let world = generate_main_world_with_trinket(seed, 24, challenges, selected)
         .map_err(|error| format!("world generation failed: {error}"))?;
     let marks = query.as_ref().map(|query| scout_matches(&world, query));
     let matched_requirements = marks.as_ref().map_or(0, |marks| marks.matched_requirements);
@@ -552,6 +576,7 @@ fn scout_impl(request_json: &str) -> Result<String, String> {
         .map(|(world_item, matched)| scout_item_output(world_item, matched))
         .collect();
     Ok(to_json(&ScoutOutput {
+        selected_trinket: selected.map(|id| item(id).stable_id),
         seed: seed.into(),
         trinket_order: shpd_seedfinder_core::trinkets::trinket_order(seed)
             .into_iter()
@@ -736,6 +761,61 @@ mod tests {
         encode_share_link_impl, engine_info, engine_info_document, filter_seeds_impl,
         format_seed_code, parse_seed_code_impl, query_continues_impl, scout_impl,
     };
+
+    #[test]
+    fn selected_search_filters_using_postbrew_loot() {
+        // These seeds gain a +1 Hand Axe in a golden mimic by floor 6 with
+        // Mimic Tooth. Searching the unselected profile loses seed zero.
+        let chosen = r#"{"requirements":[{"item":"mimic_tooth","select_trinket":true},{"item":"hand_axe","upgrade":{"exact":1},"source":"golden_mimic","max_depth":6}],"max_depth":24}"#;
+        let candidates = (0..12).map(f64::from).collect::<Vec<_>>();
+        let kept: Value =
+            serde_json::from_str(&filter_seeds_impl(chosen, &candidates).unwrap()).unwrap();
+        assert_eq!(
+            kept.as_array()
+                .unwrap()
+                .iter()
+                .map(|s| s["value"].as_u64().unwrap())
+                .collect::<Vec<_>>(),
+            vec![0, 5]
+        );
+        let unselected = chosen.replace(",\"select_trinket\":true", "");
+        let other: Value =
+            serde_json::from_str(&filter_seeds_impl(&unselected, &[0.0]).unwrap()).unwrap();
+        assert!(other.as_array().unwrap().is_empty());
+        let mut session = SearchSession::new_impl(chosen, 0.0, 12.0).unwrap();
+        let batch: Value = serde_json::from_str(&session.advance(12)).unwrap();
+        assert_eq!(batch["matches"], kept);
+    }
+
+    #[test]
+    fn scout_selection_defaults_overrides_and_validation() {
+        let query =
+            serde_json::json!({"requirements":[{"item":"mimic_tooth","select_trinket":true}]});
+        let mut request = serde_json::json!({"seed":"AAA-AAA-AAA", "query":query});
+        let selected: serde_json::Value =
+            serde_json::from_str(&scout_impl(&request.to_string()).unwrap()).unwrap();
+        assert_eq!(selected["selectedTrinket"], "mimic_tooth");
+        request["trinket"] = "none".into();
+        let none: serde_json::Value =
+            serde_json::from_str(&scout_impl(&request.to_string()).unwrap()).unwrap();
+        assert!(none["selectedTrinket"].is_null());
+        assert_ne!(none["items"], selected["items"]);
+        for id in [
+            "mimic_tooth",
+            "parchment_scrap",
+            "dimensional_sundial",
+            "thirteen_leaf_clover",
+        ] {
+            request["trinket"] = id.into();
+            let result: serde_json::Value =
+                serde_json::from_str(&scout_impl(&request.to_string()).unwrap()).unwrap();
+            assert_eq!(result["selectedTrinket"], id);
+        }
+        for id in ["rat_skull", "not_a_trinket", "longsword"] {
+            request["trinket"] = id.into();
+            assert!(scout_impl(&request.to_string()).is_err());
+        }
+    }
 
     #[test]
     fn query_continuation_matches_scope_and_requirement_multiset() {
