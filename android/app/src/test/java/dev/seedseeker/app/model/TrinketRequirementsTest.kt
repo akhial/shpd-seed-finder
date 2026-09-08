@@ -24,6 +24,26 @@ class TrinketRequirementsTest {
         assertFalse(document.toString().contains("upgrade"))
     }
 
+    @Test fun selectedTrinketSurvivesCanonicalQueryRoundTrip() {
+        val selected = ItemRequirement(
+            key = 0, item = ItemCatalog.trinkets.first(), upgrade = 0,
+            upgradeMatch = UpgradeMatch.ANY, selectTrinket = true,
+        )
+        val document = ResultsExport.encodeQuery(SearchRequest(listOf(selected)))
+        assertTrue(document.getJSONArray("requirements").getJSONObject(0).getBoolean("select_trinket"))
+        assertTrue(ResultsExport.decodeQuery(document).requirements.single().selectTrinket)
+        val preset = ResultsExport.decodeQuery(document)
+        assertTrue(DeepLink.decode(DeepLink.encodeLink(preset)).requirements.single().selectTrinket)
+        assertTrue(ResultsExport.decode(ResultsExport.encode(preset, emptyList(), "test")).query.requirements.single().selectTrinket)
+        assertTrue(selected.description.contains("choose at +3"))
+        val plain = ResultsExport.encodeQuery(SearchRequest(listOf(selected.copy(selectTrinket = false))))
+        assertFalse(plain.toString().contains("select_trinket"))
+        assertFalse(ResultsExport.decodeQuery(plain).requirements.single().selectTrinket)
+        assertThrows(IllegalArgumentException::class.java) {
+            ItemRequirement(key = 0, item = ItemCatalog.weapons.first(), upgrade = 1, selectTrinket = true)
+        }
+    }
+
     @Test fun wildcardTrinketIsRejected() {
         assertThrows(IllegalArgumentException::class.java) {
             ItemRequirement(key = 0, item = null, kind = ItemKind.TRINKET, upgrade = 0, upgradeMatch = UpgradeMatch.ANY)

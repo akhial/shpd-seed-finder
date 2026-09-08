@@ -350,6 +350,7 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
     public var identityGroup: Int?
     public var maximumDepth: Int?
     public var requireUncursed: Bool
+    public var selectTrinket: Bool
     /// Requirements sharing a group are alternatives for one slot: any member
     /// satisfies it. The number is session-local; documents renumber.
     public var alternativeGroup: Int?
@@ -366,7 +367,9 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
                 upgradeMatch: UpgradeMatch = .exactly,
                 source: ScoutItemSource? = nil, identityGroup: Int? = nil,
                 maximumDepth: Int? = nil, requireUncursed: Bool = false,
-                alternativeGroup: Int? = nil, levelSum: LevelSum? = nil) throws {
+                alternativeGroup: Int? = nil, levelSum: LevelSum? = nil,
+                selectTrinket: Bool = false) throws {
+        guard !selectTrinket || (kind == .trinket && item != nil) else { throw ModelValidationError.itemKind }
         guard kind != .trinket || item != nil else { throw ModelValidationError.itemKind }
         guard item == nil || item.map(kind.accepts) == true else { throw ModelValidationError.itemKind }
         let tierable = item == nil && (kind.family == .weapon || kind.family == .armor)
@@ -408,6 +411,7 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
         self.identityGroup = identityGroup
         self.maximumDepth = maximumDepth
         self.requireUncursed = requireUncursed
+        self.selectTrinket = selectTrinket
         self.alternativeGroup = alternativeGroup
         self.levelSum = levelSum
     }
@@ -441,7 +445,7 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case key, item, upgrade, modifier, effect, kind, tier, tierMatch, upgradeMatch, source
-        case identityGroup, maximumDepth, requireUncursed, alternativeGroup, levelSum
+        case identityGroup, maximumDepth, requireUncursed, alternativeGroup, levelSum, selectTrinket
     }
 
     /// How the saved-query JSON spells the effect filter, beside the classic
@@ -477,7 +481,8 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
             maximumDepth: values.decodeIfPresent(Int.self, forKey: .maximumDepth).map(FloorLimits.normalize),
             requireUncursed: values.decodeIfPresent(Bool.self, forKey: .requireUncursed) ?? false,
             alternativeGroup: values.decodeIfPresent(Int.self, forKey: .alternativeGroup),
-            levelSum: values.decodeIfPresent(LevelSum.self, forKey: .levelSum)
+            levelSum: values.decodeIfPresent(LevelSum.self, forKey: .levelSum),
+            selectTrinket: values.decodeIfPresent(Bool.self, forKey: .selectTrinket) ?? false
         )
     }
 
@@ -499,6 +504,7 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
         try values.encodeIfPresent(identityGroup, forKey: .identityGroup)
         try values.encodeIfPresent(maximumDepth, forKey: .maximumDepth)
         try values.encode(requireUncursed, forKey: .requireUncursed)
+        try values.encode(selectTrinket, forKey: .selectTrinket)
         try values.encodeIfPresent(alternativeGroup, forKey: .alternativeGroup)
         try values.encodeIfPresent(levelSum, forKey: .levelSum)
     }
@@ -520,6 +526,7 @@ public struct ItemRequirement: Codable, Hashable, Identifiable, Sendable {
         }
         if let effect = effect.label(for: kind) { text += " • \(effect)" }
         if requireUncursed { text += " • uncursed" }
+        if selectTrinket { text += " • choose at +3" }
         if let source { text += " • \(source.label)" }
         // The board says the relationships — a stack through its ×N badge, a
         // combined level through its Σ badge — so the line names only what the
@@ -696,10 +703,12 @@ public struct ScoutWorld: Sendable {
     /// fixture, a stub engine) falls back to the catalog's own table.
     public let ringGems: RingGems
     public let trinketOrder: [CatalogItem]
+    public let selectedTrinket: String?
     public init(seed: String, quests: [ScoutQuest] = [], items: [ScoutItem],
-                ringGems: RingGems = .catalogDefault, trinketOrder: [CatalogItem] = []) {
+                ringGems: RingGems = .catalogDefault, trinketOrder: [CatalogItem] = [], selectedTrinket: String? = nil) {
         self.seed = seed; self.quests = quests; self.items = items; self.ringGems = ringGems
         self.trinketOrder = trinketOrder
+        self.selectedTrinket = selectedTrinket
     }
 }
 

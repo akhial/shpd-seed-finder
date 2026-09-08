@@ -110,7 +110,7 @@ private data class SearchRun(
     val refine: RefineSpec? = null,
 )
 
-private data class ScoutRun(val id: Long, val seed: String, val challenges: Int)
+private data class ScoutRun(val id: Long, val seed: String, val challenges: Int, val query: SearchRequest?, val trinket: String? = null)
 
 /**
  * Link text received through an incoming intent. A plain class, not a data
@@ -544,7 +544,7 @@ fun SeedFinderApp(
         scoutResult = null
         try {
             scoutResult = withContext(Dispatchers.Default) {
-                engine.scoutSeed(currentRun.seed, currentRun.challenges)
+                engine.scoutSelectedSeed(currentRun.seed, currentRun.challenges, currentRun.query, currentRun.trinket)
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -552,16 +552,6 @@ fun SeedFinderApp(
             scoutError = failure.message ?: "The native scout could not generate this seed."
         } finally {
             isScouting = false
-        }
-    }
-
-    fun scoutSeed(seed: String) {
-        val formatted = SeedCode.formatInput(seed)
-        scoutInput = formatted
-        scoutError = null
-        destination = Destination.SCOUT
-        if (SeedCode.isCanonical(formatted)) {
-            scoutRun = ScoutRun(nextScoutRunId++, formatted, challenges)
         }
     }
 
@@ -579,6 +569,16 @@ fun SeedFinderApp(
             wandmakerQuest = wandmakerQuest,
         )
     }.getOrNull()
+    fun scoutSeed(seed: String) {
+        val formatted = SeedCode.formatInput(seed)
+        scoutInput = formatted
+        scoutError = null
+        destination = Destination.SCOUT
+        if (SeedCode.isCanonical(formatted)) {
+            scoutRun = ScoutRun(nextScoutRunId++, formatted, challenges, currentRequest)
+        }
+    }
+
     // Anything a Clear would actually erase: listed seeds, the Target and refine base,
     // or the status/notice lines the results area still shows.
     val canClearResults = results.isNotEmpty() || target != null || lastFinishedRun != null ||
@@ -604,13 +604,13 @@ fun SeedFinderApp(
     val scoutMatches by produceState<ScoutMatches?>(null, scoutResult, currentRequest) {
         val world = scoutResult
         val request = currentRequest
-        val scoutedChallenges = scoutRun?.challenges
-        value = if (world == null || request == null || scoutedChallenges == null) {
+        val completedRun = scoutRun
+        value = if (world == null || request == null || completedRun == null) {
             null
         } else {
             withContext(Dispatchers.Default) {
                 runCatching {
-                    engine.scoutMatches(world.seed, scoutedChallenges, request)
+                    engine.scoutSelectedMatches(world.seed, completedRun.challenges, request, completedRun.query, completedRun.trinket)
                 }.getOrNull()
             }
         }
@@ -816,9 +816,15 @@ fun SeedFinderApp(
                     if (formatted != scoutResult?.seed) scoutResult = null
                     scoutError = null
                 },
+                onSelectTrinket = { trinket ->
+                    val previous = scoutRun
+                    if (!isScouting && previous != null && scoutResult != null) {
+                        scoutRun = previous.copy(id = nextScoutRunId++, trinket = trinket)
+                    }
+                },
                 onScout = {
                     if (SeedCode.isCanonical(scoutInput)) {
-                        scoutRun = ScoutRun(nextScoutRunId++, scoutInput, challenges)
+                        scoutRun = ScoutRun(nextScoutRunId++, scoutInput, challenges, currentRequest)
                     }
                 },
                 onSettings = {

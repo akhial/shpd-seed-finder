@@ -73,7 +73,7 @@ challenge-effects limitation. Calibration averages brewing timing across
 catalyst placements rather than conditioning equipment supply on an explicit
 catalyst floor filter.
 
-Click any of the four initial-choice cards in the web scout to apply it, or
+Click any of the four initial-choice cards in the scout to apply it, or
 click the applied card again to clear the selection. An override
 regenerates that seed with the same brewing timing and can be changed back to
 the original match. A new scout request starts from the query's selection.
@@ -83,7 +83,7 @@ omitting it resolves the query automatically. Responses include
 
 Queries without selection keep their version-4 share codes. Selected queries
 use version 5; both versions decode in this release. The selection controls
-and scout overrides are integrated in the web UI only.
+and scout overrides are integrated in web, Windows, macOS, Linux, and Android.
 
 Web, Windows, macOS, Linux, and Android share named trinket search and OR
 semantics. Each scout uses four square initial-choice cards, a flat green
@@ -91,7 +91,7 @@ matched border/fill, single-line names that shrink to fit, and one row of 13
 smaller nearest-neighbor icons below "Remaining deck order." The platform's
 own controls, typography, and colors provide the surrounding UI.
 
-Native production scout responses use `SSC4`: the existing `SSC3` layout,
+Legacy native scout responses use `SSC4`: the existing `SSC3` layout,
 with its magic changed, followed after the item records by `trinket_count:u8`
 (equal to 17) and 17 `stable_item_id:utf8_u16` strings in draw order. The
 four initial choices are ordinary item records carrying catalyst placement
@@ -101,6 +101,16 @@ typed generator and `trinket_order(seed)` directly. The shared Android catalog
 asset supplies the same 17 title-case names and sprites to every platform.
 Query JSON and share-link codecs use category code 6 and appended item codes,
 preserving existing links.
+
+Selected native scouting uses `SSQ3`: four magic bytes, a little-endian u16
+challenge mask, a little-endian u16-length UTF-8 seed, a little-endian
+u16-length UTF-8 override, and the canonical query JSON in all remaining
+bytes (empty is allowed). An empty override resolves the query, `none`
+deselects, and a stable ID must name one of the four initial offers.
+The response uses `SSC5`, extending `SSC4` with one big-endian u16-length
+selected stable ID; an empty string means no selection. Scout matches must
+use the same request bytes so item indices refer to the selected world.
+Linux uses `production_scout_world_selected` directly with equivalent semantics.
 
 `TrinketOracle` verifies the order against the pinned BETA-4 desktop JAR:
 

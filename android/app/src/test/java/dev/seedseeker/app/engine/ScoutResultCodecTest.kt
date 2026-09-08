@@ -43,6 +43,40 @@ class ScoutResultCodecTest {
     }
 
     @Test
+    fun ssc5ReadsSelectionAndRejectsAnUnofferedTrinket() {
+        val deck = dev.seedseeker.app.catalog.ItemCatalog.trinkets
+        fun packet(selected: String): ByteArray {
+            val prefix = scoutPacket().also { it[3] = '5'.code.toByte() }
+            val tail = ByteArrayOutputStream().use { bytes ->
+                DataOutputStream(bytes).use { output ->
+                    output.writeByte(deck.size)
+                    deck.forEach { writeShortString(output, it.id) }
+                    writeShortString(output, selected)
+                }
+                bytes.toByteArray()
+            }
+            return prefix + tail
+        }
+        assertEquals(deck[1].id, ScoutResultCodec.decode(packet(deck[1].id)).selectedTrinket)
+        assertEquals(null, ScoutResultCodec.decode(packet("")).selectedTrinket)
+        assertThrows(IllegalStateException::class.java) { ScoutResultCodec.decode(packet(deck[4].id)) }
+    }
+
+    @Test
+    fun selectedScoutRequestIncludesOverrideAndCanonicalQuery() {
+        val request = dev.seedseeker.app.model.SearchRequest(listOf(
+            dev.seedseeker.app.model.ItemRequirement(
+                key = 0, item = dev.seedseeker.app.catalog.ItemCatalog.trinkets.first(), upgrade = 0,
+                upgradeMatch = dev.seedseeker.app.model.UpgradeMatch.ANY, selectTrinket = true,
+            ),
+        ))
+        val packet = ScoutRequestCodec.encode("AAA-AAA-AAA", 257, request, "none")
+        assertArrayEquals(byteArrayOf(83, 83, 81, 51, 1, 1, 11, 0), packet.copyOfRange(0, 8))
+        assertArrayEquals(byteArrayOf(4, 0, 110, 111, 110, 101), packet.copyOfRange(19, 25))
+        assertArrayEquals(QueryDocument.encode(request), packet.copyOfRange(25, packet.size))
+    }
+
+    @Test
     fun decodesAllSsc3FieldsWithoutDroppingDuplicateOrZeroUpgradeItems() {
         val packet = scoutPacket(
             item(
@@ -346,8 +380,8 @@ class ScoutResultCodecTest {
 
         val bindings = ScoutBindings(scoutPacket(gems = SHUFFLED_GEMS))
         val world = JniNativeSeedFinder(bindings).scoutSeed("AAA-AAA-AAA")
-        val request = byteArrayOf('S'.code.toByte(), 'S'.code.toByte(), 'Q'.code.toByte(), '2'.code.toByte(), 0, 0) +
-            "AAA-AAA-AAA".toByteArray(StandardCharsets.UTF_8)
+        val request = byteArrayOf('S'.code.toByte(), 'S'.code.toByte(), 'Q'.code.toByte(), '3'.code.toByte(), 0, 0, 11, 0) +
+            "AAA-AAA-AAA".toByteArray(StandardCharsets.UTF_8) + byteArrayOf(0, 0)
         assertArrayEquals(request, bindings.scoutRequest)
         // The items and the gems are two halves of one run, and one engine call
         // hands back both, so the table lands on the world it describes.
@@ -364,8 +398,8 @@ class ScoutResultCodecTest {
     @Test
     fun scoutRequestEncodesChallengeMaskLittleEndian() {
         assertArrayEquals(
-            byteArrayOf('S'.code.toByte(), 'S'.code.toByte(), 'Q'.code.toByte(), '2'.code.toByte(), 1, 1) +
-                "AAA-AAA-AAA".toByteArray(StandardCharsets.UTF_8),
+            byteArrayOf('S'.code.toByte(), 'S'.code.toByte(), 'Q'.code.toByte(), '3'.code.toByte(), 1, 1, 11, 0) +
+                "AAA-AAA-AAA".toByteArray(StandardCharsets.UTF_8) + byteArrayOf(0, 0),
             ScoutRequestCodec.encode("AAA-AAA-AAA", 257),
         )
         assertThrows(IllegalArgumentException::class.java) {

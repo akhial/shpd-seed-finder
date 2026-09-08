@@ -62,6 +62,7 @@ class PresetStorageTest {
                 ItemRequirement(3, null, 0, kind = ItemKind.ARMOR, upgradeMatch = UpgradeMatch.ANY, effect = EffectFilter.AnyEnchantment),
                 ItemRequirement(4, ItemCatalog.findById("ring_might"), 0, upgradeMatch = UpgradeMatch.ANY, levelSum = LevelSum(2, 4)),
                 ItemRequirement(5, ItemCatalog.findById("ring_might"), 0, upgradeMatch = UpgradeMatch.ANY, levelSum = LevelSum(2, 4)),
+                ItemRequirement(6, ItemCatalog.trinkets.first(), 0, upgradeMatch = UpgradeMatch.ANY, selectTrinket = true),
             ),
         )
         storage.save(listOf(QueryPreset(id = "new", name = "New preset", query = query)))

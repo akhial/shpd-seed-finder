@@ -49,6 +49,7 @@ describe("offered trinket pilot", () => {
     expect(html.match(/<button /g)).toHaveLength(4);
     expect(html).not.toContain("No Trinket");
     expect(html).not.toContain("Click a trinket");
+    expect(html).not.toContain("Applied trinket");
     expect(html).toContain(`aria-label="Apply ${order[1].name} at +3" aria-pressed="true"`);
     expect(html).toContain("Applied +3");
     expect(html).not.toContain(`aria-label="Apply ${order[4].name}`);

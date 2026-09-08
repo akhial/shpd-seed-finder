@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 pub mod json;
 
+use shpd_seedfinder_core::catalog::ItemId;
 use shpd_seedfinder_core::challenges::Challenges;
 use shpd_seedfinder_core::feasibility::QueryPlan;
 use shpd_seedfinder_core::main_world::{CanonicalMainWorldGenerator, ConfiguredMainWorldGenerator};
@@ -25,8 +26,8 @@ use shpd_seedfinder_core::search::{
 };
 use shpd_seedfinder_core::seed::{DungeonSeed, TOTAL_SEEDS};
 use shpd_seedfinder_core::wire::{
-    WireError, decode_query, decode_scout_request, encode_results, encode_scout_world,
-    encode_scout_world_with_trinkets,
+    WireError, decode_query, decode_scout_request, decode_selected_scout_request, encode_results,
+    encode_scout_world, encode_scout_world_with_selection, encode_scout_world_with_trinkets,
 };
 
 pub const STATE_RUNNING: i64 = 0;
@@ -124,20 +125,59 @@ pub fn protected_scout_seed_packet<G: WorldGenerator + ?Sized>(
         .map_err(ScoutCallError::Packet)
 }
 
-/// Scouts one world with the canonical production generator selected by the
-/// `SSQ2` challenge mask. Legacy raw UTF-8 seed requests use mask zero.
+/// Scouts a production world using the request's challenge mask and selection.
+/// `SSQ3` carries a query and override; legacy requests use no trinket.
 ///
 /// # Errors
 ///
 /// Returns a packet error or a contained generation panic.
 pub fn production_scout_packet(request: &[u8]) -> Result<Vec<u8>, ScoutCallError> {
-    let (seed, challenges) = decode_scout_request(request)
+    let decoded = decode_selected_scout_request(request)
         .map_err(ScoutPacketError::Request)
         .map_err(ScoutCallError::Packet)?;
-    let world = production_scout_world(seed, challenges)?;
-    encode_scout_world_with_trinkets(&world)
+    let (world, selected) = production_scout_world_selected(
+        decoded.seed,
+        decoded.challenges,
+        decoded.query.as_ref(),
+        decoded.trinket_override,
+    )?;
+    let packet = if request.starts_with(b"SSQ3") {
+        encode_scout_world_with_selection(&world, selected)
+    } else {
+        encode_scout_world_with_trinkets(&world)
+    };
+    packet
         .map_err(ScoutPacketError::Response)
         .map_err(ScoutCallError::Packet)
+}
+
+/// Scouts with automatic query selection or an explicit initial-offer override.
+/// A nested `None` explicitly deselects; an absent override resolves the query.
+///
+/// # Errors
+/// Rejects overrides outside the initial offers and contains generation failures.
+pub fn production_scout_world_selected(
+    seed: DungeonSeed,
+    challenges: Challenges,
+    query: Option<&SearchQuery>,
+    trinket_override: Option<Option<ItemId>>,
+) -> Result<(GeneratedWorld, Option<ItemId>), ScoutCallError> {
+    use shpd_seedfinder_core::trinkets::{resolve_selection, selection_slots, trinket_order};
+    let selected = trinket_override
+        .unwrap_or_else(|| query.and_then(|q| resolve_selection(seed, &selection_slots(q))));
+    if selected.is_some_and(|id| !trinket_order(seed)[..4].contains(&id)) {
+        return Err(ScoutCallError::Packet(ScoutPacketError::Request(
+            WireError::InvalidTrinketOrder,
+        )));
+    }
+    let world = catch_unwind(AssertUnwindSafe(|| {
+        shpd_seedfinder_core::main_world::generate_main_world_with_trinket(
+            seed, 24, challenges, selected,
+        )
+    }))
+    .map_err(|_| ScoutCallError::Panicked)?
+    .map_err(|_| ScoutCallError::Panicked)?;
+    Ok((world, selected))
 }
 
 /// Scouts one depth-24 world with the cached canonical production generator,
@@ -164,11 +204,11 @@ pub enum ScoutMatchError {
     Panicked,
 }
 
-/// Scouts the world named by an `SSQ2` (or legacy raw seed) scout request and
+/// Scouts the world named by a versioned (or legacy raw seed) scout request and
 /// reports which of its items satisfy the query in `query_packet`.
 ///
 /// The world is generated exactly like [`production_scout_packet`]'s, so the
-/// reported item indices address the item list of the `SSC3` packet that
+/// reported item indices address the item list of the scout packet that
 /// request produces.
 ///
 /// # Errors
@@ -179,9 +219,15 @@ pub fn production_scout_matches(
     request: &[u8],
     query_packet: &[u8],
 ) -> Result<ScoutMatches, ScoutMatchError> {
-    let (seed, challenges) = decode_scout_request(request).map_err(ScoutMatchError::Request)?;
+    let decoded = decode_selected_scout_request(request).map_err(ScoutMatchError::Request)?;
     let query = decode_query(query_packet).map_err(ScoutMatchError::Query)?;
-    let world = production_scout_world(seed, challenges).map_err(|_| ScoutMatchError::Panicked)?;
+    let (world, _) = production_scout_world_selected(
+        decoded.seed,
+        decoded.challenges,
+        decoded.query.as_ref(),
+        decoded.trinket_override,
+    )
+    .map_err(|_| ScoutMatchError::Panicked)?;
     Ok(scout_matches(&world, &query))
 }
 
@@ -1285,6 +1331,51 @@ mod tests {
         assert!(decide_start_packets(b"bad", None, false, true, None).is_err());
         assert!(decide_start_packets(&packet(&target), Some(b"bad"), false, true, None).is_err());
         assert!(decide_start_packets(&packet(&target), None, false, true, Some(b"bad")).is_err());
+    }
+
+    #[test]
+    fn selected_scout_packet_and_marks_use_the_same_override_world() {
+        use shpd_seedfinder_core::{catalog::item, trinkets::trinket_order};
+        let seed = DungeonSeed::from_code("AAA-AAA-AAF").unwrap();
+        let offered = trinket_order(seed);
+        let selected_id = item(offered[0]).stable_id;
+        let query =
+            format!(r#"{{"requirements":[{{"item":"{selected_id}","select_trinket":true}}]}}"#);
+        let decoded_query = decode_query(query.as_bytes()).unwrap();
+        let request = |choice: &str| {
+            let mut bytes = b"SSQ3\x00\x00".to_vec();
+            for text in ["AAA-AAA-AAF", choice] {
+                bytes.extend_from_slice(&u16::try_from(text.len()).unwrap().to_le_bytes());
+                bytes.extend_from_slice(text.as_bytes());
+            }
+            bytes.extend_from_slice(query.as_bytes());
+            bytes
+        };
+        for (choice, selected) in [
+            ("", Some(offered[0])),
+            ("none", None),
+            (item(offered[1]).stable_id, Some(offered[1])),
+        ] {
+            let request = request(choice);
+            let packet = production_scout_packet(&request).unwrap();
+            assert_eq!(&packet[..4], b"SSC5");
+            let world = decode_scout_world(&packet).unwrap();
+            let (expected, actual_selection) = production_scout_world_selected(
+                seed,
+                Challenges::NONE,
+                Some(&decoded_query),
+                Some(selected),
+            )
+            .unwrap();
+            assert_eq!(actual_selection, selected);
+            assert_eq!(world, expected);
+            let marks = production_scout_matches(&request, query.as_bytes()).unwrap();
+            assert_eq!(marks.matched, scout_matches(&world, &decoded_query).matched);
+            let tail = selected.map_or("", |id| item(id).stable_id);
+            assert!(packet.ends_with(tail.as_bytes()));
+        }
+        assert!(production_scout_packet(&request(item(offered[4]).stable_id)).is_err());
+        assert!(production_scout_packet(b"SSQ3\x00").is_err());
     }
 
     #[test]

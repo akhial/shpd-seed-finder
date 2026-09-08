@@ -327,6 +327,7 @@ fun requirementDetailLine(requirement: ItemRequirement): String = buildList {
     }
     requirement.effectLabel?.let { add(it) }
     if (requirement.requireUncursed) add("uncursed")
+    if (requirement.selectTrinket) add("choose at +3")
     requirement.source?.let { add(it.label) }
     requirement.levelSum?.let { add("Σ≥${it.atLeast}") }
     requirement.maximumDepth?.let { add("≤ floor $it") }

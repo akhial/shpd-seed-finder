@@ -48,6 +48,10 @@ interface NativeSeedFinder {
     ): NativeSearchSession
     fun filterSeeds(request: SearchRequest, seeds: List<String>): List<String>
     fun scoutSeed(seed: String, challenges: Int = 0): ScoutWorld
+    fun scoutSelectedSeed(seed: String, challenges: Int, query: SearchRequest?, trinket: String?): ScoutWorld =
+        scoutSeed(seed, challenges)
+    fun scoutSelectedMatches(seed: String, challenges: Int, request: SearchRequest, query: SearchRequest?, trinket: String?): ScoutMatches? =
+        scoutMatches(seed, challenges, request)
 
     /**
      * Which items of the world [scoutSeed] returns for the same seed and challenge mask explain
@@ -185,6 +189,13 @@ class DemoNativeSeedFinder : NativeSeedFinder {
     // no marks at all; a Kotlin stand-in matcher would be a second
     // implementation of `scout_matches`, which is what this app no longer has.
     override fun scoutMatches(seed: String, challenges: Int, request: SearchRequest): ScoutMatches? = null
+
+    // Interactive scouting uses the real engine even when search results are demo data.
+    override fun scoutSelectedSeed(seed: String, challenges: Int, query: SearchRequest?, trinket: String?): ScoutWorld =
+        JniNativeSeedFinder().scoutSelectedSeed(seed, challenges, query, trinket)
+
+    override fun scoutSelectedMatches(seed: String, challenges: Int, request: SearchRequest, query: SearchRequest?, trinket: String?): ScoutMatches =
+        JniNativeSeedFinder().scoutSelectedMatches(seed, challenges, request, query, trinket)
 
     override fun scoutSeed(seed: String, challenges: Int): ScoutWorld {
         require(SeedCode.isCanonical(seed)) { "Seed must use XXX-XXX-XXX format" }
@@ -376,8 +387,11 @@ class DemoNativeSeedFinder : NativeSeedFinder {
  * the engine's message), so queries are pre-validated locally for friendlier messages.
  * Result packet `SSR1`: magic[4], count:u16, then
  * repeated seedLength:u8, seed:ASCII. State codes are 0 running, 1 complete, 2 cancelled,
- * 3 failed. A non-zero handle is required. Scout requests use `SSQ2`, a little-endian challenge
- * mask, then the canonical UTF-8 seed. Scout packet `SSC3` contains the echoed canonical seed,
+ * 3 failed. A non-zero handle is required. Scout requests use `SSQ3`, a little-endian challenge
+ * mask, length-prefixed UTF-8 seed and override (little-endian u16 lengths), and canonical query
+ * JSON. An empty override means automatic query selection; "none" disables it. Scout packet
+ * `SSC5` extends SSC4 with a selected ID (big-endian u16 UTF-8 length, empty means none).
+ * SSC4 extends the following `SSC3` layout with a 17-entry trinket deck. SSC3 contains the echoed canonical seed,
  * then the run's ring gems — twelve gem ordinals, one per ring class in catalog ring order —
  * then a quest block — questCount:u8 (0..4) of strictly ascending {quest:u8, variant:u8,
  * depth:u8} records, where quest 1..4 is ghost/wandmaker/blacksmith/imp, variants are 1-based
@@ -388,11 +402,14 @@ class DemoNativeSeedFinder : NativeSeedFinder {
 class JniNativeSeedFinder(
     private val bindings: NativeBindings = JniBindingsAdapter,
 ) : NativeSeedFinder {
-    override fun scoutSeed(seed: String, challenges: Int): ScoutWorld {
+    override fun scoutSeed(seed: String, challenges: Int): ScoutWorld =
+        scoutSelectedSeed(seed, challenges, null, null)
+
+    override fun scoutSelectedSeed(seed: String, challenges: Int, query: SearchRequest?, trinket: String?): ScoutWorld {
         require(SeedCode.isCanonical(seed)) { "Seed must use XXX-XXX-XXX format" }
         require(challenges in 0..Challenge.ALL_MASK) { "Challenge mask must be 0..${Challenge.ALL_MASK}" }
         val world = ScoutResultCodec.decode(
-            bindings.scoutSeed(ScoutRequestCodec.encode(seed, challenges)),
+            bindings.scoutSeed(ScoutRequestCodec.encode(seed, challenges, query, trinket)),
         )
         check(world.seed == seed) { "Native scout returned ${world.seed} for requested seed $seed" }
         return world
@@ -400,9 +417,12 @@ class JniNativeSeedFinder(
 
     /** Asks the engine, which scouts the same world again and marks it. */
     override fun scoutMatches(seed: String, challenges: Int, request: SearchRequest): ScoutMatches =
+        scoutSelectedMatches(seed, challenges, request, null, "none")
+
+    override fun scoutSelectedMatches(seed: String, challenges: Int, request: SearchRequest, query: SearchRequest?, trinket: String?): ScoutMatches =
         ScoutMatchCodec.decode(
             bindings.scoutMatches(
-                ScoutRequestCodec.encode(seed, challenges),
+                ScoutRequestCodec.encode(seed, challenges, query, trinket),
                 QueryDocument.encode(request),
             ),
         )
@@ -663,17 +683,16 @@ object QueryDocument {
 }
 
 object ScoutRequestCodec {
-    fun encode(seed: String, challenges: Int): ByteArray {
+    fun encode(seed: String, challenges: Int, query: SearchRequest? = null, trinket: String? = null): ByteArray {
         require(SeedCode.isCanonical(seed)) { "Seed must use XXX-XXX-XXX format" }
         require(challenges in 0..Challenge.ALL_MASK) { "Challenge mask must be 0..${Challenge.ALL_MASK}" }
-        return byteArrayOf(
-            'S'.code.toByte(),
-            'S'.code.toByte(),
-            'Q'.code.toByte(),
-            '2'.code.toByte(),
-            (challenges and 0xff).toByte(),
-            (challenges ushr 8).toByte(),
-        ) + seed.toByteArray(StandardCharsets.UTF_8)
+        fun u16(value: Int) = byteArrayOf(value.toByte(), (value ushr 8).toByte())
+        val seedBytes = seed.toByteArray(StandardCharsets.UTF_8)
+        val overrideBytes = (trinket ?: "").toByteArray(StandardCharsets.UTF_8)
+        require(overrideBytes.size <= 65535) { "Trinket identifier is too long" }
+        return "SSQ3".toByteArray(StandardCharsets.US_ASCII) + u16(challenges) +
+            u16(seedBytes.size) + seedBytes + u16(overrideBytes.size) + overrideBytes +
+            (query?.let(QueryDocument::encode) ?: byteArrayOf())
     }
 }
 
@@ -716,7 +735,8 @@ object ScoutResultCodec {
     fun decode(packet: ByteArray): ScoutWorld =
         DataInputStream(ByteArrayInputStream(packet)).use { input ->
             val magic = ByteArray(4).also(input::readFully)
-            val hasTrinketOrder = magic.contentEquals(byteArrayOf(83, 83, 67, 52))
+            val hasSelectedTrinket = magic.contentEquals(byteArrayOf(83, 83, 67, 53))
+            val hasTrinketOrder = hasSelectedTrinket || magic.contentEquals(byteArrayOf(83, 83, 67, 52))
             check(hasTrinketOrder || magic.contentEquals(MAGIC)) { "Unexpected native scout packet" }
 
             val seed = readAscii(input, input.readUnsignedByte())
@@ -812,8 +832,13 @@ object ScoutResultCodec {
                     }
                 }.also { deck -> check(deck.map { it.id }.distinct().size == 17) { "Repeated scout trinket" } }
             } else emptyList()
+            val selectedTrinket = if (hasSelectedTrinket) {
+                readUtf8(input, input.readUnsignedShort()).takeIf { it.isNotEmpty() }?.also { id ->
+                    check(trinketOrder.take(4).any { it.id == id }) { "Selected trinket is not an initial offer" }
+                }
+            } else null
             check(input.available() == 0) { "Trailing bytes in native scout packet" }
-            ScoutWorld(seed = seed, items = items, quests = quests, ringGems = ringGems, trinketOrder = trinketOrder)
+            ScoutWorld(seed = seed, items = items, quests = quests, ringGems = ringGems, trinketOrder = trinketOrder, selectedTrinket = selectedTrinket)
         }
 
     private fun readUtf8(input: DataInputStream, length: Int): String {

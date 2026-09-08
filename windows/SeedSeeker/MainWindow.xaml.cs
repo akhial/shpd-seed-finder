@@ -957,6 +957,7 @@ public sealed partial class MainWindow : Window
         var cursePanel = new WrapPanel { Spacing = 4 };
         curseSection.Children.Add(new TextBlock { Text = "Curses", Style = (Style)Application.Current.Resources["Caption"] }); curseSection.Children.Add(cursePanel);
         var effectGrid = new StackPanel { Spacing = 4 }; effectGrid.Children.Add(enchantmentLabel); effectGrid.Children.Add(enchantmentPanel); effectGrid.Children.Add(curseSection);
+        var selectTrinket = new CheckBox { Content = "Choose matching trinket at +3", IsChecked = r.SelectTrinket };
         var uncursed = new CheckBox { Content = "Require uncursed", IsChecked = r.RequireUncursed };
         var source = Combo(new[] { "Any source" }.Concat(Enum.GetValues<ScoutItemSource>().Select(Labels.Source)), r.Source is null ? 0 : (int)r.Source + 1);
         // How many items of this kind the chip asks for. The relationships
@@ -1021,7 +1022,7 @@ public sealed partial class MainWindow : Window
             Section(SectionTitle("Item"), Row("Category", kind), Row("Item", item), Row("Tier", tierMatch), Row("Exact tier", tier), Row("Minimum tier", tierBound)),
             Section(SectionTitle("Upgrade level"), Row("Predicate", upgradeMatch), Row("Upgrade level", upgrade), Row("Minimum upgrade", upgradeBound)),
             Section(effectTitle, Row("Effect", effectMode), effectGrid),
-            Section(null, uncursed, Row("Source", source), depthRow, Row("Within first floors", depth)),
+            Section(null, selectTrinket, uncursed, Row("Source", source), depthRow, Row("Within first floors", depth)),
             Section(SectionTitle("Stack"), Row("Total item count", count), copyDepthToggle, copyDepth, totalToggle, total) }) content.Children.Add(section);
         void NormalizeTier()
         {
@@ -1032,6 +1033,7 @@ public sealed partial class MainWindow : Window
         void SyncVisibility()
         {
             var k = (ItemKind)Math.Max(0, kind.SelectedIndex); var trinket = k == ItemKind.Trinket; var generic = item.SelectedIndex == 0 && k.Family() is ItemKind.Weapon or ItemKind.Armor;
+            selectTrinket.Visibility = trinket ? Visibility.Visible : Visibility.Collapsed;
             var predicate = (TierMatch)Math.Max(0, tierMatch.SelectedIndex); var ranged = predicate is TierMatch.AtLeast or TierMatch.AtMost;
             tierMatch.Visibility = generic ? Visibility.Visible : Visibility.Collapsed;
             tier.Visibility = generic && predicate == TierMatch.Exactly ? Visibility.Visible : Visibility.Collapsed;
@@ -1133,6 +1135,7 @@ public sealed partial class MainWindow : Window
         r.Kind = (ItemKind)kind.SelectedIndex; r.Item = r.Kind == ItemKind.Trinket ? itemChoices[Math.Max(0, item.SelectedIndex)] : item.SelectedIndex > 0 ? itemChoices[item.SelectedIndex - 1] : null; r.TierMatch = r.Item is null && r.Kind.Family() is ItemKind.Weapon or ItemKind.Armor ? (TierMatch)tierMatch.SelectedIndex : TierMatch.Any; r.Tier = r.TierMatch == TierMatch.Any ? 0 : selectedTier;
         r.UpgradeMatch = (UpgradeMatch)upgradeMatch.SelectedIndex; r.Upgrade = r.UpgradeMatch switch { UpgradeMatch.Any => 0, UpgradeMatch.Exactly => (int)upgrade.Value, UpgradeMatch.AtLeast when r.Kind == ItemKind.Ring => (int)upgrade.Value, UpgradeMatch.AtLeast => selectedMinimumUpgrade, _ => 0 };
         r.RequireUncursed = uncursed.IsChecked == true;
+        r.SelectTrinket = r.Kind == ItemKind.Trinket && selectTrinket.IsChecked == true;
         // One checked effect is a single name, as before effect sets existed; an empty "Specific" means any.
         r.Effect = effectMode.Visibility != Visibility.Visible ? EffectFilter.Any() : effectMode.SelectedIndex switch
         {
@@ -1846,19 +1849,18 @@ public sealed partial class MainWindow : Window
         Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(key)
             .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
 
-    private async Task ScoutSeed(string seed)
+    private async Task ScoutSeed(string seed, string? trinket = null)
     {
         var generation = ++scoutGeneration;
         scoutedSeed = seed; UpdateResultNav();
-        ScoutButton.IsEnabled = false; ScoutStatus.Text = "Scouting…";
+        ScoutButton.IsEnabled = false; ScoutList.IsEnabled = false; ScoutStatus.Text = "Scouting…";
         try
         {
-            var world = await Task.Run(() => engine.Scout(seed, query.Challenges));
-            if (generation != scoutGeneration) return;
-            // Snapshot the query before leaving the UI thread: the engine
-            // walks its requirements, which the editor may be mutating.
+            // One snapshot names the generated world and its matched item indices.
             var marked = query.Clone();
-            var matches = await Task.Run(() => NativeEngine.ScoutMatches(seed, marked.Challenges, marked));
+            var world = await Task.Run(() => engine.Scout(seed, marked.Challenges, marked, trinket));
+            if (generation != scoutGeneration) return;
+            var matches = await Task.Run(() => NativeEngine.ScoutMatches(seed, marked.Challenges, marked, trinket));
             if (generation != scoutGeneration) return;
             var groups = world.Items.Select((item, index) => (Item: item, Index: index))
                 .GroupBy(x => x.Item.Depth).OrderBy(g => g.Key).Select(g =>
@@ -1871,7 +1873,8 @@ public sealed partial class MainWindow : Window
                         group.Add(ScoutRow.From(entry.Item, matches.Matched.Contains(entry.Index), world.Gems));
                     else if (entry.Index == trinkets[0].Index)
                         group.Add(ScoutRow.Catalyst(entry.Item, world.TrinketOrder ?? trinkets.Select(x => x.Item.Item).ToList(),
-                            trinkets.Where(x => matches.Matched.Contains(x.Index)).Select(x => x.Item.Item.Id).ToHashSet()));
+                            trinkets.Where(x => matches.Matched.Contains(x.Index)).Select(x => x.Item.Item.Id).ToHashSet(),
+                            world.SelectedTrinket, selected => { _ = ScoutSeed(seed, selected); }));
                 }
                 return group;
             }).ToList();
@@ -1891,7 +1894,7 @@ public sealed partial class MainWindow : Window
             // Keep the indicator describing the manifest that is still shown.
             scoutedSeed = renderedSeed; UpdateResultNav();
         }
-        finally { if (generation == scoutGeneration) ScoutButton.IsEnabled = SeedCode.IsCanonical(SeedInput.Text); }
+        finally { if (generation == scoutGeneration) { ScoutButton.IsEnabled = SeedCode.IsCanonical(SeedInput.Text); ScoutList.IsEnabled = true; } }
     }
     private static string Region(int depth) => depth switch { <= 5 => "Sewers", <= 10 => "Prison", <= 15 => "Caves", <= 20 => "Dwarven City", _ => "Demon Halls" };
     /// <summary>The variant label of the quest hosted on <paramref name="depth"/>, or "" for quest-less floors.</summary>
@@ -1931,13 +1934,13 @@ public sealed class ScoutGroup : List<ScoutRow>
 public sealed class ScoutRow
 {
     public UIElement? TrinketDeck { get; init; }
-    public static ScoutRow Catalyst(ScoutItem catalyst, IReadOnlyList<CatalogItem> order, IReadOnlySet<string> matches) => new()
+    public static ScoutRow Catalyst(ScoutItem catalyst, IReadOnlyList<CatalogItem> order, IReadOnlySet<string> matches, string? selectedTrinket, Action<string> onSelect) => new()
     {
         ItemName = "Magical Catalyst", SpriteIndex = 70, Source = Labels.Source(catalyst.Source),
         SecretVisibility = catalyst.Secret ? Visibility.Visible : Visibility.Collapsed,
         Accessibility = catalyst.AccessibilityTag switch { 1 => $"One reward of choice group {catalyst.AccessibilityGroup}", 2 => $"Only in some outcomes of scenario group {catalyst.AccessibilityGroup}", _ => "" },
         AccessibilityVisibility = catalyst.AccessibilityTag == 0 ? Visibility.Collapsed : Visibility.Visible,
-        TrinketDeck = new TrinketDeckView(order, matches),
+        TrinketDeck = new TrinketDeckView(order, matches, selectedTrinket, onSelect),
     };
     public string ItemName { get; init; } = "";
     public string Upgrade { get; init; } = "";

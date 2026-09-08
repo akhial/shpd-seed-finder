@@ -422,6 +422,20 @@ mod tests {
     }
 
     #[test]
+    fn selected_trinkets_survive_persistence() {
+        let state =
+            decode_state(r#"{"requirements":[{"item":"mimic_tooth","select_trinket":true}]}"#)
+                .unwrap();
+        assert!(state.requirements[0].select_trinket);
+        assert_eq!(
+            save_document(&state)["requirements"][0]["select_trinket"],
+            true
+        );
+        let restored = decode_state(&save_document(&state).to_string()).unwrap();
+        assert_eq!(restored.unvalidated_query(), state.unvalidated_query());
+    }
+
+    #[test]
     fn named_trinkets_survive_persistence_while_wildcards_are_dropped() {
         let restored =
             decode_state(r#"{"requirements":[{"kind":"trinket"},{"item":"mimic_tooth"}]}"#)

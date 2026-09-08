@@ -128,6 +128,7 @@ public static class ResultsExport
         if (output["upgrade"] is null) output.Remove("upgrade");
         if (EncodeEffect(requirement) is JsonNode effect) output["effect"] = effect;
         if (requirement.RequireUncursed) output["uncursed"] = true;
+        if (requirement.SelectTrinket) output["select_trinket"] = true;
         if (requirement.Source is ScoutItemSource source) output["source"] = SourceNames[(int)source];
         if (requirement.IdentityGroup is int group) output["identity_group"] = group;
         if (requirement.MaximumDepth is int depth) output["max_depth"] = depth;
@@ -243,6 +244,7 @@ public static class ResultsExport
             IdentityGroup = IntField(entry, "identity_group"),
             MaximumDepth = IntField(entry, "max_depth"),
             RequireUncursed = BoolField(entry, "uncursed"),
+            SelectTrinket = BoolField(entry, "select_trinket"),
             AlternativeGroup = alternativeGroup,
             LevelSum = levelSum,
         };

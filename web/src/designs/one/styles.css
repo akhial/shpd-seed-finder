@@ -2921,10 +2921,6 @@ input[type="range"]::-moz-range-thumb {
   margin-top: 14px;
 }
 
-.d1-trinket-selection {
-  margin: 12px 0;
-  font-size: 12px;
-}
 .d1-trinket-selected {
   outline: 2px solid var(--d1-accent, #bd9df1);
   outline-offset: 2px;

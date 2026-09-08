@@ -57,6 +57,7 @@ class PresetStorage(private val preferences: SharedPreferences) {
                     put("identityGroup", requirement.identityGroup ?: JSONObject.NULL)
                     put("maximumDepth", requirement.maximumDepth ?: JSONObject.NULL)
                     put("requireUncursed", requirement.requireUncursed)
+                    put("selectTrinket", requirement.selectTrinket)
                     put("alternativeGroup", requirement.alternativeGroup ?: JSONObject.NULL)
                     requirement.levelSum?.let {
                         put("levelSumGroup", it.group)
@@ -107,6 +108,7 @@ class PresetStorage(private val preferences: SharedPreferences) {
                         maximumDepth = encoded.optInt("maximumDepth").takeIf { !encoded.isNull("maximumDepth") }
                             ?.let(::normalizeFloorLimit),
                         requireUncursed = encoded.optBoolean("requireUncursed", false),
+                        selectTrinket = encoded.optBoolean("selectTrinket", false),
                         alternativeGroup = encoded.optInt("alternativeGroup")
                             .takeIf { !encoded.isNull("alternativeGroup") },
                         levelSum = encoded.optInt("levelSumGroup").takeIf { !encoded.isNull("levelSumGroup") }
