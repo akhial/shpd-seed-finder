@@ -1,4 +1,4 @@
-//! Query probability estimates derived from the measured v3.3.8 item supply.
+//! Query probability estimates derived from measured deterministic item supply.
 //!
 //! The estimate answers "what fraction of seeds satisfies this query", not "how
 //! likely is one item to match", so it has to know how much equipment a run
@@ -39,6 +39,15 @@
 //! therefore lifted out of the per-family matching and spent once across the
 //! whole query, on whichever requirement it reaches that helps most.
 //!
+//! Artifacts use their measured supply for single-item estimates. Joint
+//! artifact requirements average valid identity assignments over sampled
+//! anonymous layouts, retaining floor/source/curse filters and accessibility
+//! scenarios. Identities are dealt without replacement from eleven cards;
+//! two copies of an artifact are impossible. The layout distribution is
+//! sampled separately from identity draws; identity-dependent RNG consumption
+//! is not conditioned on. Mixed equipment/artifact pools retain the same
+//! conservative allocation approximation as equipment-only pools.
+//!
 //! Known simplifications: challenges shift item placement but are ignored, and
 //! a query carrying more requirements than one matching resolves keeps only its
 //! scarcest ones, which read high. Against them, a pool is spent on its single
@@ -50,6 +59,8 @@
 //! two plain ones — is discounted as heavily as one wanting three alike. Those
 //! read low.
 
+mod artifacts;
+
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
@@ -59,7 +70,7 @@ use crate::equipment::{
     WEAPON_RARE, WEAPON_UNCOMMON,
 };
 use crate::generator::{
-    ARMOR_ITEMS, RING_ITEMS, WAND_ITEMS, WEAPON_TIER_1_ITEMS, WEAPON_TIER_2_ITEMS,
+    ARMOR_ITEMS, ARTIFACT_ITEMS, RING_ITEMS, WAND_ITEMS, WEAPON_TIER_1_ITEMS, WEAPON_TIER_2_ITEMS,
     WEAPON_TIER_3_ITEMS, WEAPON_TIER_4_ITEMS, WEAPON_TIER_5_ITEMS,
 };
 use crate::model::ItemSource;
@@ -84,15 +95,6 @@ use crate::quests::WandmakerQuestType;
 /// the group.
 #[must_use]
 pub fn estimate_match_probability(query: &SearchQuery) -> f64 {
-    // Artifact identities are dealt without replacement across deterministic
-    // placements. Equipment supply tables cannot estimate this distribution.
-    if query
-        .requirements
-        .iter()
-        .any(|r| r.kind == ItemKind::Artifact)
-    {
-        return f64::NAN;
-    }
     if query
         .requirements
         .iter()
@@ -653,6 +655,25 @@ fn matching_chance(ordered: &[Predicate]) -> f64 {
     if ordered.is_empty() {
         return 1.0;
     }
+    // An artifact leaves the global deck on its first draw. No combination of
+    // room and quest supplies can produce a second copy of that identity.
+    let mut artifacts = std::collections::BTreeSet::new();
+    if ordered
+        .iter()
+        .filter(|predicate| predicate.kind == ItemKind::Artifact)
+        .filter_map(|predicate| predicate.item)
+        .any(|identity| !artifacts.insert(identity))
+    {
+        return 0.0;
+    }
+    // A named artifact can appear only once, so its expected matching count
+    // is already its probability, including mutually exclusive room offers.
+    if ordered.len() == 1 && ordered[0].kind == ItemKind::Artifact {
+        return expected_slots(&ordered[0]).clamp(0.0, 1.0);
+    }
+    if artifacts.len() == ordered.len() {
+        return artifacts::probability(ordered, false);
+    }
     let deepest = ordered
         .iter()
         .map(|predicate| usize::from(predicate.max_depth).clamp(1, DEPTHS))
@@ -736,9 +757,27 @@ impl OpenSupply<'_> {
                     .push(*predicate);
             }
         }
+        let spent_artifacts = self
+            .ordered
+            .iter()
+            .enumerate()
+            .filter(|(index, predicate)| {
+                predicate.kind == ItemKind::Artifact && discharged & (1 << index) != 0
+            })
+            .count();
         let answer: f64 = families
             .into_values()
-            .map(|family| open_chance(&family))
+            .map(|family| {
+                let conditional = if family[0].kind == ItemKind::Artifact {
+                    (0..family.len()).fold(1.0, |factor, used| {
+                        factor * tally(artifact_identity_count() - used)
+                            / tally(artifact_identity_count() - spent_artifacts - used)
+                    })
+                } else {
+                    1.0
+                };
+                (open_chance(&family) * conditional).min(1.0)
+            })
             .product();
         self.answered.insert(discharged, answer);
         answer
@@ -761,6 +800,25 @@ fn open_chance(ordered: &[Predicate]) -> f64 {
     let Some(kind) = ordered.first().map(|predicate| predicate.kind) else {
         return 1.0;
     };
+    if kind == ItemKind::Artifact && ordered.len() == 1 {
+        let predicate = ordered[0];
+        return supply_for(kind)
+            .filter(|supply| prize_group(supply.source).is_none())
+            .flat_map(|supply| {
+                supply
+                    .depth_slots
+                    .iter()
+                    .enumerate()
+                    .map(move |(depth, slots)| {
+                        f64::from(*slots) * predicate.slot_probability(supply, depth + 1)
+                    })
+            })
+            .sum::<f64>()
+            .clamp(0.0, 1.0);
+    }
+    if kind == ItemKind::Artifact {
+        return artifacts::probability(ordered, true);
+    }
     let wanted = ordered.len();
     let coverages = 1 << wanted;
     let shared: Vec<Option<Predicate>> = (0..coverages)
@@ -1305,6 +1363,12 @@ impl Predicate {
         let identity = self.identity_probability(supply, tiers);
         let modifiers = self.effect_probability(supply) * self.uncursed_probability(supply);
         let options = f64::from(supply.options);
+        if self.kind == ItemKind::Artifact {
+            // Alternative artifact offers have different identities, never
+            // independent chances to roll the same one twice.
+            return (identity * options * self.upgrade_probability(supply) * modifiers)
+                .clamp(0.0, 1.0);
+        }
         if supply.shared_roll {
             // No source that rolls its alternatives as one locks their levels
             // to their tiers, so the identity keeps the tabled tier shares.
@@ -1390,7 +1454,17 @@ impl Predicate {
                 }
             }
             (ItemKind::Wand | ItemKind::Ring, None) => 1.0,
-            (ItemKind::Trinket | ItemKind::Artifact, _) => 0.0,
+            (ItemKind::Artifact, Some(wanted)) => {
+                if ARTIFACT_ITEMS
+                    .iter()
+                    .any(|artifact| artifact.item_id() == Some(wanted))
+                {
+                    1.0 / tally(artifact_identity_count())
+                } else {
+                    0.0
+                }
+            }
+            (ItemKind::Artifact, None) | (ItemKind::Trinket, _) => 0.0,
         }
     }
 
@@ -1492,9 +1566,20 @@ fn melee_tier_items(tier: u8) -> &'static [Option<ItemId>] {
 /// Weapons of one tier are drawn equally often, and so are wands and rings, so
 /// resolving one of them and raising the answer to the size of its group is
 /// exact — and much cheaper than resolving all forty-odd weapon identities.
+fn artifact_identity_count() -> usize {
+    ARTIFACT_ITEMS
+        .iter()
+        .filter(|artifact| artifact.item_id().is_some())
+        .count()
+}
+
 fn identities(kind: ItemKind) -> Vec<(ItemId, i32)> {
     match kind {
-        ItemKind::Trinket | ItemKind::Artifact => Vec::new(),
+        ItemKind::Trinket => Vec::new(),
+        ItemKind::Artifact => ARTIFACT_ITEMS
+            .iter()
+            .filter_map(|artifact| artifact.item_id().map(|id| (id, 1)))
+            .collect(),
         ItemKind::Weapon => (1..=HIGHEST_TIER)
             .filter_map(|tier| {
                 let items = melee_tier_items(tier);

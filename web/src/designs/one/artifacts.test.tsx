@@ -109,6 +109,8 @@ describe("artifact search and scout", () => {
     expect(html).toContain(">+5</b>");
     expect(html).toContain("One reward of choice group");
     const analysis = JSON.parse(analyze_query(JSON.stringify(query)));
-    expect(analysis).toMatchObject({ valid: true, impossible: false, probability: null });
+    expect(analysis).toMatchObject({ valid: true, impossible: false });
+    expect(analysis.probability).toBeGreaterThan(0);
+    expect(analysis.probability).toBeLessThan(1);
   });
 });

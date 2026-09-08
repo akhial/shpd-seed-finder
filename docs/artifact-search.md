@@ -41,8 +41,15 @@ Web, Android, Windows, macOS, and Linux use the shared item catalog for artifact
 pickers and scout results. Native scout packets and match indices include the
 same full artifact stream as the core generator and WASM.
 
-Artifact probability estimates are unavailable because the equipment supply
-tables do not model their unique deck. This does not prevent searches.
+Artifact probability estimates use deterministic supply measured over 200,000
+BETA-4 worlds, including floor, source, curse, and upgrade distributions.
+Single-item estimates use the measured supply; joint artifact estimates average
+all valid assignments of their unique identities over 4,096 anonymous generated
+layouts. This respects the finite deck and each layout's accessibility choices.
+The layouts are regenerated with `cargo run --release --example calibrate_artifacts`
+into `src/probability_tables/artifact_worlds.bin` within the core crate.
+Artifacts compete with equipment for the Imp vault prize. Like equipment estimates, mixed supply and alternative groups retain
+the estimator's documented approximations.
 
 Tests pin all 11 artifact identities across eight worlds against the official
 BETA-4 JAR and cover

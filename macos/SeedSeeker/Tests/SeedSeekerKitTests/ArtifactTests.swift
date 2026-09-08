@@ -95,18 +95,18 @@ final class ArtifactTests: XCTestCase {
     }
 
     @MainActor
-    func testArtifactProbabilityLabelIsUnavailable() throws {
+    func testImportedArtifactProbabilityWaitsForSearchStatus() throws {
         let requirement = try ItemRequirement(key: 1,
             item: XCTUnwrap(ItemCatalog.findById("ethereal_chains")), upgrade: 0,
             kind: .artifact, upgradeMatch: .any)
         let controller = SearchController()
         controller.loadImported(seeds: ["AAA-AAA-AAA"], query: SavedQuery(requirements: [requirement]))
-        XCTAssertEqual(controller.probabilityLabel, "unavailable")
+        XCTAssertEqual(controller.probabilityLabel, NumberFormat.probabilityPercent(nil))
         XCTAssertNil(controller.timeToSeed)
         XCTAssertFalse(controller.isImpossibleQuery)
     }
 
-    func testUnavailableArtifactProbabilityDoesNotFailNativeStatus() async throws {
+    func testArtifactProbabilityIsAvailableFromNativeStatus() async throws {
         let requirement = try ItemRequirement(key: 1,
             item: XCTUnwrap(ItemCatalog.findById("ethereal_chains")), upgrade: 0,
             kind: .artifact, upgradeMatch: .any)
@@ -114,7 +114,9 @@ final class ArtifactTests: XCTestCase {
             SearchRequest(requirements: [requirement]), workers: 1)
         do {
             let status = try await session.status()
-            XCTAssertTrue(status.matchProbability.isNaN)
+            XCTAssertTrue(status.matchProbability.isFinite)
+            XCTAssertGreaterThan(status.matchProbability, 0)
+            XCTAssertLessThan(status.matchProbability, 1)
             XCTAssertEqual(status.state, .running)
         } catch {
             await session.cancel()

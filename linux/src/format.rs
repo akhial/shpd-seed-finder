@@ -31,7 +31,7 @@ pub fn probability_percent(probability: Option<f64>) -> String {
     format!("{mantissa:.1}\u{d7}10{}%", superscript(exponent))
 }
 
-/// A search without an artifact probability model still reports its measured speed.
+/// A search whose probability is unavailable still reports its measured speed.
 pub fn search_statistics(probability: f64, seeds_per_second: f64) -> String {
     if !probability.is_finite() {
         return format!(

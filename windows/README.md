@@ -26,4 +26,4 @@ The Trinket category selects a named trinket and supports the board’s existing
 
 ## Artifacts
 
-The Artifact category requires a named artifact and supports floor limits, source and curse filters, upgrades through +5, and OR groups. Artifacts are single items rather than stacks. Scout uses the shared catalog and engine upgrades, including +5 Imp vault rewards, and keeps artifact matches aligned with the full manifest. Artifact queries show probability and estimated search time as unavailable.
+The Artifact category requires a named artifact and supports floor limits, source and curse filters, upgrades through +5, and OR groups. Artifacts are single items rather than stacks. Scout uses the shared catalog and engine upgrades, including +5 Imp vault rewards, and keeps artifact matches aligned with the full manifest. Artifact queries show the measured match probability and estimated search time.

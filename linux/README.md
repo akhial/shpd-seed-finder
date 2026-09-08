@@ -19,7 +19,7 @@ push/pop navigation as the window narrows, down to a fully single-pane phone-siz
   level they reach. A chip opens in a dialog with category, item, tier, upgrade,
   enchantment/glyph, source, total item count, and per-item floor limit predicates.
   Artifacts require a named selection, support per-item floor and upgrade limits, and
-  show the Imp vault reward at +5 when scouting. Artifact match probability is unavailable.
+  show the Imp vault reward at +5 when scouting. Artifact match probability uses the engine's measured supply model.
   Trinkets use a named selection without equipment details. Both can join either/or clusters
   and have no item-count control. Included and user-saved presets are available from the
   sidebar and main menu; user presets can be updated or deleted. Challenges live in a

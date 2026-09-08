@@ -127,7 +127,7 @@ fn artifact_predicates_codecs_and_vault_exclusivity() {
     assert_eq!(scout_matches(&world, &exclusive).matched_requirements, 1);
     let alternatives = json_query::decode(r#"{"requirements":[{"any_of":[{"item":"sandals_of_nature"},{"item":"ethereal_chains"}]}]}"#).unwrap();
     assert_eq!(scout_matches(&world, &alternatives).matched_requirements, 1);
-    assert!(shpd_seedfinder_core::probability::estimate_match_probability(&query).is_nan());
+    assert!(shpd_seedfinder_core::probability::estimate_match_probability(&query) > 0.0);
 }
 
 #[test]
