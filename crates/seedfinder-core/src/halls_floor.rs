@@ -1331,6 +1331,27 @@ mod tests {
     }
 
     #[test]
+    fn rc1_halls_lore_page_clears_its_drop_cell() {
+        // Official RC1 JAR: seed 17, depth 24, attrition page at cell 1191.
+        // The BETA-4 profile left this cell as HIGH_GRASS.
+        let floor = generate_halls_prefix(DungeonSeed::new(17).unwrap(), 24)
+            .pop()
+            .unwrap();
+        assert_eq!(
+            floor.painted.level.map.cells[1191],
+            crate::geometry::terrain::GRASS
+        );
+        assert!(!floor.flags.los_blocking[1191]);
+        assert!(floor.regular_items.placements.iter().any(|placement| {
+            placement.cell == 1191
+                && placement.items
+                    == vec![RegularItem::Queued(QueuedItemKind::Other(
+                        "RegionLorePage$Halls",
+                    ))]
+        }));
+    }
+
+    #[test]
     fn torches_precede_level_create_queue_and_depth_twenty_shop_is_reported() {
         let floor = generate_halls_prefix(DungeonSeed::MIN, 21).pop().unwrap();
         let queue = halls_level_create_queue(&floor.painted.prepared);

@@ -7,8 +7,8 @@ import sys
 
 
 ORACLE_SCHEMA = "shpd-parity-oracle/v2"
-GAME_VERSION = "4.0.0-BETA-4"
-GAME_JAR_SHA256 = "76f6983e7b619267666621de9f1ecbbc3645d4925c2c446736987c3011b9dfd1"
+GAME_VERSION = "4.0.0-RC-1"
+GAME_JAR_SHA256 = "43f881f0d6484faffea913f5563fd2c3277ed83159eda6e83efc55e586fbfdbf"
 
 
 def load_ndjson(path: pathlib.Path):

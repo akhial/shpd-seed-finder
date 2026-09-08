@@ -1,4 +1,4 @@
-//! Exact v3.3.8 `RegularLevel.createItems()` content and RNG orchestration.
+//! Exact v4.0.0-RC-1 `RegularLevel.createItems()` content and RNG orchestration.
 //!
 //! Spatial item placement is intentionally delegated to
 //! [`RegularItemPlacement`]. Its methods are called at the same points as the
@@ -8,8 +8,8 @@
 //! prizes, queued-item ordering, and isolated bonus-stream push/pop calls.
 //!
 //! The canonical profile has no challenges, equipped trinkets, bones, Dried
-//! Rose, cached-rations talent, or meta bonus items. All guide/document pages
-//! are considered found. Canonically inactive branches still consume their
+//! Rose, or cached-rations talent. Debug journal defaults mark all pages read
+//! except RC1's Halls "attrition" page. Inactive branches still consume their
 //! outer `Long()` child seeds; Ebony Mimic and Cracked Spyglass also perform
 //! their unconditional first child-stream `Float()` calls.
 
@@ -698,6 +698,19 @@ fn consume_isolated_streams<P: RegularItemPlacement>(
             IsolatedItemStreamKind::EbonyMimic => {
                 // `Float() < 0` is false, but the left side is unconditional.
                 let _unused_ebony_roll = random.float();
+            }
+            IsolatedItemStreamKind::LorePages if depth == 24 => {
+                // RC1 leaves HALLS_KING's "attrition" page unfound even in
+                // debug journal defaults. With 5/6 pages read its first
+                // eligible floor is 21 + round(3 * 5/6) = 24.
+                place_queued_item(
+                    depth,
+                    random,
+                    placement,
+                    RegularItem::Queued(QueuedItemKind::Other("RegionLorePage$Halls")),
+                    records,
+                    world_items,
+                );
             }
             IsolatedItemStreamKind::CrackedSpyglass => {
                 // `(int)(Float() + 0)` is always zero, but consumes the Float.

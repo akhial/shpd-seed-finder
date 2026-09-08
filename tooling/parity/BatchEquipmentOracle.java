@@ -21,6 +21,11 @@ public final class BatchEquipmentOracle {
     static final Map<String, Field> FIELDS = new HashMap<>();
     static final Map<Class<?>, String> IDS = new HashMap<>();
     static final ArrayList<String> ITEMS = new ArrayList<>();
+    static final ArrayList<String> MAPS = new ArrayList<>();
+    static final ArrayList<String> LOCATIONS = new ArrayList<>();
+    static final ArrayList<String> CATALYSTS = new ArrayList<>();
+    static int cell = -1;
+    static int branch;
     static int depth;
     static Object get(Object object, String name) throws Exception {
         Class<?> type = object instanceof Class ? (Class<?>) object : object.getClass();
@@ -43,7 +48,10 @@ public final class BatchEquipmentOracle {
     static void add(Object object, String source) {
         if (!(object instanceof Item)) return;
         Item item = (Item) object;
-        if (!(item instanceof Weapon || item instanceof Armor || item instanceof Wand || item instanceof Ring)) return;
+        if (item instanceof com.shatteredpixel.shatteredpixeldungeon.items.trinkets.TrinketCatalyst) {
+            CATALYSTS.add(depth+","+source);
+        }
+        if (!(item instanceof Weapon || item instanceof Armor || item instanceof Wand || item instanceof Ring || item instanceof com.shatteredpixel.shatteredpixeldungeon.items.trinkets.Trinket)) return;
         String id = IDS.computeIfAbsent(item.getClass(), c -> c.getSimpleName()
             .replaceAll("(?<!^)([A-Z])", "_$1").toLowerCase(Locale.ROOT)
             .replace("wand_of_", "wand_").replace("ring_of_", "ring_"));
@@ -55,11 +63,18 @@ public final class BatchEquipmentOracle {
         if (e.equals("AntiMagic")) e="Anti-Magic";
         if (e.equals("AntiEntropy")) e="Anti-Entropy";
         ITEMS.add(depth+","+source+","+id+","+item.trueLevel()+","+(item.cursed?1:0)+","+e);
+        if (cell >= 0) LOCATIONS.add(depth+","+branch+","+cell+","+id+","+item.trueLevel()+","+(item.cursed?1:0)+","+e);
     }
     static void addAll(Object values, String source) {
         if (values instanceof Collection<?>) for (Object i : (Collection<?>)values) add(i,source);
     }
     static void scan(Level level, boolean vault) throws Exception {
+        branch = vault ? 1 : 0;
+        if (!(level instanceof CityBossLevel)) {
+            StringJoiner cells = new StringJoiner(",");
+            for (int tile : level.map) cells.add(Integer.toString(tile));
+            MAPS.add("map "+(depth+(vault?100:0))+" "+level.width()+","+level.height()+":"+cells);
+        }
         for (Heap h : level.heaps.valueList()) {
             Room r = level instanceof RegularLevel ? ((RegularLevel)level).room(h.pos) : null;
             if (vault && r != null && r.getClass().getSimpleName().equals("VaultFinalRoom")) continue;
@@ -69,9 +84,10 @@ public final class BatchEquipmentOracle {
                 case SKELETON -> "Skeleton"; case FOR_SALE -> "Shop";
                 default -> throw new IllegalStateException("unsupported heap "+h.type);
             };
-            addAll(h.items,source);
+            cell = h.pos; addAll(h.items,source); cell = -1;
         }
         for (Mob m : level.mobs) {
+            cell = m.pos;
             if (m instanceof Mimic) addAll(((Mimic)m).items,vault?"VaultTreasure":m instanceof GoldenMimic?"GoldenMimic":m instanceof CrystalMimic?"CrystalMimic":"Mimic");
             else if (m instanceof Statue) {
                 String source = vault?"VaultTreasure":m instanceof ArmoredStatue?"ArmoredStatue":"Statue";
@@ -79,12 +95,15 @@ public final class BatchEquipmentOracle {
                 if (m instanceof ArmoredStatue) add(((ArmoredStatue)m).armor(),source);
             }
         }
+        cell = -1;
         SacrificialFire fire=(SacrificialFire)level.blobs.get(SacrificialFire.class);
         if (fire != null) add(get(fire,"prize"),"SacrificialFire");
         if (level instanceof CityBossLevel) addAll(get(get(level,"impShop"),"itemsToSpawn"),"Shop");
     }
     static void generate(long seed) throws Exception {
         ITEMS.clear();
+        MAPS.clear();
+        LOCATIONS.clear(); CATALYSTS.clear(); cell = -1;
         SPDSettings.customSeed(DungeonSeed.convertToCode(seed)); Dungeon.initSeed();
         GamesInProgress.selectedClass=HeroClass.WARRIOR; Dungeon.init();
         Imp.Quest.rewardOptions.clear(); set(Imp.Quest.class,"oldQuest",false); set(Imp.Quest.class,"alternative",false);
@@ -99,7 +118,12 @@ public final class BatchEquipmentOracle {
             Dungeon.depth++;
         }
         if (imp>0) { depth=imp;Dungeon.depth=imp;Dungeon.branch=1;scan(Dungeon.newLevel(),true); }
+        for (String catalyst : CATALYSTS) {
+            String[] parts = catalyst.split(","); depth = Integer.parseInt(parts[0]);
+            for (int i=0; i<4; i++) add(Generator.random(Generator.Category.TRINKET), parts[1]);
+        }
         Collections.sort(ITEMS);
+        Collections.sort(LOCATIONS);
     }
     public static void main(String[] args) throws Exception {
         long start=Long.parseLong(args[0]),count=Long.parseLong(args[1]);
@@ -107,7 +131,7 @@ public final class BatchEquipmentOracle {
         PrintWriter out=new PrintWriter(new BufferedWriter(new OutputStreamWriter(System.out),65536));
         long began=System.nanoTime();
         for(long seed=start;seed<start+count;seed++) {
-            try { generate(seed); out.println(seed+"|"+String.join(";",ITEMS)); }
+            try { generate(seed); out.println(seed+"|"+String.join(";",ITEMS)+"|"+String.join(";",MAPS)+"|"+String.join(";",LOCATIONS)); }
             catch(Throwable e) { out.println("ERROR|"+seed+"|"+e.toString().replace('\n',' ')); e.printStackTrace(System.err); }
             if ((seed-start+1)%1000==0) { out.flush();System.err.printf(Locale.ROOT,"PROGRESS tested=%d elapsed=%.3f%n",seed-start+1,(System.nanoTime()-began)/1e9); }
         }

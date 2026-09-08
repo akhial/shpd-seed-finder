@@ -1,4 +1,4 @@
-# Java baseline seed finder (v4.0.0-BETA-4)
+# Java baseline seed finder (v4.0.0-RC-1)
 
 The Java side of the benchmark in the top-level `README.md`: a seed finder that
 runs Shattered Pixel Dungeon's own generator on the JVM, so Seed Seeker's
@@ -6,22 +6,22 @@ throughput can be compared with the game's own code **at the version Seed
 Seeker targets**.
 
 The published throughput and match counts below were measured on BETA-3;
-rerun the commands to obtain BETA-4 measurements.
+rerun the commands to obtain RC1 measurements.
 
 It exists because the established Java finder cannot follow the engine to
 v4.0.0. [Elektrochecker's shpd-seed-finder](https://github.com/Elektrochecker/shpd-seed-finder)
 patches the game's *source* tree (26 files, mostly item-recording hooks) and
 builds a modified desktop JAR; its newest release is `3.3.X`. Upstream has
-published a v4.0.0-BETA-4 release JAR but no v4.0.0 source, so there is nothing
+published a v4.0.0-RC-1 release JAR but no v4.0.0 source, so there is nothing
 to apply that patch to. This finder takes the route `tooling/oracle-4.0` takes
 instead: it drives the **unmodified official JAR** headlessly and recompiles
 nothing of the game.
 
 The pin is the same artifact the oracle uses:
 
-- artifact: `ShatteredPD-v4.0.0-BETA-4-Java.jar`
-- URL: `https://github.com/00-Evan/shattered-pixel-dungeon/releases/download/4.0.0-beta/ShatteredPD-v4.0.0-BETA-4-Java.jar`
-- sha256: `76f6983e7b619267666621de9f1ecbbc3645d4925c2c446736987c3011b9dfd1`
+- artifact: `ShatteredPD-v4.0.0-RC-1-Java.jar`
+- URL: `https://github.com/00-Evan/shattered-pixel-dungeon/releases/download/4.0.0-beta/ShatteredPD-v4.0.0-RC-1-Java.jar`
+- sha256: `43f881f0d6484faffea913f5563fd2c3277ed83159eda6e83efc55e586fbfdbf`
 
 `build.sh` reuses the oracle's download when there is one, verifies the sha256,
 and compiles `src/**/*.java` plus the oracle's `TextureFilm` stand-in into

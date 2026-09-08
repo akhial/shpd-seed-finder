@@ -846,6 +846,8 @@ fn create_library_walls(level: &mut Level, area: Rect, rng: &mut RandomStack) {
                     Rect::new(area.left, split + 1, area.right, area.bottom),
                     rng,
                 );
+                // RC1 returns after a successful horizontal split. BETA-4
+                // incorrectly retried this now-partitioned rectangle.
                 return;
             }
         }

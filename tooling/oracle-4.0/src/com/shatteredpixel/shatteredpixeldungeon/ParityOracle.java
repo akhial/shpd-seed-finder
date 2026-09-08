@@ -62,7 +62,7 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * A non-interactive, machine-readable oracle over the official v4.0.0-BETA-4
+ * A non-interactive, machine-readable oracle over the official v4.0.0-RC-1
  * generation path, driven headlessly against the unmodified desktop JAR.
  * This class deliberately avoids identifying or otherwise mutating generated
  * items while recording them.
@@ -70,15 +70,15 @@ import java.util.TreeSet;
 public final class ParityOracle {
 
 	private static final String SCHEMA = "shpd-parity-oracle/v2";
-	private static final String GAME_VERSION = "4.0.0-BETA-4";
-	private static final int GAME_VERSION_CODE = 906;
+	private static final String GAME_VERSION = "4.0.0-RC-1";
+	private static final int GAME_VERSION_CODE = 907;
 	private static final String GAME_JAR_URL =
-			"https://github.com/00-Evan/shattered-pixel-dungeon/releases/download/4.0.0-beta/ShatteredPD-v4.0.0-BETA-4-Java.jar";
+			"https://github.com/00-Evan/shattered-pixel-dungeon/releases/download/4.0.0-beta/ShatteredPD-v4.0.0-RC-1-Java.jar";
 	private static final String GAME_JAR_SHA256 =
-			"76f6983e7b619267666621de9f1ecbbc3645d4925c2c446736987c3011b9dfd1";
+			"43f881f0d6484faffea913f5563fd2c3277ed83159eda6e83efc55e586fbfdbf";
 	/**
 	 * The JAR's own {@code DeviceCompat.isDebug()} is {@code Game.version.contains("INDEV")}.
-	 * Debug mode marks every journal page as read, which is what keeps the unseeded
+	 * Debug mode marks guide pages read (RC1 excludes the Halls attrition lore page), keeping the unseeded
 	 * early-Guidebook heap off the first floors.  Nothing else on the generation path
 	 * reads {@code Game.version} (see README), so the suffix is the smallest possible
 	 * headless intervention.

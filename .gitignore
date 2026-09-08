@@ -43,3 +43,7 @@ pgo/*.profraw
 /web/src/generated/
 /web/public/third_party/
 /web/public/licenses/
+
+/tooling/oracle-4.0/.work/
+/tooling/java-finder/.work/
+/.work-uv/

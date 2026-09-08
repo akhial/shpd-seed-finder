@@ -1,11 +1,11 @@
 {
   "schema": "shpd-city-parity-fixture/v3",
-  "game_version": "4.0.0-BETA-4",
-  "game_jar_sha256": "76f6983e7b619267666621de9f1ecbbc3645d4925c2c446736987c3011b9dfd1",
+  "game_version": "4.0.0-RC-1",
+  "game_jar_sha256": "43f881f0d6484faffea913f5563fd2c3277ed83159eda6e83efc55e586fbfdbf",
   "runtime": {
-    "java_version": "21.0.11",
-    "java_vendor": "Oracle Corporation",
-    "java_vm": "Java HotSpot(TM) 64-Bit Server VM"
+    "java_version": "25.0.4.1",
+    "java_vendor": "Eclipse Adoptium",
+    "java_vm": "OpenJDK 64-Bit Server VM"
   },
   "generator_checkpoint_columns": [
     "depth",

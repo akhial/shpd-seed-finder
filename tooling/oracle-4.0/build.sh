@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the Shattered Pixel Dungeon v4.0.0-BETA-4 parity oracle against the
+# Builds the Shattered Pixel Dungeon v4.0.0-RC-1 parity oracle against the
 # official desktop JAR.  No game source is compiled: the oracle plus one small
 # headless shadow class are compiled into .work/classes and placed ahead of the
 # JAR on the classpath by run.sh.
@@ -7,9 +7,9 @@ set -euo pipefail
 
 ORACLE_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 WORK="$ORACLE_DIR/.work"
-JAR_NAME=ShatteredPD-v4.0.0-BETA-4-Java.jar
+JAR_NAME=ShatteredPD-v4.0.0-RC-1-Java.jar
 JAR_URL="https://github.com/00-Evan/shattered-pixel-dungeon/releases/download/4.0.0-beta/$JAR_NAME"
-JAR_SHA256=76f6983e7b619267666621de9f1ecbbc3645d4925c2c446736987c3011b9dfd1
+JAR_SHA256=43f881f0d6484faffea913f5563fd2c3277ed83159eda6e83efc55e586fbfdbf
 JAR="$WORK/$JAR_NAME"
 CLASSES="$WORK/classes"
 
@@ -39,7 +39,7 @@ if [[ "$ACTUAL_SHA256" != "$JAR_SHA256" ]]; then
 fi
 
 # JDK selection: JAVA_21_HOME, then JAVA_HOME, then PATH.  Fixtures are pinned
-# with JDK 21.
+# with Eclipse Adoptium JDK 25.0.4.1 for RC1.
 if [[ -n "${JAVA_21_HOME:-}" ]]; then
     JAVAC="$JAVA_21_HOME/bin/javac"
 elif [[ -n "${JAVA_HOME:-}" ]]; then
