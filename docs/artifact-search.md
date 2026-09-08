@@ -16,7 +16,8 @@ and are not offered in the artifact picker.
 ```
 
 Artifacts support named AND/OR queries, individual floor limits, source and
-uncursed filters. The generator's existing unique artifact deck is unchanged.
+uncursed filters. Artifact editors use any upgrade and do not offer an upgrade
+selector; scout results still show the generated upgrade. The generator's existing unique artifact deck is unchanged.
 Only artifacts generated at deterministic locations participate: heaps,
 containers, skeletons, shops, pre-generated mimic contents and the Imp reward.
 Runtime drops, transmutations, purchases affecting later RNG, and other player

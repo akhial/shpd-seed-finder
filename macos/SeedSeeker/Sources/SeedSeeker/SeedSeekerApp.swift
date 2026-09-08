@@ -1566,7 +1566,7 @@ private struct RequirementEditor: View {
                 }
                 // A combined level speaks for the whole stack, so its members
                 // take any upgrade and the per-item choice has nothing to say.
-                if kind != .trinket && effectiveTotal == nil {
+                if kind != .trinket && kind != .artifact && effectiveTotal == nil {
                     Section("Upgrade level") {
                         Picker("Predicate", selection: $match) {
                             ForEach(UpgradeMatch.allCases, id: \.self) { Text($0.label).tag($0) }
@@ -1778,9 +1778,9 @@ private struct RequirementEditor: View {
             // The relationships are the board's to write: `applyEdit` turns the
             // count and total below into the stack's own encoding, so the row
             // saved here carries no group of its own.
-            let value = try ItemRequirement(key: original.key, item: item, upgrade: kind == .trinket ? 0 : upgrade,
+            let value = try ItemRequirement(key: original.key, item: item, upgrade: kind == .trinket || kind == .artifact ? 0 : upgrade,
                 effect: effect, kind: kind,
-                tier: tierMatch == .any ? 0 : tier, tierMatch: tierMatch, upgradeMatch: kind == .trinket ? .any : match,
+                tier: tierMatch == .any ? 0 : tier, tierMatch: tierMatch, upgradeMatch: kind == .trinket || kind == .artifact ? .any : match,
                 source: kind == .trinket || sourceRaw == 0 ? nil : ScoutItemSource(rawValue: sourceRaw - 1),
                 maximumDepth: kind == .trinket || maximumDepth == 0 ? nil : maximumDepth,
                 requireUncursed: kind != .trinket && requireUncursed,

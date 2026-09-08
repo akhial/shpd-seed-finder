@@ -1044,10 +1044,10 @@ public sealed partial class MainWindow : Window
             // members, so the upgrade predicate has nothing left to say.
             var counting = CountingLevels();
             var upgradePredicate = (UpgradeMatch)Math.Max(0, upgradeMatch.SelectedIndex); var ringMinimum = k == ItemKind.Ring && upgradePredicate == UpgradeMatch.AtLeast;
-            upgradeMatch.Visibility = counting || trinket ? Visibility.Collapsed : Visibility.Visible;
-            upgrade.Visibility = !trinket && !counting && (upgradePredicate == UpgradeMatch.Exactly || ringMinimum) ? Visibility.Visible : Visibility.Collapsed;
+            upgradeMatch.Visibility = counting || k.RequiresNamedItem() ? Visibility.Collapsed : Visibility.Visible;
+            upgrade.Visibility = !k.RequiresNamedItem() && !counting && (upgradePredicate == UpgradeMatch.Exactly || ringMinimum) ? Visibility.Visible : Visibility.Collapsed;
             Relabel(upgrade, ringMinimum ? "Minimum upgrade" : "Upgrade level");
-            upgradeBound.Visibility = !trinket && !counting && upgradePredicate == UpgradeMatch.AtLeast && !ringMinimum ? Visibility.Visible : Visibility.Collapsed;
+            upgradeBound.Visibility = !k.RequiresNamedItem() && !counting && upgradePredicate == UpgradeMatch.AtLeast && !ringMinimum ? Visibility.Visible : Visibility.Collapsed;
         }
         // How many items the stack asks for; a half-typed box reads as one.
         int Counted() => double.IsNaN(count.Value) ? 1 : Math.Clamp((int)count.Value, 1, SearchLimits.StackMax);
@@ -1154,6 +1154,7 @@ public sealed partial class MainWindow : Window
         }
         if (r.Kind == ItemKind.Artifact)
         {
+            r.UpgradeMatch = UpgradeMatch.Any; r.Upgrade = 0;
             r.IdentityGroup = null; r.LevelSum = null;
             return new StackShape(1, null, null, stack.InCluster);
         }

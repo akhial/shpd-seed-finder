@@ -612,7 +612,10 @@ fn selected_upgrade_ceiling(editor: &Rc<Editor>) -> u8 {
 }
 
 fn selected_upgrade(editor: &Rc<Editor>) -> UpgradeRequirement {
-    if selected_kind(editor) == ItemKind::Trinket {
+    if matches!(
+        selected_kind(editor),
+        ItemKind::Trinket | ItemKind::Artifact
+    ) {
         return UpgradeRequirement::Any;
     }
     let kind = selected_kind(editor);
@@ -951,7 +954,7 @@ fn refresh_visibility(editor: &Rc<Editor>) {
     let stacked = !editor.in_cluster && selected_count(editor) > 1;
     editor
         .upgrade_group
-        .set_visible(!counting_levels && kind != ItemKind::Trinket);
+        .set_visible(!counting_levels && !matches!(kind, ItemKind::Trinket | ItemKind::Artifact));
     editor.details_group.set_visible(kind != ItemKind::Trinket);
     editor
         .count_group

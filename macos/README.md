@@ -43,6 +43,6 @@ choices use the app's flat mint highlight. The native scout decoder accepts SSC4
 (including the full 17-entry deck) and legacy SSC3 manifests.
 
 The Artifacts category requires a named artifact and supports floor limits,
-source and curse filters, upgrade predicates through +5, and Either/or groups.
+source and curse filters, and Either/or groups.
 Scouting shows artifacts alongside other items with their generated upgrade.
 Artifact searches display the engine's measured match probability.

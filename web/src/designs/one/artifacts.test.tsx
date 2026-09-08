@@ -5,7 +5,7 @@ import { itemsForKind } from "../../lib/catalog";
 import { fromQueryJson, maxUpgradeOf, toQueryDocument, validateRequirement } from "../../lib/query";
 import init, { analyze_query, filter_seeds, scout } from "../../lib/wasm/pkg/seedfinder.js";
 import type { ScoutResult } from "../../lib/wasm/types";
-import { RequirementEditor } from "./RequirementEditor";
+import { RequirementEditor, namedItemEditorRequirement } from "./RequirementEditor";
 import { ScoutPanel } from "./ScoutPanel";
 import { boardItems, canStack, joinAlternatives } from "./relations";
 
@@ -38,6 +38,8 @@ describe("artifact search and scout", () => {
     );
     expect(html).not.toContain("Any artifact");
     expect(html).not.toContain("Total item count");
+    expect(html).not.toContain("Upgrade level");
+    expect(namedItemEditorRequirement(requirement).upgrade).toEqual({ mode: "any", value: 0 });
     expect(html).toContain("Limit this item");
     expect(html).toContain('aria-valuetext="19"');
     const repeats = fromQueryJson(

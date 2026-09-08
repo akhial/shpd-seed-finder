@@ -94,6 +94,7 @@ export function namedItemEditorRequirement(requirement: RequirementState): Requi
       ...requirement,
       kind: "artifact",
       item: requirement.item ?? itemsForKind("artifact")[0].id,
+      upgrade: { mode: "any", value: 0 },
     };
   }
   if (requirementFamily(requirement) !== "trinket") return requirement;
@@ -211,7 +212,7 @@ export function RequirementEditor({
       ...current,
       kind: nextKind,
       upgrade:
-        nextKind === "trinket"
+        nextKind === "trinket" || nextKind === "artifact"
           ? { mode: "any", value: 0 }
           : family === "trinket"
             ? { mode: "any", value: 1 }
@@ -387,7 +388,7 @@ export function RequirementEditor({
             )}
           </section>
 
-          {effectiveTotal === undefined && family !== "trinket" && (
+          {effectiveTotal === undefined && family !== "trinket" && family !== "artifact" && (
             <section className="d1-modal-section">
               <h3>Upgrade level</h3>
               <Segmented
