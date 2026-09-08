@@ -1471,7 +1471,7 @@ private struct RequirementEditor: View {
                 .font(.headline).padding(.top, 14).padding(.bottom, 4)
             Form {
                 Section("Item") {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 10) {
                         Text("Category")
                         WideSegmentedPicker(
                             options: [ItemKind.weapon, .armor, .wand, .ring, .trinket].map { ($0.label, $0) },
