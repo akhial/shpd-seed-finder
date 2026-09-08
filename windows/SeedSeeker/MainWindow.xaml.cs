@@ -1981,7 +1981,7 @@ public sealed class ScoutRow
         return new()
         {
             ItemName = x.Item.Name,
-            Upgrade = $"+{x.Upgrade}", UpgradeVisibility = x.Upgrade > 0 ? Visibility.Visible : Visibility.Collapsed,
+            Upgrade = $"+{x.DisplayedUpgrade}", UpgradeVisibility = x.DisplayedUpgrade > 0 ? Visibility.Visible : Visibility.Collapsed,
             CurseVisibility = x.Cursed ? Visibility.Visible : Visibility.Collapsed,
             SecretVisibility = x.Secret ? Visibility.Visible : Visibility.Collapsed,
             Effect = x.Effect ?? "", EffectVisibility = x.Effect is null ? Visibility.Collapsed : Visibility.Visible,

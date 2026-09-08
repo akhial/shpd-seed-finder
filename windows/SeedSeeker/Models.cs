@@ -1259,7 +1259,25 @@ public static class BuiltInPresets
 public sealed record SeedResult(string Seed, int Number);
 public sealed record ScoutItem(CatalogItem Item, int Depth, int Upgrade, string? Effect, bool Cursed,
     ScoutItemSource Source, byte AccessibilityTag, int AccessibilityGroup, ulong AccessibilityValue,
-    bool Secret = false);
+    bool Secret = false)
+{
+    // Mirrors transferUpgrade followed by visiblyUpgraded (positive half-up rounding).
+    public int DisplayedUpgrade
+    {
+        get
+        {
+            var cap = Item.Id switch
+            {
+                "sandals_of_nature" => 3,
+                "ethereal_chains" or "timekeepers_hourglass" => 5,
+                _ => 0,
+            };
+            if (cap == 0) return Upgrade;
+            var internalLevel = (Upgrade * cap + 5) / 10;
+            return (internalLevel * 10 + cap / 2) / cap;
+        }
+    }
+}
 /// <summary>
 /// The gems one run gives the twelve ring classes, indexed by class — which is
 /// also the class's <see cref="CatalogItem.TypeIconIndex"/>, so a ring looks up

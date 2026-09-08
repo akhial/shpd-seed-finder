@@ -5,6 +5,20 @@ namespace SeedSeeker.Tests;
 
 public sealed class ArtifactTests
 {
+    [Fact]
+    public void ScoutArtifactsShowRoundedGameLevels()
+    {
+        foreach (var item in ItemCatalog.For(ItemKind.Artifact))
+        {
+            var expected = item.Id switch { "sandals_of_nature" => 7,
+                "ethereal_chains" or "timekeepers_hourglass" => 6, _ => 5 };
+            var scout = new ScoutItem(item, 19, 5, null, false, ScoutItemSource.ImpReward, 0, 0, 0);
+            Assert.Equal(expected, scout.DisplayedUpgrade);
+            Assert.Equal(5, scout.Upgrade);
+            Assert.Equal(0, (scout with { Upgrade = 0 }).DisplayedUpgrade);
+        }
+    }
+
     private static ItemRequirement Sandals() => new()
     {
         Kind = ItemKind.Artifact, Item = ItemCatalog.Find("sandals_of_nature"),
