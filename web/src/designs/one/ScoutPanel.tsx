@@ -336,26 +336,7 @@ export function CatalystEntry({
         </div>
       </div>
       {note && <p className="d1-item-note">{note}</p>}
-      {onSelect && (
-        <div className="d1-trinket-selection">
-          <div className="d1-trinket-selection-head">
-            <span>Applied trinket</span>
-            <button
-              type="button"
-              className="d1-trinket-none"
-              aria-pressed={!selectedTrinket}
-              disabled={disabled}
-              onClick={() => onSelect("none")}
-            >
-              No Trinket
-            </button>
-          </div>
-          <p className="d1-caption">
-            Click a trinket to apply it at +3 from the next floor after the first brewing
-            opportunity.
-          </p>
-        </div>
-      )}
+      {onSelect && <p className="d1-trinket-selection">Applied trinket</p>}
       <ol className="d1-trinket-choices" aria-label="Initial trinket choices">
         {(order.length
           ? order
@@ -386,7 +367,7 @@ export function CatalystEntry({
                   aria-label={`Apply ${offer.name} at +3`}
                   aria-pressed={selectedTrinket === offer.id}
                   disabled={disabled}
-                  onClick={() => onSelect(offer.id)}
+                  onClick={() => onSelect(selectedTrinket === offer.id ? "none" : offer.id)}
                 >
                   {contents}
                 </button>

@@ -46,16 +46,17 @@ describe("offered trinket pilot", () => {
       />,
     );
     expect(html).not.toContain("<select");
-    expect(html.match(/<button /g)).toHaveLength(5);
-    expect(html).toContain('aria-pressed="false">No Trinket</button>');
+    expect(html.match(/<button /g)).toHaveLength(4);
+    expect(html).not.toContain("No Trinket");
+    expect(html).not.toContain("Click a trinket");
     expect(html).toContain(`aria-label="Apply ${order[1].name} at +3" aria-pressed="true"`);
     expect(html).toContain("Applied +3");
     expect(html).not.toContain(`aria-label="Apply ${order[4].name}`);
     const cleared = renderToStaticMarkup(
       <CatalystEntry offers={offers} order={order} onSelect={() => {}} disabled />,
     );
-    expect(cleared).toContain('aria-pressed="true" disabled="">No Trinket</button>');
-    expect(cleared.match(/disabled=""/g)).toHaveLength(5);
+    expect(cleared).not.toContain('aria-pressed="true"');
+    expect(cleared.match(/disabled=""/g)).toHaveLength(4);
     expect(cleared).not.toContain("Applied +3");
   });
 

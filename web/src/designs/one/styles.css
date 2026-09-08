@@ -2923,25 +2923,8 @@ input[type="range"]::-moz-range-thumb {
 
 .d1-trinket-selection {
   margin: 12px 0;
-}
-.d1-trinket-selection-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
   font-size: 12px;
 }
-.d1-trinket-none {
-  font: inherit;
-  color: inherit;
-  background: transparent;
-  border: 1px solid #bba0ee50;
-  border-radius: 6px;
-  padding: 8px 12px;
-  min-height: 36px;
-  cursor: pointer;
-}
-.d1-trinket-none[aria-pressed="true"],
 .d1-trinket-selected {
   outline: 2px solid var(--d1-accent, #bd9df1);
   outline-offset: 2px;
@@ -2959,18 +2942,13 @@ input[type="range"]::-moz-range-thumb {
   background: transparent;
   cursor: pointer;
 }
-.d1-trinket-pick:focus-visible,
-.d1-trinket-none:focus-visible {
+.d1-trinket-pick:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 4px;
 }
-.d1-trinket-pick:disabled,
-.d1-trinket-none:disabled {
+.d1-trinket-pick:disabled {
   cursor: wait;
   opacity: 0.6;
-}
-.d1-trinket-selection .d1-caption {
-  margin: 8px 0;
 }
 .d1-trinket-applied {
   position: absolute;
